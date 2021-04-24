@@ -33,7 +33,7 @@ public class ShaclProperties {
 	// sh:PropertyShape so the reasoner will figure that out
 	private IRI type = SHACL.NODE_SHAPE;
 
-	private final List<Resource> clazz = new ArrayList<>();
+	private final List<IRI> clazz = new ArrayList<>();
 	private final List<Resource> or = new ArrayList<>();
 	private final List<Resource> xone = new ArrayList<>();
 	private final List<Resource> and = new ArrayList<>();
@@ -202,7 +202,7 @@ public class ShaclProperties {
 					pattern.add(object.stringValue());
 					break;
 				case "http://www.w3.org/ns/shacl#class":
-					clazz.add((Resource) object);
+					clazz.add((IRI) object);
 					break;
 				case "http://www.w3.org/ns/shacl#targetNode":
 					targetNode.add(object);
@@ -311,7 +311,7 @@ public class ShaclProperties {
 
 	}
 
-	public List<Resource> getClazz() {
+	public List<IRI> getClazz() {
 		return clazz;
 	}
 

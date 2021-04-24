@@ -7,17 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.nquads;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.PushbackReader;
-import java.io.Reader;
-import java.io.UnsupportedEncodingException;
-import java.nio.charset.StandardCharsets;
-
-import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -35,143 +26,74 @@ public class NQuadsParser extends NTriplesParser {
 
 	protected Resource context;
 
-	@Override
+	public NQuadsParser() {
+		super();
+	}
+
+	public NQuadsParser(ValueFactory valueFactory) {
+		super(valueFactory);
+	}
+
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.NQUADS;
 	}
 
-	@Override
-	public synchronized void parse(final InputStream inputStream, final String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
-		if (inputStream == null) {
-			throw new IllegalArgumentException("Input stream can not be 'null'");
-		}
-
-		try {
-			parse(new InputStreamReader(new BOMInputStream(inputStream, false), StandardCharsets.UTF_8), baseURI);
-		} catch (UnsupportedEncodingException e) {
-			// Every platform should support the UTF-8 encoding...
-			throw new RuntimeException(e);
-		}
-	}
-
-	@Override
-	public synchronized void parse(final Reader reader, final String baseURI)
-			throws IOException, RDFParseException, RDFHandlerException {
-		clear();
-
-		try {
-			if (reader == null) {
-				throw new IllegalArgumentException("Reader can not be 'null'");
-			}
-
-			if (rdfHandler != null) {
-				rdfHandler.startRDF();
-			}
-
-			this.reader = new PushbackReader(reader);
-			lineNo = 1;
-
-			reportLocation(lineNo, 1);
-
-			int c = readCodePoint();
-			c = skipWhitespace(c);
-
-			while (c != -1) {
-				if (c == '#') {
-					// Comment, ignore
-					c = skipLine(c);
-				} else if (c == '\r' || c == '\n') {
-					// Empty line, ignore
-					c = skipLine(c);
-				} else {
-					c = parseQuad(c);
-				}
-
-				c = skipWhitespace(c);
-			}
-		} finally {
-			clear();
-		}
-
-		if (rdfHandler != null) {
-			rdfHandler.endRDF();
-		}
-	}
-
-	private int parseQuad(int c) throws IOException, RDFParseException, RDFHandlerException {
-
+	protected void parseStatement() throws RDFParseException, RDFHandlerException {
 		boolean ignoredAnError = false;
 		try {
-			c = parseSubject(c);
-
-			c = skipWhitespace(c);
-
-			c = parsePredicate(c);
-
-			c = skipWhitespace(c);
-
-			c = parseObject(c);
-
-			c = skipWhitespace(c);
-
-			// Context is not required
-			if (c != '.') {
-				c = parseContext(c);
-				c = skipWhitespace(c);
+			skipWhitespace(false);
+			if (!shouldParseLine()) {
+				return;
 			}
-			if (c == -1) {
-				throwEOFException();
-			} else if (c != '.') {
-				reportFatalError("Expected '.', found: " + new String(Character.toChars(c)));
-			}
+			parseSubject();
 
-			c = assertLineTerminates(c);
-		} catch (RDFParseException rdfpe) {
-			if (getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES)) {
-				reportError(rdfpe, NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+			skipWhitespace(true);
+
+			parsePredicate();
+
+			skipWhitespace(true);
+
+			parseObject();
+
+			skipWhitespace(true);
+
+			parseContext();
+
+			skipWhitespace(true);
+
+			assertLineTerminates();
+		} catch (RDFParseException e) {
+			if (getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES)) {
+				reportError(e, NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 				ignoredAnError = true;
 			} else {
-				throw rdfpe;
+				throw e;
 			}
 		}
+		handleStatement(ignoredAnError);
+	}
 
-		c = skipLine(c);
+	protected void parseContext() {
+		if (lineChars[currentIndex] == '<') {
+			// context uri
+			context = parseIRI();
+		} else if (lineChars[currentIndex] == '_') {
+			// context bnode
+			context = parseNode();
+		}
+	}
 
-		if (!ignoredAnError) {
-			Statement st = createStatement(subject, predicate, object, context);
-			if (rdfHandler != null) {
-				rdfHandler.handleStatement(st);
+	protected void handleStatement(boolean ignoredAnError) {
+		if (rdfHandler != null && !ignoredAnError) {
+			if (context == null) {
+				rdfHandler.handleStatement(valueFactory.createStatement(subject, predicate, object));
+			} else {
+				rdfHandler.handleStatement(valueFactory.createStatement(subject, predicate, object, context));
 			}
 		}
-
 		subject = null;
 		predicate = null;
 		object = null;
 		context = null;
-
-		return c;
 	}
-
-	protected int parseContext(int c) throws IOException, RDFParseException {
-		StringBuilder sb = new StringBuilder(100);
-
-		// subject is either an uriref (<foo://bar>) or a nodeID (_:node1)
-		if (c == '<') {
-			// subject is an uriref
-			c = parseUriRef(c, sb);
-			context = createURI(sb.toString());
-		} else if (c == '_') {
-			// subject is a bNode
-			c = parseNodeID(c, sb);
-			context = createNode(sb.toString());
-		} else if (c == -1) {
-			throwEOFException();
-		} else {
-			reportFatalError("Expected '<' or '_', found: " + new String(Character.toChars(c)));
-		}
-
-		return c;
-	}
-
 }

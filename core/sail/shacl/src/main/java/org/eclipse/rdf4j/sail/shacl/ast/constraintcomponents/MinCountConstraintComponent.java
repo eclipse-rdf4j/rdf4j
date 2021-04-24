@@ -3,7 +3,13 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -12,6 +18,8 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
@@ -89,5 +97,76 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public ConstraintComponent deepClone() {
 		return new MinCountConstraintComponent(minCount);
+	}
+
+	@Override
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+
+		String targetVarPrefix = "target_";
+
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
+				connectionsGroup.getRdfsSubClassOfReasoner());
+		String query = effectiveTarget.getQuery(false);
+
+		if (minCount == 1) {
+			StatementMatcher.Variable value = new StatementMatcher.Variable("value");
+
+			String pathQuery = getTargetChain().getPath()
+					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+							connectionsGroup.getRdfsSubClassOfReasoner()))
+					.orElseThrow(IllegalStateException::new);
+
+			query += "\nFILTER(NOT EXISTS{" + pathQuery + "})";
+		} else {
+
+			StringBuilder condition = new StringBuilder();
+			String valuePrefix = "value_";
+
+			for (int i = 0; i < minCount; i++) {
+				StatementMatcher.Variable value = new StatementMatcher.Variable(valuePrefix + i);
+
+				String pathQuery = getTargetChain().getPath()
+						.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+								connectionsGroup.getRdfsSubClassOfReasoner()))
+						.orElseThrow(IllegalStateException::new);
+
+				condition.append(pathQuery).append("\n");
+			}
+
+			List<String> collect = LongStream.range(0, minCount)
+					.mapToObj(i -> "?" + valuePrefix + i)
+					.collect(Collectors.toList());
+
+			Set<String> notEquals = new HashSet<>();
+
+			for (String left : collect) {
+				for (String right : collect) {
+					if (left == right) {
+						continue;
+					}
+					if (left.compareTo(right) < 0) {
+						notEquals.add(left + " != " + right);
+					} else {
+						notEquals.add(right + " != " + left);
+
+					}
+				}
+			}
+
+			String innerCondition = String.join(" && ", notEquals);
+
+			query += "\nFILTER(NOT EXISTS{" + condition + "FILTER(" + innerCondition + ")\n})";
+		}
+
+		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
+
+		return new ValidationQuery(query, allTargetVariables, null, scope, getConstraintComponent(), null, null);
+
+	}
+
+	@Override
+	public ValidationApproach getOptimalBulkValidationApproach() {
+		return ValidationApproach.SPARQL;
 	}
 }

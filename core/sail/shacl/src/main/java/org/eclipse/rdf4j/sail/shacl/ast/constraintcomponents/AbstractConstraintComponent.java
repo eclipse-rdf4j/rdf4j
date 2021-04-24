@@ -1,16 +1,15 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
@@ -50,28 +49,28 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	}
 
 	@Override
-	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
-		logger.warn("SPARQL based validation for {} has not been implemented", getConstraintComponent());
-		return new EmptyNode();
+		logger.error("SPARQL based validation for {} has not been implemented", getConstraintComponent());
+		throw new ShaclUnsupportedException();
 	}
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
 			Scope scope) {
-		logger.warn("Transactional validation for {} has not been implemented", getConstraintComponent());
+		logger.error("Transactional validation for {} has not been implemented", getConstraintComponent());
 		return new EmptyNode();
 	}
 
 	@Override
-	public ValidationApproach getPreferedValidationApproach() {
+	public ValidationApproach getPreferredValidationApproach(ConnectionsGroup connectionsGroup) {
 		return ValidationApproach.Transactional;
 	}
 
 	@Override
-	public Set<ValidationApproach> getSupportedValidationApproaches() {
-		return new HashSet<>(Collections.singletonList(ValidationApproach.Transactional));
+	public ValidationApproach getOptimalBulkValidationApproach() {
+		return ValidationApproach.Transactional;
 	}
 
 	@Override

@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings;
 
 /**
  * An implementation of the RDFWriter interface that writes RDF documents in Turtle format. The Turtle format is defined
@@ -95,6 +96,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 	private Boolean xsdStringToPlainLiteral;
 	private Boolean prettyPrint;
 	private boolean inlineBNodes;
+	private Boolean abbreviateNumbers;
 
 	private ModelFactory modelFactory = new LinkedHashModelFactory();
 
@@ -157,6 +159,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 		settings.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 		settings.add(BasicWriterSettings.PRETTY_PRINT);
 		settings.add(BasicWriterSettings.INLINE_BLANK_NODES);
+		settings.add(TurtleWriterSettings.ABBREVIATE_NUMBERS);
 		return settings;
 	}
 
@@ -168,6 +171,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 			xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);
 			prettyPrint = getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT);
 			inlineBNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);
+			abbreviateNumbers = getWriterConfig().get(TurtleWriterSettings.ABBREVIATE_NUMBERS);
 
 			if (isBuffering()) {
 				this.bufferedStatements = getModelFactory().createEmptyModel();
@@ -633,7 +637,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 		String label = lit.getLabel();
 		IRI datatype = lit.getDatatype();
 
-		if (prettyPrint) {
+		if (prettyPrint && abbreviateNumbers) {
 			if (XSD.INTEGER.equals(datatype) || XSD.DECIMAL.equals(datatype)
 					|| XSD.DOUBLE.equals(datatype) || XSD.BOOLEAN.equals(datatype)) {
 				try {

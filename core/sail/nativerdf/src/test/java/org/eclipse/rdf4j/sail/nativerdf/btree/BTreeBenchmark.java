@@ -7,15 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf.btree;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.Random;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 /**
  * @author Arjohn Kampman
@@ -28,7 +28,8 @@ public class BTreeBenchmark {
 	 * Variables *
 	 *-----------*/
 
-	private File dir;
+	@Rule
+	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	private BTree btree;
 
@@ -38,14 +39,12 @@ public class BTreeBenchmark {
 
 	@Before
 	public void setUp() throws Exception {
-		dir = FileUtil.createTempDir("btree");
-		btree = new BTree(dir, "test", 4096, 8);
+		btree = new BTree(tmpDir.newFolder(), "test", 4096, 8);
 	}
 
 	@After
 	public void tearDown() throws Exception {
 		btree.delete();
-		FileUtil.deleteDir(dir);
 	}
 
 	@Test

@@ -78,8 +78,13 @@ import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetClass;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetSubjectsOf;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
+
+	private static final Logger logger = LoggerFactory.getLogger(Shape.class);
+
 	Resource id;
 	TargetChain targetChain;
 
@@ -359,16 +364,20 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		ValidationApproach validationApproach = ValidationApproach.SPARQL;
 		if (!validateEntireBaseSail) {
 			validationApproach = constraintComponents.stream()
-					.map(ConstraintComponent::getPreferedValidationApproach)
-					.reduce(ValidationApproach::reduce)
+					.map(constraintComponent -> constraintComponent.getPreferredValidationApproach(connectionsGroup))
+					.reduce(ValidationApproach::reducePreferred)
 					.get();
 		}
 
 		if (validationApproach == ValidationApproach.SPARQL) {
-			if (Shape.this.getSupportedValidationApproaches().contains(ValidationApproach.SPARQL)) {
-				return Shape.this.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, false, false,
-						Scope.none);
+			if (connectionsGroup.isExperimentalSparqlValidation()
+					&& Shape.this.getOptimalBulkValidationApproach() == ValidationApproach.SPARQL) {
+				logger.debug("Use validation approach {} for shape {}", validationApproach, this);
+				return Shape.this.generateSparqlValidationQuery(connectionsGroup, logValidationPlans, false, false,
+						Scope.none).getValidationPlan(connectionsGroup.getBaseConnection());
 			} else {
+				logger.debug("Use fall back validation approach for bulk validation instead of SPARQL for shape {}",
+						this);
 
 				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans,
 						() -> Shape.this.getTargetChain()
@@ -381,6 +390,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			}
 
 		} else if (validationApproach == ValidationApproach.Transactional) {
+			logger.debug("Use validation approach {} for shape {}", validationApproach, this);
+
 			if (this.requiresEvaluation(connectionsGroup, Scope.none)) {
 				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null,
 						Scope.none);
@@ -421,6 +432,15 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
+	}
+
+	@Override
+	public ValidationApproach getOptimalBulkValidationApproach() {
+		return constraintComponents.stream()
+				.map(ConstraintComponent::getOptimalBulkValidationApproach)
+				.reduce(ValidationApproach::reduceCompatible)
+				.orElse(ValidationApproach.MOST_COMPATIBLE);
+
 	}
 
 	public static class Factory {

@@ -63,6 +63,7 @@ public class DatatypeBenchmarkSerializableEmpty {
 	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
+		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 

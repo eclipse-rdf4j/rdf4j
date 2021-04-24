@@ -60,7 +60,7 @@ public class NativeStoreConsistencyIT {
 		IRI oldContext = vf.createIRI("http://example.org/oldContext");
 		IRI newContext = vf.createIRI("http://example.org/newContext");
 
-		File dataDir = tempDir.newFolder("nativestore-consistency");
+		File dataDir = tempDir.newFolder();
 
 		Repository repo = new SailRepository(new NativeStore(dataDir, "spoc,psoc"));
 

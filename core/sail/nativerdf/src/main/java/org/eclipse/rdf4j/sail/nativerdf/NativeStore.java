@@ -9,6 +9,9 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.io.FileUtils;
@@ -78,6 +81,9 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	// used to decide if store is writable, is true if the store was writable during initialization
 	private boolean isWritable;
 
+	// indicates if a datadir is temporary (i.e. will be deleted on shutdown)
+	private boolean isTmpDatadir = false;
+
 	/**
 	 * Data directory lock.
 	 */
@@ -134,6 +140,12 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 * Methods *
 	 *---------*/
 
+	@Override
+	public void setDataDir(File dataDir) {
+		super.setDataDir(dataDir);
+		isTmpDatadir = (dataDir == null);
+	}
+
 	/**
 	 * Sets the triple indexes for the native store, must be called before initialization.
 	 *
@@ -152,7 +164,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	}
 
 	/**
-	 * Specifiec whether updates should be synced to disk forcefully, must be called before initialization. Enabling
+	 * Specifies whether updates should be synced to disk forcefully, must be called before initialization. Enabling
 	 * this feature may prevent corruption in case of events like power loss, but can have a severe impact on write
 	 * performance. By default, this feature is disabled.
 	 */
@@ -239,7 +251,13 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		File dataDir = getDataDir();
 
 		if (dataDir == null) {
-			throw new SailException("Data dir has not been set");
+			try {
+				setDataDir(Files.createTempDirectory("rdf4j-native-tmp").toFile());
+				isTmpDatadir = true;
+			} catch (IOException ioe) {
+				throw new SailException("Temp data dir could not be created");
+			}
+			dataDir = getDataDir();
 		} else if (!dataDir.exists()) {
 			boolean success = dataDir.mkdirs();
 			if (!success) {
@@ -311,14 +329,35 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 		try {
 			store.close();
-
-			logger.debug("NativeStore shut down");
 		} finally {
 			dirLock.release();
 			if (dependentServiceResolver != null) {
 				dependentServiceResolver.shutDown();
 			}
-			logger.debug("NativeStore shut down");
+		}
+
+		if (isTmpDatadir) {
+			File dataDir = getDataDir();
+			if (dataDir != null) {
+				try {
+					Files.walk(dataDir.toPath())
+							.map(Path::toFile)
+							.sorted(Comparator.reverseOrder()) // delete files before directory
+							.forEach(File::delete);
+				} catch (IOException ioe) {
+					logger.error("Could not delete temp file " + dataDir);
+				}
+			}
+		}
+		logger.debug("NativeStore shut down");
+	}
+
+	@Override
+	public void shutDown() throws SailException {
+		super.shutDown();
+		// edge case when re-initialize after shutdown
+		if (isTmpDatadir) {
+			setDataDir(null);
 		}
 	}
 

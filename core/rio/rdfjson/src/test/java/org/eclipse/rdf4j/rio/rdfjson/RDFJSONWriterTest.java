@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.RDFJSONWriterSettings;
 
 /**
  * JUnit test for the RDF/JSON parser.
@@ -38,7 +39,8 @@ public class RDFJSONWriterTest extends RDFWriterTest {
 
 	@Override
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
-		return new RioSetting[] { BasicWriterSettings.PRETTY_PRINT };
+		return new RioSetting[] { BasicWriterSettings.PRETTY_PRINT,
+				RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES };
 	}
 
 }

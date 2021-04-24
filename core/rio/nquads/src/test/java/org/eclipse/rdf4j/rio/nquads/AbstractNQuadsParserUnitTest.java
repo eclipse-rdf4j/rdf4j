@@ -459,7 +459,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 		parser.parse(br, "http://test.base.uri");
 
 		rdfHandler.assertHandler(6);
-		parseLocationListerner.assertListener(9, 1);
+		parseLocationListerner.assertListener(8, 1);
 	}
 
 	/**
@@ -476,7 +476,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 				"http://test.base.uri");
 
 		rdfHandler.assertHandler(400);
-		parseLocationListener.assertListener(401, 1);
+		parseLocationListener.assertListener(400, 1);
 	}
 
 	@Test

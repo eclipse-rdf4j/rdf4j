@@ -7,30 +7,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.File;
 import java.io.IOException;
 
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.SparqlRegexTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 
 public class NativeSparqlRegexTest extends SparqlRegexTest {
-
-	private File dataDir;
+	@Rule
+	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	@Override
 	protected Repository newRepository() throws IOException {
-		dataDir = FileUtil.createTempDir("nativestore");
-		return new SailRepository(new NativeStore(dataDir, "spoc"));
-	}
-
-	@Override
-	public void tearDown() throws Exception {
-		try {
-			super.tearDown();
-		} finally {
-			FileUtil.deleteDir(dataDir);
-		}
+		return new SailRepository(new NativeStore(tmpDir.getRoot(), "spoc"));
 	}
 }

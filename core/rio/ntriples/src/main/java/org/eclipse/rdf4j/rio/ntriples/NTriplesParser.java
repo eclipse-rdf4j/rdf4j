@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ntriples;
 
+import static org.eclipse.rdf4j.rio.helpers.NTriplesUtil.unescapeString;
+
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.PushbackReader;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
@@ -20,9 +22,7 @@ import java.util.HashSet;
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -44,15 +44,13 @@ import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
  */
 public class NTriplesParser extends AbstractRDFParser {
 
-	protected PushbackReader reader;
+	protected BufferedReader reader;
+	protected char[] lineChars;
+	protected int currentIndex;
 	protected long lineNo;
 	protected Resource subject;
 	protected IRI predicate;
 	protected Value object;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	/**
 	 * Creates a new NTriplesParser that will use a {@link SimpleValueFactory} to create object for resources, bNodes
@@ -71,10 +69,6 @@ public class NTriplesParser extends AbstractRDFParser {
 		super(valueFactory);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
 	@Override
 	public RDFFormat getRDFFormat() {
 		return RDFFormat.NTRIPLES;
@@ -88,7 +82,8 @@ public class NTriplesParser extends AbstractRDFParser {
 		}
 
 		try {
-			parse(new InputStreamReader(new BOMInputStream(in, false), StandardCharsets.UTF_8), baseURI);
+			parse(new BufferedReader(new InputStreamReader(new BOMInputStream(in, false), StandardCharsets.UTF_8)),
+					baseURI);
 		} catch (UnsupportedEncodingException e) {
 			// Every platform should support the UTF-8 encoding...
 			throw new RuntimeException(e);
@@ -109,27 +104,17 @@ public class NTriplesParser extends AbstractRDFParser {
 				rdfHandler.startRDF();
 			}
 
-			// Allow 1 characters to be pushed back
-			this.reader = new PushbackReader(reader);
-			lineNo = 1;
+			if (reader instanceof BufferedReader) {
+				this.reader = (BufferedReader) reader;
+			} else {
+				this.reader = new BufferedReader(reader);
+			}
+			lineNo = 0;
 
 			reportLocation(lineNo, 1);
 
-			int c = readCodePoint();
-			c = skipWhitespace(c);
-
-			while (c != -1) {
-				if (c == '#') {
-					// Comment
-					c = parseComment(c);
-				} else if (c == '\r' || c == '\n') {
-					// Empty line, ignore
-					c = skipLine(c);
-				} else {
-					c = parseTriple(c);
-				}
-
-				c = skipWhitespace(c);
+			while (readLine()) {
+				parseStatement();
 			}
 		} finally {
 			clear();
@@ -140,433 +125,307 @@ public class NTriplesParser extends AbstractRDFParser {
 		}
 	}
 
-	/**
-	 * Reads characters from reader until it finds a character that is not a space or tab, and returns this last
-	 * character code point. In case the end of the character stream has been reached, -1 is returned.
-	 */
-	protected int skipWhitespace(int c) throws IOException {
-		while (c == ' ' || c == '\t') {
-			c = readCodePoint();
-		}
+	protected void parseStatement() throws RDFParseException, RDFHandlerException {
+		boolean ignoredAnError = false;
+		try {
+			skipWhitespace(false);
+			if (!shouldParseLine()) {
+				return;
+			}
+			parseSubject();
 
-		return c;
+			skipWhitespace(true);
+
+			parsePredicate();
+
+			skipWhitespace(true);
+
+			parseObject();
+
+			skipWhitespace(true);
+
+			assertLineTerminates();
+		} catch (RDFParseException e) {
+			if (!getParserConfig().get(NTriplesParserSettings.FAIL_ON_INVALID_LINES)
+					|| getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES)) {
+				reportError(e, NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+				ignoredAnError = true;
+			} else {
+				throw e;
+			}
+		}
+		handleStatement(ignoredAnError);
+	}
+
+	protected void skipWhitespace(boolean throwEOF) {
+		while (currentIndex < lineChars.length && (lineChars[currentIndex] == ' ' || lineChars[currentIndex] == '\t')) {
+			currentIndex++;
+		}
+		if (currentIndex >= lineChars.length && throwEOF) {
+			throwEOFException();
+		}
+	}
+
+	protected boolean shouldParseLine() {
+		if (currentIndex < lineChars.length - 1) {
+			if (lineChars[currentIndex] != '#') {
+				return true;
+			} else {
+				if (rdfHandler != null) {
+					rdfHandler.handleComment(
+							new String(lineChars, currentIndex + 1, lineChars.length - currentIndex - 1));
+				}
+			}
+		}
+		return false;
+	}
+
+	protected void parseSubject() {
+		if (lineChars[currentIndex] == '<') {
+			subject = parseIRI();
+		} else if (lineChars[currentIndex] == '_') {
+			subject = parseNode();
+		} else {
+			throw new RDFParseException(
+					"Expected '<' or '_', found: " + new String(Character.toChars(lineChars[currentIndex])), lineNo,
+					lineChars[currentIndex]);
+		}
+	}
+
+	protected void parsePredicate() {
+		if (lineChars[currentIndex] == '<') {
+			predicate = parseIRI();
+		} else {
+			throw new RDFParseException(
+					"Expected '<', found: " + new String(Character.toChars(lineChars[currentIndex])), lineNo,
+					lineChars[currentIndex]);
+		}
+	}
+
+	protected void parseObject() {
+		if (lineChars[currentIndex] == '<') {
+			object = parseIRI();
+		} else if (lineChars[currentIndex] == '_') {
+			object = parseNode();
+		} else if (lineChars[currentIndex] == '"') {
+			parseLiteral();
+		} else {
+			throw new RDFParseException(
+					"Expected '<' or '_', found: " + new String(Character.toChars(lineChars[currentIndex])), lineNo,
+					lineChars[currentIndex]);
+		}
 	}
 
 	/**
 	 * Verifies that there is only whitespace or comments until the end of the line.
 	 */
-	protected int assertLineTerminates(int c) throws IOException, RDFParseException {
-		c = readCodePoint();
-
-		c = skipWhitespace(c);
-
-		if (c == '#') {
-			// c = skipToEndOfLine(c);
-		} else {
-			if (c != -1 && c != '\r' && c != '\n') {
+	protected void assertLineTerminates() throws RDFParseException {
+		if (!NTriplesUtil.isDot(lineChars[currentIndex])) {
+			if (lineChars[currentIndex] != '#') {
 				reportFatalError("Content after '.' is not allowed");
-			}
-		}
-
-		return c;
-	}
-
-	/**
-	 * Reads characters from reader until the first EOL has been read. The EOL character or -1 is returned.
-	 */
-	protected int skipToEndOfLine(int c) throws IOException {
-		while (c != -1 && c != '\r' && c != '\n') {
-			c = readCodePoint();
-		}
-
-		return c;
-	}
-
-	/**
-	 * Reads characters from reader until the first EOL has been read. The first character after the EOL is returned. In
-	 * case the end of the character stream has been reached, -1 is returned.
-	 */
-	protected int skipLine(int c, StringBuilder sb) throws IOException {
-		while (c != -1 && c != '\r' && c != '\n') {
-			c = readCodePoint();
-			// make sure c is not EOF
-			if (sb != null && c != -1) {
-				sb.append(Character.toChars(c));
-			}
-		}
-		// delete last appended char as it is the line break, unless `c` is EOF and then we did not append it
-		if (sb != null && c != -1) {
-			sb.deleteCharAt(sb.length() - 1);
-		}
-
-		// c is equal to -1, \r or \n. In case of a \r, we should
-		// check whether it is followed by a \n.
-
-		if (c == '\n') {
-			c = readCodePoint();
-
-			lineNo++;
-
-			reportLocation(lineNo, 1);
-		} else if (c == '\r') {
-			c = readCodePoint();
-
-			if (c == '\n') {
-				c = readCodePoint();
-			}
-
-			lineNo++;
-
-			reportLocation(lineNo, 1);
-		}
-
-		return c;
-	}
-
-	protected int skipLine(int c) throws IOException {
-		return skipLine(c, null);
-	}
-
-	private int parseComment(int c) throws IOException {
-		StringBuilder sb = new StringBuilder(100);
-		int res = skipLine(c, sb);
-		if (rdfHandler != null) {
-			rdfHandler.handleComment(sb.toString());
-		}
-		return res;
-	}
-
-	private int parseTriple(int c) throws IOException, RDFParseException, RDFHandlerException {
-		boolean ignoredAnError = false;
-		try {
-			c = parseSubject(c);
-			c = skipWhitespace(c);
-			c = parsePredicate(c);
-			c = skipWhitespace(c);
-			c = parseObject(c);
-			c = skipWhitespace(c);
-
-			if (c == -1) {
-				throwEOFException();
-			} else if (c != '.') {
-				reportError("Expected '.', found: " + new String(Character.toChars(c)),
-						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
-			}
-
-			c = assertLineTerminates(c);
-		} catch (RDFParseException rdfpe) {
-			if (!getParserConfig().get(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES)
-					|| getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES)) {
-				reportError(rdfpe, NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
-				ignoredAnError = true;
 			} else {
-				throw rdfpe;
+				return;
 			}
 		}
-
-		c = skipLine(c);
-
-		if (!ignoredAnError) {
-			Statement st = createStatement(subject, predicate, object);
-			if (rdfHandler != null) {
-				rdfHandler.handleStatement(st);
+		if (lineChars.length - 1 > currentIndex) {
+			currentIndex++;
+			skipWhitespace(false);
+			if (currentIndex >= lineChars.length) {
+				return;
+			}
+			if (lineChars[currentIndex] != ' ' && lineChars[currentIndex] != '\t' && lineChars[currentIndex] != '#') {
+				throw new RDFParseException("line must end with '.'", lineNo, currentIndex);
 			}
 		}
+	}
 
+	protected void handleStatement(boolean ignoredAnError) {
+		if (rdfHandler != null && !ignoredAnError) {
+			rdfHandler.handleStatement(valueFactory.createStatement(subject, predicate, object));
+		}
 		subject = null;
 		predicate = null;
 		object = null;
-
-		return c;
 	}
 
-	protected int parseSubject(int c) throws IOException, RDFParseException {
-		StringBuilder sb = new StringBuilder(100);
+	protected IRI parseIRI() {
+		if (lineChars[currentIndex] != '<') {
+			reportError("Supplied char should be a '<', is: " + new String(Character.toChars(lineChars[currentIndex])),
+					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+		}
+		int startIndex = currentIndex + 1;
+		moveToIRIEndIndex();
+		IRI iri = createURI(new String(lineChars, startIndex, currentIndex - startIndex));
+		currentIndex++;
+		return iri;
+	}
 
-		// subject is either an uriref (<foo://bar>) or a nodeID (_:node1)
-		if (c == '<') {
-			// subject is an uriref
-			c = parseUriRef(c, sb);
-			subject = createURI(sb.toString());
-		} else if (c == '_') {
-			// subject is a bNode
-			c = parseNodeID(c, sb);
-			subject = createNode(sb.toString());
-		} else if (c == -1) {
-			throwEOFException();
+	protected Resource parseNode() {
+		if (lineChars[currentIndex] != '_') {
+			reportError("Supplied char should be a '_', is: " + new String(Character.toChars(lineChars[currentIndex])),
+					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+		}
+		int startIndex = currentIndex + 2;
+		moveToBNodeEndIndex();
+		return createNode(new String(lineChars, startIndex, currentIndex - startIndex));
+	}
+
+	private void parseLiteral() {
+		String label = parseLabel();
+		incrementIndexOrThrowEOF();
+		if (currentIndex < lineChars.length - 1 && lineChars[currentIndex] == '^') {
+			parseLiteralWithDatatype(label);
+		} else if (lineChars[currentIndex] == '@') {
+			parseLangLiteral(label);
 		} else {
-			throw new RDFParseException("Expected '<' or '_', found: " + new String(Character.toChars(c)), lineNo, c);
+			object = createLiteral(label, null, null);
 		}
-
-		return c;
 	}
 
-	protected int parsePredicate(int c) throws IOException, RDFParseException {
-		StringBuilder sb = new StringBuilder(100);
-
-		// predicate must be an uriref (<foo://bar>)
-		if (c == '<') {
-			// predicate is an uriref
-			c = parseUriRef(c, sb);
-			predicate = createURI(sb.toString());
-		} else if (c == -1) {
-			throwEOFException();
-		} else {
-			throw new RDFParseException("Expected '<', found: " + new String(Character.toChars(c)), lineNo, c);
-		}
-
-		return c;
-	}
-
-	protected int parseObject(int c) throws IOException, RDFParseException {
-		StringBuilder sb = getBuffer();
-
-		// object is either an uriref (<foo://bar>), a nodeID (_:node1) or a
-		// literal ("foo"-en or "1"^^<xsd:integer>).
-		if (c == '<') {
-			// object is an uriref
-			c = parseUriRef(c, sb);
-			object = createURI(sb.toString());
-		} else if (c == '_') {
-			// object is a bNode
-			c = parseNodeID(c, sb);
-			object = createNode(sb.toString());
-		} else if (c == '"') {
-			// object is a literal
-			StringBuilder lang = getLanguageTagBuffer();
-			StringBuilder datatype = getDatatypeUriBuffer();
-			c = parseLiteral(c, sb, lang, datatype);
-			object = createLiteral(sb.toString(), lang.toString(), datatype.toString());
-		} else if (c == -1) {
-			throwEOFException();
-		} else {
-			throw new RDFParseException("Expected '<' or '_', found: " + new String(Character.toChars(c)), lineNo, c);
-		}
-
-		return c;
-	}
-
-	protected int parseUriRef(int c, StringBuilder uriRef) throws IOException, RDFParseException {
-		if (c != '<') {
-			reportError("Supplied char should be a '<', is: " + new String(Character.toChars(c)),
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
-		}
-		// Read up to the next '>' character
-		c = readCodePoint();
-		while (c != '>') {
-			if (c == -1) {
-				throwEOFException();
+	private String parseLabel() {
+		int startIndex = currentIndex;
+		incrementIndexOrThrowEOF();
+		while (lineChars[currentIndex] != '\"') {
+			if (lineChars[currentIndex] == '\\') {
+				currentIndex++;
 			}
-			if (c == ' ') {
-				reportError("IRI included an unencoded space: " + new String(Character.toChars(c)),
+			incrementIndexOrThrowEOF();
+		}
+		try {
+			return unescapeString(new String(lineChars, startIndex + 1, currentIndex - startIndex - 1));
+		} catch (IllegalArgumentException e) {
+			throw new RDFParseException("Illegal unicode escape sequence", lineNo, -1);
+		}
+	}
+
+	private void parseLiteralWithDatatype(String label) {
+		if (lineChars[currentIndex + 1] != '^') {
+			reportError("Expected '^', found: " + new String(Character.toChars(lineChars[currentIndex + 1])),
+					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+		}
+		currentIndex += 2;
+		if (currentIndex >= lineChars.length || lineChars[currentIndex] != '<') {
+			reportError("Expected '<', found: " + new String(Character.toChars(lineChars[currentIndex])),
+					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+		}
+		object = createLiteral(label, null, parseIRI());
+	}
+
+	private void parseLangLiteral(String label) {
+		incrementIndexOrThrowEOF();
+		if (!ASCIIUtil.isLetter(lineChars[currentIndex])) {
+			reportError("Expected a letter, found: " + new String(Character.toChars(lineChars[currentIndex])),
+					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+		}
+		int startIndex = currentIndex;
+		while (currentIndex < lineChars.length && (!NTriplesUtil.isDot(lineChars[currentIndex])
+				&& lineChars[currentIndex] != '^'
+				&& lineChars[currentIndex] != ' '
+				&& lineChars[currentIndex] != '\t')) {
+			currentIndex++;
+		}
+		if (currentIndex >= lineChars.length) {
+			throwEOFException();
+		}
+		object = createLiteral(label, new String(lineChars, startIndex, currentIndex - startIndex), null);
+	}
+
+	/**
+	 * Moves the current line index position to the end of the IRI.
+	 */
+	private void moveToIRIEndIndex() throws RDFParseException {
+		currentIndex++;
+		while (currentIndex < lineChars.length && lineChars[currentIndex] != '>') {
+			if (lineChars[currentIndex] == ' ') {
+				reportError(
+						"IRI included an unencoded space: " + new String(Character.toChars(lineChars[currentIndex])),
 						BasicParserSettings.VERIFY_URI_SYNTAX);
 			}
-			uriRef.append(Character.toChars(c));
-
-			if (c == '\\') {
+			if (lineChars[currentIndex] == '\\') {
 				// This escapes the next character, which might be a '>'
-				c = readCodePoint();
-				if (c == -1) {
-					throwEOFException();
+				incrementIndexOrThrowEOF();
+				if (lineChars[currentIndex] != 'u' && lineChars[currentIndex] != 'U') {
+					reportError("IRI includes string escapes: '\\" + lineChars[currentIndex] + "'",
+							BasicParserSettings.VERIFY_URI_SYNTAX);
 				}
-				if (c != 'u' && c != 'U') {
-					reportError("IRI includes string escapes: '\\" + c + "'", BasicParserSettings.VERIFY_URI_SYNTAX);
-				}
-				uriRef.append(Character.toChars(c));
 			}
-
-			c = readCodePoint();
+			currentIndex++;
 		}
-
-		// c == '>', read next char
-		c = readCodePoint();
-
-		return c;
-	}
-
-	protected int parseNodeID(int c, StringBuilder name) throws IOException, RDFParseException {
-		if (c != '_') {
-			reportError("Supplied char should be a '_', is: " + new String(Character.toChars(c)),
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
-		}
-
-		c = readCodePoint();
-		if (c == -1) {
+		if (currentIndex >= lineChars.length) {
 			throwEOFException();
-		} else if (c != ':') {
-			reportError("Expected ':', found: " + new String(Character.toChars(c)),
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
 		}
-
-		c = readCodePoint();
-		if (c == -1) {
-			throwEOFException();
-		} else if (!ASCIIUtil.isLetterOrNumber(c) && !NTriplesUtil.isUnderscore(c)) {
-			reportError("Expected a letter or number or underscore, found: " + new String(Character.toChars(c)),
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
-		}
-		name.append(Character.toChars(c));
-
-		// Read all following letter and numbers, they are part of the name
-		c = readCodePoint();
-		while (c != -1 && NTriplesUtil.isValidCharacterForBNodeLabel(c)) {
-			if (NTriplesUtil.isDot(c) && !NTriplesUtil.isValidCharacterForBNodeLabel(peekCodePoint())) {
-				break;
-			}
-			name.append(Character.toChars(c));
-			c = readCodePoint();
-		}
-
-		return c;
 	}
 
 	/**
-	 * Peeks at the next Unicode code point without advancing the reader, and returns its value.
-	 *
-	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
-	 * @throws IOException
+	 * Moves the current line index position to the end of the BNode ID.
 	 */
-	protected int peekCodePoint() throws IOException {
-		int result = readCodePoint();
-		unread(result);
-		return result;
-	}
+	private void moveToBNodeEndIndex() throws RDFParseException {
+		incrementIndexOrThrowEOF();
+		if (lineChars[currentIndex] != ':') {
+			reportError("Expected ':', found: " + new String(Character.toChars(lineChars[currentIndex])),
+					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+		}
+		currentIndex++;
+		if (!ASCIIUtil.isLetterOrNumber(lineChars[currentIndex]) && !NTriplesUtil.isUnderscore(
+				lineChars[currentIndex])) {
+			reportError("Expected a letter or number or underscore, found: " + new String(
+					Character.toChars(lineChars[currentIndex])),
+					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+		}
+		while (currentIndex < lineChars.length && NTriplesUtil.isValidCharacterForBNodeLabel(lineChars[currentIndex])) {
+			if (NTriplesUtil.isDot(lineChars[currentIndex])) {
+				if (currentIndex + 1 >= lineChars.length || !NTriplesUtil.isValidCharacterForBNodeLabel(
+						lineChars[currentIndex + 1])) {
+					break;
+				}
+			}
+			currentIndex++;
+		}
 
-	/**
-	 * Pushes back a single code point by copying it to the front of the buffer. After this method returns, a call to
-	 * {@link #readCodePoint()} will return the same code point c again.
-	 *
-	 * @param codePoint a single Unicode code point.
-	 * @throws IOException
-	 */
-	protected void unread(int codePoint) throws IOException {
-		if (codePoint != -1) {
-			if (Character.isSupplementaryCodePoint(codePoint)) {
-				final char[] surrogatePair = Character.toChars(codePoint);
-				reader.unread(surrogatePair);
+		if (currentIndex == lineChars.length) {
+			if (NTriplesUtil.isDot(lineChars[currentIndex - 1])) {
+				currentIndex--;
 			} else {
-				reader.unread(codePoint);
+				throwEOFException();
 			}
 		}
 	}
 
-	private int parseLiteral(int c, StringBuilder value, StringBuilder lang, StringBuilder datatype)
-			throws IOException, RDFParseException {
-		if (c != '"') {
-			reportError("Supplied char should be a '\"', is: " + c,
-					NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+	/**
+	 * Increments the current line index position and asserts EOF is not reached.
+	 */
+	private void incrementIndexOrThrowEOF() {
+		currentIndex++;
+		if (currentIndex >= lineChars.length) {
+			throwEOFException();
 		}
+	}
 
-		// Read up to the next '"' character
-		c = readCodePoint();
-		while (c != '"') {
-			if (c == -1) {
-				throwEOFException();
-			}
-			value.append(Character.toChars(c));
-
-			if (c == '\\') {
-				// This escapes the next character, which might be a double quote
-				c = readCodePoint();
-				if (c == -1) {
-					throwEOFException();
-				}
-				value.append(Character.toChars(c));
-			}
-
-			c = readCodePoint();
+	/**
+	 * Attempts to read the next line from the buffered reader.
+	 */
+	private boolean readLine() throws IOException {
+		String line = reader.readLine();
+		if (line != null) {
+			lineChars = line.toCharArray();
+			lineNo++;
+			currentIndex = 0;
+			reportLocation(lineNo, 1);
+			return true;
 		}
-
-		// c == '"', read next char
-		c = readCodePoint();
-
-		if (c == '@') {
-			// Read language
-			c = readCodePoint();
-
-			if (!ASCIIUtil.isLetter(c)) {
-				reportError("Expected a letter, found: " + new String(Character.toChars(c)),
-						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
-			}
-
-			while (c != -1 && c != '.' && c != '^' && c != ' ' && c != '\t') {
-				lang.append(Character.toChars(c));
-				c = readCodePoint();
-			}
-		} else if (c == '^') {
-			// Read datatype
-			c = readCodePoint();
-
-			// c should be another '^'
-			if (c == -1) {
-				throwEOFException();
-			} else if (c != '^') {
-				reportError("Expected '^', found: " + new String(Character.toChars(c)),
-						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
-			}
-
-			c = readCodePoint();
-
-			// c should be a '<'
-			if (c == -1) {
-				throwEOFException();
-			} else if (c != '<') {
-				reportError("Expected '<', found: " + new String(Character.toChars(c)),
-						NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
-			}
-
-			c = parseUriRef(c, datatype);
-		}
-
-		return c;
+		lineChars = null;
+		currentIndex = -1;
+		return false;
 	}
 
 	@Override
 	protected IRI createURI(String uri) throws RDFParseException {
 		try {
-			uri = NTriplesUtil.unescapeString(uri);
+			uri = unescapeString(uri);
 		} catch (IllegalArgumentException e) {
-			reportError(e.getMessage(), NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+			reportError(e.getMessage(), NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 		}
-
 		return super.createURI(uri);
-	}
-
-	/**
-	 * Reads the next Unicode code point.
-	 *
-	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
-	 * @throws IOException
-	 */
-	protected int readCodePoint() throws IOException {
-		int next = reader.read();
-		if (Character.isHighSurrogate((char) next)) {
-			next = Character.toCodePoint((char) next, (char) reader.read());
-		}
-		return next;
-	}
-
-	protected Literal createLiteral(String label, String lang, String datatype) throws RDFParseException {
-		try {
-			label = NTriplesUtil.unescapeString(label);
-		} catch (IllegalArgumentException e) {
-			throw new RDFParseException(e, lineNo, -1);
-		}
-
-		if (lang.length() == 0) {
-			lang = null;
-		}
-
-		if (datatype.length() == 0) {
-			datatype = null;
-		}
-
-		IRI dtURI = null;
-		if (datatype != null) {
-			dtURI = createURI(datatype);
-		}
-
-		return super.createLiteral(label, lang, dtURI, lineNo, -1);
 	}
 
 	/**
@@ -610,58 +469,11 @@ public class NTriplesParser extends AbstractRDFParser {
 		throw new RDFParseException("Unexpected end of file");
 	}
 
-	/**
-	 * Return a buffer of zero length and non-zero capacity. The same buffer is reused for each thing which is parsed.
-	 * This reduces the heap churn substantially. However, you have to watch out for side-effects and convert the buffer
-	 * to a {@link String} before the buffer is reused.
-	 *
-	 * @return a buffer of zero length and non-zero capacity.
-	 */
-	private StringBuilder getBuffer() {
-		buffer.setLength(0);
-		return buffer;
-	}
-
-	private final StringBuilder buffer = new StringBuilder(100);
-
-	/**
-	 * Return a buffer for the use of parsing literal language tags. The buffer is of zero length and non-zero capacity.
-	 * The same buffer is reused for each tag which is parsed. This reduces the heap churn substantially. However, you
-	 * have to watch out for side-effects and convert the buffer to a {@link String} before the buffer is reused.
-	 *
-	 * @return a buffer of zero length and non-zero capacity, for the use of parsing literal language tags.
-	 */
-	private StringBuilder getLanguageTagBuffer() {
-		languageTagBuffer.setLength(0);
-		return languageTagBuffer;
-	}
-
-	private final StringBuilder languageTagBuffer = new StringBuilder(8);
-
-	/**
-	 * Return a buffer for the use of parsing literal datatype URIs. The buffer is of zero length and non-zero capacity.
-	 * The same buffer is reused for each datatype which is parsed. This reduces the heap churn substantially. However,
-	 * you have to watch out for side-effects and convert the buffer to a {@link String} before the buffer is reused.
-	 *
-	 * @return a buffer of zero length and non-zero capacity, for the user of parsing literal datatype URIs.
-	 */
-	private StringBuilder getDatatypeUriBuffer() {
-		datatypeUriBuffer.setLength(0);
-		return datatypeUriBuffer;
-	}
-
-	private final StringBuilder datatypeUriBuffer = new StringBuilder(40);
-
 	@Override
 	protected void clear() {
+		currentIndex = -1;
+		lineChars = null;
 		super.clear();
-		// get rid of anything large left in the buffers.
-		buffer.setLength(0);
-		buffer.trimToSize();
-		languageTagBuffer.setLength(0);
-		languageTagBuffer.trimToSize();
-		datatypeUriBuffer.setLength(0);
-		datatypeUriBuffer.trimToSize();
 	}
 
 	/*
@@ -675,5 +487,4 @@ public class NTriplesParser extends AbstractRDFParser {
 
 		return result;
 	}
-
 }
