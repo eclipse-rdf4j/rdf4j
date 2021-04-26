@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Utility methods for rendering (parts of) SeRQL and SPARQL query strings.
@@ -69,12 +70,20 @@ public final class RenderUtils {
 		} else if (value instanceof Literal) {
 			Literal aLit = (Literal) value;
 
-			builder.append("\"\"\"").append(escape(aLit.getLabel())).append("\"\"\"");
+			String quotes = "\"";
+			String escapedLexicalValue = escape(aLit.getLabel());
+			if (escapedLexicalValue.contains("\n")) {
+				quotes = "\"\"\"";
+			}
+
+			builder.append(quotes).append(escape(aLit.getLabel())).append(quotes);
 
 			if (Literals.isLanguageLiteral(aLit)) {
 				aLit.getLanguage().ifPresent(lang -> builder.append("@").append(lang));
 			} else {
-				builder.append("^^<").append(aLit.getDatatype().toString()).append(">");
+				if (!XSD.STRING.equals(aLit.getDatatype())) {
+					builder.append("^^<").append(aLit.getDatatype().toString()).append(">");
+				}
 			}
 		}
 

@@ -1,0 +1,8 @@
+CONSTRUCT {
+  ?uri2 <http://www.wikidata.org/prop/direct/something> ?uri .
+} WHERE {
+  ?uri2 <http://www.wikidata.org/prop/direct/P27> ?uri .
+  VALUES (?uri2 ?uri) {
+    (<http://www.wikidata.org/entity/Q5886> <http://www.wikidata.org/entity/Q17> )
+  }
+} 

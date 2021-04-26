@@ -1,0 +1,8 @@
+SELECT ?x ?y ?z WHERE {
+	SERVICE <http://www.metaphacts.com/wikidata/> { 
+		?myUri <http://www.metaphacts.com/ontology/hasWikidataSearchToken> "keyword" .
+        ?myUri <http://schema.org/description> ?comment . 
+        ?myUri <http://www.w3.org/2000/01/rdf-schema#label> ?mylabel . 
+        ?myUri <http://www.metaphacts.com/ontology/orderNr> ?myrank . 
+    } 
+} 

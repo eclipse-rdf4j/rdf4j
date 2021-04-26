@@ -1,0 +1,33 @@
+DELETE {
+  ?uri <http://nextprot.org/rdf#recommendedName> ?z . 
+  ?uri <http://nextprot.org/rdf#alternativeName> ?z .
+  ?z ?prop ?label .
+} INSERT {
+  ?uri <http://nextprot.org/rdf#recommendedName> ?z . 
+  ?uri <http://nextprot.org/rdf#alternativeName> ?z .
+  ?z ?prop ?label .
+} WHERE { 
+	?uri <http://nextprot.org/rdf#recommendedName>|<http://nextprot.org/rdf#alternativeName> ?z . 
+    ?z ?prop ?label . 
+    FILTER(?prop = <http://nextprot.org/rdf#fullName> || ?prop = <http://nextprot.org/rdf#shortName>) . 
+	?label <bif:contains> ?__token__ . 
+	?label <bif:score> ?sc .
+    {
+		SELECT ?uri (group_concat(distinct ?label;separator="; ") as ?synonyms) WHERE {
+        	{ { ?uri <http://nextprot.org/rdf#recommendedName> ?node . } UNION { ?uri <http://nextprot.org/rdf#alternativeName> ?node . } }
+            { { ?node <http://nextprot.org/rdf#fullName> ?label } UNION { ?node <http://nextprot.org/rdf#shortName> ?label . } }
+         } GROUP BY ?uri
+	}
+};
+
+INSERT DATA {
+  <http://example.org/s> <http://nextprot.org/rdf#recommendedName> "tmp" . 
+};
+
+LOAD SILENT <http://example.org/s> INTO GRAPH <http://example.org/s>;
+
+CLEAR ALL;
+
+DROP ALL;
+
+MOVE SILENT GRAPH <http://example.org/s> TO DEFAULT;

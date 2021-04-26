@@ -1,4 +1,5 @@
+PREFIX ex: <http://example.org/> 
 SELECT DISTINCT ?value WHERE {
-	?s rdfs:label ?value
+	?s ex:label ?value
   	FILTER(REGEX(str(?value),"?token*","i"))
 } LIMIT 10

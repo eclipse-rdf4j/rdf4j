@@ -8,17 +8,41 @@
 
 package org.eclipse.rdf4j.queryrender;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.jupiter.api.Test;
 
 public class RenderUtilsTest {
-	@Test
-	public void toSparqlWithLiteralSerialisesLanguageTag() {
-		Value val = SimpleValueFactory.getInstance().createLiteral("test", "en");
 
-		assertEquals("\"\"\"test\"\"\"@en", RenderUtils.toSPARQL(val));
+	@Test
+	public void tosPARQL_StringTypedLiteralRendersPlain() {
+		Value val = literal("test", XSD.STRING);
+
+		assertThat(RenderUtils.toSPARQL(val)).isEqualTo("\"test\"");
 	}
+
+	@Test
+	public void toSPARQl_LiteralSerialisesLanguageTag() {
+		Value val = literal("test", "en");
+
+		assertThat(RenderUtils.toSPARQL(val)).isEqualTo("\"test\"@en");
+	}
+
+	@Test
+	public void tosPARQL_LiteralWithNewlines() {
+		Value val = literal("literal with\nnew lines\nin it");
+
+		assertThat(RenderUtils.toSPARQL(val)).isEqualTo("\"\"\"literal with\nnew lines\nin it\"\"\"");
+	}
+
+	@Test
+	public void tosPARQL_LiteralWithEscapedNewlines() {
+		Value val = literal("literal with\\nnew lines\\nin it");
+
+		assertThat(RenderUtils.toSPARQL(val)).isEqualTo("\"literal with\\nnew lines\\nin it\"");
+	}
+
 }

@@ -1,0 +1,5 @@
+SELECT ?s ?d ?c WHERE 
+{ 
+	BIND(STRLANG("test", LANG("en"@en)) AS ?s)
+	BIND(STRDT("123", <http://www.w3.org/2001/XMLSchema#integer>) AS ?d)
+	BIND(sameTerm(?s, ?d) AS ?c) }

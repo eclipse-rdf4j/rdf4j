@@ -77,4 +77,12 @@ public interface IRI extends URI, Resource {
 	@Override
 	int hashCode();
 
+	/**
+	 * Returns the String-representation of this IRI.
+	 *
+	 * @return The String-representation of this IRI.
+	 */
+	@Override
+	String toString();
+
 }

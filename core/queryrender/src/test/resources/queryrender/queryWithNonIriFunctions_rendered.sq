@@ -1,0 +1,16 @@
+SELECT ?s ?d ?bnode ?e ?f ?g ?h ?tz ?md5 ?sha1 ?sha256 ?sha384 ?sha512
+WHERE { 
+	BIND(STRLANG("test", LANG("en"@en)) AS ?s)
+	BIND(STRDT("123", <http://www.w3.org/2001/XMLSchema#integer>) AS ?d)
+	BIND(BNODE() AS ?bnode)
+	BIND(UUID() AS ?e)
+	BIND(STRUUID() AS ?f)
+	BIND(RAND() AS ?g)
+	BIND(NOW() AS ?h)
+	BIND(TZ("2011-01-10T14:45:13.815-05:00"^^<http://www.w3.org/2001/XMLSchema#dateTime>) AS ?tz)
+	BIND(MD5("abc") AS ?md5)
+	BIND(SHA1("abc") AS ?sha1)
+	BIND(SHA256("abc") AS ?sha256)
+	BIND(SHA384("abc") AS ?sha384)
+	BIND(SHA512("abc") AS ?sha512)
+}

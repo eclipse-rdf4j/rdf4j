@@ -1,0 +1,4 @@
+SELECT DISTINCT ?value WHERE {
+	?s <http://example.org/label> ?value .
+  	FILTER(REGEX(STR(?value),"?token*","i"))
+} LIMIT 10

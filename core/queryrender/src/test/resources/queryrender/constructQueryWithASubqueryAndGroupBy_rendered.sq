@@ -1,0 +1,13 @@
+CONSTRUCT { ?uri rdfs:label ?label . ?uri rdfs:comments ?synonyms } where { 
+	?uri <http://nextprot.org/rdf#recommendedName>|<http://nextprot.org/rdf#alternativeName> ?z . 
+    ?z ?prop ?label . 
+    FILTER(?prop = <http://nextprot.org/rdf#fullName> || ?prop = <http://nextprot.org/rdf#shortName>) . 
+	?label <bif:contains> ?__token__ . 
+	?label <bif:score> ?sc .
+    {
+		SELECT ?uri (group_concat(distinct ?label;separator="; ") as ?synonyms) WHERE {
+        	{ { ?uri <http://nextprot.org/rdf#recommendedName> ?node . } UNION { ?uri <http://nextprot.org/rdf#alternativeName> ?node . } }
+            { { ?node <http://nextprot.org/rdf#fullName> ?label } UNION { ?node <http://nextprot.org/rdf#shortName> ?label . } }
+         } GROUP BY ?uri
+	}
+} LIMIT 10

@@ -1,0 +1,4 @@
+SELECT ?s ?d WHERE 
+{ 
+	BIND(STRLANG("test", LANG("en"@en)) AS ?s)
+	BIND(langMatches(?s, "en") AS ?d) }

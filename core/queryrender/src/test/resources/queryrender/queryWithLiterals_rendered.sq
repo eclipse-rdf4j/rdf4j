@@ -1,0 +1,10 @@
+SELECT ?a WHERE {
+	?a <http://www.w3.org/2000/01/rdf-schema#label> "abcd" .
+	?a <http://www.w3.org/2000/01/rdf-schema#label> "efgh" .
+	?a <http://www.w3.org/2000/01/rdf-schema#label> "ijkl"@de .
+	?a <http://www.w3.org/2000/01/rdf-schema#label> "mn\"\'\"op\n\t" .
+	?a <urn:someBoolean> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+	?a <urn:someDouble> "1.0"^^<http://www.w3.org/2001/XMLSchema#double> .
+	?a <urn:someInteger> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+	?a <urn:someDateTime> "2002-10-10T12:00:00-05:00"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+} 

@@ -1,0 +1,3 @@
+SELECT ?a ?b (<http://example.org/someiri> AS ?someiri) WHERE { 
+	?a <http://example.org/label> ?b .
+} 

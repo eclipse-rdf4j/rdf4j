@@ -1,0 +1,4 @@
+SELECT ?a ?b (SUM(?c) AS ?sum) WHERE { 
+	?a <http://example.org/label> ?c .
+	BIND ("constant" AS ?b)
+} GROUP BY ?a ?b
