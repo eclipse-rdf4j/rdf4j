@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -53,6 +54,14 @@ public class BindingSetAssignmentInliner implements QueryOptimizer {
 			if (bindingSet != null && bindingSet.hasBinding(var.getName())) {
 				var.setValue(bindingSet.getValue(var.getName()));
 			}
+		}
+
+		@Override
+		public void meet(LeftJoin leftJoin) {
+			leftJoin.getLeftArg().visit(this);
+			// we can not pre-bind values for the optional part of the left-join
+			bindingSet = null;
+			leftJoin.getRightArg().visit(this);
 		}
 
 		@Override

@@ -13,8 +13,11 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -52,6 +55,37 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		ArbitraryLengthPath path = (ArbitraryLengthPath) join.getRightArg();
 		assertThat(path.getObjectVar().getName()).isEqualTo("z");
 		assertThat(path.getObjectVar().getValue()).isEqualTo(iri("urn:z1"));
+	}
+
+	@Test
+	public void testOptimize_leftJoin() {
+		String query = "PREFIX : <http://example.org/> \n"
+				+ "PREFIX foaf: <http://xmlns.com/foaf/0.1/> \n"
+				+ "SELECT ?s ?o1 ?o2\n"
+				+ "{\n"
+				+ "  ?s ?p1 ?o1 \n"
+				+ "  OPTIONAL { ?s foaf:knows ?o2 }\n"
+				+ "} VALUES (?o2) {\n"
+				+ " (:b)\n"
+				+ "}";
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+		QueryOptimizer optimizer = getOptimizer();
+		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
+
+		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+
+		assertThat(optimizedTree).isInstanceOf(Projection.class);
+
+		Projection projection = (Projection) optimizedTree;
+
+		Join join = (Join) projection.getArg();
+		assertThat(join.getRightArg()).isInstanceOf(LeftJoin.class);
+		LeftJoin optional = (LeftJoin) join.getRightArg();
+
+		Var o2 = ((StatementPattern) optional.getRightArg()).getObjectVar();
+		assertThat(o2.getName()).isEqualTo("o2");
+		assertThat(o2.getValue()).isNull();
 	}
 
 	@Override
