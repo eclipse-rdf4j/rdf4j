@@ -60,7 +60,7 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b).").append(lineSeparator);
+		sb.append("  bind(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b).").append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
 
@@ -101,9 +101,9 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b1 ?b2").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b1).");
+		sb.append("  bind(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b1).");
 		sb.append(lineSeparator);
-		sb.append("  bind(\"\"\"2\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b2).");
+		sb.append("  bind(\"2\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b2).");
 		sb.append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
@@ -124,10 +124,10 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b1 ?b2").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b1).");
+		sb.append("  bind(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b1).");
 		sb.append(lineSeparator);
 		sb.append("  bind(<http://www.example.org/MyFunction>");
-		sb.append("(\"\"\"2\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>, ?b1) as ?b2).");
+		sb.append("(\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>, ?b1) as ?b2).");
 		sb.append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
@@ -148,10 +148,10 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b1 ?b2").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b1).");
+		sb.append("  bind(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer> as ?b1).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(concat(\"\"\"numberStr: \"\"\"^^<http://www.w3.org/2001/XMLSchema#string>,  str(?b1)) as ?b2).");
+				"  bind(concat(\"numberStr: \",  str(?b1)) as ?b2).");
 		sb.append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
@@ -184,38 +184,38 @@ public class SPARQLQueryRenderTest {
 		sb.append("select ?b1").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
 		sb.append(
-				"  bind(if((\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> = \"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>), \"\"\":)\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\":(\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b1).");
+				"  bind(if((\"1\"^^<http://www.w3.org/2001/XMLSchema#integer> = \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>), \":)\", \":(\") as ?b1).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(if( (\"\"\"0\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> || \"\"\"0\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>), \"\"\":)\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\":(\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b2).");
+				"  bind(if( (\"0\"^^<http://www.w3.org/2001/XMLSchema#integer> || \"0\"^^<http://www.w3.org/2001/XMLSchema#integer>), \":)\", \":(\") as ?b2).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(if( (\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> && \"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>), \"\"\":)\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\":(\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b3).");
+				"  bind(if( (\"1\"^^<http://www.w3.org/2001/XMLSchema#integer> && \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>), \":)\", \":(\") as ?b3).");
 		sb.append(lineSeparator);
 		sb.append("  bind( bound(?b1) as ?b4).").append(lineSeparator);
 		// TODO: COALESCE
 		// sb.append(" bind( coalesce(?b1,
-		// \"\"\"3\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b5).")
+		// \"3\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b5).")
 		// .append(lineSeparator);
 		sb.append("  bind( sameTerm(?b1, ?b3) as ?b8).").append(lineSeparator);
 
 		// TODO: (NOT) IN
 		// sb.append(
-		// " bind(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>
-		// in(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>,
-		// \"\"\"2\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>,
-		// \"\"\"3\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b9).")
+		// " bind(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>
+		// in(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>,
+		// \"2\"^^<http://www.w3.org/2001/XMLSchema#integer>,
+		// \"3\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b9).")
 		// .append(lineSeparator);
 		// sb.append(
-		// " bind(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer> not
-		// in(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>,
-		// \"\"\"2\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>,
-		// \"\"\"3\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b10). ")
+		// " bind(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer> not
+		// in(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>,
+		// \"2\"^^<http://www.w3.org/2001/XMLSchema#integer>,
+		// \"3\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b10). ")
 		// .append(lineSeparator);
 		// TODO: (NOT)EXISTS
 		// sb.append(" filter exists { ?s ?p ?o. }").append(lineSeparator);
 		// sb.append(" filter !exists { ?s ?p
-		// \"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>. }")
+		// \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>. }")
 		// .append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
@@ -253,26 +253,26 @@ public class SPARQLQueryRenderTest {
 		sb.append("  bind( isURI(<http://www.w3.org/2001/XMLSchema#integer>) as ?b1).").append(lineSeparator);
 		sb.append("  bind( isURI(<http://www.w3.org/2001/XMLSchema#integer>) as ?b2).").append(lineSeparator);
 		sb.append("  bind( isBlank(?b2) as ?b3).").append(lineSeparator);
-		sb.append("  bind( isLiteral(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b4).")
+		sb.append("  bind( isLiteral(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b4).")
 				.append(lineSeparator);
-		sb.append("  bind( isNumeric(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b5).")
+		sb.append("  bind( isNumeric(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b5).")
 				.append(lineSeparator);
-		sb.append("  bind( str(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b6).")
+		sb.append("  bind( str(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b6).")
 				.append(lineSeparator);
-		sb.append("  bind( lang(\"\"\"Roberto\"\"\"@es) as ?b7).").append(lineSeparator);
-		sb.append("  bind( datatype(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b8).")
+		sb.append("  bind( lang(\"Roberto\"@es) as ?b7).").append(lineSeparator);
+		sb.append("  bind( datatype(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b8).")
 				.append(lineSeparator);
-		sb.append("  bind( IRI(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b9).")
+		sb.append("  bind( IRI(\"abc\") as ?b9).")
 				.append(lineSeparator);
-		sb.append("  bind( IRI(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b10).")
+		sb.append("  bind( IRI(\"abc\") as ?b10).")
 				.append(lineSeparator);
 		// TODO:
 		// sb.append(" bind(bnode() as ?b11).").append(lineSeparator);
 		sb.append(
-				"  bind(strdt(\"\"\"123\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, <http://www.w3.org/2001/XMLSchema#integer>) as ?b12).");
+				"  bind(strdt(\"123\", <http://www.w3.org/2001/XMLSchema#integer>) as ?b12).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(strlang(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"en\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b13).")
+				"  bind(strlang(\"abc\", \"en\") as ?b13).")
 				.append(lineSeparator);
 		sb.append("  bind(uuid() as ?b14).").append(lineSeparator);
 		sb.append("  bind(struuid() as ?b15).").append(lineSeparator);
@@ -332,78 +332,78 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b1").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(strlen(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b1).");
+		sb.append("  bind(strlen(\"abc\") as ?b1).");
 		sb.append(lineSeparator);
-		sb.append("  bind(strlen(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b2).");
-		sb.append(lineSeparator);
-		sb.append(
-				"  bind(substr(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b3).");
+		sb.append("  bind(strlen(\"abc\") as ?b2).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(substr(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b4).");
-		sb.append(lineSeparator);
-		sb.append("  bind(ucase(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b5).");
-		sb.append(lineSeparator);
-		sb.append("  bind(ucase(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b6).");
-		sb.append(lineSeparator);
-		sb.append("  bind(lcase(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b7).");
-		sb.append(lineSeparator);
-		sb.append("  bind(lcase(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b8).");
+				"  bind(substr(\"abc\", \"abc\") as ?b3).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(strstarts(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b9).");
+				"  bind(substr(\"abc\", \"abc\") as ?b4).");
+		sb.append(lineSeparator);
+		sb.append("  bind(ucase(\"abc\") as ?b5).");
+		sb.append(lineSeparator);
+		sb.append("  bind(ucase(\"abc\") as ?b6).");
+		sb.append(lineSeparator);
+		sb.append("  bind(lcase(\"abc\") as ?b7).");
+		sb.append(lineSeparator);
+		sb.append("  bind(lcase(\"abc\") as ?b8).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(strstarts(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b10).");
+				"  bind(strstarts(\"abc\", \"abc\") as ?b9).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(strends(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b11).");
+				"  bind(strstarts(\"abc\", \"abc\") as ?b10).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(strends(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b12).");
+				"  bind(strends(\"abc\", \"abc\") as ?b11).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(contains(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b13).");
+				"  bind(strends(\"abc\", \"abc\") as ?b12).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(contains(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b14).");
+				"  bind(contains(\"abc\", \"abc\") as ?b13).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(strbefore(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b15).");
+				"  bind(contains(\"abc\", \"abc\") as ?b14).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(strbefore(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b16).");
+				"  bind(strbefore(\"abc\", \"abc\") as ?b15).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(strafter(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b17).");
+				"  bind(strbefore(\"abc\", \"abc\") as ?b16).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(strafter(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b18).");
-		sb.append(lineSeparator);
-		sb.append("  bind(encode_for_uri(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b19).");
-		sb.append(lineSeparator);
-		sb.append("  bind(encode_for_uri(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b20).");
+				"  bind(strafter(\"abc\", \"abc\") as ?b17).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(concat(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b21).");
+				"  bind(strafter(\"abc\", \"abc\") as ?b18).");
+		sb.append(lineSeparator);
+		sb.append("  bind(encode_for_uri(\"abc\") as ?b19).");
+		sb.append(lineSeparator);
+		sb.append("  bind(encode_for_uri(\"abc\") as ?b20).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(concat(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b22).");
+				"  bind(concat(\"abc\", \"abc\", \"abc\") as ?b21).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind( langMatches( lang(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>), \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b23).");
+				"  bind(concat(\"abc\", \"abc\", \"abc\") as ?b22).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(regex(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b24).");
+				"  bind( langMatches( lang(\"abc\"), \"abc\") as ?b23).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind( regex(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b25).");
+				"  bind(regex(\"abc\", \"abc\") as ?b24).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(replace(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b26).");
+				"  bind( regex(\"abc\", \"abc\") as ?b25).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(replace(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>, \"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b27).");
+				"  bind(replace(\"abc\", \"abc\", \"abc\") as ?b26).");
+		sb.append(lineSeparator);
+		sb.append(
+				"  bind(replace(\"abc\", \"abc\", \"abc\") as ?b27).");
 		sb.append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
@@ -431,21 +431,21 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b1").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(abs(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b1).");
+		sb.append("  bind(abs(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b1).");
 		sb.append(lineSeparator);
-		sb.append("  bind(abs(\"\"\"1\"\"\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b2).");
+		sb.append("  bind(abs(\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) as ?b2).");
 		sb.append(lineSeparator);
-		sb.append("  bind(round(\"\"\"1.9\"\"\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b3).");
+		sb.append("  bind(round(\"1.9\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b3).");
 		sb.append(lineSeparator);
-		sb.append("  bind(round(\"\"\"1.9\"\"\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b4).");
+		sb.append("  bind(round(\"1.9\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b4).");
 		sb.append(lineSeparator);
-		sb.append("  bind(ceil(\"\"\"1.5\"\"\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b5).");
+		sb.append("  bind(ceil(\"1.5\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b5).");
 		sb.append(lineSeparator);
-		sb.append("  bind(ceil(\"\"\"1.5\"\"\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b6).");
+		sb.append("  bind(ceil(\"1.5\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b6).");
 		sb.append(lineSeparator);
-		sb.append("  bind(floor(\"\"\"1.1\"\"\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b7).");
+		sb.append("  bind(floor(\"1.1\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b7).");
 		sb.append(lineSeparator);
-		sb.append("  bind(floor(\"\"\"1.1\"\"\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b8).");
+		sb.append("  bind(floor(\"1.1\"^^<http://www.w3.org/2001/XMLSchema#decimal>) as ?b8).");
 		sb.append(lineSeparator);
 		sb.append("  bind(rand() as ?b9).").append(lineSeparator);
 		sb.append("}");
@@ -498,49 +498,49 @@ public class SPARQLQueryRenderTest {
 		sb.append("where {").append(lineSeparator);
 		sb.append("  bind(now() as ?b1).").append(lineSeparator);
 		sb.append(
-				"  bind(year(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b2).");
+				"  bind(year(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b2).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(year(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b3).");
+				"  bind(year(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b3).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(month(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b4).");
+				"  bind(month(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b4).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(month(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b5).");
+				"  bind(month(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b5).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(day(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b6).");
+				"  bind(day(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b6).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(day(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b7).");
+				"  bind(day(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b7).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(hours(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b8).");
+				"  bind(hours(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b8).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(hours(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b9).");
+				"  bind(hours(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b9).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(minutes(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b10).");
+				"  bind(minutes(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b10).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(minutes(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b11).");
+				"  bind(minutes(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b11).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(seconds(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b12).");
+				"  bind(seconds(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b12).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(seconds(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b13).");
+				"  bind(seconds(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b13).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(timezone(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b14).");
+				"  bind(timezone(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b14).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(timezone(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b15).");
+				"  bind(timezone(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b15).");
 		sb.append(lineSeparator);
 		sb.append(
-				"  bind(tz(\"\"\"2011-01-10T14:45:13.815-05:00\"\"\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b16).");
+				"  bind(tz(\"2011-01-10T14:45:13.815-05:00\"^^<http://www.w3.org/2001/XMLSchema#dateTime>) as ?b16).");
 		sb.append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
@@ -564,15 +564,15 @@ public class SPARQLQueryRenderTest {
 		sb.delete(0, sb.length());
 		sb.append("select ?b1").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  bind(md5(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b1).");
+		sb.append("  bind(md5(\"abc\") as ?b1).");
 		sb.append(lineSeparator);
-		sb.append("  bind(sha1(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b2).");
+		sb.append("  bind(sha1(\"abc\") as ?b2).");
 		sb.append(lineSeparator);
-		sb.append("  bind(sha256(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b3).");
+		sb.append("  bind(sha256(\"abc\") as ?b3).");
 		sb.append(lineSeparator);
-		sb.append("  bind(sha384(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b4).");
+		sb.append("  bind(sha384(\"abc\") as ?b4).");
 		sb.append(lineSeparator);
-		sb.append("  bind(sha512(\"\"\"abc\"\"\"^^<http://www.w3.org/2001/XMLSchema#string>) as ?b5).");
+		sb.append("  bind(sha512(\"abc\") as ?b5).");
 		sb.append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
