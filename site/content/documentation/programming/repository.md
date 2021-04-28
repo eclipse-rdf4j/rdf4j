@@ -86,7 +86,7 @@ String indexes = "spoc,posc,cosp";
 Repository repo = new SailRepository(new NativeStore(dataDir, indexes));
 ```
 
-### Elasticserch RDF Repository
+### Elasticsearch RDF Repository
 
 {{< tag " New in RDF4J 3.1" >}}
 
