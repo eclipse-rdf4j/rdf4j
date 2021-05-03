@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.queryrender.sparql.mp;
+package org.eclipse.rdf4j.queryrender.sparql;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -14,7 +14,6 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -120,11 +119,12 @@ public class SPARQLQueryRendererTest {
 		String query = loadQuery(id);
 		String expected = loadQuery(id + "_rendered");
 		SPARQLQueryRenderer mpQueryRenderer = new SPARQLQueryRenderer();
-		ParsedOperation parsedOperation = (ParsedOperation) QueryParserUtil.parseOperation(QueryLanguage.SPARQL, query,
-				null);
+        ParsedQuery parsedOperation = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		
+        System.out.println(((ParsedQuery) parsedOperation).getTupleExpr());
 		try {
 			String renderedQuery = mpQueryRenderer.render(parsedOperation);
-			assertThat(renderedQuery).isEqualToIgnoringWhitespace(expected);
+            assertThat(renderedQuery.toLowerCase()).isEqualToIgnoringWhitespace(expected.toLowerCase());
 		} catch (Exception e) {
 			fail("could not render query", e);
 		}

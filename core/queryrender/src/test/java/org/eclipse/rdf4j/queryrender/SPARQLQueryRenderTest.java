@@ -34,14 +34,14 @@ public class SPARQLQueryRenderTest {
 		StringBuffer sb = new StringBuffer();
 		sb.append("select ?s ?o").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  ?s <http://www.w3.org/2000/01/rdf-schema#subClassOf+> ?o.").append(lineSeparator);
+        sb.append("  ?s <http://www.w3.org/2000/01/rdf-schema#subClassOf>+ ?o.").append(lineSeparator);
 		sb.append("}");
 		String query = sb.toString();
 
 		sb.delete(0, sb.length());
 		sb.append("select ?s ?o").append(lineSeparator);
 		sb.append("where {").append(lineSeparator);
-		sb.append("  ?s <http://www.w3.org/2000/01/rdf-schema#subClassOf+> ?o.").append(lineSeparator);
+        sb.append("  ?s <http://www.w3.org/2000/01/rdf-schema#subClassOf>+ ?o.").append(lineSeparator);
 		sb.append("}");
 		String expected = sb.toString();
 

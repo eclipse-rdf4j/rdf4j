@@ -9,13 +9,14 @@ package org.eclipse.rdf4j.queryrender.sparql;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.StringJoiner;
 
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
-import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -273,32 +274,11 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 			theFilter.getArg().visit(this);
 		}
 
-		// try and reverse engineer the original scoping intent of the query
-		final boolean aNeedsNewScope = theFilter.getParentNode() != null
-				&& (theFilter.getParentNode() instanceof Join || theFilter.getParentNode() instanceof LeftJoin);
-
 		String aFilter = renderValueExpr(theFilter.getCondition());
-		if (theFilter.getCondition() instanceof ValueConstant || theFilter.getCondition() instanceof Var) {
-			// means the filter is something like "filter (true)" or "filter (?v)"
-			// so we'll need to wrap it in parens since they can't live
-			// in the query w/o them, but we can't always wrap them in parens in
-			// the normal renderer
-
-			aFilter = "(" + aFilter + ")";
-		}
+        aFilter = "(" + aFilter + ")";
 
 		mJoinBuffer.append(indent());
-
-		// if (aNeedsNewScope) {
-		// mJoinBuffer.append("{ ");
-		// }
-
-		mJoinBuffer.append("filter ").append(aFilter).append(".");
-
-		// if (aNeedsNewScope) {
-		// mJoinBuffer.append("}.");
-		// }
-
+        mJoinBuffer.append("filter ").append(aFilter);
 		mJoinBuffer.append(System.lineSeparator());
 
 		ctxClose(theFilter);
@@ -434,6 +414,30 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	public void meet(LangMatches node) throws Exception {
 		mJoinBuffer.append(renderValueExpr(node));
 	}
+
+    @Override
+    public void meet(BindingSetAssignment node) throws Exception {
+        mJoinBuffer.append("values");
+        StringJoiner varNamesJoiner = new StringJoiner(" ");
+        for (String varName : node.getAssuredBindingNames()) {
+            varNamesJoiner.add("?" + varName);
+        }
+        mJoinBuffer.append("(" + varNamesJoiner.toString() + ") { ");
+        for (BindingSet bindingSet : node.getBindingSets()) {
+            mJoinBuffer.append("( ");
+            for (String varName : node.getAssuredBindingNames()) {
+                Value v = bindingSet.getValue(varName);
+                if (v != null) {
+                    mJoinBuffer.append(RenderUtils.toSPARQL(bindingSet.getValue(varName)) + " ");
+                }
+                else {
+                    mJoinBuffer.append("UNDEF ");
+                }
+            }
+            mJoinBuffer.append(")");
+        }
+        mJoinBuffer.append(" }\n");
+    }
 
 	@Override
 	public void meet(ArbitraryLengthPath node) throws Exception {
