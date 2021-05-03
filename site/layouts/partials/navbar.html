@@ -29,8 +29,8 @@
       <div class="wrapper-logo-default">
         {{- with .Site.Params.logo | default "https://www.eclipse.org/eclipse.org-common/themes/solstice/public/images/logo/eclipse-foundation-white-orange.svg" }}
           <a title="{{ $.Site.Title}}" href="{{ "" | absLangURL }}">
-            <img width="140" class="logo-eclipse-default img-responsive hidden-xs" src="{{ . | absURL }}" alt="{{ $.Site.Title}}" />
-          </a>
+            <img width="140" align=left class="logo-eclipse-default img-responsive hidden-xs" src="{{ . | absURL }}" alt="{{ $.Site.Title}}" />
+          </a>&trade;
         {{ end }}
       </div>
     </div>

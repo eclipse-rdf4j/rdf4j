@@ -104,7 +104,7 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 Repository repo = new SailRepository(new NativeStore());
 ```
 
-### Elasticserch RDF Repository
+### Elasticsearch RDF Repository
 
 {{< tag " New in RDF4J 3.1" >}}
 
