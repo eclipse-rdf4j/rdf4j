@@ -8,12 +8,14 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -40,11 +42,10 @@ public class BindingSetAssignmentInliner implements QueryOptimizer {
 
 		@Override
 		public void meet(BindingSetAssignment bsa) {
-			List<BindingSet> bindingSets = new ArrayList<>();
-			bsa.getBindingSets().forEach(bindingSets::add);
-
-			if (bindingSets.size() == 1) {
-				bindingSet = bindingSets.get(0);
+			Iterator<BindingSet> iter = bsa.getBindingSets().iterator();
+			BindingSet firstBindingSet = iter.next();
+			if (!iter.hasNext()) {
+				bindingSet = firstBindingSet;
 			}
 			super.meet(bsa);
 		}
@@ -57,6 +58,12 @@ public class BindingSetAssignmentInliner implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Filter node) throws RuntimeException {
+			// TODO Auto-generated method stub
+			super.meet(node);
+		}
+
+		@Override
 		public void meet(LeftJoin leftJoin) {
 			leftJoin.getLeftArg().visit(this);
 			// we can not pre-bind values for the optional part of the left-join
@@ -65,14 +72,14 @@ public class BindingSetAssignmentInliner implements QueryOptimizer {
 		}
 
 		@Override
-		public void meetOther(QueryModelNode node) throws RuntimeException {
-			// reset if we encounter a scope change (e.g. a subquery)
+		protected void meetNode(QueryModelNode node) throws RuntimeException {
+			// reset if we encounter a scope change (e.g. a subquery or a union)
 			if (node instanceof AbstractQueryModelNode) {
 				if (((AbstractQueryModelNode) node).isVariableScopeChange()) {
 					bindingSet = null;
 				}
 			}
-			super.meetOther(node);
+			super.meetNode(node);
 		}
 	}
 }
