@@ -259,6 +259,25 @@
 			</properties>
 		</profile>
 		<profile>
+			<id>use-sonatype-snapshots</id>
+			<activation>
+				<!-- active on all Java 8 and higher builds by default -->
+				<jdk>[1.8,)</jdk>
+			</activation>
+			<repositories>
+				<repository>
+					<releases>
+						<enabled>false</enabled>
+					</releases>
+					<snapshots>
+						<enabled>true</enabled>
+					</snapshots>
+					<id>oss-sonatype-snapshots</id>
+					<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+				</repository>
+			</repositories>
+		</profile>
+		<profile>
 			<id>formatting</id>
 			<activation>
 				<!-- active on all Java 8 and higher builds by default -->
@@ -990,21 +1009,6 @@
 			</extension>
 		</extensions>
 	</build>
-	<!--
-	See: GH-3005 and https://www.eclipse.org/lists/rdf4j-dev/msg01815.html
-		<repositories>
-			<repository>
-				<releases>
-					<enabled>false</enabled>
-				</releases>
-				<snapshots>
-					<enabled>true</enabled>
-				</snapshots>
-				<id>oss-sonatype-snapshots</id>
-				<url>https://oss.sonatype.org/content/repositories/snapshots</url>
-			</repository>
-		</repositories>
-		-->
 	<scm>
 		<connection>scm:git:git://github.com:eclipse/rdf4j.git</connection>
 		<developerConnection>scm:git:git@github.com:eclipse/rdf4j.git</developerConnection>

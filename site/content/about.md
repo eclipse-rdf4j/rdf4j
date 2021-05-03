@@ -5,7 +5,7 @@ description: "description"
 toc: true
 ---
 
-Eclipse RDF4J is an open source modular Java framework for working with [RDF](https://www.w3.org/TR/rdf11-primer/) data. This includes parsing, storing, inferencing and querying of/over such data. It offers an easy-to-use API that can be connected to all leading RDF storage solutions. It allows you to connect with [SPARQL](https://www.w3.org/TR/sparql11-overview/) endpoints and create applications that leverage the power of [Linked Data](http://linkeddata.org/) and [Semantic Web](http://www.w3.org/2001/sw/).
+Eclipse RDF4J&trade; is an open source modular Java framework for working with [RDF](https://www.w3.org/TR/rdf11-primer/) data. This includes parsing, storing, inferencing and querying of/over such data. It offers an easy-to-use API that can be connected to all leading RDF storage solutions. It allows you to connect with [SPARQL](https://www.w3.org/TR/sparql11-overview/) endpoints and create applications that leverage the power of [Linked Data](http://linkeddata.org/) and [Semantic Web](http://www.w3.org/2001/sw/).
 
 RDF4J offers two out-of-the-box RDF databases (the in-memory store and the native store), and in addition many third party storage solutions are available. The framework offers a large scala of tools to developers to leverage the power of RDF and related standards. RDF4J fully supports the SPARQL 1.1 query and update language for expressive querying and offers transparent access to remote RDF repositories using the exact same API as for local access. Finally, RDF4J supports all mainstream RDF file formats, including RDF/XML, Turtle, N-Triples,  N-Quads, JSON-LD, TriG and TriX.
 

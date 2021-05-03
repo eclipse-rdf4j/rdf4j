@@ -10,10 +10,10 @@ pygmentsStyle = "github"
 
 [Params]
   google_tag_manager = ""
-  description = "Eclipse RDF4J: Scalable RDF for Java developers."
+  description = "Eclipse RDF4J™ : Scalable RDF for Java developers."
   subtitle = "Eclipse Foundation"
-  seo_title_suffix = " | The Eclipse Foundation"
-  keywords = ["hugo", "solstice", "eclipse foundatiou"]
+  seo_title_suffix = " · Eclipse RDF4J™ | The Eclipse Foundation"
+  keywords = ["RDF4J", "rdf", "sparql", "shacl", "triplestore", "eclipse foundation"]
   logo = "images/rdf4j-logo-orange-114.png"
   favicon = "images/favicon.png"
   hide_sidebar = "false"
