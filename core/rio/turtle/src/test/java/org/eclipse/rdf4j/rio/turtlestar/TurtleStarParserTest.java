@@ -162,7 +162,7 @@ public class TurtleStarParserTest {
 	}
 
 	@Test
-	public void testTripleMultipleAnnotation() throws IOException {
+	public void testTripleMultipleAnnotationSameObject() throws IOException {
 		IRI example = iri("http://example.com/Example");
 		IRI a = iri("urn:a"), b = iri("urn:b"), c = iri("urn:c"), d = iri("urn:d");
 		Literal foo = literal("foo"), bar = literal("bar");
@@ -180,6 +180,29 @@ public class TurtleStarParserTest {
 			assertThat(stmts).contains(statement(Values.triple(annotatedSt), c, bar, null));
 			assertThat(stmts).contains(statement(Values.triple(annotatedSt), d, foo, null));
 			assertThat(stmts).contains(statement(example, d, a, null));
+		}
+	}
+
+	@Test
+	public void testTripleMultipleAnnotationMultipleObjects() throws IOException {
+		IRI example = iri("http://example.com/Example");
+		IRI a = iri("urn:a"), b = iri("urn:b"), c = iri("urn:c"), d = iri("urn:d");
+		Literal foo = literal("foo"), bar = literal("bar");
+		String data = "@prefix ex: <http://example.com/>.\n"
+				+ "ex:Example  <urn:a> <urn:b> {| <urn:c> \"foo\" |}, <urn:d> {| <urn:c> \"bar\" |}."
+				+ "ex:Example <urn:d> <urn:a> .";
+
+		Statement annotatedSt1 = statement(example, a, b, null), annotatedSt2 = statement(example, a, d, null);
+		try (Reader r = new StringReader(data)) {
+			parser.parse(r, baseURI);
+			Collection<Statement> stmts = statementCollector.getStatements();
+
+			assertThat(stmts).contains(annotatedSt1);
+			assertThat(stmts).contains(statement(Values.triple(annotatedSt1), c, foo, null));
+			assertThat(stmts).contains(statement(Values.triple(annotatedSt2), c, bar, null));
+			assertThat(stmts).contains(statement(example, d, a, null));
+			assertThat(stmts).doesNotContain(statement(Values.triple(annotatedSt1), c, bar, null));
+
 		}
 	}
 

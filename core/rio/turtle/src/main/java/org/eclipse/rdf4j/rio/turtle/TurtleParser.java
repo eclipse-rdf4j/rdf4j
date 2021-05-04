@@ -72,7 +72,10 @@ public class TurtleParser extends AbstractRDFParser {
 
 	private final StringBuilder parsingBuilder = new StringBuilder();
 
-	private Statement lastStatement;
+	/**
+	 * The most recently read complete statement.
+	 */
+	private Statement previousStatement;
 
 	/*--------------*
 	 * Constructors *
@@ -376,6 +379,9 @@ public class TurtleParser extends AbstractRDFParser {
 			readCodePoint();
 			skipWSC();
 			parseObject();
+			if (skipWSC() == '{') {
+				parseAnnotation();
+			}
 		}
 	}
 
@@ -1105,9 +1111,9 @@ public class TurtleParser extends AbstractRDFParser {
 
 	protected void reportStatement(Resource subj, IRI pred, Value obj) throws RDFParseException, RDFHandlerException {
 		if (subj != null && pred != null && obj != null) {
-			lastStatement = createStatement(subj, pred, obj);
+			previousStatement = createStatement(subj, pred, obj);
 			if (rdfHandler != null) {
-				rdfHandler.handleStatement(lastStatement);
+				rdfHandler.handleStatement(previousStatement);
 			}
 		}
 	}
@@ -1390,10 +1396,16 @@ public class TurtleParser extends AbstractRDFParser {
 		verifyCharacterOrFail(readCodePoint(), "{");
 		verifyCharacterOrFail(readCodePoint(), "|");
 		skipWSC();
-		subject = Values.triple(lastStatement);
+
+		// keep reference to original subject and predicate while processing the annotation content
+		final Resource currentSubject = subject;
+		final IRI currentPredicate = predicate;
+		subject = Values.triple(previousStatement);
 		parsePredicateObjectList();
 		verifyCharacterOrFail(readCodePoint(), "|");
 		verifyCharacterOrFail(readCodePoint(), "}");
+		subject = currentSubject;
+		predicate = currentPredicate;
 	}
 
 }
