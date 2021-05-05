@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * Function constructing RDF* Triple from its 3 arguments reused the IRI of rdf:Statement as name
+ * Function constructing RDF-star Triple from its 3 arguments reused the IRI of rdf:Statement as name
  *
  * @author damyan.ognyanov
  *

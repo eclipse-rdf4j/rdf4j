@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 
 /**
- * Constants for the SPARQL* JSON format. The format is handles {@link org.eclipse.rdf4j.query.TupleQueryResult} only.
+ * Constants for the SPARQL-star JSON format. The format handles {@link org.eclipse.rdf4j.query.TupleQueryResult} only.
  * For Boolean results, the SPARQL JSON format is used.
  * <p>
  * The format introduces a new type, triple, whose value is an object consisting of three elements:
@@ -41,12 +41,13 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
  * 			"o" : {
  * 				"type" : "uri",
  * 				"value" : "urn:b"
- *        }
+ *          }
  *        }
  *  }
  * </pre>
  *
  * @author Pavel Mihaylov
+ * @see <a href="https://w3c.github.io/rdf-star/cg-spec/">RDF-star and SPARQL-star Draft Community Group Report</a>
  */
 final class SPARQLStarResultsJSONConstants {
 	static TupleQueryResultFormat QUERY_RESULT_FORMAT = TupleQueryResultFormat.JSON_STAR;

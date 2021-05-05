@@ -108,7 +108,7 @@ public class RDFStarUtilTest {
 				RDFStarUtil.fromRDFEncodedValue(invalidValue);
 				fail("Must fail because of invalid value");
 			} catch (IllegalArgumentException e) {
-				assertTrue(e.getMessage().startsWith("Invalid RDF* encoded triple"));
+				assertTrue(e.getMessage().startsWith("Invalid RDF-star encoded triple"));
 			}
 		}
 	}

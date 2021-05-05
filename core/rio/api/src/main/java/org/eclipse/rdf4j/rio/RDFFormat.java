@@ -56,12 +56,12 @@ public class RDFFormat extends FileFormat {
 	public static final boolean NO_CONTEXTS = false;
 
 	/**
-	 * Indicates that RDF* triples can be serialized natively for this format.
+	 * Indicates that RDF-star triples can be serialized natively for this format.
 	 */
 	public static final boolean SUPPORTS_RDF_STAR = true;
 
 	/**
-	 * Indicates that RDF* triples will NOT be serialized natively for this format.
+	 * Indicates that RDF-star triples will NOT be serialized natively for this format.
 	 */
 	public static final boolean NO_RDF_STAR = false;
 
@@ -111,16 +111,17 @@ public class RDFFormat extends FileFormat {
 			NO_CONTEXTS, NO_RDF_STAR);
 
 	/**
-	 * The Turtle* (TurtleStar) file format, a Turtle-based RDF serialization format that supports RDF* triples.
+	 * The Turtle-star file format, a Turtle-based RDF serialization format that supports RDF-star triples.
 	 * <p>
-	 * The file extension <code>.ttls</code> is recommended for Turtle* documents. The media type is
+	 * The file extension <code>.ttls</code> is recommended for Turtle-star documents. The media type is
 	 * <code>application/x-turtlestar</code> and the encoding is UTF-8.
 	 * </p>
 	 *
 	 * @see <a href="https://arxiv.org/pdf/1406.3399.pdf">Foundations of an Alternative Approach to Reification in
 	 *      RDF</a>
+	 * @see <a href="https://w3c.github.io/rdf-star/cg-spec/">RDF-star and SPARQL-star Draft Community Group Report</a>
 	 */
-	public static final RDFFormat TURTLESTAR = new RDFFormat("Turtle*",
+	public static final RDFFormat TURTLESTAR = new RDFFormat("Turtle-star",
 			Arrays.asList("text/x-turtlestar", "application/x-turtlestar"), StandardCharsets.UTF_8,
 			Arrays.asList("ttls"), SUPPORTS_NAMESPACES, NO_CONTEXTS, SUPPORTS_RDF_STAR);
 
@@ -168,17 +169,18 @@ public class RDFFormat extends FileFormat {
 			SUPPORTS_CONTEXTS, NO_RDF_STAR);
 
 	/**
-	 * The TriG* (TriGStar) file format, a TriG-based RDF serialization format that supports RDF* triples. This builds
-	 * upon the idea for the Turtle* format but adds support for named graphs.
+	 * The TriG-star file format, a TriG-based RDF serialization format that supports RDF-star triples. This builds upon
+	 * the idea for the Turtle-star format but adds support for named graphs.
 	 * <p>
-	 * The file extension <code>.trigs</code> is recommended for TriG* documents. The media type is
+	 * The file extension <code>.trigs</code> is recommended for TriG-star documents. The media type is
 	 * <code>application/x-trigstar</code> and the encoding is UTF-8.
 	 * </p>
 	 *
 	 * @see <a href="https://arxiv.org/pdf/1406.3399.pdf">Foundations of an Alternative Approach to Reification in
 	 *      RDF</a>
+	 * @see <a href="https://w3c.github.io/rdf-star/cg-spec/">RDF-star and SPARQL-star Draft Community Group Report</a>
 	 */
-	public static final RDFFormat TRIGSTAR = new RDFFormat("TriG*", "application/x-trigstar",
+	public static final RDFFormat TRIGSTAR = new RDFFormat("TriG-star", "application/x-trigstar",
 			StandardCharsets.UTF_8, "trigs", SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS, SUPPORTS_RDF_STAR);
 
 	/**
@@ -353,7 +355,7 @@ public class RDFFormat extends FileFormat {
 	private final boolean supportsContexts;
 
 	/**
-	 * Flag indicating whether the RDFFormat can encode RDF* triples natively.
+	 * Flag indicating whether the RDFFormat can encode RDF-star triples natively.
 	 */
 	private final boolean supportsRDFStar;
 
@@ -404,7 +406,7 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
-	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
+	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF-star triples natively and
 	 *                           <tt>false</tt> otherwise.
 	 */
 	public RDFFormat(String name, String mimeType, Charset charset, String fileExtension, boolean supportsNamespaces,
@@ -449,7 +451,7 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
-	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
+	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF-star triples natively and
 	 *                           <tt>false</tt> otherwise.
 	 */
 	public RDFFormat(String name, String mimeType, Charset charset, Collection<String> fileExtensions,
@@ -496,7 +498,7 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
-	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
+	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF-star triples natively and
 	 *                           <tt>false</tt> otherwise.
 	 */
 	public RDFFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions,
@@ -547,7 +549,7 @@ public class RDFFormat extends FileFormat {
 	 *                           and <tt>false</tt> otherwise.
 	 * @param supportsContexts   <tt>True</tt> if the RDFFormat supports the encoding of contexts/named graphs and
 	 *                           <tt>false</tt> otherwise.
-	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF* triples natively and
+	 * @param supportsRDFStar    <tt>True</tt> if the RDFFormat supports the encoding of RDF-star triples natively and
 	 *                           <tt>false</tt> otherwise.
 	 */
 	public RDFFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions,
@@ -579,7 +581,7 @@ public class RDFFormat extends FileFormat {
 	}
 
 	/**
-	 * Return <tt>true</tt> if the RDFFormat supports the encoding of RDF* triples natively.
+	 * Return <tt>true</tt> if the RDFFormat supports the encoding of RDF-star triples natively.
 	 */
 	public boolean supportsRDFStar() {
 		return supportsRDFStar;

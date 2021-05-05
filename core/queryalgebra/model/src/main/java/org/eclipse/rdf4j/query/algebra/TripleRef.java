@@ -13,7 +13,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Triple lookup reference. Allow retrieval of RDF* triples **/
+/** Triple lookup reference. Allow retrieval of RDF-star triples **/
 public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 
 	private org.eclipse.rdf4j.query.algebra.Var exprVar;

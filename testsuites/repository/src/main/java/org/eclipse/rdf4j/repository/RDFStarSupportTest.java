@@ -32,7 +32,7 @@ import org.junit.Test;
 import org.junit.rules.Timeout;
 
 /**
- * Test cases for RDF* support in the Repository.
+ * Test cases for RDF-star support in the Repository.
  *
  * @author Jeen Broekstra
  *
@@ -126,7 +126,7 @@ public abstract class RDFStarSupportTest {
 
 		try {
 			testCon.add(RDF.ALT, RDF.TYPE, RDF.ALT, rdfStarTriple);
-			fail("RDF* triple value should not be allowed by store as context identifier");
+			fail("RDF-star triple value should not be allowed by store as context identifier");
 		} catch (UnsupportedOperationException e) {
 			// fall through, expected behavior
 			testCon.rollback();

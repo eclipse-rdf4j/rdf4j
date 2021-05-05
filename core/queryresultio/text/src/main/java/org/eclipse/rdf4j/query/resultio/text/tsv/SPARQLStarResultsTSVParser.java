@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.query.resultio.text.tsv;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 
 /**
- * Parser for SPARQL* TSV results. This is equivalent to the SPARQL TSV parser with the addition of support for RDF*
- * triples. Serialized triples must be in Turtle* fashion with the notable exception that any embedded literals may not
- * use the triple quotes notation (as regular literals in SPARQL TSV).
+ * Parser for SPARQL-star TSV results. This is equivalent to the SPARQL TSV parser with the addition of support for
+ * RDF-star triples. Serialized triples must be in Turtle-star fashion with the notable exception that any embedded
+ * literals may not use the triple quotes notation (as regular literals in SPARQL TSV).
  *
  * @author Pavel Mihaylov
  * @author Jeen Broekstra

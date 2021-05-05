@@ -256,7 +256,7 @@ public class BinaryRDFParser extends AbstractRDFParser {
 			}
 		}
 
-		reportFatalError("Invalid RDF* triple value");
+		reportFatalError("Invalid RDF-star triple value");
 		return null;
 	}
 

@@ -58,7 +58,7 @@ interface SPARQLResultsXMLConstants {
 
 	public static final String QNAME = "q:qname";
 
-	/* tag constants for serialization of RDF* values in results */
+	/* tag constants for serialization of RDF-star values in results */
 
 	public static final String TRIPLE_TAG = "triple";
 

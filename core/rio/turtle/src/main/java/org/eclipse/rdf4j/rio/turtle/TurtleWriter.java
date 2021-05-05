@@ -615,7 +615,7 @@ public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 	}
 
 	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
-		throw new IOException(getRDFFormat().getName() + " does not support RDF* triples");
+		throw new IOException(getRDFFormat().getName() + " does not support RDF-star triples");
 	}
 
 	protected void writeTripleRDFStar(Triple triple, boolean canShorten) throws IOException {

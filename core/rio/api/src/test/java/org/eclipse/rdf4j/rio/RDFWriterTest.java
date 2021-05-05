@@ -757,7 +757,7 @@ public abstract class RDFWriterTest {
 			IRI pred = potentialPredicates.get(prng.nextInt(potentialPredicates.size()));
 			while (obj instanceof Triple && pred.equals(RDF.TYPE)) {
 				// Avoid statements "x rdf:type <<triple>>" as those use the shorter syntax in RDFXMLPrettyWriter
-				// and the writer produces invalid XML in that case. Even though the RDF* triples are encoded as
+				// and the writer produces invalid XML in that case. Even though the RDF-star triples are encoded as
 				// valid IRIs, XML has limitations on what characters may form an XML tag name and thus a limitation
 				// on what IRIs may be used in predicates (predicates are XML tags) or the short form of rdf:type
 				// (where the type is also an XML tag).
@@ -1848,8 +1848,8 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(inputReader, "");
 
-		// 1 non-RDF* statement
-		// 1 RDF* statement whose conversion yields 20 additional statements:
+		// 1 non-RDF-star statement
+		// 1 RDF-star statement whose conversion yields 20 additional statements:
 		// 4 for triple3
 		// 4 for triple6
 		// 4 for triple2 (contained in triple6)

@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
- * A lexical rdf term Comparator, this class does not compare numerically and is therefore a bit faster than a SPARQL
+ * A lexical RDF Term Comparator, this class does not compare numerically and is therefore a bit faster than a SPARQL
  * compliant comparator.
  *
  * @author james
@@ -84,7 +84,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 			return 1;
 		}
 
-		// 5. RDF* triples
+		// 5. RDF-star triples
 		return compareTriples((Triple) o1, (Triple) o2);
 	}
 

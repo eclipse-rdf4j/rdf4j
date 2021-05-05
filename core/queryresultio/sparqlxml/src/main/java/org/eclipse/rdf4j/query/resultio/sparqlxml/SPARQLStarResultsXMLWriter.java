@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
  * <a href="http://www.w3.org/TR/rdf-sparql-XMLres/">SPARQL Query Results XML Format</a>.
  *
  * @author Jeen Broekstra
- * @implNote the base class {@link SPARQLResultsXMLWriter} already has full support for writing extended RDF* syntax.
- *           This class purely exists as a hook for the custom content type for
+ * @implNote the base class {@link SPARQLResultsXMLWriter} already has full support for writing extended RDF-star
+ *           syntax. This class purely exists as a hook for the custom content type for
  *           {@link TupleQueryResultFormat#SPARQL_STAR}.
  */
 @Experimental

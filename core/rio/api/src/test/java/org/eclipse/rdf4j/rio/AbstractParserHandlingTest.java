@@ -933,7 +933,7 @@ public abstract class AbstractParserHandlingTest {
 				vf.createIRI("urn:f"));
 		expectedModel.add(vf.createStatement(t3, vf.createIRI("urn:same"), t3));
 
-		// Default: formats with RDF* support handle it natively and non-RDF* use a compatibility encoding
+		// Default: formats with RDF-star support handle it natively and non-RDF-star use a compatibility encoding
 		InputStream input1 = serialize(expectedModel);
 		testParser.parse(input1, BASE_URI);
 		assertErrorListener(0, 0, 0);
@@ -942,8 +942,8 @@ public abstract class AbstractParserHandlingTest {
 		testListener.reset();
 		testStatements.clear();
 
-		// Turn off compatibility on parsing: formats with RDF* support will produce RDF* triples,
-		// non-RDF* formats will produce IRIs of the kind urn:rdf4j:triple:xxx
+		// Turn off compatibility on parsing: formats with RDF-star support will produce RDF-star triples,
+		// non-RDF-star formats will produce IRIs of the kind urn:rdf4j:triple:xxx
 		InputStream input2 = serialize(expectedModel);
 		testParser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
 		testParser.parse(input2, BASE_URI);

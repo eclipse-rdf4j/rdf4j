@@ -125,7 +125,7 @@ public class SPARQLProtocolSessionTest {
 		SPARQLStarResultsXMLWriter handler = Mockito.spy(new SPARQLStarResultsXMLWriter(out));
 		sparqlSession.sendTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o}", null, null, true, -1, handler);
 
-		// SPARQL* XML sink should accept SPARQL/XML data and pass directly to OutputStream
+		// SPARQL-star XML sink should accept SPARQL/XML data and pass directly to OutputStream
 		verify(handler, never()).startQueryResult(anyList());
 
 		// check that the OutputStream received content in XML format

@@ -50,7 +50,7 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public class EvaluationStrategyWithRDFStarTest {
 
-	@Parameters(name = "RDF*={0}")
+	@Parameters(name = "RDF-star={0}")
 	public static Object[] params() {
 		return new Object[] { false, true };
 	}

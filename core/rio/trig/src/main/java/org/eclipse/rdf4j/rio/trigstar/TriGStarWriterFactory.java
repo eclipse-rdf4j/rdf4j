@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
- * An {@link RDFWriterFactory} for TriG* writers.
+ * An {@link RDFWriterFactory} for TriG-star writers.
  *
  * @author Pavel Mihaylov
  */
