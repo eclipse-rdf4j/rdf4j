@@ -1,0 +1,1 @@
+LOAD <http://www.w3.org/TR/skos-reference/skos.rdf> INTO GRAPH <urn:namespaces:skos>

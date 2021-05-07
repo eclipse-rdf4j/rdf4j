@@ -1,0 +1,4 @@
+PREFIX :   <http://example/>
+SELECT * 
+{  ?s :item ?_a .
+   ?_a :price ?x . }

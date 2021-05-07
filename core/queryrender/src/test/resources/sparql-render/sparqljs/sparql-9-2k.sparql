@@ -1,0 +1,7 @@
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+  SELECT *
+  {
+    ?x foaf:knows ?gen1 .
+    ?y foaf:knows ?gen1 .  
+    FILTER(?x != ?y)
+  }
