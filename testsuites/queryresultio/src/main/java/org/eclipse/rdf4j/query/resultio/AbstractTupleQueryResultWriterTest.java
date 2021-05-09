@@ -63,8 +63,8 @@ public abstract class AbstractTupleQueryResultWriterTest {
 		BindingSet actual = collector.getBindingSets().get(0);
 
 		if (writer.getTupleQueryResultFormat().supportsRDFStar()) {
-			// natively-supporting RDF* writers should ignore the encoding setting and just always use their extended
-			// format
+			// natively-supporting RDF-star writers should ignore the encoding setting and just always use their
+			// extended format
 			assertThat(actual.getValue("t")).isInstanceOf(Triple.class);
 		} else {
 			assertThat(actual.getValue("t")).isInstanceOf(IRI.class);

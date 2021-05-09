@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFParserFactory;
 
 /**
- * An {@link RDFParserFactory} for Turtle* parsers.
+ * An {@link RDFParserFactory} for Turtle-star parsers.
  *
  * @author Pavel Mihaylov
  */

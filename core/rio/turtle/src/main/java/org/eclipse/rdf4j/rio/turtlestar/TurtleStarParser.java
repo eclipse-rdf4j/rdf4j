@@ -18,20 +18,20 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.turtle.TurtleParser;
 
 /**
- * RDF parser for Turtle* (an extension of Turtle that adds RDF* support).
+ * RDF parser for Turtle-star (an extension of Turtle that adds RDF-star support).
  *
  * @author Pavel Mihaylov
  */
 public class TurtleStarParser extends TurtleParser {
 	/**
-	 * Creates a new TurtleStarParser that will use a {@link SimpleValueFactory} to create RDF* model objects.
+	 * Creates a new TurtleStarParser that will use a {@link SimpleValueFactory} to create RDF-star model objects.
 	 */
 	public TurtleStarParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new TurtleStarParser that will use the supplied ValueFactory to create RDF* model objects.
+	 * Creates a new TurtleStarParser that will use the supplied ValueFactory to create RDF-star model objects.
 	 *
 	 * @param valueFactory A ValueFactory.
 	 */

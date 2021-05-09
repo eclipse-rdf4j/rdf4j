@@ -1331,9 +1331,9 @@ public class TurtleParser extends AbstractRDFParser {
 
 	/**
 	 * Peeks at the next two Unicode code points without advancing the reader and returns true if they indicate the
-	 * start of an RDF* triple value. Such values start with '<<'.
+	 * start of an RDF-star triple value. Such values start with '<<'.
 	 *
-	 * @return true if the next code points indicate the beginning of an RDF* triple value, false otherwise
+	 * @return true if the next code points indicate the beginning of an RDF-star triple value, false otherwise
 	 * @throws IOException
 	 */
 	protected boolean peekIsTripleValue() throws IOException {
@@ -1346,9 +1346,9 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parser an RDF* triple value and returns it.
+	 * Parser an RDF-star triple value and returns it.
 	 *
-	 * @return An RDF* triple.
+	 * @return An RDF-star triple.
 	 * @throws IOException
 	 */
 	protected Triple parseTripleValue() throws IOException {
@@ -1368,13 +1368,13 @@ public class TurtleParser extends AbstractRDFParser {
 					verifyCharacterOrFail(readCodePoint(), ">");
 					return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
 				} else {
-					reportFatalError("Missing object in RDF* triple");
+					reportFatalError("Missing object in RDF-star triple");
 				}
 			} else {
-				reportFatalError("Illegal predicate value in RDF* triple: " + predicate);
+				reportFatalError("Illegal predicate value in RDF-star triple: " + predicate);
 			}
 		} else {
-			reportFatalError("Illegal subject val in RDF* triple: " + subject);
+			reportFatalError("Illegal subject val in RDF-star triple: " + subject);
 		}
 
 		return null;

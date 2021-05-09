@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * Represents a {@link Statement} whose subject or object may be an RDF* triple that will be encoded as a special IRI
- * value on {@link #getSubject()} and {@link #getObject()}.
+ * Represents a {@link Statement} whose subject or object may be an RDF-star triple that will be encoded as a special
+ * IRI value on {@link #getSubject()} and {@link #getObject()}.
  *
  * @author Pavel Mihaylov
  */

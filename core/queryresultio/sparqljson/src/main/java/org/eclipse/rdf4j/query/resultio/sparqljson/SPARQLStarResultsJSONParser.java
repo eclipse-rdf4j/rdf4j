@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 
 /**
- * Parser for SPARQL* JSON results. This is equivalent to the SPARQL JSON parser with the addition of support for RDF*
- * triples. See {@link SPARQLStarResultsJSONConstants} for a description of the RDF* extension.
+ * Parser for SPARQL-star JSON results. This is equivalent to the SPARQL JSON parser with the addition of support for
+ * RDF-star triples. See {@link SPARQLStarResultsJSONConstants} for a description of the RDF-star extension.
  *
  * @author Pavel Mihaylov
  */

@@ -113,7 +113,7 @@ public class TurtleStarParserTest {
 		try (InputStream in = this.getClass().getResourceAsStream("/test-rdfstar.ttls")) {
 			parser.parse(in, baseURI);
 		} catch (RDFParseException e) {
-			fail("parser setting should have no influence on TurtleStarParser handling of RDF* data");
+			fail("parser setting should have no influence on TurtleStarParser handling of RDF-star data");
 		}
 	}
 

@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
  * A {@link ValueFactory} that will delegate everything to another {@link ValueFactory} and create statements whose
- * subject and object will be converted from RDF* triples encoded as special IRIs back to RDF* values.
+ * subject and object will be converted from RDF-star triples encoded as special IRIs back to RDF-star values.
  * <p>
  * All other values in the subject and object position will be used as is.
  */

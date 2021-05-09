@@ -116,7 +116,7 @@ public class NTriplesUtil {
 	public static IRI parseURI(String nTriplesURI, ValueFactory valueFactory) throws IllegalArgumentException {
 		if (nTriplesURI.startsWith("<") && nTriplesURI.endsWith(">")) {
 			String uri = nTriplesURI.substring(1, nTriplesURI.length() - 1);
-			// Disambiguate with RDF* triple
+			// Disambiguate with RDF-star triple
 			if (!uri.startsWith("<")) {
 				uri = unescapeString(uri);
 				return valueFactory.createIRI(uri);
@@ -186,10 +186,10 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Parses an RDF* triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
+	 * Parses an RDF-star triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
 	 * returns this object.
 	 *
-	 * @param nTriplesTriple The RDF* triple to parse.
+	 * @param nTriplesTriple The RDF-star triple to parse.
 	 * @param valueFactory   The ValueFactory to use for creating the object.
 	 * @return An object representing the parsed triple.
 	 * @throws IllegalArgumentException If the supplied triple could not be parsed correctly.
@@ -203,10 +203,10 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Parses an RDF* triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
+	 * Parses an RDF-star triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
 	 * returns an object that contains the parsed triple and the length of the parsed text.
 	 *
-	 * @param nTriplesTriple The RDF* triple to parse.
+	 * @param nTriplesTriple The RDF-star triple to parse.
 	 * @param valueFactory   The ValueFactory to use for creating the object.
 	 * @return An object representing the parsed triple and the length of the matching text.
 	 * @throws IllegalArgumentException If the supplied triple could not be parsed correctly.
@@ -576,7 +576,7 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Creates an N-Triples (non-standard) string for the supplied RDF* triple.
+	 * Creates an N-Triples (non-standard) string for the supplied RDF-star triple.
 	 *
 	 * @param triple
 	 * @return string

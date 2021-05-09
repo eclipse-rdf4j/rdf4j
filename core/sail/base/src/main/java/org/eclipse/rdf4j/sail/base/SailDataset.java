@@ -77,18 +77,18 @@ public interface SailDataset extends SailClosable {
 			Resource... contexts) throws SailException;
 
 	/**
-	 * Gets all RDF* triples that have a specific subject, predicate and/or object. All three parameters may be null to
-	 * indicate wildcards.
+	 * Gets all RDF-star triples that have a specific subject, predicate and/or object. All three parameters may be null
+	 * to indicate wildcards.
 	 *
 	 * @param subj A Resource specifying the subject, or <tt>null</tt> for a wildcard.
 	 * @param pred A IRI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj  A Value specifying the object, or <tt>null</tt> for a wildcard.
 	 * @return An iterator over the relevant triples.
-	 * @throws SailException If the triple source failed to get the RDF* triples.
+	 * @throws SailException If the triple source failed to get the RDF-star triples.
 	 */
 	default CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
-		throw new SailException("RDF* triple retrieval not supported by this store");
+		throw new SailException("RDF-star triple retrieval not supported by this store");
 	}
 
 }

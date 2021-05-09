@@ -29,7 +29,7 @@ public class TurtleParserSettings {
 			"Allows case-insensitive directives to be recognised", Boolean.FALSE);
 
 	/**
-	 * Allows the regular Turtle parser to accept data using the non-standard Turtle* extension.
+	 * Allows the regular Turtle parser to accept data using the non-standard Turtle-star extension.
 	 * <p>
 	 * Defaults to true.
 	 * <p>
@@ -39,7 +39,7 @@ public class TurtleParserSettings {
 	 */
 	public static final RioSetting<Boolean> ACCEPT_TURTLESTAR = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.accept_turtlestar",
-			"Allow processing of Turtle* data by the standard Turtle parser",
+			"Allow processing of Turtle-star data by the standard Turtle parser",
 			Boolean.TRUE);
 
 }

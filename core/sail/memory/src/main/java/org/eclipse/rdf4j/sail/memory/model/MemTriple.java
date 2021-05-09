@@ -172,7 +172,7 @@ public class MemTriple implements Triple, MemResource {
 
 	@Override
 	public void addContextStatement(MemStatement st) {
-		throw new UnsupportedOperationException("RDF* triples can not be used as context identifier");
+		throw new UnsupportedOperationException("RDF-star triples can not be used as context identifier");
 	}
 
 	@Override

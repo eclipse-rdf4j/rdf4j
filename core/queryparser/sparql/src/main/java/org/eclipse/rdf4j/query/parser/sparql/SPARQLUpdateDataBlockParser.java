@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
  * <li>it introduces the 'GRAPH' keyword in front of each named graph identifier
  * <li>it does not allow the occurrence of blank nodes.
  * <li>it does not require curly braces around the default graph.
- * <li>it adds support for RDF* triples (from TriG*).</li>
+ * <li>it adds support for RDF-star triples (from TriG-star).</li>
  * </ul>
  *
  * @author Jeen Broekstra

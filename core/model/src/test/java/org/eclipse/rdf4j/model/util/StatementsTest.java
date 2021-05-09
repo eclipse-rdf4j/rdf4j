@@ -89,18 +89,18 @@ public class StatementsTest {
 
 		Model convertedModel1 = new LinkedHashModel();
 		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(s, convertedModel1::add));
-		assertTrue("RDF* conversion to reification with implicit VF",
+		assertTrue("RDF-star conversion to reification with implicit VF",
 				Models.isomorphic(reifiedModel, convertedModel1));
 
 		Model convertedModel2 = new LinkedHashModel();
 		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, s, convertedModel2::add));
-		assertTrue("RDF* conversion to reification with explicit VF",
+		assertTrue("RDF-star conversion to reification with explicit VF",
 				Models.isomorphic(reifiedModel, convertedModel2));
 
 		Model convertedModel3 = new LinkedHashModel();
 		rdfStarModel.forEach((s) -> Statements.convertRDFStarToReification(vf, (t) -> vf.createBNode(t.stringValue()),
 				s, convertedModel3::add));
-		assertTrue("RDF* conversion to reification with explicit VF and custom BNode mapping",
+		assertTrue("RDF-star conversion to reification with explicit VF and custom BNode mapping",
 				Models.isomorphic(reifiedModel, convertedModel3));
 	}
 
@@ -126,7 +126,7 @@ public class StatementsTest {
 	}
 
 	@Test
-	public void testToStatement() {
+	public void testStatement() {
 
 		Resource context = vf.createIRI("http://example.org/context");
 		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
@@ -135,11 +135,11 @@ public class StatementsTest {
 		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"));
 
-		assertThat(Statements.toStatement(t1)).isEqualTo(st1);
+		assertThat(Statements.statement(t1)).isEqualTo(st1);
 	}
 
 	@Test
-	public void testToStatement_Context() {
+	public void testStatement_Context() {
 
 		Resource context = vf.createIRI("http://example.org/context");
 		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
@@ -148,17 +148,17 @@ public class StatementsTest {
 		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"), context);
 
-		assertThat(Statements.toStatement(t1, context)).isEqualTo(st1);
+		assertThat(Statements.statement(t1, context)).isEqualTo(st1);
 	}
 
 	@Test
-	public void testToStatement_NullContext() {
+	public void testStatement_NullContext() {
 		Triple t1 = vf.createTriple(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"));
 
 		Statement st1 = vf.createStatement(vf.createIRI("http://example.com/1"), vf.createIRI("http://example.com/2"),
 				vf.createLiteral("data"), null);
 
-		assertThat(Statements.toStatement(t1, null)).isEqualTo(st1);
+		assertThat(Statements.statement(t1, null)).isEqualTo(st1);
 	}
 }

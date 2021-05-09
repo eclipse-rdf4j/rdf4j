@@ -343,7 +343,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 			if (TYPE.equals(fieldName)) {
 				type = jp.nextTextValue();
 				if (TRIPLE_STARDOG.equals(type)) {
-					// Stardog RDF* serialization dialect does not wrap the triple in a value object
+					// Stardog RDF-star serialization dialect does not wrap the triple in a value object
 					triple = parseStardogTripleValue(jp, type);
 					// avoid reading away the next end-of-object token by jumping out of the loop.
 					break;

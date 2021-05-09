@@ -18,7 +18,8 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.trig.TriGWriter;
 
 /**
- * An extension of {@link TriGWriter} that writes RDF* documents in the TriG* format by including the RDF* triples.
+ * An extension of {@link TriGWriter} that writes RDF-star documents in the TriG-star format by including the RDF-star
+ * triples.
  *
  * @author Pavel Mihaylov
  */
@@ -26,7 +27,7 @@ public class TriGStarWriter extends TriGWriter {
 	/**
 	 * Creates a new TriGStarWriter that will write to the supplied OutputStream.
 	 *
-	 * @param out The OutputStream to write the TriG* document to.
+	 * @param out The OutputStream to write the TriG-star document to.
 	 */
 	public TriGStarWriter(OutputStream out) {
 		super(out);
@@ -35,7 +36,7 @@ public class TriGStarWriter extends TriGWriter {
 	/**
 	 * Creates a new TriGStarWriter that will write to the supplied OutputStream using the supplied base IRI.
 	 *
-	 * @param out     The OutputStream to write the TriG* document to.
+	 * @param out     The OutputStream to write the TriG-star document to.
 	 * @param baseIRI The base IRI to use.
 	 */
 	public TriGStarWriter(OutputStream out, ParsedIRI baseIRI) {
@@ -45,7 +46,7 @@ public class TriGStarWriter extends TriGWriter {
 	/**
 	 * Creates a new TriGStarWriter that will write to the supplied Writer.
 	 *
-	 * @param writer The Writer to write the TriG* document to.
+	 * @param writer The Writer to write the TriG-star document to.
 	 */
 	public TriGStarWriter(Writer writer) {
 		super(writer);
@@ -54,7 +55,7 @@ public class TriGStarWriter extends TriGWriter {
 	/**
 	 * Creates a new TriGStarWriter that will write to the supplied Writer using the supplied base IRI.
 	 *
-	 * @param writer  The Writer to write the TriG* document to.
+	 * @param writer  The Writer to write the TriG-star document to.
 	 * @param baseIRI The base IRI to use.
 	 */
 	public TriGStarWriter(Writer writer, ParsedIRI baseIRI) {
@@ -68,7 +69,7 @@ public class TriGStarWriter extends TriGWriter {
 
 	@Override
 	public boolean acceptsFileFormat(FileFormat format) {
-		// since TriG* is a superset of regular TriG, this Sink also accepts regular TriG
+		// since TriG-star is a superset of regular TriG, this Sink also accepts regular TriG
 		// serialization
 		return super.acceptsFileFormat(format) || RDFFormat.TRIG.equals(format);
 	}

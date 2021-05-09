@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 
 /**
- * Utility methods for working with {@link Statement} objects, including conversion to/from {@link Triple RDF* triple
- * objects}.
+ * Utility methods for working with {@link Statement} objects, including conversion to/from {@link Triple RDF-star
+ * triple objects}.
  *
  * @author Jeen Broekstra
  */
@@ -123,10 +123,10 @@ public class Statements {
 	}
 
 	/**
-	 * Create an {@link Triple RDF* triple} from the supplied {@link Statement}
+	 * Create an {@link Triple RDF-star triple} from the supplied {@link Statement}
 	 *
-	 * @param statement a statement to convert to an RDF* triple
-	 * @return an {@link Triple RDF* triple} with the same subject, predicate and object as the input statement.
+	 * @param statement a statement to convert to an RDF-star triple
+	 * @return an {@link Triple RDF-star triple} with the same subject, predicate and object as the input statement.
 	 * @since 3.4.0
 	 * @deprecated since 3.5.0 - use {@link Values#triple(Statement)} instead
 	 */
@@ -136,11 +136,11 @@ public class Statements {
 	}
 
 	/**
-	 * Create an {@link Triple RDF* triple} from the supplied {@link Statement}
+	 * Create an {@link Triple RDF-star triple} from the supplied {@link Statement}
 	 *
 	 * @param vf        the {@link ValueFactory} to use for creating the {@link Triple} object.
-	 * @param statement a statement to convert to an RDF* triple
-	 * @return an {@link Triple RDF* triple} with the same subject, predicate and object as the input statement.
+	 * @param statement a statement to convert to an RDF-star triple
+	 * @return an {@link Triple RDF-star triple} with the same subject, predicate and object as the input statement.
 	 * @since 3.4.0
 	 * 
 	 * @deprecated since 3.5.0 - use {@link Values#triple(ValueFactory, Statement)} instead
@@ -151,40 +151,81 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF* triple}
+	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple}
 	 *
-	 * @param triple an RDF* triple to convert to a {@link Statement}.
+	 * @param triple an RDF-star triple to convert to a {@link Statement}.
+	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and no context.
+	 * @since 3.4.0
+	 * @deprecated Use {@link #statement(Triple)} instead
+	 */
+	public static Statement toStatement(Triple triple) {
+		return statement(triple);
+	}
+
+	/**
+	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple}
+	 *
+	 * @param triple an RDF-star triple to convert to a {@link Statement}.
 	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and no context.
 	 * @since 3.4.0
 	 */
-	public static Statement toStatement(Triple triple) {
+	public static Statement statement(Triple triple) {
 		return toStatement(triple, null);
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF* triple} and context.
+	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
 	 *
-	 * @param triple  an RDF* triple to convert to a {@link Statement}.
+	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
+	 * @param context the context to assign to the {@link Statement}.
+	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+	 *         supplied context.
+	 * @since 3.7.0
+	 */
+	public static Statement statement(Triple triple, Resource context) {
+		return statement(SimpleValueFactory.getInstance(), triple, context);
+	}
+
+	/**
+	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 *
+	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
 	 * @param context the context to assign to the {@link Statement}.
 	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
 	 *         supplied context.
 	 * @since 3.4.0
+	 * @deprecated since 3.7.0 - use {@link #statement(Triple, Resource)} instead
 	 */
 	public static Statement toStatement(Triple triple, Resource context) {
-		return toStatement(SimpleValueFactory.getInstance(), triple, context);
+		return statement(SimpleValueFactory.getInstance(), triple, context);
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF* triple} and context.
+	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
 	 *
 	 * @param vf      the {@link ValueFactory} to use for creating the {@link Statement} object.
-	 * @param triple  an RDF* triple to convert to a {@link Statement}.
+	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
 	 * @param context the context to assign to the {@link Statement}. May be null to indicate no context.
 	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
 	 *         supplied context.
 	 * @since 3.4.0
+	 * @deprecated Use {@link #statement(ValueFactory,Triple,Resource)} instead
 	 */
 	public static Statement toStatement(ValueFactory vf, Triple triple, Resource context) {
+		return statement(vf, triple, context);
+	}
+
+	/**
+	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 *
+	 * @param vf      the {@link ValueFactory} to use for creating the {@link Statement} object.
+	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
+	 * @param context the context to assign to the {@link Statement}. May be null to indicate no context.
+	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+	 *         supplied context.
+	 * @since 3.7.0
+	 */
+	public static Statement statement(ValueFactory vf, Triple triple, Resource context) {
 		return vf.createStatement(triple.getSubject(), triple.getPredicate(), triple.getObject(), context);
 	}
 
@@ -242,8 +283,8 @@ public class Statements {
 	}
 
 	/**
-	 * Converts the supplied RDF* statement to RDF reification statements, and sends the resultant statements to the
-	 * supplied consumer. If the supplied statement is not RDF* it will be sent to the consumer as is.
+	 * Converts the supplied RDF-star statement to RDF reification statements, and sends the resultant statements to the
+	 * supplied consumer. If the supplied statement is not RDF-star it will be sent to the consumer as is.
 	 * <p>
 	 * The statements needed to represent reification will use blank nodes.
 	 *
@@ -256,8 +297,8 @@ public class Statements {
 	}
 
 	/**
-	 * Converts the supplied RDF* statement to RDF reification statements, and sends the resultant statements to the
-	 * supplied consumer. If the supplied statement is not RDF* it will be sent to the consumer as is.
+	 * Converts the supplied RDF-star statement to RDF reification statements, and sends the resultant statements to the
+	 * supplied consumer. If the supplied statement is not RDF-star it will be sent to the consumer as is.
 	 * <p>
 	 * The statements needed to represent reification will use blank nodes.
 	 * <p>
@@ -273,8 +314,8 @@ public class Statements {
 	}
 
 	/**
-	 * Converts the supplied RDF* statement to RDF reification statements, and sends the resultant statements to the
-	 * supplied consumer. If the supplied statement is not RDF* it will be sent to the consumer as is.
+	 * Converts the supplied RDF-star statement to RDF reification statements, and sends the resultant statements to the
+	 * supplied consumer. If the supplied statement is not RDF-star it will be sent to the consumer as is.
 	 * <p>
 	 * The supplied value factory is used to create all new statements.
 	 * <p>
@@ -305,7 +346,7 @@ public class Statements {
 	}
 
 	/**
-	 * Converts the supplied RDF* triple to a series of RDF reification statements and sends the statements to the
+	 * Converts the supplied RDF-star triple to a series of RDF reification statements and sends the statements to the
 	 * supplied consumer. The subject of the created statements is returned.
 	 * <p>
 	 * The supplied value factory is used to create all new statements.
