@@ -133,6 +133,25 @@ public class SPARQLProtocolSessionTest {
 	}
 
 	@Test
+	public void testTupleQuery_Passthrough_ConfiguredFalse() throws Exception {
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list.xml")));
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		SPARQLStarResultsXMLWriter handler = Mockito.spy(new SPARQLStarResultsXMLWriter(out));
+		sparqlSession.setPassThroughEnabled(false);
+		sparqlSession.sendTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o}", null, null, true, -1, handler);
+
+		// If not passed through, the QueryResultWriter methods should have been invoked
+		verify(handler, times(1)).startQueryResult(anyList());
+
+		// check that the OutputStream received content in XML format
+		assertThat(out.toString()).startsWith("<");
+	}
+
+	@Test
 	public void getContentTypeSerialisationTest() {
 		{
 			HttpResponse httpResponse = withContentType("application/shacl-validation-report+n-quads");
