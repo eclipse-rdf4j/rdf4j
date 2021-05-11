@@ -1,0 +1,5 @@
+SELECT * WHERE 
+{ 
+	BIND(STRLANG("test", LANG("en"@en)) AS ?s)
+	BIND(STRDT("123", xsd:integer) as ?d)
+	BIND(sameTerm(?s, ?d) as ?c) }

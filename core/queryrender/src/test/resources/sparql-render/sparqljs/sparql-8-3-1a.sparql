@@ -1,0 +1,5 @@
+SELECT *
+{ 
+  ?s ?p ?o
+  FILTER NOT EXISTS { ?x ?y ?z }
+}

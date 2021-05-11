@@ -1,0 +1,5 @@
+  PREFIX :   <http://example/>
+  SELECT (sum(?x) AS ?total)
+  { 
+    :order :item/:price ?x
+  }

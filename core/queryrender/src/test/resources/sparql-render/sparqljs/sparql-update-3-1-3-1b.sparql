@@ -1,0 +1,5 @@
+PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
+
+WITH <http://example/addresses>
+DELETE { ?person ?property ?value } 
+WHERE { ?person ?property ?value ; foaf:givenName 'Fred' } 

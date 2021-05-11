@@ -1,0 +1,4 @@
+PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+PREFIX : <http://example.org/>
+SELECT * {?s foaf:knows ?o } VALUES (?s) { (:a) (:b) }
+
