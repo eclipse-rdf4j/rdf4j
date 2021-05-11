@@ -183,6 +183,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	private Map<String, String> additionalHttpHeaders = Collections.emptyMap();
 
+	private boolean passThroughEnabled = true;
+
 	public SPARQLProtocolSession(HttpClient client, ExecutorService executor) {
 		this.httpClient = client;
 		this.httpContext = new HttpClientContext();
@@ -879,6 +881,9 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 */
 	private boolean passThrough(HttpResponse response, FileFormat responseFormat, Sink sink)
 			throws IOException {
+		if (!isPassThroughEnabled()) {
+			return false;
+		}
 		if (sink.acceptsFileFormat(responseFormat)) {
 			InputStream in = response.getEntity().getContent();
 			if (sink instanceof CharSink) {
@@ -1243,5 +1248,25 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 */
 	protected HttpContext getHttpContext() {
 		return this.httpContext;
+	}
+
+	/**
+	 * Indicates if direct pass-through of the endpoint result to the supplied {@link Sink} is enabled.
+	 * 
+	 * @return the passThroughEnabled setting.
+	 */
+	public boolean isPassThroughEnabled() {
+		return passThroughEnabled;
+	}
+
+	/**
+	 * Configure direct pass-through of the endpoint result to the supplied {@link Sink}.
+	 * <p>
+	 * If not explicitly configured, the setting defaults to {@code true}.
+	 * 
+	 * @param passThroughEnabled the passThroughEnabled to set.
+	 */
+	public void setPassThroughEnabled(boolean passThroughEnabled) {
+		this.passThroughEnabled = passThroughEnabled;
 	}
 }
