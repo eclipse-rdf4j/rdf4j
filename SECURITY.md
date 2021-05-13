@@ -12,4 +12,4 @@ Eclipse RDF4J supports security updates for the following releases:
 
 ## Reporting a Vulnerability
 
-Eclipse RDF4J follows the [Eclipse Vulnerability Reporting Policy](https://www.eclipse.org/security/policy.php). 
+Eclipse RDF4J follows the [Eclipse Vulnerability Reporting Policy](https://www.eclipse.org/security/policy.php). We recommend that in case of suspected vulnerabilities you do not use the public issue tracker, but instead contact the Eclipse Security Team directly via security@eclipse.org.
