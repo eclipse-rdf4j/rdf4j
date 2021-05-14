@@ -257,8 +257,8 @@ public class QueryResultIO {
 	 * Parses a query result document, reporting the parsed solutions to the supplied TupleQueryResultHandler.
 	 *
 	 * @param in           An InputStream to read the query result document from.
-	 * @param format       The query result format of the document to parse. Supported formats are
-	 *                     {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
+	 * @param format       The query result format of the document to parse. See {@link TupleQueryResultFormat} for the
+	 *                     list of supported formats.
 	 * @param handler      The TupleQueryResultHandler to report the parse results to.
 	 * @param valueFactory
 	 * @throws IOException                           If an I/O error occurred while reading the query result document
@@ -289,8 +289,8 @@ public class QueryResultIO {
 	 * Parses a query result document and returns it as a TupleQueryResult object.
 	 *
 	 * @param in     An InputStream to read the query result document from.
-	 * @param format The query result format of the document to parse. Supported formats are
-	 *               {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
+	 * @param format The query result format of the document to parse. See {@link TupleQueryResultFormat} for the list
+	 *               of supported formats.
 	 * @return A TupleQueryResult containing the query results.
 	 * @throws IOException                           If an I/O error occurred while reading the query result document
 	 *                                               from the stream.
@@ -310,8 +310,8 @@ public class QueryResultIO {
 	 * TupleQueryResult be closed consistently when it is no longer required, to prevent resource leaks.
 	 *
 	 * @param in     An InputStream to read the query result document from.
-	 * @param format The query result format of the document to parse. Supported formats are
-	 *               {@link TupleQueryResultFormat#SPARQL} and {@link TupleQueryResultFormat#BINARY}.
+	 * @param format The query result format of the document to parse. See {@link TupleQueryResultFormat} for the list
+	 *               of supported formats.
 	 * @return A TupleQueryResult containing the query results, which must be closed to prevent resource leaks.
 	 * @throws IOException                           If an I/O error occurred while reading the query result document
 	 *                                               from the stream.
