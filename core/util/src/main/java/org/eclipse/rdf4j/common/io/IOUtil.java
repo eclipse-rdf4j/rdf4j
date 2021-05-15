@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.common.io;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.CharArrayWriter;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -481,5 +482,89 @@ public class IOUtil {
 		try (FileWriter writer = new FileWriter(file)) {
 			return transfer(reader, writer);
 		}
+	}
+
+	/**
+	 * <p>
+	 * Write an variable length (non-negative) integer.
+	 * </p>
+	 * <p>
+	 * The variable length integer encoding (also know as <i>varint</i> and <i>vint</i>) writes non-negative / unsigned
+	 * integers in a minimal number of bytes (binary octets). The encoding uses the most significant bit is used to
+	 * indicate whether another varint byte follows. The remaining 7 bits of every octet are used to store the binary
+	 * representation of the actual integer value. Note that the least significant bytes of the integer value are stored
+	 * before more significate bytes.
+	 * </p>
+	 * <p>
+	 * The table below shows a few examples of decimals encoded both as a 32-bit integer and as variable length binary:
+	 * 
+	 * <pre>
+	 * {@code
+	 * decimal |           32-bit integer            |          variable length binary
+	 *       0 | 00000000 00000000 00000000 00000000 |                   00000000   (1 byte)
+	 *       1 | 00000000 00000000 00000000 00000001 |                   00000001   (1 byte)
+	 *      42 | 00000000 00000000 00000000 00101010 |                   00101010   (1 byte)
+	 *     421 | 00000000 00000000 00000001 10100101 |          10100101 00000011   (2 bytes)
+	 *  100000 | 00000000 00000001 10000110 10100000 | 10100000 10001101 00000110   (3 bytes)
+	 * }
+	 * </pre>
+	 * </p>
+	 *
+	 * @param out   The {@link OutputStream} to write to.
+	 * @param value The {@code int} value to write.
+	 * @throws IOException If an error occurred while writing the integer.
+	 */
+	public static void writeVarInt(OutputStream out, int value) throws IOException {
+		if (value < 0) {
+			throw new IllegalArgumentException("Unable to write negative variable length integer");
+		}
+
+		while (value > 127) {
+			out.write(value & 0b01111111 | 0b10000000);
+			value >>>= 7;
+		}
+
+		out.write(value);
+	}
+
+	public static void main(String[] args) throws IOException {
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		writeVarInt(baos, 100000);
+		byte[] bytes = baos.toByteArray();
+		for (byte b : bytes) {
+			System.out.print(" ");
+			System.out.print(Integer.toBinaryString(0xff & b));
+		}
+
+		System.out.println();
+
+		ByteArrayInputStream bis = new ByteArrayInputStream(
+				new byte[] { (byte) 0b10100000, (byte) 0b10001101, (byte) 0b00000110 });
+		System.out.println("read: " + readVarInt(bis));
+	}
+
+	/**
+	 * Read an variable length integer. See {@link #writeVarInt(OutputStream, int)} for encoding details.
+	 * 
+	 * @param in The {@link InputStream} to read from.
+	 * @return The integer read.
+	 * @throws IOException If an error occurred while reading the integer.
+	 */
+	public static int readVarInt(InputStream in) throws IOException {
+		byte b = readByte(in);
+		int v = b & 0b01111111;
+		for (int i = 7; (b & 0b10000000) != 0; i += 7) {
+			b = readByte(in);
+			v |= (b & 0b01111111) << i;
+		}
+		return v;
+	}
+
+	private static byte readByte(InputStream in) throws IOException {
+		int read = in.read();
+		if (read == -1) {
+			throw new EOFException();
+		}
+		return (byte) read;
 	}
 }

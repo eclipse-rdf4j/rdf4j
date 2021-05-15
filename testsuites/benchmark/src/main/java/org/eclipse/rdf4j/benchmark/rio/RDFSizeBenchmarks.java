@@ -21,27 +21,32 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 
 import org.apache.commons.io.output.CountingOutputStream;
+import org.apache.commons.lang3.tuple.Pair;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.binary.BinaryRDFWriter;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
 
 /**
- * <p>This class benchmarks {@link RDFWriter}s in terms of output size given a number of datasets (see
+ * <p>
+ * This class benchmarks {@link RDFWriter}s in terms of output size given a number of datasets (see
  * {@link RDFTestDataset}. The output of the benchmark is the output size in megabytes, the time for parsing the input
- * dataset (!) and writing the output and a description of the writer used for each of the datasets.</p>
- * <p>Please note that the datasets from {@link RDFTestDataset} are fairly large files</p>
+ * dataset (!) and writing the output and a description of the writer used for each of the datasets.
+ * </p>
+ * <p>
+ * Please note that the datasets from {@link RDFTestDataset} are fairly large files
+ * </p>
  * 
  * @author Frens Jan Rumph
  */
@@ -58,34 +63,69 @@ public class RDFSizeBenchmarks {
 				RDFTestDataset.BSBM.download()
 		);
 
-		Map<String, Function<OutputStream, RDFWriter>> writers = new LinkedHashMap<>();
-		writers.put("binary, default settings", out -> new BinaryRDFWriter(out));
-		writers.put("binary, buffer size = 8k", out -> new BinaryRDFWriter(out, 8 * 1024));
+		Map<String, Pair<RDFFormat, WriterConfig>> writers = new LinkedHashMap<>();
+
+		writers.put("binary v1, buffer size = 100",
+				binaryV1(100L));
+		writers.put("binary v1, buffer size =  8k",
+				binaryV1(8192L));
+		writers.put("binary v2, buffer size = 100, UTF-16",
+				binaryV2(100L, UTF_16, false));
+		writers.put("binary v2, buffer size =  8k, UTF-16",
+				binaryV2(8192L, UTF_16, false));
+		writers.put("binary v2, buffer size = 100, UTF-8",
+				binaryV2(100L, UTF_8, false));
+		writers.put("binary v2, buffer size =  8k, UTF-8",
+				binaryV2(8192L, UTF_8, false));
+		writers.put("binary v2, buffer size = 100, UTF-16, with id-recycling",
+				binaryV2(100L, UTF_16, true));
+		writers.put("binary v2, buffer size =  8k, UTF-16, with id-recycling",
+				binaryV2(8192L, UTF_16, true));
+		writers.put("binary v2, buffer size = 100, UTF-8, with id-recycling",
+				binaryV2(100L, UTF_8, true));
+		writers.put("binary v2, buffer size =  8k, UTF-8, with id-recycling",
+				binaryV2(8192L, UTF_8, true));
 
 		for (File dataset : datasets) {
-			for (Map.Entry<String, Function<OutputStream, RDFWriter>> writer : writers.entrySet()) {
+			for (Map.Entry<String, Pair<RDFFormat, WriterConfig>> writer : writers.entrySet()) {
 				System.gc();
-				reportSize(dataset, writer.getKey(), writer.getValue());
+				reportSize(dataset, writer.getKey(), writer.getValue().getKey(), writer.getValue().getValue());
 			}
 		}
 	}
 
-	private static void reportSize(File path, String description, Function<OutputStream, RDFWriter> writer)
-			throws IOException {
-		String fileName = path.getName();
-		RDFFormat format = Rio.getParserFormatForFileName(fileName)
-				.orElseThrow(() -> new IllegalArgumentException("No format available for " + fileName));
-		InputStream is = new BufferedInputStream(new FileInputStream(path));
-		reportSize(fileName, is, description, format, writer);
+	private static Pair<RDFFormat, WriterConfig> binaryV1(long bufferSize) {
+		return Pair.of(RDFFormat.BINARY, new WriterConfig()
+				.set(BinaryRDFWriterSettings.VERSION, 1L)
+				.set(BinaryRDFWriterSettings.BUFFER_SIZE, bufferSize));
 	}
 
-	private static void reportSize(String dataset, InputStream is, String description, RDFFormat format,
-			Function<OutputStream, RDFWriter> writerConstructor) throws IOException {
+	private static Pair<RDFFormat, WriterConfig> binaryV2(long bufferSize, Charset charset, boolean recycleIds) {
+		WriterConfig config = new WriterConfig()
+				.set(BinaryRDFWriterSettings.VERSION, 2L)
+				.set(BinaryRDFWriterSettings.BUFFER_SIZE, bufferSize)
+				.set(BinaryRDFWriterSettings.CHARSET, charset.name())
+				.set(BinaryRDFWriterSettings.RECYCLE_IDS, recycleIds);
+		return Pair.of(RDFFormat.BINARY, config);
+	}
+
+	private static void reportSize(File path, String description, RDFFormat outputFormat, WriterConfig writerConfig)
+			throws IOException {
+		String fileName = path.getName();
+		RDFFormat inputFormat = Rio.getParserFormatForFileName(fileName)
+				.orElseThrow(() -> new IllegalArgumentException("No format available for " + fileName));
+		InputStream is = new BufferedInputStream(new FileInputStream(path));
+		reportSize(fileName, is, description, inputFormat, outputFormat, writerConfig);
+	}
+
+	private static void reportSize(String dataset, InputStream is, String description, RDFFormat inputFormat,
+			RDFFormat outputFormat, WriterConfig writerConfig) throws IOException {
 
 		CountingOutputStream os = new CountingOutputStream(NULL_OUTPUT_STREAM);
-		RDFWriter writer = writerConstructor.apply(os);
+		RDFWriter writer = Rio.createWriter(outputFormat, os);
+		writer.setWriterConfig(writerConfig);
 
-		RDFParser parser = Rio.createParser(format);
+		RDFParser parser = Rio.createParser(inputFormat);
 		parser.setRDFHandler(writer);
 		// Verification of datasets is disabled because of encoding issues in the input data and it's not a critical
 		// part of the benchmarking.
