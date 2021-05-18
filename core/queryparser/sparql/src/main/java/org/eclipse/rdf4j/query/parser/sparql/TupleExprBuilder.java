@@ -1545,7 +1545,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				pelist.addElement(pe);
 			}
 
-			return new Distinct(new Projection(zeroOne, pelist));
+			return new Distinct(new Projection(zeroOne, pelist, false));
 		}
 
 		// nothing to modify
