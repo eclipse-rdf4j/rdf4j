@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
 import org.xml.sax.SAXException;
 
 /**
@@ -76,7 +77,10 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 
 	@Override
 	public void startTag(String tagName, Map<String, String> atts, String text) throws SAXException {
-		if (TransactionXMLConstants.URI_TAG.equals(tagName)) {
+		if (TransactionXMLConstants.TRIPLE_TAG.equals(tagName)) {
+			// fixes GH-3048
+			parsedValues.add(RDFStarUtil.fromRDFEncodedValue(valueFactory.createIRI(text)));
+		} else if (TransactionXMLConstants.URI_TAG.equals(tagName)) {
 			parsedValues.add(valueFactory.createIRI(text));
 		} else if (TransactionXMLConstants.BNODE_TAG.equals(tagName)) {
 			parsedValues.add(valueFactory.createBNode(text));
