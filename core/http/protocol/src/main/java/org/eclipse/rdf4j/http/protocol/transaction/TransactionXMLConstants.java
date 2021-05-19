@@ -27,6 +27,8 @@ interface TransactionXMLConstants {
 
 	public static final String NULL_TAG = "null";
 
+	public static final String TRIPLE_TAG = "triple";
+
 	public static final String URI_TAG = "uri";
 
 	public static final String BNODE_TAG = "bnode";
