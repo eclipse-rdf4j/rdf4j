@@ -172,9 +172,9 @@ public class NativeStoreBenchmark {
 
 		File file = Files.newTemporaryFolder();
 
-		NotifyingSail shaclSail = new NativeStore(file, "spoc,ospc,psoc");
+		NotifyingSail nativeStore = new NativeStore(file, "spoc,ospc,psoc");
 
-		SailRepository sailRepository = new SailRepository(shaclSail);
+		SailRepository sailRepository = new SailRepository(nativeStore);
 		sailRepository.init();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {

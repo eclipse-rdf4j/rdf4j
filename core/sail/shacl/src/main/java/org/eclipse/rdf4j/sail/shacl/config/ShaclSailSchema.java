@@ -62,6 +62,7 @@ public class ShaclSailSchema {
 
 	public final static IRI VALIDATION_RESULTS_LIMIT_TOTAL = create("validationResultsLimitTotal");
 	public final static IRI VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT = create("validationResultsLimitPerConstraint");
+	public final static IRI TRANSACTIONAL_VALIDATION_LIMIT = create("transactionalValidationLimit");
 
 	private static IRI create(String localName) {
 		return iri(NAMESPACE, localName);

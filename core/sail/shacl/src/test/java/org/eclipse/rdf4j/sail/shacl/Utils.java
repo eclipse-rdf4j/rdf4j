@@ -85,6 +85,12 @@ public class Utils {
 		return repo;
 	}
 
+	public static SailRepository getInitializedShaclRepository(String shapeData) throws IOException {
+		SailRepository repo = new SailRepository(new ShaclSail(new MemoryStore()));
+		Utils.loadShapeData(repo, shapeData);
+		return repo;
+	}
+
 	public static ShaclSail getInitializedShaclSail(String shapeData) throws IOException {
 		ShaclSail sail = new ShaclSail(new MemoryStore());
 		Utils.loadShapeData(sail, shapeData);
