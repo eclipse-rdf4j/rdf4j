@@ -18,7 +18,7 @@
 			<id>jeenbroekstra</id>
 			<name>Jeen Broekstra</name>
 			<email>jeen@fastmail.com</email>
-			<timezone>GMT+10</timezone>
+			<timezone>AEST</timezone>
 		</developer>
 		<developer>
 			<id>hmottestad</id>
