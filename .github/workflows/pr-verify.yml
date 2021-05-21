@@ -47,9 +47,9 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-jdk1.8-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
-          ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
+          ${{ runner.os }}-jdk1.8-maven-
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
@@ -78,9 +78,9 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-jdk1.8-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
-          ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
+          ${{ runner.os }}-jdk1.8-maven-
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
