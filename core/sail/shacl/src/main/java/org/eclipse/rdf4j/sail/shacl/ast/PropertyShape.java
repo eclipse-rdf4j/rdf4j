@@ -127,32 +127,44 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup,
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
-		if (isDeactivated()) {
-			return new EmptyNode();
+
+		if (deactivated) {
+			return ValidationQuery.Deactivated.getInstance();
 		}
 
-		PlanNode union = new EmptyNode();
+		ValidationQuery validationQuery = constraintComponents.stream()
+				.map(c -> {
+					ValidationQuery validationQuery1 = c.generateSparqlValidationQuery(connectionsGroup,
+							logValidationPlans, negatePlan,
+							negateChildren, Scope.propertyShape);
+					if (!(c instanceof PropertyShape)) {
+						return validationQuery1.withConstraintComponent(c.getConstraintComponent());
+					}
+					return validationQuery1;
+				})
+				.reduce(ValidationQuery::union)
+				.orElseThrow(IllegalStateException::new);
 
-		for (ConstraintComponent constraintComponent : constraintComponents) {
-			PlanNode validationPlanNode = constraintComponent
-					.generateSparqlValidationPlan(connectionsGroup, logValidationPlans, negatePlan, false,
-							Scope.propertyShape);
+		// since we split our shapes by constraint component we know that we will only have 1 constraint component
+		// unless we are within a logical operator like sh:not, in which case we don't need to create a validation
+		// report since sh:detail is not supported for sparql based validation
+		if (constraintComponents.size() == 1 && !(constraintComponents.get(0) instanceof PropertyShape)) {
+			validationQuery.withShape(this);
+			validationQuery.withSeverity(getSeverity());
+			validationQuery.makeCurrentStateValidationReport();
 
-			if (!(constraintComponent instanceof PropertyShape)) {
-				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
-					return new ValidationResult(t.getActiveTarget(), t.getValue(), this,
-							constraintComponent.getConstraintComponent(), getSeverity(), t.getScope());
-				});
-			}
-
-			validationPlanNode = new Unique(new TargetChainPopper(validationPlanNode), true);
-
-			union = new UnionNode(union, validationPlanNode);
 		}
 
-		return union;
+		if (scope == Scope.propertyShape) {
+			validationQuery.popTargetChain();
+		} else {
+			validationQuery.shiftToNodeShape();
+		}
+
+		return validationQuery;
+
 	}
 
 	@Override
@@ -245,19 +257,11 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public ValidationApproach getPreferedValidationApproach() {
+	public ValidationApproach getPreferredValidationApproach(ConnectionsGroup connectionsGroup) {
 		return constraintComponents.stream()
-				.map(ConstraintComponent::getPreferedValidationApproach)
-				.reduce(ValidationApproach::reduce)
-				.orElse(ValidationApproach.Transactional);
-	}
-
-	@Override
-	public Set<ValidationApproach> getSupportedValidationApproaches() {
-		return constraintComponents.stream()
-				.map(ConstraintComponent::getSupportedValidationApproaches)
-				.flatMap(Set::stream)
-				.collect(Collectors.toSet());
+				.map(constraintComponent -> constraintComponent.getPreferredValidationApproach(connectionsGroup))
+				.reduce(ValidationApproach::reducePreferred)
+				.orElse(ValidationApproach.MOST_COMPATIBLE);
 	}
 
 	public Path getPath() {

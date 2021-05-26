@@ -125,8 +125,27 @@ public class SPARQLProtocolSessionTest {
 		SPARQLStarResultsXMLWriter handler = Mockito.spy(new SPARQLStarResultsXMLWriter(out));
 		sparqlSession.sendTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o}", null, null, true, -1, handler);
 
-		// SPARQL* XML sink should accept SPARQL/XML data and pass directly to OutputStream
+		// SPARQL-star XML sink should accept SPARQL/XML data and pass directly to OutputStream
 		verify(handler, never()).startQueryResult(anyList());
+
+		// check that the OutputStream received content in XML format
+		assertThat(out.toString()).startsWith("<");
+	}
+
+	@Test
+	public void testTupleQuery_Passthrough_ConfiguredFalse() throws Exception {
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list.xml")));
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		SPARQLStarResultsXMLWriter handler = Mockito.spy(new SPARQLStarResultsXMLWriter(out));
+		sparqlSession.setPassThroughEnabled(false);
+		sparqlSession.sendTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o}", null, null, true, -1, handler);
+
+		// If not passed through, the QueryResultWriter methods should have been invoked
+		verify(handler, times(1)).startQueryResult(anyList());
 
 		// check that the OutputStream received content in XML format
 		assertThat(out.toString()).startsWith("<");

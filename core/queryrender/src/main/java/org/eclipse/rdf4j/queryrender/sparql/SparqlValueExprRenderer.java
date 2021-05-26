@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
@@ -18,9 +19,11 @@ import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.In;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsResource;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Label;
@@ -197,7 +200,8 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 */
 	@Override
 	public void meet(FunctionCall theOp) throws Exception {
-		mBuffer.append("<").append(theOp.getURI()).append(">(");
+		mBuffer.append(knownFunctionsUriReduction(theOp.getURI())).append("(");
+
 		boolean aFirst = true;
 		for (ValueExpr aArg : theOp.getArgs()) {
 			if (!aFirst) {
@@ -327,6 +331,14 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 * @inheritDoc
 	 */
 	@Override
+	public void meet(IsNumeric theOp) throws Exception {
+		unaryMeet("isNumeric", theOp);
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	@Override
 	public void meet(IsResource theOp) throws Exception {
 		// there's no isResource method in SPARQL, so lets serialize this as not
 		// isLiteral -- if something is not a literal
@@ -342,6 +354,14 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	@Override
 	public void meet(IsURI theOp) throws Exception {
 		unaryMeet("isURI", theOp);
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	@Override
+	public void meet(IRIFunction theOp) throws Exception {
+		unaryMeet("IRI", theOp);
 	}
 
 	/**
@@ -424,5 +444,127 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 		mBuffer.append(" ").append(theOpStr).append("(");
 		theOp.getArg().visit(this);
 		mBuffer.append(")");
+	}
+
+	private String knownFunctionsUriReduction(String functionUri) {
+		switch (functionUri.toLowerCase()) {
+		// Functional Forms
+
+		// Functions on RDF Terms
+		case "strdt":
+			return "strdt";
+
+		case "strlang":
+			return "strlang";
+
+		case "uuid":
+			return "uuid";
+
+		case "struuid":
+			return "struuid";
+
+		// Functions on Strings
+		case "http://www.w3.org/2005/xpath-functions#string-length":
+			return "strlen";
+
+		case "http://www.w3.org/2005/xpath-functions#substring":
+			return "substr";
+
+		case "http://www.w3.org/2005/xpath-functions#upper-case":
+			return "ucase";
+
+		case "http://www.w3.org/2005/xpath-functions#lower-case":
+			return "lcase";
+
+		case "http://www.w3.org/2005/xpath-functions#starts-with":
+			return "strstarts";
+
+		case "http://www.w3.org/2005/xpath-functions#ends-with":
+			return "strends";
+
+		case "http://www.w3.org/2005/xpath-functions#contains":
+			return "contains";
+
+		case "http://www.w3.org/2005/xpath-functions#substring-before":
+			return "strbefore";
+
+		case "http://www.w3.org/2005/xpath-functions#substring-after":
+			return "strafter";
+
+		case "http://www.w3.org/2005/xpath-functions#encode-for-uri":
+			return "encode_for_uri";
+
+		case "http://www.w3.org/2005/xpath-functions#concat":
+			return "concat";
+
+		case "http://www.w3.org/2005/xpath-functions#matches":
+			return "regex";
+
+		case "http://www.w3.org/2005/xpath-functions#replace":
+			return "replace";
+
+		// Functions on Numerics
+		case "http://www.w3.org/2005/xpath-functions#numeric-abs":
+			return "abs";
+
+		case "http://www.w3.org/2005/xpath-functions#numeric-round":
+			return "round";
+
+		case "http://www.w3.org/2005/xpath-functions#numeric-ceil":
+			return "ceil";
+
+		case "http://www.w3.org/2005/xpath-functions#numeric-floor":
+			return "floor";
+
+		case "rand":
+			return "rand";
+
+		// Functions on Dates and Times
+		case "now":
+			return "now";
+
+		case "http://www.w3.org/2005/xpath-functions#year-from-datetime":
+			return "year";
+
+		case "http://www.w3.org/2005/xpath-functions#month-from-datetime":
+			return "month";
+
+		case "http://www.w3.org/2005/xpath-functions#day-from-datetime":
+			return "day";
+
+		case "http://www.w3.org/2005/xpath-functions#hours-from-datetime":
+			return "hours";
+
+		case "http://www.w3.org/2005/xpath-functions#minutes-from-datetime":
+			return "minutes";
+
+		case "http://www.w3.org/2005/xpath-functions#seconds-from-datetime":
+			return "seconds";
+
+		case "http://www.w3.org/2005/xpath-functions#timezone-from-datetime":
+			return "timezone";
+
+		case "tz":
+			return "tz";
+
+		// Hash Functions
+		case "md5":
+			return "md5";
+
+		case "sha1":
+			return "sha1";
+
+		case "sha256":
+			return "sha256";
+
+		case "sha384":
+			return "sha384";
+
+		case "sha512":
+			return "sha512";
+
+		default:
+			return "<" + functionUri + ">";
+		}
 	}
 }

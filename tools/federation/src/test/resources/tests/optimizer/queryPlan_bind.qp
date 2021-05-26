@@ -5,9 +5,9 @@ QueryRoot
          ProjectionElem "label"
       NJoin
          Extension
+            SingletonSet
             ExtensionElem (type)
                ValueConstant (value=http://namespace3.org/Project)
-            SingletonSet
          StatementSourcePattern
             Var (name=project)
             Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)

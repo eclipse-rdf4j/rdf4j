@@ -215,11 +215,11 @@ public class BasicParserSettings {
 			Namespaces.DEFAULT_RDF4J);
 
 	/**
-	 * Boolean setting for parser to determine whether it should process RDF* triples encoded as RDF-compatible special
-	 * IRIs back to RDF* values. These IRIs start with urn:rdf4j:triple: followed by the base64-encoding of the
-	 * N-Triples serialization of the RDF* triple value.
+	 * Boolean setting for parser to determine whether it should process RDF-star triples encoded as RDF-compatible
+	 * special IRIs back to RDF-star values. These IRIs start with urn:rdf4j:triple: followed by the base64-encoding of
+	 * the N-Triples serialization of the RDF-star triple value.
 	 * <p>
-	 * Parsers that support RDF* natively will honour this setting too.
+	 * Parsers that support RDF-star natively will honour this setting too.
 	 * <p>
 	 * Defaults to true.
 	 * <p>
@@ -227,7 +227,7 @@ public class BasicParserSettings {
 	 */
 	public static final RioSetting<Boolean> PROCESS_ENCODED_RDF_STAR = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.process_encoded_rdf_star",
-			"Converts RDF* triples encoded as RDF-compatible IRIs back to triple values", Boolean.TRUE);
+			"Converts RDF-star triples encoded as RDF-compatible IRIs back to triple values", Boolean.TRUE);
 
 	static {
 		List<DatatypeHandler> defaultDatatypeHandlers = new ArrayList<>(5);

@@ -29,7 +29,7 @@ public class NativeStoreCustomInferencingTest extends CustomGraphQueryInferencer
 	@Override
 	protected NotifyingSail newSail() {
 		try {
-			return new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc");
+			return new NativeStore(tempDir.newFolder(), "spoc,posc");
 		} catch (IOException e) {
 			fail(e.getMessage());
 			throw new AssertionError(e);

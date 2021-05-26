@@ -14,12 +14,12 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
- * Writer for SPARQL* JSON results. This is equivalent to the SPARQL JSON writer with the addition of support for RDF*
- * triples. See {@link SPARQLStarResultsJSONConstants} for a description of the RDF* extension.
+ * Writer for SPARQL-star JSON results. This is equivalent to the SPARQL JSON writer with the addition of support for
+ * RDF-star triples. See {@link SPARQLStarResultsJSONConstants} for a description of the RDF-star extension.
  *
  * @author Pavel Mihaylov
- * @implNote the actual {@link SPARQLResultsJSONWriter} itself already supports writing RDF* triples according to the
- *           extension. This subclass functions as an anchor point for the custom
+ * @implNote the actual {@link SPARQLResultsJSONWriter} itself already supports writing RDF-star triples according to
+ *           the extension. This subclass functions as an anchor point for the custom
  *           {@link TupleQueryResultFormat#JSON_STAR} content type.
  */
 public class SPARQLStarResultsJSONWriter extends SPARQLResultsJSONWriter implements TupleQueryResultWriter {
@@ -39,7 +39,7 @@ public class SPARQLStarResultsJSONWriter extends SPARQLResultsJSONWriter impleme
 
 	@Override
 	public boolean acceptsFileFormat(FileFormat format) {
-		// since SPARQL*/JSON is a superset of regular SPARQL/JSON, this Sink also accepts regular SPARQL/JSON
+		// since SPARQL-star/JSON is a superset of regular SPARQL/JSON, this Sink also accepts regular SPARQL/JSON
 		// serialization
 		return super.acceptsFileFormat(format) || TupleQueryResultFormat.JSON.equals(format);
 	}

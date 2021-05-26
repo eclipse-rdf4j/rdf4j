@@ -86,7 +86,7 @@ public class ValueComparator implements Comparator<Value> {
 			return 1;
 		}
 
-		// 5. RDF* triples
+		// 5. RDF-star triples
 		return compareTriples((Triple) o1, (Triple) o2);
 	}
 

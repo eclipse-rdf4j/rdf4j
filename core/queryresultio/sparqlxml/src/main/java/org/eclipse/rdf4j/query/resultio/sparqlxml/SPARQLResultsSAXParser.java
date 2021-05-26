@@ -82,7 +82,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 	private QueryResultHandler handler;
 
 	/**
-	 * stack for handling nested RDF* triples
+	 * stack for handling nested RDF-star triples
 	 */
 	private Deque<TripleContainer> tripleStack = new ArrayDeque<>();
 
@@ -201,7 +201,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 		case S_TAG:
 			currentTriple = tripleStack.peek();
 			if (currentTriple.getSubject() != null) {
-				throw new SAXException("RDF* triple subject defined twice");
+				throw new SAXException("RDF-star triple subject defined twice");
 			}
 			if (currentValue instanceof Resource) {
 				currentTriple.setSubject((Resource) currentValue);
@@ -213,7 +213,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 		case P_TAG:
 			currentTriple = tripleStack.peek();
 			if (currentTriple.getPredicate() != null) {
-				throw new SAXException("RDF* triple predicate defined twice");
+				throw new SAXException("RDF-star triple predicate defined twice");
 			}
 			if (currentValue instanceof IRI) {
 				currentTriple.setPredicate((IRI) currentValue);
@@ -225,7 +225,7 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 		case O_TAG:
 			currentTriple = tripleStack.peek();
 			if (currentTriple.getObject() != null) {
-				throw new SAXException("RDF* triple object defined twice");
+				throw new SAXException("RDF-star triple object defined twice");
 			}
 			currentTriple.setObject(currentValue);
 			break;

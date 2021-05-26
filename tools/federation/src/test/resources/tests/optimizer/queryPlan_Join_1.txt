@@ -4,8 +4,6 @@ QueryRoot
          ProjectionElem "person"
       NUnion
          Extension (new scope)
-            ExtensionElem (nameOut)
-               Var (name=name)
             EmptyNJoin
                ExclusiveStatement
                   Var (name=person)
@@ -16,6 +14,8 @@ QueryRoot
                   Var (name=person)
                   Var (name=_const_4240a169_uri, value=urn:doesNotExistProp, anonymous)
                   Var (name=obj)
+            ExtensionElem (nameOut)
+               Var (name=name)
          ExclusiveStatement
             Var (name=person)
             Var (name=_const_ea9562d5_uri, value=http://xmlns.com/foaf/0.1/interest, anonymous)

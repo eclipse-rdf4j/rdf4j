@@ -42,6 +42,9 @@ public class SPARQLRepositoryFactory implements RepositoryFactory {
 			} else {
 				result = new SPARQLRepository(httpConfig.getQueryEndpointUrl());
 			}
+			if (httpConfig.getPassThroughEnabled() != null) {
+				result.setPassThroughEnabled(httpConfig.getPassThroughEnabled());
+			}
 		} else {
 			throw new RepositoryConfigException("Invalid configuration class: " + config.getClass());
 		}

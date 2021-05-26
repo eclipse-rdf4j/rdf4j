@@ -1,0 +1,5 @@
+SELECT * {
+  ?a ?b ?c.
+  FILTER (?a IN (1, 2, 3))
+  FILTER (?c NOT IN (1, 2, 3))
+}

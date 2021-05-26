@@ -644,7 +644,7 @@ public class Values {
 	/* triple factory methods */
 
 	/**
-	 * Creates a new {@link Triple RDF* embedded triple} with the supplied subject, predicate, and object.
+	 * Creates a new {@link Triple RDF-star embedded triple} with the supplied subject, predicate, and object.
 	 *
 	 * @param subject   the Triple subject
 	 * @param predicate the Triple predicate
@@ -659,7 +659,7 @@ public class Values {
 	}
 
 	/**
-	 * Creates a new {@link Triple RDF* embedded triple} with the supplied subject, predicate, and object.
+	 * Creates a new {@link Triple RDF-star embedded triple} with the supplied subject, predicate, and object.
 	 * 
 	 * @param vf        the {@link ValueFactory} to use for creation of the {@link Triple}
 	 * @param subject   the Triple subject
@@ -679,7 +679,7 @@ public class Values {
 	}
 
 	/**
-	 * Creates a new {@link Triple RDF* embedded triple} using the subject, predicate and object from the supplied
+	 * Creates a new {@link Triple RDF-star embedded triple} using the subject, predicate and object from the supplied
 	 * {@link Statement}.
 	 *
 	 * @param statement the {@link Statement} from which to construct a {@link Triple}
@@ -694,7 +694,7 @@ public class Values {
 	}
 
 	/**
-	 * Creates a new {@link Triple RDF* embedded triple} using the subject, predicate and object from the supplied
+	 * Creates a new {@link Triple RDF-star embedded triple} using the subject, predicate and object from the supplied
 	 * {@link Statement}.
 	 * 
 	 * @param vf        the {@link ValueFactory} to use for creation of the {@link Triple}

@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings;
 
 /**
  * @author Jeen Broesktra
@@ -29,7 +30,8 @@ public abstract class AbstractTriGWriterTest extends RDFWriterTest {
 				BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL,
 				BasicWriterSettings.PRETTY_PRINT,
 				BasicWriterSettings.INLINE_BLANK_NODES,
-				BasicWriterSettings.BASE_DIRECTIVE
+				BasicWriterSettings.BASE_DIRECTIVE,
+				TurtleWriterSettings.ABBREVIATE_NUMBERS
 		};
 	}
 }

@@ -310,7 +310,7 @@ public interface ValueFactory {
 	}
 
 	/**
-	 * Creates a new RDF* triple with the supplied subject, predicate and object.
+	 * Creates a new RDF-star triple with the supplied subject, predicate and object.
 	 *
 	 * @param subject   The statement's subject.
 	 * @param predicate The statement's predicate.

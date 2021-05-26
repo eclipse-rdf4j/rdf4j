@@ -7,19 +7,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc;
 
-import java.io.File;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+import org.junit.Rule;
+import org.junit.rules.TemporaryFolder;
 
 public class RDFSchemaNativeRepositoryConnectionTest extends RDFSchemaRepositoryConnectionTest {
-
-	private File dataDir;
+	@Rule
+	public TemporaryFolder tempDir = new TemporaryFolder();
 
 	public RDFSchemaNativeRepositoryConnectionTest(IsolationLevel level) {
 		super(level);
@@ -27,16 +27,6 @@ public class RDFSchemaNativeRepositoryConnectionTest extends RDFSchemaRepository
 
 	@Override
 	protected Repository createRepository() throws IOException {
-		dataDir = FileUtil.createTempDir("nativestore");
-		return new SailRepository(new ForwardChainingRDFSInferencer(new NativeStore(dataDir, "spoc")));
-	}
-
-	@Override
-	public void tearDown() throws Exception {
-		try {
-			super.tearDown();
-		} finally {
-			FileUtil.deleteDir(dataDir);
-		}
+		return new SailRepository(new ForwardChainingRDFSInferencer(new NativeStore(tempDir.newFolder(), "spoc")));
 	}
 }

@@ -87,7 +87,7 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 			Value obj) throws QueryEvaluationException {
 		try {
 			// In contrast to statement retrieval (which gets de-duplicated later on when handling things like
-			// projections and conversions) we need to make sure we de-duplicate the RDF* triples here.
+			// projections and conversions) we need to make sure we de-duplicate the RDF-star triples here.
 			return new DistinctIteration<>(new TriplesIteration(dataset.getTriples(subj, pred, obj)));
 		} catch (SailException e) {
 			throw new QueryEvaluationException(e);

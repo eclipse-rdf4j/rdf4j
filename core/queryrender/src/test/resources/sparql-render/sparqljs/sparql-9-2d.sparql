@@ -1,0 +1,6 @@
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+SELECT *
+  { 
+    ?x foaf:mbox <mailto:alice@example> .
+    ?x foaf:knows/foaf:knows/foaf:name ?name .
+  }

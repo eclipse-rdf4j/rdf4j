@@ -12,11 +12,12 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 
 /**
- * Parser for reading tuple query results formatted as SPARQL Results Documents, extended with support for RDF* triples
+ * Parser for reading tuple query results formatted as SPARQL Results Documents, extended with support for RDF-star
+ * triples
  *
  * @author Jeen Broekstra
- * @implNote the base class {@link SPARQLResultsXMLParser} already has full support for processing extended RDF* syntax.
- *           This class purely exists as a hook for the custom content type for
+ * @implNote the base class {@link SPARQLResultsXMLParser} already has full support for processing extended RDF-star
+ *           syntax. This class purely exists as a hook for the custom content type for
  *           {@link TupleQueryResultFormat#SPARQL_STAR}.
  */
 @Experimental

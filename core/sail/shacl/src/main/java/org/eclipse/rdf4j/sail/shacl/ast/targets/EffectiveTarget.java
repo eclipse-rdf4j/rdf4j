@@ -254,8 +254,14 @@ public class EffectiveTarget {
 		return chain.stream()
 				.map(EffectiveTargetObject::getQueryFragment)
 				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
+				.orElse("") + "\n";
 
+	}
+
+	public List<StatementMatcher.Variable> getAllTargetVariables() {
+		return chain.stream()
+				.map(c -> c.var)
+				.collect(Collectors.toCollection(ArrayList::new));
 	}
 
 	public enum Extend {

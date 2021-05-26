@@ -3,16 +3,18 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -20,7 +22,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.InnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.NonUniqueTargetLang;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
@@ -45,66 +46,53 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			boolean negatePlan, boolean negateChildren, Scope scope) {
-		assert !negateChildren : "There are no subplans!";
-		assert !negatePlan;
-
-		if (!getTargetChain().getPath().isPresent()) {
-			throw new IllegalStateException("UniqueLang only operates on paths");
-		}
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		String targetVarPrefix = "target_";
 
-		ComplexQueryFragment complexQueryFragment = getComplexQueryFragment(targetVarPrefix, connectionsGroup);
-
-		String query = complexQueryFragment.getQuery();
-
-		return new Select(connectionsGroup.getBaseConnection(), query, null, b -> {
-
-			List<String> targetVars = b.getBindingNames()
-					.stream()
-					.filter(s -> s.startsWith(targetVarPrefix))
-					.sorted()
-					.collect(Collectors.toList());
-
-			ValidationTuple validationTuple = new ValidationTuple(b, targetVars, scope, false);
-
-			return validationTuple;
-
-		});
-
-	}
-
-	private ComplexQueryFragment getComplexQueryFragment(String targetVarPrefix, ConnectionsGroup connectionsGroup) {
-
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, Scope.propertyShape,
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
 				connectionsGroup.getRdfsSubClassOfReasoner());
 		String query = effectiveTarget.getQuery(false);
 
-		StatementMatcher.Variable targetVar = effectiveTarget.getTargetVar();
+		StatementMatcher.Variable value1 = new StatementMatcher.Variable("value1");
 
 		String pathQuery1 = getTargetChain().getPath()
-				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(),
-						new StatementMatcher.Variable("value1"),
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value1,
 						connectionsGroup.getRdfsSubClassOfReasoner()))
-				.get();
+				.orElseThrow(IllegalStateException::new);
+
+		query += pathQuery1;
+
+		StatementMatcher.Variable value2 = new StatementMatcher.Variable("value2");
 
 		String pathQuery2 = getTargetChain().getPath()
-				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(),
-						new StatementMatcher.Variable("value2"),
+				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value2,
 						connectionsGroup.getRdfsSubClassOfReasoner()))
-				.get();
+				.orElseThrow(IllegalStateException::new);
 
-		query += "\n FILTER(EXISTS{" +
-				"\n" + query +
-				"\n" + pathQuery1 +
-				"\n" + pathQuery2 +
-				"FILTER(?value1 != ?value2 && lang(?value1) = lang(?value2) && lang(?value1) != \"\")" +
-				"} )";
+		query += String.join("\n", "",
+				"FILTER(",
+				"	EXISTS {",
+				"		" + pathQuery2,
+				"		FILTER(",
+				"			lang(?" + value2.getName() + ") != \"\" && ",
+				"			lang(?" + value1.getName() + ") != \"\" && ",
+				"			?" + value1.getName() + " != ?" + value2.getName() + " && ",
+				"			lang(?" + value1.getName() + ") = lang(?" + value2.getName() + ")",
+				"		)",
+				"	}",
+				")");
 
-		return new ComplexQueryFragment(query, targetVarPrefix, targetVar, null);
+		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
 
+		return new ValidationQuery(query, allTargetVariables, null, scope, getConstraintComponent(), null, null);
+
+	}
+
+	@Override
+	public ValidationApproach getOptimalBulkValidationApproach() {
+		return ValidationApproach.SPARQL;
 	}
 
 	@Override

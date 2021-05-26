@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * Function returning the predicate component of RDF* Triple reused the IRI of rdf:predicate as name
+ * Function returning the predicate component of RDF-star Triple reused the IRI of rdf:predicate as name
  *
  * @author damyan.ognyanov
  *

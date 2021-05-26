@@ -21,20 +21,20 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.trig.TriGParser;
 
 /**
- * RDF parser for TriG* (an extension of TriG that adds RDF* support).
+ * RDF parser for TriG-star (an extension of TriG that adds RDF-star support).
  *
  * @author Pavel Mihaylov
  */
 public class TriGStarParser extends TriGParser {
 	/**
-	 * Creates a new TriGStarParser that will use a {@link SimpleValueFactory} to create RDF* model objects.
+	 * Creates a new TriGStarParser that will use a {@link SimpleValueFactory} to create RDF-star model objects.
 	 */
 	public TriGStarParser() {
 		super();
 	}
 
 	/**
-	 * Creates a new TriGStarParser that will use the supplied ValueFactory to create RDF* model objects.
+	 * Creates a new TriGStarParser that will use the supplied ValueFactory to create RDF-star model objects.
 	 *
 	 * @param valueFactory A ValueFactory.
 	 */

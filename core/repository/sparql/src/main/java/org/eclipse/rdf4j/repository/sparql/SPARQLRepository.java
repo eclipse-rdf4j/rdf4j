@@ -54,6 +54,8 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 
 	private volatile Map<String, String> additionalHttpHeaders = Collections.emptyMap();
 
+	private Boolean passThroughEnabled;
+
 	/**
 	 * Create a new SPARQLRepository using the supplied endpoint URL for queries and updates.
 	 *
@@ -127,20 +129,30 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	}
 
 	/**
-	 * Creates a new {@link SPARQLProtocolSession} object.
+	 * Creates a new {@link SPARQLProtocolSession} object. The life-cycle of this is per-connection.
 	 *
 	 * @return a SPARQLProtocolSession object.
 	 */
-	protected SPARQLProtocolSession createHTTPClient() {
-		// initialize HTTP client
-		SPARQLProtocolSession httpClient = getHttpClientSessionManager().createSPARQLProtocolSession(queryEndpointUrl,
+	protected SPARQLProtocolSession createSPARQLProtocolSession() {
+		SPARQLProtocolSession session = getHttpClientSessionManager().createSPARQLProtocolSession(queryEndpointUrl,
 				updateEndpointUrl);
-		httpClient.setValueFactory(getValueFactory());
-		httpClient.setAdditionalHttpHeaders(additionalHttpHeaders);
+		session.setValueFactory(getValueFactory());
+		session.setAdditionalHttpHeaders(additionalHttpHeaders);
 		if (username != null) {
-			httpClient.setUsernameAndPassword(username, password);
+			session.setUsernameAndPassword(username, password);
 		}
-		return httpClient;
+		if (getPassThroughEnabled() != null) {
+			session.setPassThroughEnabled(getPassThroughEnabled());
+		}
+		return session;
+	}
+
+	/**
+	 * @deprecated use {@link #createSPARQLProtocolSession()} instead
+	 */
+	@Deprecated
+	protected SPARQLProtocolSession createHTTPClient() {
+		return createSPARQLProtocolSession();
 	}
 
 	@Override
@@ -148,7 +160,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 		if (!isInitialized()) {
 			init();
 		}
-		return new SPARQLConnection(this, createHTTPClient(), quadMode);
+		return new SPARQLConnection(this, createSPARQLProtocolSession(), quadMode);
 	}
 
 	@Override
@@ -243,5 +255,27 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	 */
 	public void enableQuadMode(boolean flag) {
 		this.quadMode = flag;
+	}
+
+	/**
+	 * Retrieve the passThroughEnabled setting to be used for any newly created {@link RepositoryConnection}s.
+	 * 
+	 * @return the passThroughEnabled setting. May be <code>null</code> if not explicitly configured.
+	 * 
+	 * @see SPARQLProtocolSession#isPassThroughEnabled()
+	 */
+	public Boolean getPassThroughEnabled() {
+		return passThroughEnabled;
+	}
+
+	/**
+	 * Set the passThroughEnabled configuration. Changing this will influence behavior of any new
+	 * {@link RepositoryConnection}s, but not of existing ones.
+	 * 
+	 * @param passThroughEnabled the passThroughEnabled to set
+	 * @see SPARQLProtocolSession#setPassThroughEnabled()
+	 */
+	public void setPassThroughEnabled(Boolean passThroughEnabled) {
+		this.passThroughEnabled = passThroughEnabled;
 	}
 }

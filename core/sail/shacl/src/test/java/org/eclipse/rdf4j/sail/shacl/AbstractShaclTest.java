@@ -178,6 +178,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/nodeKind/not",
 			"test-cases/nodeKind/simple",
 			"test-cases/nodeKind/simpleInversePath",
+			"test-cases/nodeKind/targetNode",
 			"test-cases/nodeKind/validateTarget",
 			"test-cases/or/class",
 			"test-cases/or/class2",
@@ -1065,6 +1066,8 @@ abstract public class AbstractShaclTest {
 		shaclSail.setEclipseRdf4jShaclExtensions(true);
 		shaclSail.setDashDataShapes(true);
 		shaclSail.setPerformanceLogging(false);
+
+		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 
 		repository.init();
 

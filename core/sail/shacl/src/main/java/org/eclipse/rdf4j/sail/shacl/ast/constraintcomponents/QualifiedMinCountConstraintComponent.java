@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LeftOuterJoin;
@@ -95,7 +96,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 	}
 
 	@Override
-	public PlanNode generateSparqlValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			boolean negatePlan, boolean negateChildren, Scope scope) {
 		assert scope == Scope.propertyShape;
 		throw new ShaclUnsupportedException();

@@ -1,0 +1,3 @@
+SELECT ?p WHERE {
+    ?p <http://xmlns.com/foaf/0.1/name> "York\ntest"@en.
+}

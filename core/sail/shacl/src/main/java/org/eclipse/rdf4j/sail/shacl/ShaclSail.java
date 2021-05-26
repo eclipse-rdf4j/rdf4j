@@ -19,7 +19,6 @@ import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
@@ -178,6 +177,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	private static final Model DASH_CONSTANTS;
 
+	// Temporary field used to control if the new SPARQL based validation should be enabled!
+	final boolean experimentalSparqlValidation;
+
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
 	 */
@@ -243,6 +245,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 		ReferenceQueue<ShaclSail> objectReferenceQueue = new ReferenceQueue<>();
 		startMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue), initialized,
 				executorService);
+		this.experimentalSparqlValidation = "true"
+				.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation"));
+
 	}
 
 	public ShaclSail() {
@@ -250,6 +255,9 @@ public class ShaclSail extends NotifyingSailWrapper {
 		ReferenceQueue<ShaclSail> objectReferenceQueue = new ReferenceQueue<>();
 		startMonitoring(objectReferenceQueue, new PhantomReference<>(this, objectReferenceQueue), initialized,
 				executorService);
+		this.experimentalSparqlValidation = "true"
+				.equalsIgnoreCase(System.getProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation"));
+
 	}
 
 	// This is used to keep track of the current connection, if the opening and closing of connections is done serially.

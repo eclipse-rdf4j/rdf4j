@@ -12,11 +12,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import java.io.File;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -28,11 +26,13 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTest {
-
-	private File dataDir;
+	@Rule
+	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	public LimitedSizeNativeStoreConnectionTest(IsolationLevel level) {
 		super(level);
@@ -40,17 +40,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 
 	@Override
 	protected Repository createRepository() throws IOException {
-		dataDir = FileUtil.createTempDir("nativestore");
-		return new SailRepository(new LimitedSizeNativeStore(dataDir, "spoc"));
-	}
-
-	@Override
-	public void tearDown() throws Exception {
-		try {
-			super.tearDown();
-		} finally {
-			FileUtil.deleteDir(dataDir);
-		}
+		return new SailRepository(new LimitedSizeNativeStore(tmpDir.newFolder(), "spoc"));
 	}
 
 	@Test

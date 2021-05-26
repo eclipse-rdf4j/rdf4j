@@ -13,6 +13,7 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.RDFJSONWriterSettings;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerationException;
@@ -50,9 +52,19 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharS
 
 	private final Writer writer;
 
+	private final RDFFormat actualFormat;
+
 	private Model graph;
 
-	private final RDFFormat actualFormat;
+	private Resource lastWrittenSubject;
+
+	private IRI lastWrittenPredicate;
+
+	private JsonGenerator jg;
+
+	private boolean isEmptyStream;
+
+	private boolean isStreaming;
 
 	public RDFJSONWriter(final OutputStream out, final RDFFormat actualFormat) {
 		this.actualFormat = actualFormat;
@@ -70,13 +82,48 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharS
 	}
 
 	@Override
+	public void startRDF() throws RDFHandlerException {
+		super.startRDF();
+		try {
+			isStreaming = getWriterConfig().get(RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES);
+			jg = configureNewJsonFactory().createGenerator(writer);
+			if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {
+				Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
+				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)
+						.withObjectIndenter(indenter);
+				jg.setPrettyPrinter(pp);
+			}
+			if (isStreaming) {
+				isEmptyStream = true;
+				lastWrittenPredicate = null;
+				lastWrittenSubject = null;
+				jg.writeStartObject();
+			} else {
+				graph = new TreeModel();
+			}
+		} catch (final IOException e) {
+			throw new RDFHandlerException(e);
+		}
+	}
+
+	@Override
 	public void endRDF() throws RDFHandlerException {
 		checkWritingStarted();
 		try {
-			try (final JsonGenerator jg = configureNewJsonFactory().createGenerator(this.writer);) {
-				RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
+			try {
+				if (isStreaming) {
+					if (!isEmptyStream) {
+						jg.writeEndArray();
+					}
+					jg.writeEndObject();
+					lastWrittenPredicate = null;
+					lastWrittenSubject = null;
+				} else {
+					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);
+				}
 			} finally {
-				this.writer.flush();
+				jg.close();
+				writer.flush();
 			}
 		} catch (final IOException e) {
 			throw new RDFHandlerException(e);
@@ -85,7 +132,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharS
 
 	@Override
 	public RDFFormat getRDFFormat() {
-		return this.actualFormat;
+		return actualFormat;
 	}
 
 	@Override
@@ -93,6 +140,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharS
 		final Set<RioSetting<?>> results = new HashSet<>(super.getSupportedSettings());
 
 		results.add(BasicWriterSettings.PRETTY_PRINT);
+		results.add(RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES);
 
 		return results;
 	}
@@ -111,13 +159,11 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharS
 
 	@Override
 	public void consumeStatement(final Statement statement) throws RDFHandlerException {
-		graph.add(statement);
-	}
-
-	@Override
-	public void startRDF() throws RDFHandlerException {
-		super.startRDF();
-		this.graph = new TreeModel();
+		if (isStreaming) {
+			consumeStreamingStatement(statement);
+		} else {
+			graph.add(statement);
+		}
 	}
 
 	/**
@@ -129,7 +175,6 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharS
 	 * @param jg       the {@link JsonGenerator} to write to.
 	 * @throws IOException
 	 * @throws JsonGenerationException
-	 * @throws JSONException
 	 */
 	public static void writeObject(final Value object, final Set<Resource> contexts, final JsonGenerator jg)
 			throws JsonGenerationException, IOException {
@@ -185,7 +230,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharS
 	}
 
 	public static void modelToRdfJsonInternal(final Model graph, final WriterConfig writerConfig,
-			final JsonGenerator jg) throws IOException, JsonGenerationException {
+			final JsonGenerator jg) throws IOException {
 		if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {
 			// SES-2011: Always use \n for consistency
 			Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;
@@ -216,7 +261,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharS
 	}
 
 	/**
-	 * Get an instance of JsonFactory configured using the settings from {@link #getParserConfig()}.
+	 * Get an instance of JsonFactory.
 	 *
 	 * @return A newly configured JsonFactory based on the currently enabled settings
 	 */
@@ -231,5 +276,46 @@ public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharS
 		nextJsonFactory.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
 
 		return nextJsonFactory;
+	}
+
+	/**
+	 * Consumes statement when RDF/JSON writer is streaming output.
+	 */
+	private void consumeStreamingStatement(final Statement statement) throws RDFHandlerException {
+		Resource subj = statement.getSubject();
+		IRI pred = statement.getPredicate();
+		Value obj = statement.getObject();
+		Resource context = statement.getContext();
+
+		try {
+			if (!subj.equals(lastWrittenSubject)) {
+				if (lastWrittenSubject != null) {
+					// close previous predicate-object array and then close the previous subject object
+					jg.writeEndArray();
+					jg.writeEndObject();
+					lastWrittenPredicate = null;
+				}
+
+				jg.writeObjectFieldStart(RDFJSONWriter.resourceToString(subj));
+				lastWrittenSubject = subj;
+			}
+
+			if (!pred.equals(lastWrittenPredicate)) {
+				if (lastWrittenPredicate != null) {
+					// close previous predicate array and then close the previous subject object
+					jg.writeEndArray();
+				}
+
+				jg.writeArrayFieldStart(pred.stringValue());
+				lastWrittenPredicate = pred;
+			}
+
+			writeObject(obj, Collections.singleton(context), jg);
+			if (isEmptyStream) {
+				isEmptyStream = false;
+			}
+		} catch (final IOException e) {
+			throw new RDFHandlerException(e);
+		}
 	}
 }

@@ -61,7 +61,7 @@ import java.io.DataOutput;
  * <li><tt>EMPTY_ROW</tt> (byte value: 9):<br>
  * This indicates a row with zero values.
  * <li><tt>TRIPLE</tt> (byte value: 10):<br>
- * This indicates an RDF* triple value. It is followed by the subject, predicate and object values of the triple.
+ * This indicates an RDF-star triple value. It is followed by the subject, predicate and object values of the triple.
  * <li><tt>ERROR</tt> (byte value: 126):<br>
  * This record indicates a error. The type of error is indicates by the byte directly following the record type marker:
  * <tt>1</tt> for a malformed query error, <tt>2</tt> for a query evaluation error. The error type byte is followed by

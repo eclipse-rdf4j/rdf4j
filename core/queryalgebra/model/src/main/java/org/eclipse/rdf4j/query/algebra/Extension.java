@@ -93,11 +93,10 @@ public class Extension extends UnaryTupleOperator {
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+		super.visitChildren(visitor);
 		for (ExtensionElem elem : elements) {
 			elem.visit(visitor);
 		}
-
-		super.visitChildren(visitor);
 	}
 
 	@Override

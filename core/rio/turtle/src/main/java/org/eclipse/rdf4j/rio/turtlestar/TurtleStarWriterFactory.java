@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 
 /**
- * An {@link RDFWriterFactory} for Turtle* writers.
+ * An {@link RDFWriterFactory} for Turtle-star writers.
  *
  * @author Pavel Mihaylov
  */

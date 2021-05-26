@@ -3,10 +3,13 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -16,6 +19,8 @@ import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -177,4 +182,63 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 		}
 	}
 
+	@Override
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+
+		String targetVarPrefix = "target_";
+
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
+				connectionsGroup.getRdfsSubClassOfReasoner());
+		String query = effectiveTarget.getQuery(false);
+
+		if (scope == Scope.nodeShape) {
+
+			query += "FILTER(?" + effectiveTarget.getTargetVar().getName() + " != "
+					+ stringRepresentationOfValue(hasValue) + ")\n";
+
+		} else {
+			StatementMatcher.Variable value = new StatementMatcher.Variable("value");
+
+			String pathQuery = getTargetChain().getPath()
+					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+							connectionsGroup.getRdfsSubClassOfReasoner()))
+					.orElseThrow(IllegalStateException::new);
+
+			query += "FILTER( " +
+					"NOT EXISTS{" +
+					"	BIND(" + stringRepresentationOfValue(hasValue) + " as ?" + value.getName() + ")\n" +
+					pathQuery +
+					"})";
+
+		}
+
+		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
+
+		return new ValidationQuery(query, allTargetVariables, null, scope, getConstraintComponent(), null, null);
+
+	}
+
+	private String stringRepresentationOfValue(Value value) {
+		if (value.isIRI()) {
+			return "<" + value + ">";
+		}
+		if (value.isLiteral()) {
+			IRI datatype = ((Literal) value).getDatatype();
+			if (datatype == null) {
+				return "\"" + value.stringValue() + "\"";
+			}
+			if (((Literal) value).getLanguage().isPresent()) {
+				return "\"" + value.stringValue() + "\"@" + ((Literal) value).getLanguage().get();
+			}
+			return "\"" + value.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+		}
+
+		throw new IllegalStateException(value.getClass().getSimpleName());
+	}
+
+	@Override
+	public ValidationApproach getOptimalBulkValidationApproach() {
+		return ValidationApproach.SPARQL;
+	}
 }

@@ -1,12 +1,8 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.Random;
 import java.util.stream.IntStream;
 
-import org.apache.commons.io.FileUtils;
-import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -16,31 +12,17 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Ignore;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 public class LongMultithreadedTransactions {
-
-	File file;
-
-	@After
-	public void after() {
-		try {
-			FileUtils.deleteDirectory(file);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	@Before
-	public void before() {
-		file = Files.newTemporaryFolder();
-	}
+	@Rule
+	public final TemporaryFolder tmpDir = new TemporaryFolder();
 
 	NotifyingSail getBaseSail() {
-		return new NativeStore(file);
+		return new NativeStore(tmpDir.getRoot());
 	}
 
 	@Test

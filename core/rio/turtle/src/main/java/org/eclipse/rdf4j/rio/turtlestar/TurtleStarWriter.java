@@ -18,7 +18,8 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
 
 /**
- * An extension of {@link TurtleWriter} that writes RDF* documents in the Turtle* format by including the RDF* triples.
+ * An extension of {@link TurtleWriter} that writes RDF-star documents in the Turtle-star format by including the
+ * RDF-star triples.
  *
  * @author Pavel Mihaylov
  */
@@ -68,7 +69,7 @@ public class TurtleStarWriter extends TurtleWriter {
 
 	@Override
 	public boolean acceptsFileFormat(FileFormat format) {
-		// since Turtle* is a superset of regular Turtle, this Sink also accepts regular Turtle
+		// since Turtle-star is a superset of regular Turtle, this Sink also accepts regular Turtle
 		// serialization
 		return super.acceptsFileFormat(format) || RDFFormat.TURTLE.equals(format);
 	}

@@ -7,11 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFParserFactory;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings;
 
 /**
  * @author Jeen Broekstra
@@ -29,7 +35,16 @@ public abstract class AbstractTurtleWriterTest extends RDFWriterTest {
 				BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL,
 				BasicWriterSettings.PRETTY_PRINT,
 				BasicWriterSettings.INLINE_BLANK_NODES,
-				BasicWriterSettings.BASE_DIRECTIVE
+				BasicWriterSettings.BASE_DIRECTIVE,
+				TurtleWriterSettings.ABBREVIATE_NUMBERS
 		};
+	}
+
+	protected Model getAbbrevTestModel() {
+		Model m = new LinkedHashModel();
+		m.add(Values.iri("http://www.example.com/double"), RDF.VALUE, Values.literal("1234567.89", XSD.DOUBLE));
+		m.add(Values.iri("http://www.example.com/int"), RDF.VALUE, Values.literal("-2", XSD.INTEGER));
+		m.add(Values.iri("http://www.example.com/decimal"), RDF.VALUE, Values.literal("55.66", XSD.DECIMAL));
+		return m;
 	}
 }

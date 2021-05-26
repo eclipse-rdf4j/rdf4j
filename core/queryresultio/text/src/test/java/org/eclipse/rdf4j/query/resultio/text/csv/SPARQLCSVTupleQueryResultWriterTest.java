@@ -32,13 +32,13 @@ public class SPARQLCSVTupleQueryResultWriterTest extends AbstractTupleQueryResul
 	}
 
 	@Override
-	@Ignore("pending implementation of RDF* extensions for the csv format")
+	@Ignore("pending implementation of RDF-star extensions for the csv format")
 	@Test
 	public void testRDFStarHandling_NoEncoding() throws Exception {
 	}
 
 	@Override
-	@Ignore("pending implementation of RDF* extensions for the csv format")
+	@Ignore("pending implementation of RDF-star extensions for the csv format")
 	@Test
 	public void testRDFStarHandling_DeepNesting() throws Exception {
 	}

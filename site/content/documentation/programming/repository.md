@@ -59,9 +59,13 @@ memStore.setSyncDelay(1000L);
 Repository repo = new SailRepository(memStore);
 ```
 
+ The MemoryStore is designed for datasets with fewer than 100,000 triples.
+
 ### Native RDF Repository
 
-A Native RDF Repository does not keep its data in main memory, but instead stores it directly to disk (in a binary format optimized for compact storage and fast retrieval). It is an efficient, scalable and fast solution for RDF storage of datasets that are too large to keep entirely in memory.
+The NativeStore saves data to disk in a binary format which is optimized for compact storage and fast retrieval. If there is sufficient physical memory, the Native store will act like the MemoryStore on most operating systems because the read/write commands will be cached by the OS.
+
+It is therefore an efficient, scalable and fast solution for datasets with up to 100 million triples (and probably even more).
 
 The code for creation of a Native RDF repository is almost identical to that of a main memory repository:
 
@@ -84,6 +88,20 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 File dataDir = new File("/path/to/datadir/");
 String indexes = "spoc,posc,cosp";
 Repository repo = new SailRepository(new NativeStore(dataDir, indexes));
+```
+
+{{< tag " New in RDF4J 3.7" >}}
+
+If a data directory is not set, a temporary directory will be created when the native store is initialized and (contrary to the previous examples) subsequently deleted when the repository is shut down.
+
+This is convenient when the repository is only used as a means to transform large RDF files.
+
+```java
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+...
+Repository repo = new SailRepository(new NativeStore());
 ```
 
 ### Elasticsearch RDF Repository

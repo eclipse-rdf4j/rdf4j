@@ -35,7 +35,7 @@ public class SchemaCachingRDFSInferencerNativeIsolationLevelTest extends SailIso
 	@Override
 	protected NotifyingSail createSail() throws SailException {
 		try {
-			return new SchemaCachingRDFSInferencer(new NativeStore(tempDir.newFolder("nativestore"), "spoc,posc"));
+			return new SchemaCachingRDFSInferencer(new NativeStore(tempDir.newFolder(), "spoc,posc"));
 		} catch (IOException e) {
 			throw new AssertionError(e);
 		}
