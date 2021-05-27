@@ -9,7 +9,7 @@
 	<artifactId>rdf4j-core</artifactId>
 	<packaging>pom</packaging>
 	<modules>
-		<module>util</module>
+		<module>common</module>
 		<module>model-api</module>
 		<module>model-vocabulary</module>
 		<module>model</module>
