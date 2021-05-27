@@ -684,8 +684,8 @@
 					<version>3.7.0</version>
 					<configuration>
 						<fork>true</fork>
-						<source>1.8</source>
-						<target>1.8</target>
+						<source>11</source>
+						<target>11</target>
 						<encoding>utf8</encoding>
 					</configuration>
 				</plugin>
