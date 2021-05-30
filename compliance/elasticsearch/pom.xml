@@ -16,6 +16,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
+					<forkCount>0</forkCount>
 					<systemPropertyVariables>
 						<tests.security.manager>false</tests.security.manager>
 					</systemPropertyVariables>

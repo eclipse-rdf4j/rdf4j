@@ -239,9 +239,9 @@
 			</build>
 		</profile>
 		<profile>
-			<id>doclint-java9-disable</id>
+			<id>doclint-disable</id>
 			<activation>
-				<jdk>[9,)</jdk>
+				<jdk>[11,)</jdk>
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
@@ -251,8 +251,8 @@
 		<profile>
 			<id>use-sonatype-snapshots</id>
 			<activation>
-				<!-- active on all Java 8 and higher builds by default -->
-				<jdk>[1.8,)</jdk>
+				<!-- active on all Java 11 and higher builds by default -->
+				<jdk>[11,)</jdk>
 			</activation>
 			<repositories>
 				<repository>
@@ -270,8 +270,8 @@
 		<profile>
 			<id>formatting</id>
 			<activation>
-				<!-- active on all Java 8 and higher builds by default -->
-				<jdk>[1.8,)</jdk>
+				<!-- active on all Java 11 and higher builds by default -->
+				<jdk>[11,)</jdk>
 			</activation>
 			<build>
 				<plugins>
