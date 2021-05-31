@@ -203,7 +203,7 @@
 						</executions>
 						<configuration>
 							<encoding>utf8</encoding>
-							<source>8</source>
+							<source>11</source>
 							<additionalparam>${javadoc.opts}</additionalparam>
 						</configuration>
 					</plugin>
@@ -239,19 +239,9 @@
 			</build>
 		</profile>
 		<profile>
-			<id>doclint-java8-disable</id>
+			<id>doclint-disable</id>
 			<activation>
-				<jdk>1.8</jdk>
-			</activation>
-			<properties>
-				<javadoc.opts>-Xdoclint:none</javadoc.opts>
-				<additional.j.option/>
-			</properties>
-		</profile>
-		<profile>
-			<id>doclint-java9-disable</id>
-			<activation>
-				<jdk>[9,)</jdk>
+				<jdk>[11,)</jdk>
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
@@ -261,8 +251,8 @@
 		<profile>
 			<id>use-sonatype-snapshots</id>
 			<activation>
-				<!-- active on all Java 8 and higher builds by default -->
-				<jdk>[1.8,)</jdk>
+				<!-- active on all Java 11 and higher builds by default -->
+				<jdk>[11,)</jdk>
 			</activation>
 			<repositories>
 				<repository>
@@ -280,8 +270,8 @@
 		<profile>
 			<id>formatting</id>
 			<activation>
-				<!-- active on all Java 8 and higher builds by default -->
-				<jdk>[1.8,)</jdk>
+				<!-- active on all Java 11 and higher builds by default -->
+				<jdk>[11,)</jdk>
 			</activation>
 			<build>
 				<plugins>
@@ -373,7 +363,7 @@
 		<httpcore.version>4.4.14</httpcore.version>
 		<jackson.version>2.11.4</jackson.version>
 		<jsonldjava.version>0.13.3</jsonldjava.version>
-		<last.japicmp.compare.version>3.1.4</last.japicmp.compare.version>
+		<last.japicmp.compare.version>3.6.3</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
 		<lucene.version>7.7.2</lucene.version>
 		<solr.version>7.7.2</solr.version>
@@ -681,11 +671,10 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-compiler-plugin</artifactId>
-					<version>3.7.0</version>
+					<version>3.8.1</version>
 					<configuration>
 						<fork>true</fork>
-						<source>11</source>
-						<target>11</target>
+						<release>11</release>
 						<encoding>utf8</encoding>
 					</configuration>
 				</plugin>
@@ -903,7 +892,7 @@
 				<plugin>
 					<groupId>com.github.siom79.japicmp</groupId>
 					<artifactId>japicmp-maven-plugin</artifactId>
-					<version>0.14.3</version>
+					<version>0.15.3</version>
 					<configuration>
 						<oldVersion>
 							<dependency>
@@ -920,20 +909,14 @@
 						</newVersion>
 						<parameter>
 							<onlyModified>true</onlyModified>
-							<breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
-							<breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+							<breakBuildOnBinaryIncompatibleModifications>false</breakBuildOnBinaryIncompatibleModifications>
+							<breakBuildOnSourceIncompatibleModifications>false</breakBuildOnSourceIncompatibleModifications>
 							<ignoreMissingOldVersion>true</ignoreMissingOldVersion>
 							<excludes>
 								<exclude>@org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>@org.eclipse.rdf4j.common.annotation.Experimental</exclude>
 								<exclude>org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>org.eclipse.rdf4j.common.annotation.Experimental</exclude>
-								<!-- GH-2538 bug fix, not considered backward incompatible -->
-								<exclude>org.eclipse.rdf4j.model.Namespace#equals(java.lang.Object)</exclude>
-								<exclude>org.eclipse.rdf4j.model.Namespace#hashCode()</exclude>
-								<!-- GH-2350 introduced with defaults, so false positive -->
-								<exclude>org.eclipse.rdf4j.IsolationLevel#getValue()</exclude>
-								<exclude>org.eclipse.rdf4j.IsolationLevel#getName()</exclude>
 							</excludes>
 							<overrideCompatibilityChangeParameters>
 								<overrideCompatibilityChangeParameter>
@@ -966,26 +949,6 @@
 			</plugins>
 		</pluginManagement>
 		<plugins>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>animal-sniffer-maven-plugin</artifactId>
-				<version>1.20</version>
-				<executions>
-					<execution>
-						<phase>test</phase>
-						<goals>
-							<goal>check</goal>
-						</goals>
-					</execution>
-				</executions>
-				<configuration>
-					<signature>
-						<groupId>org.codehaus.mojo.signature</groupId>
-						<artifactId>java18</artifactId>
-						<version>1.0</version>
-					</signature>
-				</configuration>
-			</plugin>
 			<plugin>
 				<groupId>net.revelc.code.formatter</groupId>
 				<artifactId>formatter-maven-plugin</artifactId>
