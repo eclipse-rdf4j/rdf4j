@@ -3,10 +3,8 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.math.BigInteger;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
@@ -54,6 +52,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
+
 		PlanNode target = getTargetChain()
 				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 				.getPlanNode(connectionsGroup, scope, true);
@@ -77,7 +77,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				getTargetChain().getPath()
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-								connectionsGroup.getRdfsSubClassOfReasoner()),
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 				false,
 				null,
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -91,7 +91,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
-		return new EmptyNode();
+		return EmptyNode.getInstance();
 	}
 
 	@Override
@@ -104,6 +104,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		String targetVarPrefix = "target_";
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
 				connectionsGroup.getRdfsSubClassOfReasoner());
@@ -114,7 +115,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 			String pathQuery = getTargetChain().getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner()))
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
 					.orElseThrow(IllegalStateException::new);
 
 			query += "\nFILTER(NOT EXISTS{" + pathQuery + "})";
@@ -128,7 +129,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 				String pathQuery = getTargetChain().getPath()
 						.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-								connectionsGroup.getRdfsSubClassOfReasoner()))
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
 						.orElseThrow(IllegalStateException::new);
 
 				condition.append(pathQuery).append("\n");

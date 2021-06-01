@@ -11,6 +11,8 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 
+import java.util.Objects;
+
 /**
  * @author Håvard Ottestad
  */
@@ -38,5 +40,25 @@ public class DatatypeFilter extends FilterPlanNode {
 	@Override
 	public String toString() {
 		return "DatatypeFilter{" + "datatype=" + Formatter.prefix(datatype) + '}';
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		DatatypeFilter that = (DatatypeFilter) o;
+		return datatype.equals(that.datatype);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), datatype);
 	}
 }

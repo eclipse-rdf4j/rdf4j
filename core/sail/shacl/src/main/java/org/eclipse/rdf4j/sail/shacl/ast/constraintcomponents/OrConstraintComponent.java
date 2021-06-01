@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
-import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EqualsJoinValue;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -97,14 +97,13 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
-		// if (scope == Scope.nodeShape) {
 
 		PlanNodeProvider planNodeProvider;
 
 		if (overrideTargetNode != null) {
 			planNodeProvider = overrideTargetNode;
 		} else {
-			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, scope);
+			planNodeProvider = new BufferedSplitter(getAllTargetsPlan(connectionsGroup, scope));
 		}
 
 		PlanNode orPlanNodes = or.stream()
@@ -116,7 +115,7 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 				)
 				)
 				.reduce((a, b) -> new EqualsJoinValue(a, b, false))
-				.orElse(new EmptyNode());
+				.orElse(EmptyNode.getInstance());
 
 		PlanNode invalid = new Unique(orPlanNodes, false);
 
@@ -142,8 +141,9 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 
 		PlanNode planNode = or.stream()
 				.map(or -> or.getAllTargetsPlan(connectionsGroup, scope))
+				.distinct()
 				.reduce(UnionNode::new)
-				.orElse(new EmptyNode());
+				.orElse(EmptyNode.getInstance());
 
 		return new Unique(new UnionNode(allTargets, planNode), false);
 	}
@@ -167,9 +167,11 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
-		return buildSparqlValidNodes_rsx_targetShape_inner(subject, object, rdfsSubClassOfReasoner, scope, or,
+		return buildSparqlValidNodes_rsx_targetShape_inner(subject, object, rdfsSubClassOfReasoner, scope,
+				stableRandomVariableProvider, or,
 				getTargetChain(),
 				SparqlFragment::union, SparqlFragment::or);
 

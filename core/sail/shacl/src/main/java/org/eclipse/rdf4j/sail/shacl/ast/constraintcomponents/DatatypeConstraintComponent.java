@@ -8,16 +8,15 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.DatatypeFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
 public class DatatypeConstraintComponent extends SimpleAbstractConstraintComponent {
 
-	Resource datatype;
+	IRI datatype;
 
-	public DatatypeConstraintComponent(Resource datatype) {
+	public DatatypeConstraintComponent(IRI datatype) {
 		this.datatype = datatype;
 	}
 

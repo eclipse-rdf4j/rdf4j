@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
@@ -441,6 +442,23 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 		public boolean wasRecentlyPushed() {
 			return recentlyPushed;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			NotifyingPushablePlanNode that = (NotifyingPushablePlanNode) o;
+			return delegate.equals(that.delegate);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(delegate);
 		}
 	}
 

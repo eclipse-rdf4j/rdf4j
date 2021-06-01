@@ -17,6 +17,7 @@ public interface Targetable {
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner);
 
 	String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner);
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
 
 }

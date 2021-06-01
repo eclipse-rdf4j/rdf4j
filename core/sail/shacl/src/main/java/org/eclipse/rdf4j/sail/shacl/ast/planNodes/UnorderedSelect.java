@@ -165,11 +165,10 @@ public class UnorderedSelect implements PlanNode {
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(((MemoryStoreConnection) connection).getSail(), subject, predicate, object, mapper,
-					UnorderedSelect.class);
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), subject, predicate, object, mapper);
 		}
 
-		return Objects.hash(connection, subject, predicate, object, mapper, UnorderedSelect.class);
+		return Objects.hash(connection, subject, predicate, object, mapper);
 	}
 
 	public static class Mapper {

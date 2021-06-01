@@ -79,6 +79,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
 
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
+
 		String targetVarPrefix = "target_";
 
 		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix, scope,
@@ -98,7 +100,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			String pathQuery = targetChain.getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner()))
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
 					.orElseThrow(IllegalStateException::new);
 
 			query += pathQuery;
@@ -140,6 +142,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			PlanNodeProvider overrideTargetNode, Function<PlanNode, FilterPlanNode> filterAttacher, Scope scope) {
 
 		boolean negatePlan = false;
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", scope,
 				connectionsGroup.getRdfsSubClassOfReasoner());
@@ -164,7 +167,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 						path.get()
 								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 										new StatementMatcher.Variable("c"),
-										connectionsGroup.getRdfsSubClassOfReasoner()),
+										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 						false, null,
 						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 			}
@@ -227,7 +230,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					path.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner()),
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					true,
 					connectionsGroup.getPreviousStateConnection(),
 					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
@@ -281,7 +284,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
-		return new EmptyNode();
+		return EmptyNode.getInstance();
 	}
 
 }

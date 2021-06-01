@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Objects;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -21,6 +22,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,5 +86,39 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 				", queryString=" + queryString.replace("\n", "\t") +
 				", queryVariable='" + queryVariable.toString().replace("\n", "  ") + '\'' +
 				'}';
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		ExternalFilterByQuery that = (ExternalFilterByQuery) o;
+
+		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
+			return ((MemoryStoreConnection) connection).getSail()
+					.equals(((MemoryStoreConnection) that.connection).getSail())
+					&& queryVariable.equals(that.queryVariable) && filterOn.equals(that.filterOn)
+					&& queryString.equals(that.queryString);
+		}
+
+		return connection.equals(that.connection) && queryVariable.equals(that.queryVariable)
+				&& filterOn.equals(that.filterOn) && queryString.equals(that.queryString);
+	}
+
+	@Override
+	public int hashCode() {
+		if (connection instanceof MemoryStoreConnection) {
+			return Objects.hash(super.hashCode(), ((MemoryStoreConnection) connection).getSail(), queryVariable,
+					filterOn, queryString);
+		}
+
+		return Objects.hash(super.hashCode(), connection, queryVariable, filterOn, queryString);
 	}
 }

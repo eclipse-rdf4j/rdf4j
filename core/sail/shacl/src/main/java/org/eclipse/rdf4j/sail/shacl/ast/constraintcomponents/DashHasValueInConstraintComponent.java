@@ -70,6 +70,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		EffectiveTarget target = getTargetChain().getEffectiveTarget("_target", scope,
 				connectionsGroup.getRdfsSubClassOfReasoner());
@@ -81,9 +82,9 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
+
 				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
 						false);
-
 			} else {
 				addedTargets = target.getPlanNode(connectionsGroup, scope, true);
 				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
@@ -100,7 +101,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 					addedTargets,
 					connectionsGroup.getBaseConnection(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-							connectionsGroup.getRdfsSubClassOfReasoner()),
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,
 					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -144,13 +145,14 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 
 			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
-		return new EmptyNode();
+		return EmptyNode.getInstance();
 	}
 
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		List<StatementMatcher> statementMatchers = Collections.emptyList();
 
@@ -169,15 +171,16 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			String sparql = hasValueIn
 					.stream()
 					.map(value -> {
-//						Var objectVar = new Var("hasValueIn_" + UUID.randomUUID().toString().replace("-", ""));
 
 						if (value.isIRI()) {
 							return "BIND(<" + value + "> as ?" + object.getName() + ")\n"
-									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
+									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
+											stableRandomVariableProvider);
 						}
 						if (value.isLiteral()) {
 							return "BIND(" + value.toString() + " as ?" + object.getName() + ")\n"
-									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner);
+									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
+											stableRandomVariableProvider);
 						}
 
 						throw new UnsupportedOperationException(

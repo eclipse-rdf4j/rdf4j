@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 import org.apache.commons.text.StringEscapeUtils;

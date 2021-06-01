@@ -38,13 +38,15 @@ public class EffectiveTarget {
 
 		EffectiveTargetObject previous = null;
 
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
+
 		for (Targetable targetable : chain) {
 			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
 					new StatementMatcher.Variable(targetVarPrefix + String.format("%010d", index++)),
 					targetable,
 					previous,
-					rdfsSubClassOfReasoner
-			);
+					rdfsSubClassOfReasoner,
+					stableRandomVariableProvider);
 			previous = effectiveTargetObject;
 			this.chain.addLast(effectiveTargetObject);
 		}
@@ -54,8 +56,8 @@ public class EffectiveTarget {
 					new StatementMatcher.Variable(targetVarPrefix + String.format("%010d", index)),
 					optional,
 					previous,
-					rdfsSubClassOfReasoner
-			);
+					rdfsSubClassOfReasoner,
+					stableRandomVariableProvider);
 		} else {
 			this.optional = null;
 		}
@@ -271,17 +273,20 @@ public class EffectiveTarget {
 
 	static class EffectiveTargetObject {
 
-		final StatementMatcher.Variable var;
-		final Targetable target;
-		final EffectiveTargetObject prev;
-		final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
+		private final StatementMatcher.Variable var;
+		private final Targetable target;
+		private final EffectiveTargetObject prev;
+		private final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
+		private final StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider;
 
 		public EffectiveTargetObject(StatementMatcher.Variable var, Targetable target, EffectiveTargetObject prev,
-				RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+				RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+				StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 			this.var = var;
 			this.target = target;
 			this.prev = prev;
 			this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
+			this.stableRandomVariableProvider = stableRandomVariableProvider;
 		}
 
 		public Stream<StatementMatcher> getStatementMatcher() {
@@ -294,9 +299,10 @@ public class EffectiveTarget {
 
 		public String getQueryFragment() {
 			if (prev == null) {
-				return target.getTargetQueryFragment(null, var, rdfsSubClassOfReasoner);
+				return target.getTargetQueryFragment(null, var, rdfsSubClassOfReasoner, stableRandomVariableProvider);
 			} else {
-				return target.getTargetQueryFragment(prev.var, var, rdfsSubClassOfReasoner);
+				return target.getTargetQueryFragment(prev.var, var, rdfsSubClassOfReasoner,
+						stableRandomVariableProvider);
 			}
 		}
 	}

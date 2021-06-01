@@ -40,7 +40,8 @@ public class TargetNode extends Target {
 
 	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		StringBuilder sb = new StringBuilder();
 		sb.append("VALUES ( ").append(subjectVariable).append(" ) {\n");
 
@@ -93,7 +94,8 @@ public class TargetNode extends Target {
 
 	@Override
 	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		assert subject == null;
 
 		StringBuilder sb = new StringBuilder();

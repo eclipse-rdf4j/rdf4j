@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Objects;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
@@ -29,7 +31,7 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 
 	UnBufferedPlanNode(T parent, String name) {
 		this.parent = parent;
-		this.name = name;
+		this.name = Objects.requireNonNull(name);
 	}
 
 	@Override
@@ -141,5 +143,22 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 	@Override
 	public boolean requiresSorted() {
 		return parent.producesSorted();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		UnBufferedPlanNode<?> that = (UnBufferedPlanNode<?>) o;
+		return parent.equals(that.parent) && name.equals(that.name);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(parent, name);
 	}
 }

@@ -136,7 +136,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 	public PlanNode negated(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 
-		// if (scope == Scope.nodeShape) {
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		PlanNodeProvider planNodeProvider = () -> {
 
@@ -158,7 +158,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner()),
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,
 					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -197,7 +197,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 				getTargetChain().getPath()
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-								connectionsGroup.getRdfsSubClassOfReasoner()),
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 				false,
 				null,
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)

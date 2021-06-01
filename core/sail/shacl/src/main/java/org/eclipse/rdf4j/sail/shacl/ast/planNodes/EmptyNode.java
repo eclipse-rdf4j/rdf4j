@@ -17,8 +17,13 @@ public class EmptyNode implements PlanNode {
 
 	private boolean printed = false;
 
-	public EmptyNode() {
+	static final private EmptyNode instance = new EmptyNode();
 
+	private EmptyNode() {
+	}
+
+	public static EmptyNode getInstance() {
+		return instance;
 	}
 
 	@Override

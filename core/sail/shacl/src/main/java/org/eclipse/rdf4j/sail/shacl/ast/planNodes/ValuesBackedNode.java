@@ -8,11 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.SortedSet;
+import java.util.stream.Collectors;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -28,13 +29,20 @@ import org.slf4j.LoggerFactory;
 public class ValuesBackedNode implements PlanNode {
 
 	private static final Logger logger = LoggerFactory.getLogger(ValuesBackedNode.class);
-	private final SortedSet<Value> collection;
+	private final SortedSet<Value> values;
+	private final List<ValidationTuple> tuples;
+
 	private final ConstraintComponent.Scope scope;
 	boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValuesBackedNode(SortedSet<Value> collection, ConstraintComponent.Scope scope) {
-		this.collection = collection;
+	public ValuesBackedNode(SortedSet<Value> values, ConstraintComponent.Scope scope) {
+
+		this.tuples = values.stream()
+				.map(c -> new ValidationTuple(Collections.singletonList(c), scope, false))
+				.collect(Collectors.toList());
+
+		this.values = values;
 		this.scope = scope;
 	}
 
@@ -42,7 +50,7 @@ public class ValuesBackedNode implements PlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final Iterator<Value> iterator = collection.iterator();
+			final Iterator<ValidationTuple> iterator = tuples.iterator();
 
 			@Override
 			public void close() throws SailException {
@@ -55,9 +63,7 @@ public class ValuesBackedNode implements PlanNode {
 
 			@Override
 			public ValidationTuple loggingNext() throws SailException {
-				List<Value> targets = new ArrayList<>();
-				targets.add(iterator.next());
-				return new ValidationTuple(targets, scope, false);
+				return iterator.next();
 			}
 
 		};
@@ -87,7 +93,7 @@ public class ValuesBackedNode implements PlanNode {
 	@Override
 	public String toString() {
 		return "ValuesBackedNode{" +
-				"collection=" + collection + '}';
+				"values=" + values + '}';
 	}
 
 	@Override
@@ -99,12 +105,12 @@ public class ValuesBackedNode implements PlanNode {
 			return false;
 		}
 		ValuesBackedNode that = (ValuesBackedNode) o;
-		return collection.equals(that.collection) && scope == that.scope;
+		return values.equals(that.values) && scope == that.scope;
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(collection, scope);
+		return Objects.hash(values, scope);
 	}
 
 	@Override
