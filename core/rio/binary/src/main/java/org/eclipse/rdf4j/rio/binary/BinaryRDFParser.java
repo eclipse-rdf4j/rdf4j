@@ -5,13 +5,16 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
+
 package org.eclipse.rdf4j.rio.binary;
 
+import static org.eclipse.rdf4j.common.io.IOUtil.readVarInt;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.BNODE_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.COMMENT;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.DATATYPE_LITERAL_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.END_OF_DATA;
-import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.FORMAT_VERSION;
+import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.FORMAT_V1;
+import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.FORMAT_V2;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.LANG_LITERAL_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.MAGIC_NUMBER;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.NAMESPACE_DECL;
@@ -20,6 +23,7 @@ import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.PLAIN_LITERAL_VALU
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.STATEMENT;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.TRIPLE_VALUE;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.URI_VALUE;
+import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.V1_STRING_CHARSET;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.VALUE_DECL;
 import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.VALUE_REF;
 
@@ -28,6 +32,8 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
@@ -44,14 +50,17 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 
 /**
  * @author Arjohn Kampman
+ * @author Frens Jan Rumph
  */
 public class BinaryRDFParser extends AbstractRDFParser {
 
 	private Value[] declaredValues = new Value[16];
 
 	private DataInputStream in;
+	private int formatVersion;
+	private Charset charset = StandardCharsets.UTF_8;
 
-	private byte[] buf = null;
+	private byte[] buf = new byte[1024];
 
 	@Override
 	public RDFFormat getRDFFormat() {
@@ -80,10 +89,13 @@ public class BinaryRDFParser extends AbstractRDFParser {
 				reportFatalError("File does not contain a binary RDF document");
 			}
 
-			// Check format version (parser is backward-compatible with version 1 and
-			// version 2)
-			int formatVersion = this.in.readInt();
-			if (formatVersion != FORMAT_VERSION) {
+			formatVersion = this.in.readInt();
+
+			// Check format version (parser is backward-compatible with version 1 and version 2)
+			if (formatVersion == FORMAT_V1) {
+			} else if (formatVersion == FORMAT_V2) {
+				charset = Charset.forName(readString());
+			} else {
 				reportFatalError("Incompatible format version: " + formatVersion);
 			}
 
@@ -138,7 +150,7 @@ public class BinaryRDFParser extends AbstractRDFParser {
 	}
 
 	private void readValueDecl() throws IOException, RDFParseException {
-		int id = in.readInt();
+		int id = readId();
 		Value v = readValue();
 
 		if (id >= declaredValues.length) {
@@ -213,7 +225,7 @@ public class BinaryRDFParser extends AbstractRDFParser {
 	}
 
 	private Value readValueRef() throws IOException, RDFParseException {
-		int id = in.readInt();
+		int id = readId();
 		return declaredValues[id];
 	}
 
@@ -260,14 +272,35 @@ public class BinaryRDFParser extends AbstractRDFParser {
 		return null;
 	}
 
-	private String readString() throws IOException {
-		int stringLength = in.readInt();
-		int stringBytes = stringLength << 1;
-		if (buf == null || buf.length < stringBytes) {
-			// Allocate what we need plus some extra space
-			buf = new byte[stringBytes << 1];
+	private int readId() throws IOException {
+		if (formatVersion == FORMAT_V1) {
+			return in.readInt();
+		} else {
+			return readVarInt(in);
 		}
-		in.readFully(buf, 0, stringBytes);
-		return new String(buf, 0, stringBytes, "UTF-16BE");
 	}
+
+	private String readString() throws IOException {
+		if (formatVersion == FORMAT_V1) {
+			int stringLength = in.readInt();
+			int stringBytes = stringLength << 1;
+			byte[] bytes = readBytes(stringBytes);
+			return new String(bytes, 0, stringBytes, V1_STRING_CHARSET);
+		} else {
+			int length = readVarInt(in);
+			byte[] bytes = readBytes(length);
+			return new String(bytes, 0, length, charset);
+		}
+	}
+
+	protected byte[] readBytes(int length) throws IOException {
+		if (buf == null || buf.length < length) {
+			// Allocate what we need plus some extra space
+			buf = new byte[length << 1];
+		}
+
+		in.readFully(buf, 0, length);
+		return buf;
+	}
+
 }
