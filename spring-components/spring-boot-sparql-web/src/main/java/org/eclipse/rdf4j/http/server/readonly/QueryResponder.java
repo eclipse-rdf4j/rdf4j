@@ -97,12 +97,13 @@ public class QueryResponder {
 
 	/**
 	 * @see https://www.w3.org/TR/sparql11-protocol/#dataset
-	 * @param q the query
+	 * @param q               the query
 	 * @param defaultGraphUri
 	 * @param namedGraphUri
 	 * @param connection
 	 */
-	private void setQueryDataSet(Query q, String defaultGraphUri, String namedGraphUri, RepositoryConnection connection) {
+	private void setQueryDataSet(Query q, String defaultGraphUri, String namedGraphUri,
+			RepositoryConnection connection) {
 		if (defaultGraphUri != null || namedGraphUri != null) {
 			SimpleDataset dataset = new SimpleDataset();
 
@@ -110,7 +111,7 @@ public class QueryResponder {
 				IRI defaultIri = connection.getValueFactory().createIRI(defaultGraphUri);
 				dataset.addDefaultGraph(defaultIri);
 			}
-			
+
 			if (namedGraphUri != null) {
 				IRI namedIri = connection.getValueFactory().createIRI(namedGraphUri);
 				dataset.addNamedGraph(namedIri);
@@ -152,7 +153,8 @@ public class QueryResponder {
 				BooleanQuery bq = (BooleanQuery) q;
 				QueryResultFormat format = (QueryResultFormat) bestFormat(acceptHeader);
 				final Optional<BooleanQueryResultWriterFactory> optional = BooleanQueryResultWriterRegistry
-						.getInstance().get(format);
+						.getInstance()
+						.get(format);
 				if (optional.isPresent()) {
 
 					BooleanQueryResultWriter writer = optional.get().getWriter(response.getOutputStream());
@@ -171,13 +173,12 @@ public class QueryResponder {
 		}
 
 		/**
-		 * Test if the query is of a type that can be answered. And that the accept
-		 * headers allow for the response to be send.
+		 * Test if the query is of a type that can be answered. And that the accept headers allow for the response to be
+		 * send.
 		 * 
 		 * @param preparedQuery
 		 * @param acceptHeader
-		 * @return true if the query is of the right type and acceptHeaders are
-		 *         acceptable.
+		 * @return true if the query is of the right type and acceptHeaders are acceptable.
 		 * @throws MismatchingAcceptHeaderException
 		 */
 		protected boolean accepts(Query preparedQuery, String acceptHeader) throws MismatchingAcceptHeaderException {

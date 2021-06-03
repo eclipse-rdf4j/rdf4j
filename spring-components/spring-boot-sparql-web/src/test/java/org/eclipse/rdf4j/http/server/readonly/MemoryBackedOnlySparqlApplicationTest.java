@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.readonly;
 
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
@@ -40,7 +39,7 @@ public class MemoryBackedOnlySparqlApplicationTest {
 				String.class, "ASK { ?s ?p ?o }")).contains("true");
 
 	}
-	
+
 	@Test
 	public void testSelectQuery() {
 		String forObject = this.restTemplate.getForObject("http://localhost:" + port + "/sparql/?query={query}",

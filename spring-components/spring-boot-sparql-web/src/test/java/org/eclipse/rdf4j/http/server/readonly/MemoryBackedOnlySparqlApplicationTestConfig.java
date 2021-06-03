@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Bean;
 @TestConfiguration
 public class MemoryBackedOnlySparqlApplicationTestConfig {
 
-	@Bean(destroyMethod="shutDown")
+	@Bean(destroyMethod = "shutDown")
 	public Repository getTestRepository() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		sailRepository.init();
