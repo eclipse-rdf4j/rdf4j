@@ -67,8 +67,6 @@ public class BindingSetAssignmentInliner implements QueryOptimizer {
 		public void meet(LeftJoin leftJoin) {
 			leftJoin.getLeftArg().visit(this);
 			// we can not pre-bind values for the optional part of the left-join
-			bindingSet = null;
-			leftJoin.getRightArg().visit(this);
 		}
 
 		@Override
