@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -67,8 +65,6 @@ public class BindingSetAssignmentInliner implements QueryOptimizer {
 		public void meet(LeftJoin leftJoin) {
 			leftJoin.getLeftArg().visit(this);
 			// we can not pre-bind values for the optional part of the left-join
-			bindingSet = null;
-			leftJoin.getRightArg().visit(this);
 		}
 
 		@Override
