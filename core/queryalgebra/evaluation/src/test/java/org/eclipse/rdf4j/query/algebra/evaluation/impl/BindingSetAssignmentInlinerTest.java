@@ -63,6 +63,32 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void testEmptyValues() {
+		String query = "select * \n"
+				+ "where { values ?z { } \n"
+				+ "        ?x <urn:pred1> ?y ; \n"
+				+ "           (<urn:pred2>/<urn:pred3>)* ?z . \n"
+				+ "}";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+		QueryOptimizer optimizer = getOptimizer();
+		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
+
+		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		assertThat(optimizedTree).isInstanceOf(Projection.class);
+
+		Projection projection = (Projection) optimizedTree;
+
+		Join join = (Join) projection.getArg();
+		assertThat(join.getRightArg()).isInstanceOf(ArbitraryLengthPath.class);
+
+		ArbitraryLengthPath path = (ArbitraryLengthPath) join.getRightArg();
+		assertThat(path.getObjectVar().getName()).isEqualTo("z");
+		assertThat(path.getObjectVar().getValue()).isNull();
+	}
+
+	@Test
 	public void testOptimize_MultipleValues() {
 		String query = "select * \n"
 				+ "where { values ?z { <urn:z1> <urn:z2> } \n"

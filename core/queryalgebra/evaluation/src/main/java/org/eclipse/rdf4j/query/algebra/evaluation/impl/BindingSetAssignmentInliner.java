@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -43,9 +41,11 @@ public class BindingSetAssignmentInliner implements QueryOptimizer {
 		@Override
 		public void meet(BindingSetAssignment bsa) {
 			Iterator<BindingSet> iter = bsa.getBindingSets().iterator();
-			BindingSet firstBindingSet = iter.next();
-			if (!iter.hasNext()) {
-				bindingSet = firstBindingSet;
+			if (iter.hasNext()) {
+				BindingSet firstBindingSet = iter.next();
+				if (!iter.hasNext()) {
+					bindingSet = firstBindingSet;
+				}
 			}
 			super.meet(bsa);
 		}
