@@ -28,6 +28,7 @@ public class ListBindingSet extends AbstractBindingSet {
 	private static final long serialVersionUID = -2907809218835403743L;
 
 	private final List<String> bindingNames;
+	private Set<String> bindingNamesSetCache;
 
 	private final List<? extends Value> values;
 
@@ -60,7 +61,10 @@ public class ListBindingSet extends AbstractBindingSet {
 
 	@Override
 	public Set<String> getBindingNames() {
-		return new LinkedHashSet<>(bindingNames);
+		if (bindingNamesSetCache == null) {
+			bindingNamesSetCache = new LinkedHashSet<>(bindingNames);
+		}
+		return bindingNamesSetCache;
 	}
 
 	@Override
