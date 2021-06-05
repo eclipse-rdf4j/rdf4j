@@ -41,6 +41,16 @@ public class Unique implements PlanNode {
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
+		if (parent instanceof Unique) {
+			Unique parentUnique = ((Unique) parent);
+
+			parent = parentUnique.parent;
+
+			if (!compress) {
+				compress = parentUnique.compress;
+			}
+		}
+
 		this.parent = parent;
 		this.compress = compress;
 	}
