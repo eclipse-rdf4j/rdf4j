@@ -8,22 +8,26 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Resource;
-
 import java.util.Objects;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.impl.SimpleLiteral;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * @author Håvard Ottestad
  */
 public class DatatypeFilter extends FilterPlanNode {
 
-	private final Resource datatype;
+	private final IRI datatype;
+	private final XSD.Datatype xsdDatatype;
 	private StackTraceElement[] stackTrace;
 
-	public DatatypeFilter(PlanNode parent, Resource datatype) {
+	public DatatypeFilter(PlanNode parent, IRI datatype) {
 		super(parent);
 		this.datatype = datatype;
+		this.xsdDatatype = XSD.Datatype.from(datatype).orElse(null);
 //		stackTrace = Thread.currentThread().getStackTrace();
 	}
 
@@ -34,7 +38,11 @@ public class DatatypeFilter extends FilterPlanNode {
 		}
 
 		Literal literal = (Literal) t.getValue();
-		return literal.getDatatype() == datatype || literal.getDatatype().equals(datatype);
+		if (xsdDatatype != null && literal instanceof SimpleLiteral) {
+			return xsdDatatype == ((SimpleLiteral) literal).getXsdDatatype().orElse(null);
+		} else {
+			return literal.getDatatype() == datatype || literal.getDatatype().equals(datatype);
+		}
 	}
 
 	@Override
