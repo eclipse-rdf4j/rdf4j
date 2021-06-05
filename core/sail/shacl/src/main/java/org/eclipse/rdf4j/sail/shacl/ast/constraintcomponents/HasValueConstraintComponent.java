@@ -73,15 +73,16 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
 				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false);
+						false, null);
 
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, scope, true);
+				addedTargets = target.getPlanNode(connectionsGroup, scope, true, null);
 				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
 
 				addedByPath = target.getTargetFilter(connectionsGroup,
 						new Unique(new TrimToTarget(addedByPath), false));
-				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
+				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false,
+						null);
 
 				addedTargets = new UnionNode(addedByPath, addedTargets);
 				addedTargets = new Unique(addedTargets, false);
@@ -110,9 +111,9 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
 				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false);
+						false, null);
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, scope, false);
+				addedTargets = target.getPlanNode(connectionsGroup, scope, false, null);
 			}
 
 			PlanNode falseNode = new ValueInFilter(addedTargets, new HashSet<>(Collections.singletonList(hasValue)))
@@ -131,7 +132,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
 			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}

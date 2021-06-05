@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.Targetable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BindSelect;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -73,7 +74,7 @@ public class EffectiveTarget {
 	// If the target chain is [type foaf:Person / foaf:knows ] and [ex:Peter] is in the source, this will effectively
 	// retrieve all "ex:Peter foaf:knows ?extension"
 	public PlanNode extend(PlanNode source, ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
-			Extend direction, boolean includePropertyShapeValues) {
+			Extend direction, boolean includePropertyShapeValues, Function<PlanNode, PlanNode> filter) {
 
 		String query = getQuery(includePropertyShapeValues);
 		List<StatementMatcher.Variable> vars = getVars();
@@ -85,14 +86,30 @@ public class EffectiveTarget {
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
 		if (varNames.size() == 1) {
-			return connectionsGroup.getCachedNodeFor(getTargetFilter(connectionsGroup,
-					new Unique(new TupleMapper(source, new ActiveTargetTupleMapper(scope, includePropertyShapeValues)),
-							false)));
-		}
 
-		return connectionsGroup.getCachedNodeFor(
-				new Unique(new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, varNames, scope,
-						100, direction, includePropertyShapeValues), true));
+			PlanNode parent = new TupleMapper(source, new ActiveTargetTupleMapper(scope, includePropertyShapeValues));
+
+			if (filter != null) {
+				parent = filter.apply(parent);
+			}
+
+			return connectionsGroup.getCachedNodeFor(getTargetFilter(connectionsGroup, new Unique(parent, false)));
+		} else {
+
+			PlanNode parent = new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, varNames, scope,
+					1000, direction, includePropertyShapeValues);
+
+			if (filter != null) {
+				parent = connectionsGroup.getCachedNodeFor(parent);
+				parent = filter.apply(parent);
+				parent = new Unique(parent, true);
+				return parent;
+			} else {
+				return connectionsGroup.getCachedNodeFor(
+						new Unique(parent, true));
+			}
+
+		}
 	}
 
 	private List<StatementMatcher.Variable> getVars() {
@@ -142,19 +159,11 @@ public class EffectiveTarget {
 	}
 
 	public PlanNode getAllTargets(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		String query = chain.stream()
-				.map(EffectiveTargetObject::getQueryFragment)
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
-
-		List<String> varNames = getVars().stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
-
-		return new Select(connectionsGroup.getBaseConnection(), query, null,
-				new AllTargetsBindingSetMapper(varNames, scope, false));
+		return new AllTargetsPlanNode(connectionsGroup, chain, getVars(), scope);
 	}
 
 	public PlanNode getPlanNode(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
-			boolean includeTargetsAffectedByRemoval) {
+			boolean includeTargetsAffectedByRemoval, Function<PlanNode, PlanNode> filter) {
 		assert !chain.isEmpty();
 
 		if (chain.size() == 1 && !(includeTargetsAffectedByRemoval && optional != null)) {
@@ -162,7 +171,14 @@ public class EffectiveTarget {
 
 			EffectiveTargetObject last = chain.getLast();
 			if (last.target instanceof Target) {
-				return connectionsGroup.getCachedNodeFor(((Target) last.target).getAdded(connectionsGroup, scope));
+
+				if (filter != null) {
+					return filter.apply(connectionsGroup
+							.getCachedNodeFor(((Target) last.target).getAdded(connectionsGroup, scope)));
+				} else {
+					return connectionsGroup.getCachedNodeFor(((Target) last.target).getAdded(connectionsGroup, scope));
+				}
+
 			} else {
 				throw new ShaclUnsupportedException(
 						"Unknown target in chain is type: " + last.getClass().getSimpleName());
@@ -210,7 +226,11 @@ public class EffectiveTarget {
 				);
 			}
 
-			return connectionsGroup.getCachedNodeFor(new Unique(targetChainRetriever, true));
+			if (filter != null) {
+				return connectionsGroup.getCachedNodeFor(new Unique(filter.apply(targetChainRetriever), true));
+			} else {
+				return connectionsGroup.getCachedNodeFor(new Unique(targetChainRetriever, true));
+			}
 
 		}
 
@@ -271,7 +291,7 @@ public class EffectiveTarget {
 		right
 	}
 
-	static class EffectiveTargetObject {
+	public static class EffectiveTargetObject {
 
 		private final StatementMatcher.Variable var;
 		private final Targetable target;
@@ -304,42 +324,6 @@ public class EffectiveTarget {
 				return target.getTargetQueryFragment(prev.var, var, rdfsSubClassOfReasoner,
 						stableRandomVariableProvider);
 			}
-		}
-	}
-
-	static class AllTargetsBindingSetMapper implements Function<BindingSet, ValidationTuple> {
-		List<String> varNames;
-		ConstraintComponent.Scope scope;
-		boolean hasValue;
-
-		public AllTargetsBindingSetMapper(List<String> varNames, ConstraintComponent.Scope scope, boolean hasValue) {
-			this.varNames = varNames;
-			this.scope = scope;
-			this.hasValue = hasValue;
-		}
-
-		@Override
-		public ValidationTuple apply(BindingSet b) {
-			return new ValidationTuple(b, varNames, scope, false);
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (this == o) {
-				return true;
-			}
-			if (o == null || getClass() != o.getClass()) {
-				return false;
-			}
-			AllTargetsBindingSetMapper that = (AllTargetsBindingSetMapper) o;
-			return hasValue == that.hasValue &&
-					varNames.equals(that.varNames) &&
-					scope == that.scope;
-		}
-
-		@Override
-		public int hashCode() {
-			return Objects.hash(varNames, scope, hasValue, AllTargetsBindingSetMapper.class);
 		}
 	}
 

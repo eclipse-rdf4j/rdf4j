@@ -113,7 +113,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		if (overrideTargetNode != null) {
 
 			PlanNode targets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope,
-					EffectiveTarget.Extend.right, false);
+					EffectiveTarget.Extend.right, false, null);
 
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 					targets,
@@ -132,7 +132,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		}
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
-			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
+			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false, null);
 
 			PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
@@ -142,14 +142,15 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			return new Unique(new TrimToTarget(nonUniqueTargetLang), false);
 		}
 
-		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
+		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false, null);
 
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
 		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
 				new Unique(new TrimToTarget(addedByPath), false));
 
-		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
+		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false,
+				null);
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
@@ -179,7 +180,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
 			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}

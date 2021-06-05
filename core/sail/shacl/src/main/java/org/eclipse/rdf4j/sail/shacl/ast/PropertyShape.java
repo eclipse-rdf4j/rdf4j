@@ -241,7 +241,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 				getTargetChain()
 						.getEffectiveTarget("_target", Scope.propertyShape,
 								connectionsGroup.getRdfsSubClassOfReasoner())
-						.getPlanNode(connectionsGroup, Scope.propertyShape, true));
+						.getPlanNode(connectionsGroup, Scope.propertyShape, true, null));
 
 		if (scope == Scope.propertyShape) {
 			planNode = new Unique(new TargetChainPopper(planNode), true);

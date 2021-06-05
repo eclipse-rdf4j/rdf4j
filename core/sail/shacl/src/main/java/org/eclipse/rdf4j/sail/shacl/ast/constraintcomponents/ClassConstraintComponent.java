@@ -68,16 +68,17 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
 				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false);
+						false, null);
 
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, scope, false);
+				addedTargets = target.getPlanNode(connectionsGroup, scope, false, null);
 				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
 
 				addedByPath = target.getTargetFilter(connectionsGroup,
 						new Unique(new TrimToTarget(addedByPath), false));
 
-				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
+				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false,
+						null);
 
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
@@ -87,7 +88,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 							.getEffectiveTarget("target_", Scope.nodeShape,
 									connectionsGroup.getRdfsSubClassOfReasoner())
 							.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left,
-									false);
+									false, null);
 
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget("target_", Scope.nodeShape,
@@ -130,9 +131,9 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
 				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false);
+						false, null);
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, scope, false);
+				addedTargets = target.getPlanNode(connectionsGroup, scope, false, null);
 
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
@@ -142,7 +143,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 							.getTargetFilter(connectionsGroup, deletedTypes);
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-							.extend(deletedTypes, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
+							.extend(deletedTypes, connectionsGroup, scope, EffectiveTarget.Extend.left, false, null);
 					addedTargets = new UnionNode(addedTargets, new TrimToTarget(deletedTypes));
 				}
 			}
@@ -166,7 +167,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
 			// removed type statements that match clazz could affect sh:or
 			if (connectionsGroup.getStats().hasRemoved()) {
@@ -177,7 +178,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 						.getTargetFilter(connectionsGroup, deletedTypes);
 				deletedTypes = getTargetChain()
 						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-						.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false);
+						.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false,
+								null);
 				allTargetsPlan = new UnionNode(allTargetsPlan, deletedTypes);
 			}
 
@@ -190,7 +192,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 						.getTargetFilter(connectionsGroup, addedTypes);
 				addedTypes = getTargetChain()
 						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-						.extend(addedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false);
+						.extend(addedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false,
+								null);
 				allTargetsPlan = new UnionNode(allTargetsPlan, addedTypes);
 			}
 
@@ -207,7 +210,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					.getTargetFilter(connectionsGroup, deletedTypes);
 			deletedTypes = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false);
+					.extend(deletedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false, null);
 			allTargetsPlan = new UnionNode(allTargetsPlan, deletedTypes);
 
 		}
@@ -221,7 +224,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					.getTargetFilter(connectionsGroup, addedTypes);
 			addedTypes = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.extend(addedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false);
+					.extend(addedTypes, connectionsGroup, Scope.nodeShape, EffectiveTarget.Extend.left, false, null);
 			allTargetsPlan = new UnionNode(allTargetsPlan, addedTypes);
 
 		}

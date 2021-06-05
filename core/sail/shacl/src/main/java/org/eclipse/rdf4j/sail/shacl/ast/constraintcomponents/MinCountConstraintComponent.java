@@ -56,12 +56,12 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode target = getTargetChain()
 				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-				.getPlanNode(connectionsGroup, scope, true);
+				.getPlanNode(connectionsGroup, scope, true, null);
 
 		if (overrideTargetNode != null) {
 			target = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
-							false);
+							false, null);
 		} else {
 			// we can assume that we are not doing bulk validation, so it is worth checking our added statements before
 			// we go to the base sail

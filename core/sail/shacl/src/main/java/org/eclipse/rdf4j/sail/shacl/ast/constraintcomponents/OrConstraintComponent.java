@@ -129,13 +129,13 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
 			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, scope, true);
+					.getPlanNode(connectionsGroup, scope, true, null);
 
 		}
 
@@ -145,7 +145,8 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 				.reduce(UnionNode::new)
 				.orElse(EmptyNode.getInstance());
 
-		return new Unique(new UnionNode(allTargets, planNode), false);
+		Unique unique = new Unique(new UnionNode(allTargets, planNode), false);
+		return unique;
 	}
 
 	@Override

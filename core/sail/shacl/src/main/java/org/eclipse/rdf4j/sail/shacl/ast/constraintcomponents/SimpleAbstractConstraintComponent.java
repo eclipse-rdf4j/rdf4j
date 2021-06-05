@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -153,23 +154,65 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			PlanNode planNode;
 
 			if (scope == Scope.nodeShape) {
-				planNode = overrideTargetNode.getPlanNode();
-				planNode = effectiveTarget.extend(planNode, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false);
+				PlanNode overrideTargetPlanNode = overrideTargetNode.getPlanNode();
+
+				if (overrideTargetPlanNode instanceof AllTargetsPlanNode) {
+					PlanNode allTargets = effectiveTarget.getAllTargets(connectionsGroup, scope);
+					if (negatePlan) {
+						allTargets = filterAttacher.apply(allTargets).getTrueNode(UnBufferedPlanNode.class);
+					} else {
+						allTargets = filterAttacher.apply(allTargets).getFalseNode(UnBufferedPlanNode.class);
+					}
+
+					return new Unique(allTargets, true);
+				} else {
+					return effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup, scope,
+							EffectiveTarget.Extend.right,
+							false, p -> {
+								if (negatePlan) {
+									return filterAttacher.apply(p).getTrueNode(UnBufferedPlanNode.class);
+								} else {
+									return filterAttacher.apply(p).getFalseNode(UnBufferedPlanNode.class);
+								}
+							});
+
+				}
 
 			} else {
-				PlanNode temp = overrideTargetNode.getPlanNode();
+				PlanNode overrideTargetPlanNode = overrideTargetNode.getPlanNode();
 
-				temp = effectiveTarget.extend(temp, connectionsGroup, scope, EffectiveTarget.Extend.right, false);
+				if (overrideTargetPlanNode instanceof AllTargetsPlanNode) {
 
-				planNode = new BulkedExternalInnerJoin(temp,
-						connectionsGroup.getBaseConnection(),
-						path.get()
-								.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-										new StatementMatcher.Variable("c"),
-										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-						false, null,
-						(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
+					// We are cheating a bit here by retrieving all the targets and values at the same time by
+					// pretending to be in node shape scope and then shifting the results back to property shape scope
+					PlanNode allTargets = targetChain
+							.getEffectiveTarget("target_", Scope.nodeShape,
+									connectionsGroup.getRdfsSubClassOfReasoner())
+							.getAllTargets(connectionsGroup, Scope.nodeShape);
+					allTargets = new ShiftToPropertyShape(allTargets);
+
+					if (negatePlan) {
+						allTargets = filterAttacher.apply(allTargets).getTrueNode(UnBufferedPlanNode.class);
+					} else {
+						allTargets = filterAttacher.apply(allTargets).getFalseNode(UnBufferedPlanNode.class);
+					}
+
+					return new Unique(allTargets, true);
+
+				} else {
+
+					overrideTargetPlanNode = effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup, scope,
+							EffectiveTarget.Extend.right, false, null);
+
+					planNode = new BulkedExternalInnerJoin(overrideTargetPlanNode,
+							connectionsGroup.getBaseConnection(),
+							path.get()
+									.getTargetQueryFragment(new StatementMatcher.Variable("a"),
+											new StatementMatcher.Variable("c"),
+											connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
+							false, null,
+							(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
+				}
 			}
 
 			if (negatePlan) {
@@ -182,13 +225,13 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 		if (scope == Scope.nodeShape) {
 
-			PlanNode targets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
-
-			if (negatePlan) {
-				return filterAttacher.apply(targets).getTrueNode(UnBufferedPlanNode.class);
-			} else {
-				return filterAttacher.apply(targets).getFalseNode(UnBufferedPlanNode.class);
-			}
+			return effectiveTarget.getPlanNode(connectionsGroup, scope, false, p -> {
+				if (negatePlan) {
+					return filterAttacher.apply(p).getTrueNode(UnBufferedPlanNode.class);
+				} else {
+					return filterAttacher.apply(p).getFalseNode(UnBufferedPlanNode.class);
+				}
+			});
 
 		}
 
@@ -205,7 +248,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		}
 
 		InnerJoin innerJoin = new InnerJoin(
-				effectiveTarget.getPlanNode(connectionsGroup, scope, false),
+				effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
 				invalidValuesDirectOnPath);
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
@@ -220,12 +263,12 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			PlanNode typeFilterPlan = effectiveTarget.getTargetFilter(connectionsGroup, discardedRight);
 
 			typeFilterPlan = effectiveTarget.extend(typeFilterPlan, connectionsGroup, scope,
-					EffectiveTarget.Extend.left, true);
+					EffectiveTarget.Extend.left, true, null);
 
 			top = new UnionNode(top, typeFilterPlan);
 
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
-					effectiveTarget.getPlanNode(connectionsGroup, scope, false),
+					effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
 					connectionsGroup.getBaseConnection(),
 					path.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
@@ -280,7 +323,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
 			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}

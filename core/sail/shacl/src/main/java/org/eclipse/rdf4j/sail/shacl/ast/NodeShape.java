@@ -210,7 +210,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		planNode = new UnionNode(planNode,
 				getTargetChain()
 						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-						.getPlanNode(connectionsGroup, Scope.nodeShape, true));
+						.getPlanNode(connectionsGroup, Scope.nodeShape, true, null));
 
 		if (scope == Scope.propertyShape) {
 			planNode = new Unique(new ShiftToPropertyShape(planNode), true);

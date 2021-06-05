@@ -119,7 +119,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 		if (overrideTargetNode != null) {
 			target = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
-							false);
+							false, null);
 		} else {
 			target = getAllTargetsPlan(connectionsGroup, scope);
 		}
@@ -146,7 +146,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 				target = getTargetChain()
 						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 						.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
-								false);
+								false, null);
 			}
 
 			target = new Unique(new TrimToTarget(target), false);
@@ -186,7 +186,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 			allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
-							false);
+							false, null);
 		}
 
 		allTargetsPlan = new Unique(new TrimToTarget(allTargetsPlan), false);
@@ -215,7 +215,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode allTargets = getTargetChain()
 				.getEffectiveTarget("target_", Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner())
-				.getPlanNode(connectionsGroup, Scope.propertyShape, true);
+				.getPlanNode(connectionsGroup, Scope.propertyShape, true, null);
 
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, scope);
 
