@@ -12,8 +12,11 @@ import static org.eclipse.rdf4j.model.util.Values.iri;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -60,6 +63,32 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		ArbitraryLengthPath path = (ArbitraryLengthPath) join.getRightArg();
 		assertThat(path.getObjectVar().getName()).isEqualTo("z");
 		assertThat(path.getObjectVar().getValue()).isEqualTo(iri("urn:z1"));
+	}
+
+	@Test
+	public void testEmptyValues() {
+		String query = "select * \n"
+				+ "where { values ?z { } \n"
+				+ "        ?x <urn:pred1> ?y ; \n"
+				+ "           (<urn:pred2>/<urn:pred3>)* ?z . \n"
+				+ "}";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+		QueryOptimizer optimizer = getOptimizer();
+		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
+
+		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		assertThat(optimizedTree).isInstanceOf(Projection.class);
+
+		Projection projection = (Projection) optimizedTree;
+
+		Join join = (Join) projection.getArg();
+		assertThat(join.getRightArg()).isInstanceOf(ArbitraryLengthPath.class);
+
+		ArbitraryLengthPath path = (ArbitraryLengthPath) join.getRightArg();
+		assertThat(path.getObjectVar().getName()).isEqualTo("z");
+		assertThat(path.getObjectVar().getValue()).isNull();
 	}
 
 	@Test
@@ -117,6 +146,42 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		Var o2 = ((StatementPattern) optional.getRightArg()).getObjectVar();
 		assertThat(o2.getName()).isEqualTo("o2");
 		assertThat(o2.getValue()).isNull();
+	}
+
+	/**
+	 * @see https://github.com/eclipse/rdf4j/issues/3091
+	 */
+	@Test
+	public void testOptimize_LeftJoinWithValuesInScope() {
+		String query = "SELECT ?datasetBound {\n"
+				+ "  OPTIONAL {\n"
+				+ "    VALUES(?dataset ?uriSpace) {\n"
+				+ "       (<http://example.org/void.ttl#FOAF> \"http://xmlns.com/foaf/0.1/\")  \n"
+				+ "    }\n"
+				+ "    FILTER(STRSTARTS(STR(<http://example.com>), ?uriSpace))\n"
+				+ "  }\n"
+				+ "  BIND(BOUND(?dataset) as ?datasetBound)\n"
+				+ "}";
+
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+		QueryOptimizer optimizer = getOptimizer();
+		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
+
+		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+
+		assertThat(optimizedTree).isInstanceOf(Projection.class);
+		Projection projection = (Projection) optimizedTree;
+
+		Extension extension = (Extension) projection.getArg();
+		assertThat(extension.getArg()).isInstanceOf(LeftJoin.class);
+		ExtensionElem elem = extension.getElements().iterator().next();
+		Bound bound = (Bound) elem.getExpr();
+
+		Var datasetVar = bound.getArg();
+		assertThat(datasetVar.getName()).isEqualTo("dataset");
+		assertThat(datasetVar.getValue()).isNull();
+
 	}
 
 	@Test
