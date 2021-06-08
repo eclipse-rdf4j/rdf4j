@@ -70,7 +70,6 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		return generateTransactionalValidationPlan(
 				connectionsGroup,
 				overrideTargetNode,
-				getFilterAttacher(),
 				scope
 		);
 
@@ -140,7 +139,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	abstract String getSparqlFilterExpression(String varName, boolean negated);
 
 	private PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			PlanNodeProvider overrideTargetNode, Function<PlanNode, FilterPlanNode> filterAttacher, Scope scope) {
+			PlanNodeProvider overrideTargetNode, Scope scope) {
 
 		boolean negatePlan = false;
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
@@ -158,23 +157,15 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 				if (overrideTargetPlanNode instanceof AllTargetsPlanNode) {
 					PlanNode allTargets = effectiveTarget.getAllTargets(connectionsGroup, scope);
-					if (negatePlan) {
-						allTargets = filterAttacher.apply(allTargets).getTrueNode(UnBufferedPlanNode.class);
-					} else {
-						allTargets = filterAttacher.apply(allTargets).getFalseNode(UnBufferedPlanNode.class);
-					}
+					allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);
 
 					return new Unique(allTargets, true);
 				} else {
 					return effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup, scope,
 							EffectiveTarget.Extend.right,
-							false, p -> {
-								if (negatePlan) {
-									return filterAttacher.apply(p).getTrueNode(UnBufferedPlanNode.class);
-								} else {
-									return filterAttacher.apply(p).getFalseNode(UnBufferedPlanNode.class);
-								}
-							});
+							false,
+							p -> getFilterAttacherWithNegation(negatePlan, p)
+					);
 
 				}
 
@@ -191,11 +182,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 							.getAllTargets(connectionsGroup, Scope.nodeShape);
 					allTargets = new ShiftToPropertyShape(allTargets);
 
-					if (negatePlan) {
-						allTargets = filterAttacher.apply(allTargets).getTrueNode(UnBufferedPlanNode.class);
-					} else {
-						allTargets = filterAttacher.apply(allTargets).getFalseNode(UnBufferedPlanNode.class);
-					}
+					allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);
 
 					return new Unique(allTargets, true);
 
@@ -215,37 +202,17 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				}
 			}
 
-			if (negatePlan) {
-				return filterAttacher.apply(planNode).getTrueNode(UnBufferedPlanNode.class);
-			} else {
-				return filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class);
-			}
+			return getFilterAttacherWithNegation(negatePlan, planNode);
 
 		}
 
 		if (scope == Scope.nodeShape) {
-
-			return effectiveTarget.getPlanNode(connectionsGroup, scope, false, p -> {
-				if (negatePlan) {
-					return filterAttacher.apply(p).getTrueNode(UnBufferedPlanNode.class);
-				} else {
-					return filterAttacher.apply(p).getFalseNode(UnBufferedPlanNode.class);
-				}
-			});
-
+			return effectiveTarget.getPlanNode(connectionsGroup, scope, false,
+					p -> getFilterAttacherWithNegation(negatePlan, p));
 		}
 
-		PlanNode invalidValuesDirectOnPath;
-
-		if (negatePlan) {
-			invalidValuesDirectOnPath = path.get()
-					.getAdded(connectionsGroup,
-							planNode -> filterAttacher.apply(planNode).getTrueNode(UnBufferedPlanNode.class));
-		} else {
-			invalidValuesDirectOnPath = path.get()
-					.getAdded(connectionsGroup,
-							planNode -> filterAttacher.apply(planNode).getFalseNode(UnBufferedPlanNode.class));
-		}
+		PlanNode invalidValuesDirectOnPath = path.get()
+				.getAdded(connectionsGroup, planNode -> getFilterAttacherWithNegation(negatePlan, planNode));
 
 		InnerJoin innerJoin = new InnerJoin(
 				effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
@@ -280,13 +247,18 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			top = new UnionNode(top, bulkedExternalInnerJoin);
 
-			if (negatePlan) {
-				return filterAttacher.apply(top).getTrueNode(UnBufferedPlanNode.class);
-			} else {
-				return filterAttacher.apply(top).getFalseNode(UnBufferedPlanNode.class);
-			}
+			return getFilterAttacherWithNegation(negatePlan, top);
 
 		}
+	}
+
+	private PlanNode getFilterAttacherWithNegation(boolean negatePlan, PlanNode allTargets) {
+		if (negatePlan) {
+			allTargets = getFilterAttacher().apply(allTargets).getTrueNode(UnBufferedPlanNode.class);
+		} else {
+			allTargets = getFilterAttacher().apply(allTargets).getFalseNode(UnBufferedPlanNode.class);
+		}
+		return allTargets;
 	}
 
 	@Override

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * .Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -61,20 +61,14 @@ class SimpleBindingSet extends AbstractBindingSet {
 
 	@Override
 	public boolean hasBinding(String bindingName) {
-		for (Binding binding : bindings) {
-			if (binding.getName().equals(bindingName)) {
-				return true;
-			}
-		}
-		return false;
+		return bindingNamesSet.contains(bindingName);
 	}
 
 	@Override
 	public Value getValue(String bindingName) {
-		for (Binding binding : bindings) {
-			if (binding.getName().equals(bindingName)) {
-				return binding.getValue();
-			}
+		Binding binding = getBinding(bindingName);
+		if (binding != null) {
+			return binding.getValue();
 		}
 		return null;
 	}

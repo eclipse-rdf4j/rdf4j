@@ -171,15 +171,11 @@ public class StatementMatcher {
 	}
 
 	public static class StableRandomVariableProvider {
-		private static final String BASE = UUID.randomUUID().toString().replace("-", "") + "_"; // We just need a random
-																								// base that isn't used
-																								// elsewhere in the
-																								// ShaclSail, but we
-																								// don't want it to be
-																								// stable so we can
-																								// compare the SPARQL
-																								// queries where these
-																								// variables are used
+
+		// We just need a random base that isn't used elsewhere in the ShaclSail, but we don't want it to be stable so
+		// we can compare the SPARQL queries where these variables are used
+		private static final String BASE = UUID.randomUUID().toString().replace("-", "") + "_";
+
 		private int counter = 0;
 
 		public Variable next() {

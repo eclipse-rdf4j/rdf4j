@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 
 /**
- * Used for adding a custom log statement to tuples as they pass through. Should only be used for debugging.
+ * Used to signal bulk validation. This plan node should only be used from EffectiveTarget#getAllTargets
  */
 public class AllTargetsPlanNode implements PlanNode {
 

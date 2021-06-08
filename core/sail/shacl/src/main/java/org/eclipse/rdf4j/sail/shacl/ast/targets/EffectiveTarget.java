@@ -8,7 +8,6 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
@@ -19,7 +18,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BindSelect;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;

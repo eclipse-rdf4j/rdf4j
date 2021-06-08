@@ -161,7 +161,7 @@ public class OrDatatypeBenchmark {
 			}
 		}
 
-//		repository.shutDown();
+		repository.shutDown();
 
 	}
 
