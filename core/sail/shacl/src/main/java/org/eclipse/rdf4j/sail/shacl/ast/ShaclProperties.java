@@ -49,7 +49,7 @@ public class ShaclProperties {
 	private Long minCount;
 	private Long maxCount;
 
-	private Resource datatype;
+	private IRI datatype;
 	private Resource in;
 	private final List<Value> hasValue = new ArrayList<>();
 	private final List<Resource> hasValueIn = new ArrayList<>();
@@ -148,7 +148,7 @@ public class ShaclProperties {
 					if (datatype != null) {
 						throw new IllegalStateException(predicate + " already populated");
 					}
-					datatype = (Resource) object;
+					datatype = (IRI) object;
 					break;
 				case "http://www.w3.org/ns/shacl#minCount":
 					if (minCount != null) {
@@ -335,7 +335,7 @@ public class ShaclProperties {
 		return maxCount;
 	}
 
-	public Resource getDatatype() {
+	public IRI getDatatype() {
 		return datatype;
 	}
 

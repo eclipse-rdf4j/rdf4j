@@ -1,7 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -55,8 +54,8 @@ public class DashAllSubjects extends Target {
 
 	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
-		String tempVar = "?" + UUID.randomUUID().toString().replace("-", "");
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 //		return targetObjectsOf.stream()
 //			.map(target -> "\n{ BIND(<" + target + "> as " + tempVar + ") \n " + objectVariable + " "
@@ -91,11 +90,12 @@ public class DashAllSubjects extends Target {
 
 	@Override
 	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		assert (subject == null);
 
-		String tempVar1 = "?" + UUID.randomUUID().toString().replace("-", "");
-		String tempVar2 = "?" + UUID.randomUUID().toString().replace("-", "");
+		String tempVar1 = stableRandomVariableProvider.next().asSparqlVariable();
+		String tempVar2 = stableRandomVariableProvider.next().asSparqlVariable();
 
 		return " ?" + object.getName() + " " + tempVar1 + " " + tempVar2 + " .";
 

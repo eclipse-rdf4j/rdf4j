@@ -3,9 +3,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -65,6 +63,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 		EffectiveTarget target = getTargetChain().getEffectiveTarget("_target", scope,
 				connectionsGroup.getRdfsSubClassOfReasoner());
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		if (scope == Scope.propertyShape) {
 			Path path = getTargetChain().getPath().get();
@@ -74,15 +73,16 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
 				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false);
+						false, null);
 
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, scope, true);
+				addedTargets = target.getPlanNode(connectionsGroup, scope, true, null);
 				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
 
 				addedByPath = target.getTargetFilter(connectionsGroup,
 						new Unique(new TrimToTarget(addedByPath), false));
-				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
+				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false,
+						null);
 
 				addedTargets = new UnionNode(addedByPath, addedTargets);
 				addedTargets = new Unique(addedTargets, false);
@@ -92,7 +92,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 					addedTargets,
 					connectionsGroup.getBaseConnection(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-							connectionsGroup.getRdfsSubClassOfReasoner()),
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,
 					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -111,9 +111,9 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
 				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false);
+						false, null);
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, scope, false);
+				addedTargets = target.getPlanNode(connectionsGroup, scope, false, null);
 			}
 
 			PlanNode falseNode = new ValueInFilter(addedTargets, new HashSet<>(Collections.singletonList(hasValue)))
@@ -132,17 +132,18 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
 			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
-		return new EmptyNode();
+		return EmptyNode.getInstance();
 	}
 
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		List<StatementMatcher> statementMatchers = Collections.emptyList();
 
@@ -159,11 +160,15 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 			if (hasValue.isIRI()) {
 				return SparqlFragment.bgp("BIND(<" + hasValue + "> as ?" + object.getName() + ")\n"
-						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner), statementMatchers);
+						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
+								stableRandomVariableProvider),
+						statementMatchers);
 			}
 			if (hasValue.isLiteral()) {
 				return SparqlFragment.bgp("BIND(" + hasValue.toString() + " as ?" + object.getName() + ")\n"
-						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner), statementMatchers);
+						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
+								stableRandomVariableProvider),
+						statementMatchers);
 			}
 
 			throw new UnsupportedOperationException(
@@ -187,6 +192,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		String targetVarPrefix = "target_";
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
 				connectionsGroup.getRdfsSubClassOfReasoner());
@@ -202,7 +208,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 			String pathQuery = getTargetChain().getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner()))
+							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
 					.orElseThrow(IllegalStateException::new);
 
 			query += "FILTER( " +

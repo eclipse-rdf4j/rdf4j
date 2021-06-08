@@ -7,12 +7,9 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -173,15 +170,15 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			Scope scope) {
 
 		if (isDeactivated()) {
-			return new EmptyNode();
+			return EmptyNode.getInstance();
 		}
 
-		PlanNode union = new EmptyNode();
+		PlanNode union = EmptyNode.getInstance();
 
 //		if (negatePlan) {
 //			assert overrideTargetNode == null : "Negated property shape with override target is not supported at the moment!";
 //
-//			PlanNode ret = new EmptyNode();
+//			PlanNode ret = EmptyNode.getInstance();
 //
 //			for (ConstraintComponent constraintComponent : constraintComponents) {
 //				PlanNode planNode = constraintComponent.generateTransactionalValidationPlan(connectionsGroup,
@@ -236,14 +233,15 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 		PlanNode planNode = constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, Scope.propertyShape))
+				.distinct()
 				.reduce(UnionNode::new)
-				.orElse(new EmptyNode());
+				.orElse(EmptyNode.getInstance());
 
 		planNode = new UnionNode(planNode,
 				getTargetChain()
 						.getEffectiveTarget("_target", Scope.propertyShape,
 								connectionsGroup.getRdfsSubClassOfReasoner())
-						.getPlanNode(connectionsGroup, Scope.propertyShape, true));
+						.getPlanNode(connectionsGroup, Scope.propertyShape, true, null));
 
 		if (scope == Scope.propertyShape) {
 			planNode = new Unique(new TargetChainPopper(planNode), true);
@@ -282,11 +280,13 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		List<SparqlFragment> sparqlFragments = constraintComponents.stream()
 				.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(object,
-						StatementMatcher.Variable.getRandomInstance(), rdfsSubClassOfReasoner, Scope.propertyShape))
+						stableRandomVariableProvider.next(), rdfsSubClassOfReasoner, Scope.propertyShape,
+						stableRandomVariableProvider))
 				.collect(Collectors.toList());
 
 		if (SparqlFragment.isFilterCondition(sparqlFragments)) {

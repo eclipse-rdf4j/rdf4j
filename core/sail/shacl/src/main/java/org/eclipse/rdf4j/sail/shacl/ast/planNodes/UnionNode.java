@@ -9,8 +9,10 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -21,22 +23,55 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class UnionNode implements PlanNode {
 
+	private final HashSet<PlanNode> nodesSet;
 	private StackTraceElement[] stackTrace;
 	private final PlanNode[] nodes;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public UnionNode(PlanNode... nodes) {
-		for (int i = 0; i < nodes.length; i++) {
-			nodes[i] = PlanNodeHelper.handleSorting(this, nodes[i]);
-		}
 
-		this.nodes = nodes;
+		this.nodes = Arrays.stream(nodes)
+				.filter(n -> !(n instanceof EmptyNode))
+				.flatMap(n -> {
+					if (n instanceof UnionNode) {
+						return Arrays.stream(((UnionNode) n).nodes);
+					}
+					return Stream.of(n);
+				})
+				.map(n -> PlanNodeHelper.handleSorting(this, n))
+				.toArray(PlanNode[]::new);
+
+		this.nodesSet = new HashSet<>(Arrays.asList(this.nodes));
+
 		// this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+
+		if (nodes.length == 1) {
+			return new LoggingCloseableIteration(this, validationExecutionLogger) {
+
+				final CloseableIteration<? extends ValidationTuple, SailException> iterator = nodes[0].iterator();
+
+				@Override
+				public void close() throws SailException {
+					iterator.close();
+				}
+
+				@Override
+				protected ValidationTuple loggingNext() throws SailException {
+					return iterator.next();
+				}
+
+				@Override
+				protected boolean localHasNext() throws SailException {
+					return iterator.hasNext();
+				}
+			};
+		}
+
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			final List<CloseableIteration<? extends ValidationTuple, SailException>> iterators = Arrays.stream(nodes)
@@ -163,5 +198,27 @@ public class UnionNode implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return true;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		UnionNode unionNode = (UnionNode) o;
+		if (nodes.length != unionNode.nodes.length) {
+			return false;
+		}
+
+		return nodesSet.equals(unionNode.nodesSet);
+
+	}
+
+	@Override
+	public int hashCode() {
+		return nodes.length + nodesSet.hashCode();
 	}
 }

@@ -26,13 +26,13 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 /**
  * Internal utility methods for the SHACL AST to quickly convert between java collections and RDF collections. These
  * utilities are not meant for general use as they make several simplifying assumptions for performance reasons:
- * 
+ *
  * <ul>
  * <li>they add type coercion
  * <Li>they rely on the use of "stable" identifiers for blank nodes, so that duplicates can be quickly detected and
  * discarded
  * </ul>
- * 
+ *
  * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
  *          one release to the next.
  */

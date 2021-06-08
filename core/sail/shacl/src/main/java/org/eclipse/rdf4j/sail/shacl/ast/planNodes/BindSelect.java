@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import static java.util.stream.Collectors.toCollection;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -25,8 +26,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
@@ -177,6 +177,8 @@ public class BindSelect implements PlanNode {
 								.collect(Collectors.toList());
 					}
 
+					Set<String> varNamesSet = new HashSet<>(varNames);
+
 					List<BindingSet> bindingSets = bulk
 							.stream()
 							.filter(t -> {
@@ -190,8 +192,8 @@ public class BindSelect implements PlanNode {
 
 								return temp == targetChainSize;
 							})
-							.map(t -> new ListBindingSet(varNames,
-									new ArrayList<>(t.getTargetChain(includePropertyShapeValues))))
+							.map(t -> new SimpleBindingSet(varNamesSet, varNames,
+									t.getTargetChain(includePropertyShapeValues)))
 							.collect(Collectors.toList());
 
 					bulk = bulk
@@ -212,7 +214,7 @@ public class BindSelect implements PlanNode {
 					updateQuery(parsedQuery, bindingSets, targetChainSize);
 
 					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
-							new MapBindingSet(), true);
+							EmptyBindingSet.getInstance(), true);
 				}
 			}
 
@@ -392,4 +394,5 @@ public class BindSelect implements PlanNode {
 				", scope=" + scope +
 				'}';
 	}
+
 }

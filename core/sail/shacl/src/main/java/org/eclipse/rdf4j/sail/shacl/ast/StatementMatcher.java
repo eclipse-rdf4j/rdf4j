@@ -170,6 +170,20 @@ public class StatementMatcher {
 		return Objects.hash(subjectName, subjectValue, predicateName, predicateValue, objectName, objectValue);
 	}
 
+	public static class StableRandomVariableProvider {
+
+		// We just need a random base that isn't used elsewhere in the ShaclSail, but we don't want it to be stable so
+		// we can compare the SPARQL queries where these variables are used
+		private static final String BASE = UUID.randomUUID().toString().replace("-", "") + "_";
+
+		private int counter = 0;
+
+		public Variable next() {
+			return new Variable(BASE + counter++);
+		}
+
+	}
+
 	public static class Variable {
 		String name;
 		Value value;
@@ -199,8 +213,11 @@ public class StatementMatcher {
 			return name == null && value == null;
 		}
 
-		public static Variable getRandomInstance() {
-			return new Variable(UUID.randomUUID().toString().replace("-", ""));
+		public String asSparqlVariable() {
+			if (value != null)
+				throw new IllegalStateException(
+						"Can not produce SPARQL variable for variables that have fixed values!");
+			return "?" + name.replace("-", "__");
 		}
 
 		@Override
