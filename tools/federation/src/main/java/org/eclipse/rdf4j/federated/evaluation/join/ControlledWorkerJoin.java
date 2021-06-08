@@ -52,10 +52,17 @@ public class ControlledWorkerJoin extends JoinExecutorBase<BindingSet> {
 
 		int totalBindings = 0; // the total number of bindings
 
+		Phaser currentPhaser = phaser;
 		while (!closed && leftIter.hasNext()) {
-			ParallelJoinTask task = new ParallelJoinTask(this, strategy, rightArg, leftIter.next());
 			totalBindings++;
-			phaser.register();
+			// create a new phaser if there are more than 10000 parties
+			// note: a phaser supports only up to 65535 registered parties
+			if (totalBindings % 10000 == 0) {
+				currentPhaser = new Phaser(currentPhaser);
+			}
+			ParallelJoinTask task = new ParallelJoinTask(new PhaserHandlingParallelExecutor(this, currentPhaser),
+					strategy, rightArg, leftIter.next());
+			currentPhaser.register();
 			scheduler.schedule(task);
 		}
 
@@ -68,17 +75,5 @@ public class ControlledWorkerJoin extends JoinExecutorBase<BindingSet> {
 		// wait until all tasks are executed
 		phaser.awaitAdvanceInterruptibly(phaser.arrive(), queryInfo.getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);
 
-	}
-
-	@Override
-	public void done() {
-		phaser.arriveAndDeregister();
-		super.done();
-	}
-
-	@Override
-	public void toss(Exception e) {
-		phaser.arriveAndDeregister();
-		super.toss(e);
 	}
 }
