@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
-import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
@@ -98,7 +97,7 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 				.map(a -> a.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans,
 						overrideTargetNode, scope))
 				.reduce(UnionNode::new)
-				.orElse(new EmptyNode());
+				.orElse(EmptyNode.getInstance());
 
 		return new Unique(planNode, false);
 
@@ -108,8 +107,9 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
 		PlanNode planNode = and.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, scope))
+				.distinct()
 				.reduce(UnionNode::new)
-				.orElse(new EmptyNode());
+				.orElse(EmptyNode.getInstance());
 
 		planNode = new Unique(planNode, false);
 
@@ -135,9 +135,11 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
-		return buildSparqlValidNodes_rsx_targetShape_inner(subject, object, rdfsSubClassOfReasoner, scope, and,
+		return buildSparqlValidNodes_rsx_targetShape_inner(subject, object, rdfsSubClassOfReasoner, scope,
+				stableRandomVariableProvider, and,
 				getTargetChain(),
 				SparqlFragment::join, SparqlFragment::and);
 

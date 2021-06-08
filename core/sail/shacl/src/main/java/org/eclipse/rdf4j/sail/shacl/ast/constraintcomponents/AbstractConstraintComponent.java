@@ -1,7 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.UUID;
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
@@ -60,7 +58,7 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
 			Scope scope) {
 		logger.error("Transactional validation for {} has not been implemented", getConstraintComponent());
-		return new EmptyNode();
+		return EmptyNode.getInstance();
 	}
 
 	@Override
@@ -87,12 +85,9 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
-	}
-
-	static String randomSparqlVariable() {
-		return "?" + UUID.randomUUID().toString().replace("-", "");
 	}
 
 }

@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
@@ -34,5 +35,25 @@ public class ValueInFilter extends FilterPlanNode {
 	public String toString() {
 		return "ValueInFilter{" + "valueSet=" + Arrays.toString(valueSet.stream().map(Formatter::prefix).toArray())
 				+ '}';
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		ValueInFilter that = (ValueInFilter) o;
+		return valueSet.equals(that.valueSet);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), valueSet);
 	}
 }

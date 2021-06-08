@@ -9,7 +9,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
@@ -48,6 +47,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		String targetVarPrefix = "target_";
 
@@ -59,7 +59,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		String pathQuery1 = getTargetChain().getPath()
 				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value1,
-						connectionsGroup.getRdfsSubClassOfReasoner()))
+						connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
 				.orElseThrow(IllegalStateException::new);
 
 		query += pathQuery1;
@@ -68,7 +68,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		String pathQuery2 = getTargetChain().getPath()
 				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value2,
-						connectionsGroup.getRdfsSubClassOfReasoner()))
+						connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
 				.orElseThrow(IllegalStateException::new);
 
 		query += String.join("\n", "",
@@ -104,6 +104,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape,
 				connectionsGroup.getRdfsSubClassOfReasoner());
 		Optional<Path> path = getTargetChain().getPath();
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		if (!path.isPresent() || scope != Scope.propertyShape) {
 			throw new IllegalStateException("UniqueLang only operates on paths");
@@ -112,7 +113,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		if (overrideTargetNode != null) {
 
 			PlanNode targets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope,
-					EffectiveTarget.Extend.right, false);
+					EffectiveTarget.Extend.right, false, null);
 
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 					targets,
@@ -120,7 +121,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					path.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner()),
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,
 					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -131,7 +132,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		}
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
-			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
+			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false, null);
 
 			PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
@@ -141,14 +142,15 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			return new Unique(new TrimToTarget(nonUniqueTargetLang), false);
 		}
 
-		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false);
+		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false, null);
 
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
 		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
 				new Unique(new TrimToTarget(addedByPath), false));
 
-		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false);
+		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false,
+				null);
 
 		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
 
@@ -161,7 +163,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				connectionsGroup.getBaseConnection(),
 				path.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-								connectionsGroup.getRdfsSubClassOfReasoner()),
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 				false,
 				null,
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
@@ -178,11 +180,11 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, Scope.nodeShape, true);
+					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
 			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
-		return new EmptyNode();
+		return EmptyNode.getInstance();
 	}
 
 	@Override

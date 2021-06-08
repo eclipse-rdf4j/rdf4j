@@ -32,6 +32,7 @@ public class Sort implements PlanNode {
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
@@ -157,7 +158,7 @@ public class Sort implements PlanNode {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(parent, Sort.class);
+		return Objects.hash(parent);
 	}
 
 	@Override

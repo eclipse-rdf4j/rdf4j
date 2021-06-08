@@ -62,7 +62,8 @@ public class SimplePath extends Path {
 
 	@Override
 	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		return "?" + subject.getName() + " <" + predicate + "> ?" + object.getName() + " .";
 	}

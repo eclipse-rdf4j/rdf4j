@@ -7,11 +7,9 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -159,10 +157,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			Scope scope) {
 
 		if (isDeactivated()) {
-			return new EmptyNode();
+			return EmptyNode.getInstance();
 		}
 
-		PlanNode union = new EmptyNode();
+		PlanNode union = EmptyNode.getInstance();
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			PlanNode validationPlanNode = constraintComponent
@@ -205,13 +203,14 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 
 		PlanNode planNode = constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, Scope.nodeShape))
+				.distinct()
 				.reduce(UnionNode::new)
-				.orElse(new EmptyNode());
+				.orElse(EmptyNode.getInstance());
 
 		planNode = new UnionNode(planNode,
 				getTargetChain()
 						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-						.getPlanNode(connectionsGroup, Scope.nodeShape, true));
+						.getPlanNode(connectionsGroup, Scope.nodeShape, true, null));
 
 		if (scope == Scope.propertyShape) {
 			planNode = new Unique(new ShiftToPropertyShape(planNode), true);
@@ -236,11 +235,12 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		List<SparqlFragment> sparqlFragments = constraintComponents.stream()
 				.map(shape -> shape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,
-						Scope.nodeShape))
+						Scope.nodeShape, stableRandomVariableProvider))
 				.collect(Collectors.toList());
 
 		if (SparqlFragment.isFilterCondition(sparqlFragments)) {

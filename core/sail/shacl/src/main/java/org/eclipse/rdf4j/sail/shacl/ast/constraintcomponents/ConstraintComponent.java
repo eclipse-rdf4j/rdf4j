@@ -1,8 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.Set;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
@@ -51,7 +48,7 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			Scope scope);
+			Scope scope, StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
 
 	enum Scope {
 		none,

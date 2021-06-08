@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -25,8 +26,6 @@ public class ShiftToNodeShape implements PlanNode {
 	PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
-
-	boolean keepPath = false;
 
 	public ShiftToNodeShape(PlanNode parent) {
 		parent = PlanNodeHelper.handleSorting(this, parent);
@@ -93,7 +92,7 @@ public class ShiftToNodeShape implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "TrimToTarget";
+		return "ShiftToNodeShape";
 	}
 
 	@Override
@@ -115,5 +114,22 @@ public class ShiftToNodeShape implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		ShiftToNodeShape that = (ShiftToNodeShape) o;
+		return parent.equals(that.parent);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(parent);
 	}
 }

@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayDeque;
+import java.util.Objects;
 import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -191,5 +192,28 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
 		leftNode.receiveLogger(validationExecutionLogger);
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		BulkedExternalLeftOuterJoin that = (BulkedExternalLeftOuterJoin) o;
+		return skipBasedOnPreviousConnection == that.skipBasedOnPreviousConnection && connection.equals(that.connection)
+				&& leftNode.equals(that.leftNode)
+				&& Objects.equals(previousStateConnection, that.previousStateConnection) && query.equals(that.query);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), connection, leftNode, skipBasedOnPreviousConnection,
+				previousStateConnection, query);
 	}
 }

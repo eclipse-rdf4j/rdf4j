@@ -52,7 +52,8 @@ public class TargetClass extends Target {
 			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
 					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 		} else {
-			planNode = new Select(connection, getQueryFragment("?a", "?c", null),
+			planNode = new Select(connection,
+					getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider()),
 					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false));
 		}
 
@@ -61,7 +62,8 @@ public class TargetClass extends Target {
 
 	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		Set<Resource> targets = targetClass;
 
 		if (rdfsSubClassOfReasoner != null) {
@@ -113,7 +115,8 @@ public class TargetClass extends Target {
 
 	@Override
 	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		assert (subject == null);
 
 		List<Resource> targetClass = this.targetClass

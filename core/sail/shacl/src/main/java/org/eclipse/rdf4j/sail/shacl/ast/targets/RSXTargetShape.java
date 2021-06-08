@@ -71,7 +71,8 @@ public class RSXTargetShape extends Target {
 		StatementMatcher.Variable object = new StatementMatcher.Variable("temp1");
 
 		SparqlFragment sparqlFragment = this.targetShape.buildSparqlValidNodes_rsx_targetShape(null, object,
-				connectionsGroup.getRdfsSubClassOfReasoner(), null);
+				connectionsGroup.getRdfsSubClassOfReasoner(), null,
+				new StatementMatcher.StableRandomVariableProvider());
 
 		List<StatementMatcher> statementMatchers = sparqlFragment.getStatementMatchers();
 
@@ -92,7 +93,8 @@ public class RSXTargetShape extends Target {
 
 	@Override
 	public String getQueryFragment(String subjectVariable, String objectVariable,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 
@@ -100,8 +102,9 @@ public class RSXTargetShape extends Target {
 
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+
 		String query = getTargetQueryFragment(null, new StatementMatcher.Variable("temp1"),
-				connectionsGroup.getRdfsSubClassOfReasoner());
+				connectionsGroup.getRdfsSubClassOfReasoner(), new StatementMatcher.StableRandomVariableProvider());
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, query,
@@ -116,17 +119,22 @@ public class RSXTargetShape extends Target {
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
-		return this.targetShape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null)
+		return this.targetShape
+				.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null,
+						new StatementMatcher.StableRandomVariableProvider())
 				.getStatementMatchers()
 				.stream();
 	}
 
 	@Override
 	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		assert (subject == null);
 
-		return this.targetShape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null)
+		return this.targetShape
+				.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null,
+						new StatementMatcher.StableRandomVariableProvider())
 				.getFragment();
 
 	}

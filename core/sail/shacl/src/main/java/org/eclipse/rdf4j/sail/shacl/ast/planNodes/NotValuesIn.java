@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -130,5 +131,22 @@ public class NotValuesIn implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return true;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		NotValuesIn that = (NotValuesIn) o;
+		return parent.equals(that.parent) && notIn.equals(that.notIn);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(parent, notIn);
 	}
 }

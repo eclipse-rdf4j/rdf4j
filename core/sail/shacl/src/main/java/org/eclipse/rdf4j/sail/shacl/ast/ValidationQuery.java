@@ -223,7 +223,7 @@ public class ValidationQuery {
 
 		@Override
 		public PlanNode getValidationPlan(SailConnection baseConnection) {
-			return new EmptyNode();
+			return EmptyNode.getInstance();
 		}
 
 		@Override

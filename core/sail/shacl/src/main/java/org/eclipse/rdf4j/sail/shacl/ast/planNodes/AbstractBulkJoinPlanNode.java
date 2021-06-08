@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -20,7 +21,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
@@ -121,7 +121,8 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 				})
 				.map(ValidationTuple::getActiveTarget)
-				.map(r -> new ListBindingSet(Collections.singletonList("a"), Collections.singletonList(r)))
+				.map(r -> new SimpleBindingSet(Collections.singleton("a"), Collections.singletonList("a"),
+						Collections.singletonList(r)))
 				.collect(Collectors.toList());
 	}
 
@@ -133,5 +134,22 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return true;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		AbstractBulkJoinPlanNode that = (AbstractBulkJoinPlanNode) o;
+		return mapper.equals(that.mapper);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(mapper);
 	}
 }

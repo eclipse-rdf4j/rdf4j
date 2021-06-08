@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
-import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
@@ -396,7 +395,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null,
 						Scope.none);
 			} else {
-				return new EmptyNode();
+				return EmptyNode.getInstance();
 			}
 
 		} else {
@@ -430,7 +429,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	 */
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}
 

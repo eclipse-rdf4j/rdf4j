@@ -68,9 +68,11 @@ public class InversePath extends Path {
 
 	@Override
 	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
-		return inversePath.getTargetQueryFragment(object, subject, rdfsSubClassOfReasoner);
+		return inversePath.getTargetQueryFragment(object, subject, rdfsSubClassOfReasoner,
+				stableRandomVariableProvider);
 
 	}
 }

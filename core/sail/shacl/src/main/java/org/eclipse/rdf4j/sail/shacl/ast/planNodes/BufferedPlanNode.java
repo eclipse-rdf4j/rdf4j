@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayDeque;
+import java.util.Objects;
 import java.util.Queue;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -30,7 +31,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 
 	BufferedPlanNode(T parent, String name) {
 		this.parent = parent;
-		this.name = name;
+		this.name = Objects.requireNonNull(name);
 	}
 
 	@Override
@@ -144,5 +145,22 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 	@Override
 	public boolean requiresSorted() {
 		return parent.requiresSorted();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		BufferedPlanNode<?> that = (BufferedPlanNode<?>) o;
+		return parent.equals(that.parent) && name.equals(that.name);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(parent, name);
 	}
 }

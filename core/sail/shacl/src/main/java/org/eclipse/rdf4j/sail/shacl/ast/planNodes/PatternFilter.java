@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.Value;
@@ -72,5 +73,25 @@ public class PatternFilter extends FilterPlanNode {
 	@Override
 	public String toString() {
 		return "PatternFilter{" + "pattern=" + pattern + '}';
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+		PatternFilter that = (PatternFilter) o;
+		return pattern.equals(that.pattern);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(super.hashCode(), pattern);
 	}
 }

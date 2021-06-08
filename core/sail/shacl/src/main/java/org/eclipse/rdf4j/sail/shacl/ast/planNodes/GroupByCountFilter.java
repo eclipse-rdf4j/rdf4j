@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Objects;
 import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -141,5 +142,22 @@ public class GroupByCountFilter implements PlanNode {
 	@Override
 	public boolean requiresSorted() {
 		return true;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		GroupByCountFilter that = (GroupByCountFilter) o;
+		return filter.equals(that.filter) && parent.equals(that.parent);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(filter, parent);
 	}
 }

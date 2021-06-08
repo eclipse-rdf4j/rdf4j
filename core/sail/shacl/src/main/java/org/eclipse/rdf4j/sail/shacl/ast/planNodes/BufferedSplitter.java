@@ -167,6 +167,22 @@ public class BufferedSplitter implements PlanNodeProvider {
 			return bufferedSplitter.parent.requiresSorted();
 		}
 
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			BufferedSplitterPlaneNode that = (BufferedSplitterPlaneNode) o;
+			return bufferedSplitter.equals(that.bufferedSplitter);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(bufferedSplitter);
+		}
 	}
 
 }

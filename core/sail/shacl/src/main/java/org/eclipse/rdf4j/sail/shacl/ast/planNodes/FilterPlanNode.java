@@ -253,4 +253,5 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	public int hashCode() {
 		return Objects.hash(parent);
 	}
+
 }
