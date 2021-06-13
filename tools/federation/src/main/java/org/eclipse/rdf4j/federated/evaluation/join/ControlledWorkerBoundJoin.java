@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.federated.evaluation.join;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -19,6 +20,7 @@ import org.eclipse.rdf4j.federated.algebra.FedXService;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
+import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -66,6 +68,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 		TupleExpr expr = rightArg;
 
 		TaskCreator taskCreator = null;
+		Phaser currentPhaser = phaser;
 
 		// first item is always sent in a non-bound way
 		if (!closed && leftIter.hasNext()) {
@@ -74,24 +77,31 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 			if (expr instanceof StatementTupleExpr) {
 				StatementTupleExpr stmt = (StatementTupleExpr) expr;
 				if (stmt.hasFreeVarsFor(b)) {
-					taskCreator = new BoundJoinTaskCreator(this, strategy, stmt);
+					taskCreator = new BoundJoinTaskCreator(strategy, stmt);
 				} else {
 					expr = new CheckStatementPattern(stmt, queryInfo);
-					taskCreator = new CheckJoinTaskCreator(this, strategy, (CheckStatementPattern) expr);
+					taskCreator = new CheckJoinTaskCreator(strategy, (CheckStatementPattern) expr);
 				}
 			} else if (expr instanceof FedXService) {
-				taskCreator = new FedXServiceJoinTaskCreator(this, strategy, (FedXService) expr);
+				taskCreator = new FedXServiceJoinTaskCreator(strategy, (FedXService) expr);
 			} else {
 				throw new RuntimeException("Expr is of unexpected type: " + expr.getClass().getCanonicalName()
 						+ ". Please report this problem.");
 			}
 			phaser.register();
-			scheduler.schedule(new ParallelJoinTask(this, strategy, expr, b));
+			scheduler.schedule(
+					new ParallelJoinTask(new PhaserHandlingParallelExecutor(this, currentPhaser), strategy, expr, b));
 		}
 
 		int nBindings;
 		List<BindingSet> bindings = null;
 		while (!closed && leftIter.hasNext()) {
+
+			// create a new phaser if there are more than 10000 parties
+			// note: a phaser supports only up to 65535 registered parties
+			if (currentPhaser.getRegisteredParties() >= 10000) {
+				currentPhaser = new Phaser(currentPhaser);
+			}
 
 			/*
 			 * XXX idea:
@@ -120,7 +130,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 			totalBindings += count;
 
 			phaser.register();
-			scheduler.schedule(taskCreator.getTask(bindings));
+			scheduler.schedule(taskCreator.getTask(new PhaserHandlingParallelExecutor(this, currentPhaser), bindings));
 		}
 
 		scheduler.informFinish(this);
@@ -152,63 +162,57 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 	}
 
 	protected interface TaskCreator {
-		public ParallelTask<BindingSet> getTask(List<BindingSet> bindings);
+		public ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings);
 	}
 
 	protected class BoundJoinTaskCreator implements TaskCreator {
-		protected final ControlledWorkerBoundJoin _control;
 		protected final FederationEvalStrategy _strategy;
 		protected final StatementTupleExpr _expr;
 
-		public BoundJoinTaskCreator(ControlledWorkerBoundJoin control,
+		public BoundJoinTaskCreator(
 				FederationEvalStrategy strategy, StatementTupleExpr expr) {
 			super();
-			_control = control;
 			_strategy = strategy;
 			_expr = expr;
 		}
 
 		@Override
-		public ParallelTask<BindingSet> getTask(List<BindingSet> bindings) {
-			return new ParallelBoundJoinTask(_control, _strategy, _expr, bindings);
+		public ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings) {
+			return new ParallelBoundJoinTask(control, _strategy, _expr, bindings);
 		}
 	}
 
 	protected class CheckJoinTaskCreator implements TaskCreator {
-		protected final ControlledWorkerBoundJoin _control;
 		protected final FederationEvalStrategy _strategy;
 		protected final CheckStatementPattern _expr;
 
-		public CheckJoinTaskCreator(ControlledWorkerBoundJoin control,
+		public CheckJoinTaskCreator(
 				FederationEvalStrategy strategy, CheckStatementPattern expr) {
 			super();
-			_control = control;
 			_strategy = strategy;
 			_expr = expr;
 		}
 
 		@Override
-		public ParallelTask<BindingSet> getTask(List<BindingSet> bindings) {
-			return new ParallelCheckJoinTask(_control, _strategy, _expr, bindings);
+		public ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings) {
+			return new ParallelCheckJoinTask(control, _strategy, _expr, bindings);
 		}
 	}
 
 	protected class FedXServiceJoinTaskCreator implements TaskCreator {
-		protected final ControlledWorkerBoundJoin _control;
 		protected final FederationEvalStrategy _strategy;
 		protected final FedXService _expr;
 
-		public FedXServiceJoinTaskCreator(ControlledWorkerBoundJoin control,
+		public FedXServiceJoinTaskCreator(
 				FederationEvalStrategy strategy, FedXService expr) {
 			super();
-			_control = control;
 			_strategy = strategy;
 			_expr = expr;
 		}
 
 		@Override
-		public ParallelTask<BindingSet> getTask(List<BindingSet> bindings) {
-			return new ParallelServiceJoinTask(_control, _strategy, _expr, bindings);
+		public ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings) {
+			return new ParallelServiceJoinTask(control, _strategy, _expr, bindings);
 		}
 	}
 
