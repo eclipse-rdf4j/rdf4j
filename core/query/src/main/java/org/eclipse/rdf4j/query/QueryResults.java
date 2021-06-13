@@ -499,8 +499,8 @@ public class QueryResults extends Iterations {
 	}
 
 	/**
-	 * Check whether two {@link BindingSet}s are compatible.Two binding sets are compatible if they have equal values
-	 * for each binding name that occurs in both binding sets.
+	 * Check whether two {@link BindingSet}s are compatible. Two binding sets are compatible if they have equal values
+	 * for each variable that is bound in both binding sets.
 	 *
 	 * @param bs1
 	 * @param bs2
@@ -513,6 +513,11 @@ public class QueryResults extends Iterations {
 		for (String bindingName : sharedBindings) {
 			Value value1 = bs1.getValue(bindingName);
 			Value value2 = bs2.getValue(bindingName);
+
+			if (value1 == null || value2 == null) {
+				// variable is unbound in one set, therefore compatible.
+				continue;
+			}
 
 			if (!value1.equals(value2)) {
 				return false;
