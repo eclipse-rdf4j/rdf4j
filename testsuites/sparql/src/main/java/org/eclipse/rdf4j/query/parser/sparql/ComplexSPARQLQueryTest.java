@@ -2513,6 +2513,19 @@ public abstract class ComplexSPARQLQueryTest {
 		assertThat(result).hasSize(2);
 	}
 
+	@Test
+	public void testValuesCartesianProduct() {
+		final String queryString = ""
+				+ "select ?x ?y where { "
+				+ "  values ?x { undef 67 } "
+				+ "  values ?y { undef 42 } "
+				+ "}";
+		final TupleQuery tupleQuery = conn.prepareTupleQuery(queryString);
+
+		List<BindingSet> bindingSets = QueryResults.asList(tupleQuery.evaluate());
+		assertThat(bindingSets).hasSize(4);
+	}
+
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1267
 	 */

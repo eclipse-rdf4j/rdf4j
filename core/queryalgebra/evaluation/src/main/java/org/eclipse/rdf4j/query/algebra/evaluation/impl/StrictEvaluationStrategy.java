@@ -730,52 +730,48 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSetAssignment bsa,
 			BindingSet bindings) throws QueryEvaluationException {
-		final Iterator<BindingSet> iter = bsa.getBindingSets().iterator();
-		if (bindings.size() == 0) { // empty binding set
-			return new CloseableIteratorIteration<>(iter);
+		final Iterator<BindingSet> assignments = bsa.getBindingSets().iterator();
+		if (bindings.size() == 0) {
+			// we can just return the assignments directly without checking existing bindings
+			return new CloseableIteratorIteration<>(assignments);
 		}
 
+		// we need to verify that new binding assignments do not overwrite existing bindings
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
-
-		final QueryBindingSet b = new QueryBindingSet(bindings);
 
 		result = new LookAheadIteration<BindingSet, QueryEvaluationException>() {
 
 			@Override
 			protected BindingSet getNextElement() throws QueryEvaluationException {
-				QueryBindingSet result = null;
-				while (result == null && iter.hasNext()) {
-					final BindingSet assignedBindings = iter.next();
+				QueryBindingSet nextResult = null;
+				while (nextResult == null && assignments.hasNext()) {
+					final BindingSet assignedBindings = assignments.next();
+
 					for (String name : assignedBindings.getBindingNames()) {
+						if (nextResult == null) {
+							nextResult = new QueryBindingSet(bindings);
+						}
+
 						final Value assignedValue = assignedBindings.getValue(name);
-						if (assignedValue != null) { // can be null if set to
-							// UNDEF
-							// check that the binding assignment does not
-							// overwrite
-							// existing bindings.
-							Value bValue = b.getValue(name);
-							if (bValue == null || assignedValue.equals(bValue)) {
-								if (result == null) {
-									result = new QueryBindingSet(b);
-								}
-								if (bValue == null) {
-									// we are not overwriting an existing
-									// binding.
-									result.addBinding(name, assignedValue);
+						if (assignedValue != null) {
+							// check that the binding assignment does not overwrite existing bindings.
+							Value existingValue = bindings.getValue(name);
+							if (existingValue == null || assignedValue.equals(existingValue)) {
+								if (existingValue == null) {
+									// we are not overwriting an existing binding.
+									nextResult.addBinding(name, assignedValue);
 								}
 							} else {
-								// if values are not equal there is no
-								// compatible
-								// merge and we should return no next element.
-								result = null;
+								// if values are not equal there is no compatible merge and we should return no next
+								// element.
+								nextResult = null;
 								break;
 							}
 						}
 					}
 				}
-				return result;
+				return nextResult;
 			}
-
 		};
 
 		return result;
