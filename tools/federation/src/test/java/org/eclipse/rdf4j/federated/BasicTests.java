@@ -99,6 +99,27 @@ public class BasicTests extends SPARQLBaseTest {
 	}
 
 	@Test
+	public void testQuotes() throws Exception {
+		/* test query with new line in literal */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint3.ttl"));
+		execute("/tests/basic/query_quotes.rq", "/tests/basic/query_quotes.srx", false);
+	}
+
+	@Test
+	public void testQuotesDatatype() throws Exception {
+		/* test query with new line in triple quotes and datatype */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint3.ttl"));
+		execute("/tests/basic/query_quotes_datatype.rq", "/tests/basic/query_quotes_datatype.srx", false);
+	}
+
+	@Test
+	public void testLanguageTag() throws Exception {
+		/* test query with a language tag */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint4.ttl"));
+		execute("/tests/basic/query_lang.rq", "/tests/basic/query_lang.srx", false);
+	}
+
+	@Test
 	public void testBindClause() throws Exception {
 
 		/* test query with bind clause */
