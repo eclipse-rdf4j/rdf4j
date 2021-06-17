@@ -7,9 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,8 +31,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MutableTupleQueryResult;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Arjohn Kampman
@@ -75,7 +76,7 @@ public class QueryResultsTest {
 
 	private IRI q = VF.createIRI("urn:q");
 
-	@Before
+	@BeforeEach
 	public void setUp() {
 		tqr1 = new MutableTupleQueryResult(twoBindingNames);
 		tqr2 = new MutableTupleQueryResult(twoBindingNames);
@@ -180,6 +181,41 @@ public class QueryResultsTest {
 			BindingSet result = filtered.next();
 			assertFalse(processed.contains(result));
 			processed.add(result);
+		}
+	}
+
+	@Test
+	public void testBindingSetsCompatible() {
+		{
+			BindingSet a = new ListBindingSet(twoBindingNames, foo, lit1);
+			BindingSet b = new ListBindingSet(twoBindingNames, foo, lit2);
+
+			assertThat(QueryResults.bindingSetsCompatible(a, b)).isFalse();
+		}
+		{
+			BindingSet a = new ListBindingSet(twoBindingNames, foo, lit1);
+			BindingSet b = new ListBindingSet(twoBindingNames, foo, lit1);
+
+			assertThat(QueryResults.bindingSetsCompatible(a, b)).isTrue();
+		}
+		{
+			BindingSet a = new ListBindingSet(twoBindingNames, null, lit1);
+			BindingSet b = new ListBindingSet(twoBindingNames, null, lit2);
+
+			assertThat(QueryResults.bindingSetsCompatible(a, b)).isFalse();
+		}
+		{
+			BindingSet a = new ListBindingSet(twoBindingNames, null, lit1);
+			BindingSet b = new ListBindingSet(twoBindingNames, null, lit1);
+
+			assertThat(QueryResults.bindingSetsCompatible(a, b)).isTrue();
+		}
+		{
+			BindingSet a = new ListBindingSet(twoBindingNames, foo, lit1);
+			BindingSet b = new ListBindingSet(twoBindingNames, null, lit1);
+
+			assertThat(QueryResults.bindingSetsCompatible(a, b)).isTrue();
+			assertThat(QueryResults.bindingSetsCompatible(b, a)).isTrue();
 		}
 	}
 

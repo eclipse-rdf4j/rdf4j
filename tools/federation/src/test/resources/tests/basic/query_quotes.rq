@@ -1,0 +1,5 @@
+PREFIX : <http://example.org/ns#>
+SELECT ?s
+{ ?s ?p '''SPARQL 1.1 Basic
+Federated Query'''
+}

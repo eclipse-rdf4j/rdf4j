@@ -1151,6 +1151,33 @@ public abstract class ComplexSPARQLQueryTest {
 	}
 
 	/**
+	 * See https://github.com/eclipse/rdf4j/issues/3072
+	 * 
+	 */
+	@Test
+	public void testValuesAfterOptional() throws Exception {
+		String data = "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . \n"
+				+ "@prefix :     <urn:ex:> . \n"
+				+ ":r1 a rdfs:Resource . \n"
+				+ ":r2 a rdfs:Resource ; rdfs:label \"a label\" . \n";
+
+		String query = ""
+				+ "prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> \n"
+				+ "prefix :     <urn:ex:> \n"
+				+ "\n"
+				+ "select ?resource ?label where { \n"
+				+ "  ?resource a rdfs:Resource . \n"
+				+ "  optional { ?resource rdfs:label ?label } \n"
+				+ "  values ?label { undef } \n"
+				+ "}";
+
+		conn.add(new StringReader(data), RDFFormat.TURTLE);
+
+		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+		assertThat(result).hasSize(2);
+	}
+
+	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
 	@Test
@@ -2511,6 +2538,19 @@ public abstract class ComplexSPARQLQueryTest {
 
 		List<BindingSet> result = QueryResults.asList(q.evaluate());
 		assertThat(result).hasSize(2);
+	}
+
+	@Test
+	public void testValuesCartesianProduct() {
+		final String queryString = ""
+				+ "select ?x ?y where { "
+				+ "  values ?x { undef 67 } "
+				+ "  values ?y { undef 42 } "
+				+ "}";
+		final TupleQuery tupleQuery = conn.prepareTupleQuery(queryString);
+
+		List<BindingSet> bindingSets = QueryResults.asList(tupleQuery.evaluate());
+		assertThat(bindingSets).hasSize(4);
 	}
 
 	/**

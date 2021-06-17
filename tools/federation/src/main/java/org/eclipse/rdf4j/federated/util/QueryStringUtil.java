@@ -889,19 +889,19 @@ public class QueryStringUtil {
 	 * @return the string builder
 	 */
 	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
-		sb.append('"');
+		sb.append("'''");
 		sb.append(lit.getLabel().replace("\"", "\\\""));
-		sb.append('"');
+		sb.append("'''");
 
 		if (lit.getLanguage().isPresent()) {
 			sb.append('@');
-			sb.append(lit.getLanguage());
-		}
-
-		if (lit.getDatatype() != null) {
-			sb.append("^^<");
-			sb.append(lit.getDatatype().stringValue());
-			sb.append('>');
+			sb.append(lit.getLanguage().get());
+		} else {
+			if (lit.getDatatype() != null) {
+				sb.append("^^<");
+				sb.append(lit.getDatatype().stringValue());
+				sb.append('>');
+			}
 		}
 		return sb;
 	}
