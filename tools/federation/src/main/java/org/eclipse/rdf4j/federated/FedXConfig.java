@@ -68,6 +68,8 @@ public class FedXConfig {
 
 	private String prefixDeclarations = null;
 
+	private int consumingIterationMax = 1000;
+
 	/* factory like setters */
 
 	/**
@@ -506,5 +508,28 @@ public class FedXConfig {
 	 */
 	public Optional<TaskWrapper> getTaskWrapper() {
 		return Optional.ofNullable(taskWrapper);
+	}
+
+	/**
+	 * Set the max number of results to be consumed by {@link ConsumingIteration}. See
+	 * {@link #getConscumingIterationMax()}.
+	 *
+	 * <p>
+	 * Can only be set before federation initialization.
+	 * </p>
+	 *
+	 * @param max
+	 * @return the current config
+	 */
+	public FedXConfig withConsumingIterationMax(int max) {
+		this.consumingIterationMax = max;
+		return this;
+	}
+
+	/**
+	 * Returns the max number of results to be consumed by {@link ConsumingIteration}
+	 */
+	public int getConscumingIterationMax() {
+		return consumingIterationMax;
 	}
 }

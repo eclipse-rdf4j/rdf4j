@@ -97,7 +97,10 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 		}
 
 		try {
-			rightQueue.put(res);
+			if (!closed)
+				rightQueue.put(res);
+			else
+				res.close();
 		} catch (InterruptedException e) {
 			throw new RuntimeException("Error adding element to right queue", e);
 		}
@@ -153,6 +156,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	@Override
 	public void handleClose() throws QueryEvaluationException {
 
+		closed = true;
 		try {
 			rightQueue.close();
 		} finally {
@@ -162,7 +166,6 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 				rightIter = null;
 			}
 		}
-		closed = true;
 		super.handleClose();
 	}
 

@@ -122,13 +122,18 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 			bindings = new ArrayList<>(nBindings);
 
 			int count = 0;
-			while (count < nBindings && leftIter.hasNext()) {
+			while (!closed && count < nBindings && leftIter.hasNext()) {
 				bindings.add(leftIter.next());
 				count++;
 			}
 
 			totalBindings += count;
 
+			if (closed) {
+				leftIter.close();
+				scheduler.informFinish(this);
+				return;
+			}
 			phaser.register();
 			scheduler.schedule(taskCreator.getTask(new PhaserHandlingParallelExecutor(this, currentPhaser), bindings));
 		}
@@ -139,7 +144,8 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 			log.debug("JoinStats: left iter of " + getDisplayId() + " had " + totalBindings + " results.");
 		}
 
-		phaser.awaitAdvanceInterruptibly(phaser.arrive(), queryInfo.getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);
+		phaser.awaitAdvanceInterruptibly(phaser.arrive(), queryInfo.getMaxRemainingTimeMS(),
+				TimeUnit.MILLISECONDS);
 	}
 
 	/**

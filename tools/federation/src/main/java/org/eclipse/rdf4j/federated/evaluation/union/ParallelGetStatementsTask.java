@@ -35,6 +35,7 @@ public class ParallelGetStatementsTask extends ParallelTaskBase<Statement> {
 	protected final Value obj;
 	protected final QueryInfo queryInfo;
 	protected Resource[] contexts;
+	private CloseableIteration<Statement, QueryEvaluationException> res;
 
 	public ParallelGetStatementsTask(ParallelExecutor<Statement> unionControl,
 			Endpoint endpoint,
@@ -59,6 +60,17 @@ public class ParallelGetStatementsTask extends ParallelTaskBase<Statement> {
 	public CloseableIteration<Statement, QueryEvaluationException> performTask()
 			throws Exception {
 		TripleSource tripleSource = endpoint.getTripleSource();
-		return tripleSource.getStatements(subj, pred, obj, queryInfo, contexts);
+		res = tripleSource.getStatements(subj, pred, obj, queryInfo, contexts);
+		return res;
+	}
+
+	@Override
+	public void cancel() {
+		// TODO Auto-generated method stub
+		super.cancel();
+		if (res != null) {
+			res.close();
+			res = null;
+		}
 	}
 }

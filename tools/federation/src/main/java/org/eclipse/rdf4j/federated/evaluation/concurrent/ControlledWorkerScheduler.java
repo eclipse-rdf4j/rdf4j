@@ -208,16 +208,21 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 			ParallelExecutor<T> taskControl = task.getControl();
 
+			CloseableIteration<T, QueryEvaluationException> res = null;
 			try {
 				if (log.isTraceEnabled()) {
 					log.trace("Performing task " + task.toString() + " in " + Thread.currentThread().getName());
 				}
-				CloseableIteration<T, QueryEvaluationException> res = task.performTask();
+				res = task.performTask();
 				taskControl.addResult(res);
+				if (aborted || taskControl.isFinished())
+					res.close();
 
 				taskControl.done(); // in most cases this is a no-op
 			} catch (Throwable t) {
 				if (aborted) {
+					if (res != null)
+						res.close();
 					return;
 				}
 				log.debug("Exception encountered while evaluating task (" + t.getClass().getSimpleName() + "): "

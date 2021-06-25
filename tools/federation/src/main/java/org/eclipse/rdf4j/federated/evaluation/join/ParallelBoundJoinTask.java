@@ -30,6 +30,8 @@ public class ParallelBoundJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final StatementTupleExpr expr;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
+	protected volatile boolean cancel = false;
+	CloseableIteration<BindingSet, QueryEvaluationException> res;
 
 	public ParallelBoundJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
 			StatementTupleExpr expr, List<BindingSet> bindings) {
@@ -41,12 +43,28 @@ public class ParallelBoundJoinTask extends ParallelTaskBase<BindingSet> {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> performTask() throws Exception {
-		return strategy.evaluateBoundJoinStatementPattern(expr, bindings);
+		res = strategy.evaluateBoundJoinStatementPattern(expr, bindings);
+		try {
+			return res;
+		} finally {
+			if (cancel) {
+				res.close();
+			}
+		}
 	}
 
 	@Override
 	public ParallelExecutor<BindingSet> getControl() {
 		return joinControl;
+	}
+
+	@Override
+	public void cancel() {
+		this.cancel = true;
+		super.cancel();
+		if (res != null) {
+			res.close();
+		}
 	}
 
 }

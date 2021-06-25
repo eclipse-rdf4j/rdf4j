@@ -91,13 +91,14 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 			bindings = new ArrayList<>(nBindings);
 
 			int count = 0;
-			while (count < nBindings && leftIter.hasNext()) {
+			while (!closed && count < nBindings && leftIter.hasNext()) {
 				bindings.add(leftIter.next());
 				count++;
 			}
 
 			totalBindings += count;
-
+			if (closed)
+				return;
 			if (hasFreeVars) {
 				addResult(strategy.evaluateBoundJoinStatementPattern(stmt, bindings));
 			} else {
