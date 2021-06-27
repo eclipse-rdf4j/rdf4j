@@ -365,9 +365,10 @@
 		<jsonldjava.version>0.13.3</jsonldjava.version>
 		<last.japicmp.compare.version>3.6.3</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
-		<lucene.version>7.7.2</lucene.version>
-		<solr.version>7.7.2</solr.version>
-		<elasticsearch.version>6.8.8</elasticsearch.version>
+		<lucene.version>8.5.1</lucene.version>
+		<solr.version>8.4.1</solr.version>
+		<elasticsearch.version>7.8.1</elasticsearch.version>
+		<servlet.version>3.1.0</servlet.version>
 		<jetty.version>9.4.38.v20210224</jetty.version>
 		<spring.version>5.3.5</spring.version>
 		<guava.version>30.1.1-jre</guava.version>
@@ -815,7 +816,7 @@
 					<version>3.0.0-M5</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
-						<argLine>-Xmx1G</argLine>
+						<argLine>-Xmx2048M</argLine>
 					</configuration>
 				</plugin>
 				<plugin>

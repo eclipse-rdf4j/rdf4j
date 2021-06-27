@@ -50,6 +50,7 @@ import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.reindex.BulkByScrollResponse;
 import org.elasticsearch.index.reindex.DeleteByQueryAction;
+import org.elasticsearch.index.reindex.DeleteByQueryRequestBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -141,11 +142,12 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	@Override
 	synchronized public void clear(boolean inferred, Resource[] contexts) {
 
-		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientProvider.getClient())
-				.filter(getQueryBuilder(null, null, null, inferred, contexts))
-				.abortOnVersionConflict(false)
-				.source(index)
-				.get();
+		BulkByScrollResponse response = new DeleteByQueryRequestBuilder(clientProvider.getClient(),
+				DeleteByQueryAction.INSTANCE)
+						.filter(getQueryBuilder(null, null, null, inferred, contexts))
+						.abortOnVersionConflict(false)
+						.source(index)
+						.get();
 
 		long deleted = response.getDeleted();
 	}
@@ -596,11 +598,12 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		}
 
-		BulkByScrollResponse response = DeleteByQueryAction.INSTANCE.newRequestBuilder(clientProvider.getClient())
-				.filter(getQueryBuilder(subj, pred, obj, inferred, contexts))
-				.source(index)
-				.abortOnVersionConflict(false)
-				.get();
+		BulkByScrollResponse response = new DeleteByQueryRequestBuilder(clientProvider.getClient(),
+				DeleteByQueryAction.INSTANCE)
+						.filter(getQueryBuilder(subj, pred, obj, inferred, contexts))
+						.source(index)
+						.abortOnVersionConflict(false)
+						.get();
 
 		long deleted = response.getDeleted();
 		return deleted > 0;

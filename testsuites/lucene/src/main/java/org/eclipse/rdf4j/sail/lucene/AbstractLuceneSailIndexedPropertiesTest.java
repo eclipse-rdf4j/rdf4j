@@ -144,6 +144,7 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 			// this should not be indexed
 			assertTrue(connection.hasStatement(SUBJECT_3, FOAFPLAN,
 					vf.createLiteral("groucho did not smoke cigars nor cigarillos"), false));
+			System.err.println("--- after");
 		}
 	}
 
