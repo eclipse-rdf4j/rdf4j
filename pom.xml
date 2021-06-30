@@ -396,7 +396,7 @@
 			<dependency>
 				<groupId>com.opencsv</groupId>
 				<artifactId>opencsv</artifactId>
-				<version>4.6</version>
+				<version>5.3</version>
 			</dependency>
 			<!-- Apache Commons -->
 			<dependency>
