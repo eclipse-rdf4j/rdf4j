@@ -183,11 +183,14 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection(); 
-			SailRepositoryConnection connection2 = sailRepository.getConnection()) {
-			add(connection1, "ex:pete a ex:Person .");
-			connection2.begin();
-			StringReader shaclRules = new StringReader(String.join("\n", "",
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		add(connection1, "ex:pete a ex:Person .");
+
+		connection2.begin();
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
@@ -200,17 +203,22 @@ public class TransactionalIsolationTest {
 				"                sh:path ex:age ;",
 				"                sh:minCount 1 ;",
 				"        ] ."));
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			try {
-				connection2.commit();
-			} catch (Throwable ignored) {
-			}
-			connection2.rollback();
-			add(connection1, "ex:steve a ex:Person .");
-			connection2.close();
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+		try {
+			connection2.commit();
+		} catch (Throwable ignored) {
 		}
+
+		connection2.rollback();
+		add(connection1, "ex:steve a ex:Person .");
+
+		connection2.close();
+		connection1.close();
+
 		sailRepository.shutDown();
-		
+
 	}
 
 	@Test
@@ -221,7 +229,9 @@ public class TransactionalIsolationTest {
 		sailRepository.init();
 
 		SailRepositoryConnection connection1 = sailRepository.getConnection();
-		try (SailRepositoryConnection connection2 = sailRepository.getConnection()) {
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		try {
 
 			connection2.begin();
 
@@ -250,6 +260,7 @@ public class TransactionalIsolationTest {
 			}
 
 		} finally {
+			connection2.close();
 			connection1.close();
 			sailRepository.shutDown();
 
@@ -266,10 +277,12 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection()) {
-			SailRepositoryConnection connection2 = sailRepository.getConnection();
-			connection2.begin();
-			StringReader shaclRules = new StringReader(String.join("\n", "",
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection2.begin();
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
@@ -282,16 +295,21 @@ public class TransactionalIsolationTest {
 				"                sh:path ex:age ;",
 				"                sh:minCount 1 ;",
 				"        ] ."));
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			connection1.begin();
-			connection2.commit();
-			addInTransaction(connection1, "ex:steve a ex:Person .");
-			try {
-				connection1.commit();
-			} catch (Throwable ignored) {
-				System.out.println(ignored.getMessage());
-			}
-			connection2.close();
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection1.begin();
+		connection2.commit();
+
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+
+		try {
+			connection1.commit();
+		} catch (Throwable ignored) {
+			System.out.println(ignored.getMessage());
+		}
+
+		connection2.close();
+		connection1.close();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -315,10 +333,12 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection()) {
-			SailRepositoryConnection connection2 = sailRepository.getConnection();
-			connection2.begin(IsolationLevels.SERIALIZABLE);
-			StringReader shaclRules = new StringReader(String.join("\n", "",
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection2.begin(IsolationLevels.SERIALIZABLE);
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
@@ -331,16 +351,21 @@ public class TransactionalIsolationTest {
 				"                sh:path ex:age ;",
 				"                sh:minCount 1 ;",
 				"        ] ."));
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			connection1.begin(IsolationLevels.SERIALIZABLE);
-			connection2.commit();
-			addInTransaction(connection1, "ex:steve a ex:Person .");
-			try {
-				connection1.commit();
-			} catch (Throwable ignored) {
-				System.out.println(ignored.getMessage());
-			}
-			connection2.close();
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection1.begin(IsolationLevels.SERIALIZABLE);
+		connection2.commit();
+
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+
+		try {
+			connection1.commit();
+		} catch (Throwable ignored) {
+			System.out.println(ignored.getMessage());
+		}
+
+		connection2.close();
+		connection1.close();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -364,12 +389,15 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection()) {
-			SailRepositoryConnection connection2 = sailRepository.getConnection();
-			connection1.begin(IsolationLevels.SNAPSHOT);
-			addInTransaction(connection1, "ex:steve a ex:Person .");
-			connection2.begin(IsolationLevels.SNAPSHOT);
-			StringReader shaclRules = new StringReader(String.join("\n", "",
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection1.begin(IsolationLevels.SNAPSHOT);
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+
+		connection2.begin(IsolationLevels.SNAPSHOT);
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
@@ -382,13 +410,18 @@ public class TransactionalIsolationTest {
 				"                sh:path ex:age ;",
 				"                sh:minCount 1 ;",
 				"        ] ."));
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			connection1.commit();
-			try {
-				connection2.commit();
-			} catch (Throwable ignored) {
-			}
-			connection2.close();
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+		connection1.commit();
+
+		try {
+			connection2.commit();
+		} catch (Throwable ignored) {
+		}
+
+		connection2.close();
+		connection1.close();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -412,12 +445,15 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection()) {
-			SailRepositoryConnection connection2 = sailRepository.getConnection();
-			connection1.begin(IsolationLevels.SNAPSHOT_READ);
-			addInTransaction(connection1, "ex:steve a ex:Person .");
-			connection2.begin(IsolationLevels.SNAPSHOT_READ);
-			StringReader shaclRules = new StringReader(String.join("\n", "",
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection1.begin(IsolationLevels.SNAPSHOT_READ);
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+
+		connection2.begin(IsolationLevels.SNAPSHOT_READ);
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
@@ -430,13 +466,18 @@ public class TransactionalIsolationTest {
 				"                sh:path ex:age ;",
 				"                sh:minCount 1 ;",
 				"        ] ."));
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			connection1.commit();
-			try {
-				connection2.commit();
-			} catch (Throwable ignored) {
-			}
-			connection2.close();
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+		connection1.commit();
+
+		try {
+			connection2.commit();
+		} catch (Throwable ignored) {
+		}
+
+		connection2.close();
+		connection1.close();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -460,12 +501,15 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection()) {
-			SailRepositoryConnection connection2 = sailRepository.getConnection();
-			connection1.begin(IsolationLevels.SERIALIZABLE);
-			addInTransaction(connection1, "ex:steve a ex:Person .");
-			connection2.begin(IsolationLevels.SERIALIZABLE);
-			StringReader shaclRules = new StringReader(String.join("\n", "",
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection1.begin(IsolationLevels.SERIALIZABLE);
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+
+		connection2.begin(IsolationLevels.SERIALIZABLE);
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
@@ -478,13 +522,18 @@ public class TransactionalIsolationTest {
 				"                sh:path ex:age ;",
 				"                sh:minCount 1 ;",
 				"        ] ."));
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			connection1.commit();
-			try {
-				connection2.commit();
-			} catch (Throwable ignored) {
-			}
-			connection2.close();
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+		connection1.commit();
+
+		try {
+			connection2.commit();
+		} catch (Throwable ignored) {
+		}
+
+		connection2.close();
+		connection1.close();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -508,13 +557,16 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection()) {
-			SailRepositoryConnection connection2 = sailRepository.getConnection();
-			connection1.begin();
-			addInTransaction(connection1, "ex:steve a ex:Person .");
-			connection2.begin();
-			connection1.commit();
-			StringReader shaclRules = new StringReader(String.join("\n", "",
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection1.begin();
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+
+		connection2.begin();
+		connection1.commit();
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
@@ -527,12 +579,16 @@ public class TransactionalIsolationTest {
 				"                sh:path ex:age ;",
 				"                sh:minCount 1 ;",
 				"        ] ."));
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			try {
-				connection2.commit();
-			} catch (Throwable ignored) {
-			}
-			connection2.close();
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+		try {
+			connection2.commit();
+		} catch (Throwable ignored) {
+		}
+
+		connection2.close();
+		connection1.close();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -556,10 +612,12 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection()) {
-			SailRepositoryConnection connection2 = sailRepository.getConnection();
-			connection2.begin();
-			StringReader shaclRules = new StringReader(String.join("\n", "",
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection2.begin();
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
 				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
 				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
@@ -572,16 +630,21 @@ public class TransactionalIsolationTest {
 				"                sh:path ex:age ;",
 				"                sh:minCount 1 ;",
 				"        ] ."));
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			connection1.begin();
-			addInTransaction(connection1, "ex:steve a ex:Person .");
-			connection2.commit();
-			try {
-				connection1.commit();
-			} catch (Throwable ignored) {
-				System.out.println(ignored.getMessage());
-			}
-			connection2.close();
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection1.begin();
+
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+		connection2.commit();
+
+		try {
+			connection1.commit();
+		} catch (Throwable ignored) {
+			System.out.println(ignored.getMessage());
+		}
+
+		connection2.close();
+		connection1.close();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
@@ -603,33 +666,33 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection()) {
-			SailRepositoryConnection connection2 = sailRepository.getConnection();
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
 
-			connection2.begin();
+		connection2.begin();
 
-			StringReader shaclRules = new StringReader(String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+		StringReader shaclRules = new StringReader(String.join("\n", "",
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
 
-					"ex:PersonShape",
-					"        a sh:NodeShape  ;",
-					"        sh:targetClass ex:Person ;",
-					"        sh:property [",
-					"                sh:path ex:age ;",
-					"                sh:minCount 1 ;",
-					"        ] ."));
+				"ex:PersonShape",
+				"        a sh:NodeShape  ;",
+				"        sh:targetClass ex:Person ;",
+				"        sh:property [",
+				"                sh:path ex:age ;",
+				"                sh:minCount 1 ;",
+				"        ] ."));
 
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			connection2.getSailConnection().prepare();
-			connection2.rollback();
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.getSailConnection().prepare();
+		connection2.rollback();
 
-			add(connection1, "ex:steve a ex:Person .");
+		add(connection1, "ex:steve a ex:Person .");
 
-			connection2.close();
-		}
+		connection2.close();
+		connection1.close();
 
 		sailRepository.shutDown();
 
