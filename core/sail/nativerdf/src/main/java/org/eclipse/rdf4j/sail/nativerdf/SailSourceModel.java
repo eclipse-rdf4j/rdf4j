@@ -57,11 +57,10 @@ class SailSourceModel extends AbstractModel {
 		@Override
 		public boolean hasNext() {
 			try {
-				try (stmts) {
-					if (stmts.hasNext()) {
-						return true;
-					}
+				if (stmts.hasNext()) {
+					return true;
 				}
+				stmts.close();
 				return false;
 			} catch (SailException e) {
 				throw new ModelException(e);
