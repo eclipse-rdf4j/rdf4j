@@ -107,8 +107,9 @@ public class HDTParser extends AbstractRDFParser {
 		HDTDictionarySection objects = null;
 		HDTTriplesSection section = null;
 
-		try ( // not using try-with-resources, since the counter is needed in the catch clause (JDK8)
-				CountingInputStream bis = new CountingInputStream(in)) {
+		// not using try-with-resources, since the counter is needed in the catch clause
+		CountingInputStream bis = new CountingInputStream(in);
+		try {
 			reportLocation(0, -1);
 			HDTGlobal global = new HDTGlobal();
 			global.parse(bis);
@@ -154,6 +155,8 @@ public class HDTParser extends AbstractRDFParser {
 			section.parse(bis, triples.getOrder());
 		} catch (IOException ioe) {
 			reportFatalError(ioe.getMessage(), bis.getCount(), -1);
+		} finally {
+			bis.close();
 		}
 
 		if (rdfHandler != null) {
