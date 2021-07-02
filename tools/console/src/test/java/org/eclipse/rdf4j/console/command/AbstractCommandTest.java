@@ -165,14 +165,14 @@ public class AbstractCommandTest {
 	 * @throws RDF4JException
 	 */
 	protected String addRepository(InputStream configStream) throws IOException, RDF4JException {
-		try (configStream) {
-			RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());
-			graph = new LinkedHashModel();
-			rdfParser.setRDFHandler(new StatementCollector(graph));
-			rdfParser.parse(
-					new StringReader(IOUtil.readString(new InputStreamReader(configStream, StandardCharsets.UTF_8))),
-					RepositoryConfigSchema.NAMESPACE);
-		}
+		RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());
+
+		Model graph = new LinkedHashModel();
+		rdfParser.setRDFHandler(new StatementCollector(graph));
+		rdfParser.parse(
+				new StringReader(IOUtil.readString(new InputStreamReader(configStream, StandardCharsets.UTF_8))),
+				RepositoryConfigSchema.NAMESPACE);
+		configStream.close();
 
 		Resource repositoryNode = Models.subject(graph.filter(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))
 				.orElseThrow(() -> new RepositoryConfigException("could not find subject resource"));
