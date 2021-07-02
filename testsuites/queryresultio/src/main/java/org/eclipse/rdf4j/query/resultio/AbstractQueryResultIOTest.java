@@ -354,10 +354,9 @@ public abstract class AbstractQueryResultIOTest {
 	protected void doTupleNoLinks(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected)
 			throws IOException, QueryResultParseException, UnsupportedQueryResultFormatException,
 			QueryEvaluationException, QueryResultHandlerException {
-		try (input) {
-			out = new ByteArrayOutputStream(4096);
-			QueryResultIO.writeTuple(input, format, out);
-		}
+		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
+		QueryResultIO.writeTuple(input, format, out);
+		input.close();
 
 		// System.out.println("output: " + out.toString("UTF-8"));
 
