@@ -99,22 +99,18 @@ public class IDFileBenchmark {
 
 		int writeCount = COUNT / 10;
 
-		IDFile idFile = new IDFile(file);
-
-		for (int i = 0; i < writeCount * 8; i++) {
-			idFile.storeOffset(i);
+		long sum;
+		try (IDFile idFile = new IDFile(file)) {
+			for (int i = 0; i < writeCount * 8; i++) {
+				idFile.storeOffset(i);
+			}
+			idFile.clearCache();
+			Random random = new Random(RANDOM_SEED);
+			sum = 0;
+			for (int i = 0; i < writeCount; i++) {
+				sum += idFile.getOffset(random.nextInt(writeCount));
+			}
 		}
-
-		idFile.clearCache();
-
-		Random random = new Random(RANDOM_SEED);
-
-		long sum = 0;
-		for (int i = 0; i < writeCount; i++) {
-			sum += idFile.getOffset(random.nextInt(writeCount));
-		}
-
-		idFile.close();
 
 		boolean delete = file.delete();
 

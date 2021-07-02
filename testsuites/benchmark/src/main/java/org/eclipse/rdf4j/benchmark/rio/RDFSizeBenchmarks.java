@@ -135,10 +135,8 @@ public class RDFSizeBenchmarks {
 				.set(VERIFY_URI_SYNTAX, false));
 
 		Instant start = Instant.now();
-		try {
+		try (is) {
 			parser.parse(is);
-		} finally {
-			is.close();
 		}
 		Instant end = Instant.now();
 		Duration duration = Duration.between(start, end);

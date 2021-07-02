@@ -174,10 +174,8 @@ public class DataStore implements Closeable {
 		try {
 			hashFile.close();
 		} finally {
-			try {
+			try (dataFile) {
 				idFile.close();
-			} finally {
-				dataFile.close();
 			}
 		}
 	}

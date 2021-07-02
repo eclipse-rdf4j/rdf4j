@@ -59,46 +59,46 @@ public abstract class SparqlAggregatesTest {
 	@Test
 	public void testSelect() throws Exception {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, selectNameMbox);
-		TupleQueryResult result = query.evaluate();
-		assertTrue(result.hasNext());
-		result.next();
-		result.next();
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertTrue(result.hasNext());
+			result.next();
+			result.next();
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
 	public void testConcat() throws Exception {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, concatMbox);
-		TupleQueryResult result = query.evaluate();
-		assertTrue(result.hasNext());
-		assertNotNull(result.next().getValue("mbox"));
-		assertNotNull(result.next().getValue("mbox"));
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertTrue(result.hasNext());
+			assertNotNull(result.next().getValue("mbox"));
+			assertNotNull(result.next().getValue("mbox"));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
 	public void testConcatOptional() throws Exception {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, concatOptionalMbox);
-		TupleQueryResult result = query.evaluate();
-		assertTrue(result.hasNext());
-		result.next();
-		result.next();
-		result.next();
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertTrue(result.hasNext());
+			result.next();
+			result.next();
+			result.next();
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
 	public void testCount() throws Exception {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, countMbox);
-		TupleQueryResult result = query.evaluate();
-		assertTrue(result.hasNext());
-		assertEquals("1", result.next().getValue("mbox").stringValue());
-		assertEquals("1", result.next().getValue("mbox").stringValue());
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertTrue(result.hasNext());
+			assertEquals("1", result.next().getValue("mbox").stringValue());
+			assertEquals("1", result.next().getValue("mbox").stringValue());
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
@@ -107,13 +107,13 @@ public abstract class SparqlAggregatesTest {
 		zeroOr1.add("0");
 		zeroOr1.add("1");
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, countOptionalMbox);
-		TupleQueryResult result = query.evaluate();
-		assertTrue(result.hasNext());
-		assertTrue(zeroOr1.contains(result.next().getValue("mbox").stringValue()));
-		assertTrue(zeroOr1.contains(result.next().getValue("mbox").stringValue()));
-		assertTrue(zeroOr1.contains(result.next().getValue("mbox").stringValue()));
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertTrue(result.hasNext());
+			assertTrue(zeroOr1.contains(result.next().getValue("mbox").stringValue()));
+			assertTrue(zeroOr1.contains(result.next().getValue("mbox").stringValue()));
+			assertTrue(zeroOr1.contains(result.next().getValue("mbox").stringValue()));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Before
@@ -129,12 +129,9 @@ public abstract class SparqlAggregatesTest {
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return repository;
 	}
@@ -151,14 +148,14 @@ public abstract class SparqlAggregatesTest {
 	}
 
 	private void createUser(String id, String name, String email) throws RepositoryException {
-		RepositoryConnection conn = repository.getConnection();
-		IRI subj = vf.createIRI("http://example.org/ns#", id);
-		IRI foafName = vf.createIRI("http://xmlns.com/foaf/0.1/", "name");
-		IRI foafMbox = vf.createIRI("http://xmlns.com/foaf/0.1/", "mbox");
-		conn.add(subj, foafName, vf.createLiteral(name));
-		if (email != null) {
-			conn.add(subj, foafMbox, vf.createIRI("mailto:", email));
+		try (RepositoryConnection conn = repository.getConnection()) {
+			IRI subj = vf.createIRI("http://example.org/ns#", id);
+			IRI foafName = vf.createIRI("http://xmlns.com/foaf/0.1/", "name");
+			IRI foafMbox = vf.createIRI("http://xmlns.com/foaf/0.1/", "mbox");
+			conn.add(subj, foafName, vf.createLiteral(name));
+			if (email != null) {
+				conn.add(subj, foafMbox, vf.createIRI("mailto:", email));
+			}
 		}
-		conn.close();
 	}
 }

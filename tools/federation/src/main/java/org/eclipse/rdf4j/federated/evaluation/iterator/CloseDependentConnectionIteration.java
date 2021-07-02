@@ -64,10 +64,8 @@ public class CloseDependentConnectionIteration<T>
 		try {
 			inner.close();
 		} finally {
-			try {
+			try (dependentConn) {
 				super.handleClose();
-			} finally {
-				dependentConn.close();
 			}
 		}
 	}

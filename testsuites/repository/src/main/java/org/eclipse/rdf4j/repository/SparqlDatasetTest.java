@@ -138,12 +138,9 @@ public abstract class SparqlDatasetTest {
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return repository;
 	}
@@ -160,15 +157,15 @@ public abstract class SparqlDatasetTest {
 	}
 
 	private IRI createUser(String id, String name, String email, Resource... context) throws RepositoryException {
-		RepositoryConnection conn = repository.getConnection();
-		IRI subj = vf.createIRI("http://example.org/ns#", id);
-		IRI foafName = vf.createIRI("http://xmlns.com/foaf/0.1/", "name");
-		IRI foafMbox = vf.createIRI("http://xmlns.com/foaf/0.1/", "mbox");
-
-		conn.add(subj, RDF.TYPE, vf.createIRI("http://xmlns.com/foaf/0.1/", "Person"), context);
-		conn.add(subj, foafName, vf.createLiteral(name), context);
-		conn.add(subj, foafMbox, vf.createIRI("mailto:", email), context);
-		conn.close();
+		IRI subj;
+		try (RepositoryConnection conn = repository.getConnection()) {
+			subj = vf.createIRI("http://example.org/ns#", id);
+			IRI foafName = vf.createIRI("http://xmlns.com/foaf/0.1/", "name");
+			IRI foafMbox = vf.createIRI("http://xmlns.com/foaf/0.1/", "mbox");
+			conn.add(subj, RDF.TYPE, vf.createIRI("http://xmlns.com/foaf/0.1/", "Person"), context);
+			conn.add(subj, foafName, vf.createLiteral(name), context);
+			conn.add(subj, foafMbox, vf.createIRI("mailto:", email), context);
+		}
 
 		return subj;
 	}

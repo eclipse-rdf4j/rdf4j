@@ -68,45 +68,41 @@ public abstract class RDFXMLParserTestCase {
 		// Create an RDF repository for the manifest data
 		Repository repository = new SailRepository(new MemoryStore());
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-
+		TestSuite suite;
 		// Add W3C's manifest
-		URL w3cManifest = resolveURL(W3C_MANIFEST_FILE);
-		con.add(w3cManifest, base(W3C_MANIFEST_FILE), RDFFormat.RDFXML);
-
-		// Create test suite
-		TestSuite suite = new TestSuite(RDFXMLParserTestCase.class.getName());
-
-		// Add all positive parser tests
-		String query = "select TESTCASE, INPUT, OUTPUT " + "from {TESTCASE} rdf:type {test:PositiveParserTest}; "
-				+ "                test:inputDocument {INPUT}; " + "                test:outputDocument {OUTPUT}; "
-				+ "                test:status {\"APPROVED\"} "
-				+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			String caseURI = bindingSet.getValue("TESTCASE").toString();
-			String inputURL = bindingSet.getValue("INPUT").toString();
-			String outputURL = bindingSet.getValue("OUTPUT").toString();
-			suite.addTest(new PositiveParserTest(caseURI, inputURL, outputURL));
+		try (RepositoryConnection con = repository.getConnection()) {
+			// Add W3C's manifest
+			URL w3cManifest = resolveURL(W3C_MANIFEST_FILE);
+			con.add(w3cManifest, base(W3C_MANIFEST_FILE), RDFFormat.RDFXML);
+			// Create test suite
+			suite = new TestSuite(RDFXMLParserTestCase.class.getName());
+			// Add all positive parser tests
+			String query = "select TESTCASE, INPUT, OUTPUT " + "from {TESTCASE} rdf:type {test:PositiveParserTest}; "
+					+ "                test:inputDocument {INPUT}; " + "                test:outputDocument {OUTPUT}; "
+					+ "                test:status {\"APPROVED\"} "
+					+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
+			TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				String caseURI = bindingSet.getValue("TESTCASE").toString();
+				String inputURL = bindingSet.getValue("INPUT").toString();
+				String outputURL = bindingSet.getValue("OUTPUT").toString();
+				suite.addTest(new PositiveParserTest(caseURI, inputURL, outputURL));
+			}
+			queryResult.close();
+			// Add all negative parser tests
+			query = "select TESTCASE, INPUT " + "from {TESTCASE} rdf:type {test:NegativeParserTest}; "
+					+ "                test:inputDocument {INPUT}; " + "                test:status {\"APPROVED\"} "
+					+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
+			queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				String caseURI = bindingSet.getValue("TESTCASE").toString();
+				String inputURL = bindingSet.getValue("INPUT").toString();
+				suite.addTest(new NegativeParserTest(caseURI, inputURL));
+			}
+			queryResult.close();
 		}
-
-		queryResult.close();
-
-		// Add all negative parser tests
-		query = "select TESTCASE, INPUT " + "from {TESTCASE} rdf:type {test:NegativeParserTest}; "
-				+ "                test:inputDocument {INPUT}; " + "                test:status {\"APPROVED\"} "
-				+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
-		queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			String caseURI = bindingSet.getValue("TESTCASE").toString();
-			String inputURL = bindingSet.getValue("INPUT").toString();
-			suite.addTest(new NegativeParserTest(caseURI, inputURL));
-		}
-
-		queryResult.close();
-		con.close();
 		repository.shutDown();
 
 		return suite;
@@ -241,9 +237,9 @@ public abstract class RDFXMLParserTestCase {
 
 				rdfxmlParser.setRDFHandler(new StatementCollector());
 
-				InputStream in = resolveURL(inputURL).openStream();
-				rdfxmlParser.parse(in, base(inputURL));
-				in.close();
+				try (InputStream in = resolveURL(inputURL).openStream()) {
+					rdfxmlParser.parse(in, base(inputURL));
+				}
 
 				fail("Parser parses erroneous data without reporting errors");
 			} catch (RDFParseException e) {

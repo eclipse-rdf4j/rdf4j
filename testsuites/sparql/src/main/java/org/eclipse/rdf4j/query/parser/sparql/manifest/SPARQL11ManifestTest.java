@@ -201,9 +201,7 @@ public class SPARQL11ManifestTest {
 			baseURI = url.toExternalForm();
 		}
 
-		InputStream in = url.openStream();
-
-		try {
+		try (InputStream in = url.openStream()) {
 			OpenRDFUtil.verifyContextNotNull(contexts);
 			final ValueFactory vf = con.getRepository().getValueFactory();
 			RDFParser rdfParser = new TurtleParser();
@@ -228,8 +226,6 @@ public class SPARQL11ManifestTest {
 			} catch (RuntimeException e) {
 				con.rollback();
 			}
-		} finally {
-			in.close();
 		}
 	}
 }

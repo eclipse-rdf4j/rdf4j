@@ -102,25 +102,22 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 		String query = readQuery();
 		Repository dataRep = createRepository(entailment);
 
-		RepositoryConnection dataCon = dataRep.getConnection();
-
+		Collection<Statement> actualStatements;
 		// Add unnamed graph
-		dataCon.add(url(dataFile), base(dataFile),
-				Rio.getParserFormatForFileName(dataFile).orElseThrow(Rio.unsupportedFormat(dataFile)));
-
-		// add named graphs
-		for (String graphName : graphNames) {
-			dataCon.add(url(graphName), base(graphName),
-					Rio.getParserFormatForFileName(graphName).orElseThrow(Rio.unsupportedFormat(graphName)),
-					dataCon.getValueFactory().createIRI(graphName));
+		try (RepositoryConnection dataCon = dataRep.getConnection()) {
+			// Add unnamed graph
+			dataCon.add(url(dataFile), base(dataFile),
+					Rio.getParserFormatForFileName(dataFile).orElseThrow(Rio.unsupportedFormat(dataFile)));
+			// add named graphs
+			for (String graphName : graphNames) {
+				dataCon.add(url(graphName), base(graphName),
+						Rio.getParserFormatForFileName(graphName).orElseThrow(Rio.unsupportedFormat(graphName)),
+						dataCon.getValueFactory().createIRI(graphName));
+			} // Evaluate the query on the query data
+			GraphQueryResult result = dataCon.prepareGraphQuery(getQueryLanguage(), query).evaluate();
+			actualStatements = Iterations.addAll(result, new ArrayList<>(1));
+			result.close();
 		}
-
-		// Evaluate the query on the query data
-		GraphQueryResult result = dataCon.prepareGraphQuery(getQueryLanguage(), query).evaluate();
-		Collection<Statement> actualStatements = Iterations.addAll(result, new ArrayList<>(1));
-		result.close();
-
-		dataCon.close();
 		dataRep.shutDown();
 		discardRepository(dataRep);
 
@@ -191,12 +188,9 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 			dataRep = newRepository(entailment);
 		}
 		dataRep.initialize();
-		RepositoryConnection con = dataRep.getConnection();
-		try {
+		try (RepositoryConnection con = dataRep.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return dataRep;
 	}
@@ -239,11 +233,8 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 	}
 
 	private String readQuery() throws IOException {
-		InputStream stream = url(queryFile).openStream();
-		try {
+		try (InputStream stream = url(queryFile).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 
@@ -258,51 +249,43 @@ public abstract class SeRQLQueryTestCase extends TestCase {
 		Repository manifestRep = new SailRepository(new MemoryStore());
 		manifestRep.initialize();
 
-		RepositoryConnection con = manifestRep.getConnection();
-
-		URL manifestURL = SeRQLQueryTestCase.class.getResource(MANIFEST_FILE);
-		RDFFormat format = Rio.getParserFormatForFileName(MANIFEST_FILE).orElse(RDFFormat.TURTLE);
-		con.add(manifestURL, base(manifestURL.toExternalForm()), format);
-
-		String query = "SELECT testName, entailment, input, query, result " + "FROM {} mf:name {testName};"
-				+ "        mf:result {result}; " + "        tck:entailment {entailment}; "
-				+ "        mf:action {} qt:query {query}; " + "                     qt:data {input} "
-				+ "USING NAMESPACE " + "  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
-				+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>, "
-				+ "  tck = <urn:openrdf.org:sesame:tests#> ";
-
-		TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
-		while (tests.hasNext()) {
-			BindingSet testBindings = tests.next();
-			String testName = ((Literal) testBindings.getValue("testName")).getLabel();
-			String inputFile = testBindings.getValue("input").toString();
-			String queryFile = testBindings.getValue("query").toString();
-			String resultFile = testBindings.getValue("result").toString();
-			String entailment = ((Literal) testBindings.getValue("entailment")).getLabel();
-
-			query = "SELECT graph " + "FROM {} mf:name {testName}; " + "        mf:action {} qt:graphData {graph} "
-					+ "WHERE testName = \"" + SeRQLUtil.encodeString(testName) + "\" " + "USING NAMESPACE"
-					+ "  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>,"
-					+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
-
-			List<String> graphNames = new ArrayList<>();
-
-			TupleQueryResult graphs = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
-			while (graphs.hasNext()) {
-				BindingSet graphBindings = graphs.next();
-				graphNames.add(graphBindings.getValue("graph").toString());
+		try (RepositoryConnection con = manifestRep.getConnection()) {
+			URL manifestURL = SeRQLQueryTestCase.class.getResource(MANIFEST_FILE);
+			RDFFormat format = Rio.getParserFormatForFileName(MANIFEST_FILE).orElse(RDFFormat.TURTLE);
+			con.add(manifestURL, base(manifestURL.toExternalForm()), format);
+			String query = "SELECT testName, entailment, input, query, result " + "FROM {} mf:name {testName};"
+					+ "        mf:result {result}; " + "        tck:entailment {entailment}; "
+					+ "        mf:action {} qt:query {query}; " + "                     qt:data {input} "
+					+ "USING NAMESPACE " + "  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
+					+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>, "
+					+ "  tck = <urn:openrdf.org:sesame:tests#> ";
+			TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
+			while (tests.hasNext()) {
+				BindingSet testBindings = tests.next();
+				String testName = ((Literal) testBindings.getValue("testName")).getLabel();
+				String inputFile = testBindings.getValue("input").toString();
+				String queryFile = testBindings.getValue("query").toString();
+				String resultFile = testBindings.getValue("result").toString();
+				String entailment = ((Literal) testBindings.getValue("entailment")).getLabel();
+				query = "SELECT graph " + "FROM {} mf:name {testName}; " + "        mf:action {} qt:graphData {graph} "
+						+ "WHERE testName = \"" + SeRQLUtil.encodeString(testName) + "\" " + "USING NAMESPACE"
+						+ "  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>,"
+						+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
+				List<String> graphNames = new ArrayList<>();
+				try (TupleQueryResult graphs = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate()) {
+					while (graphs.hasNext()) {
+						BindingSet graphBindings = graphs.next();
+						graphNames.add(graphBindings.getValue("graph").toString());
+					}
+				}
+				if (testName.startsWith("test-029:")) {
+					logger.error("test-029 SKIPPED in {}", SeRQLQueryTestCase.class.getName());
+					continue;
+				}
+				suite.addTest(factory.createTest(testName, inputFile, graphNames, queryFile, resultFile, entailment));
 			}
-			graphs.close();
-
-			if (testName.startsWith("test-029:")) {
-				logger.error("test-029 SKIPPED in {}", SeRQLQueryTestCase.class.getName());
-				continue;
-			}
-			suite.addTest(factory.createTest(testName, inputFile, graphNames, queryFile, resultFile, entailment));
+			tests.close();
 		}
-
-		tests.close();
-		con.close();
 		manifestRep.shutDown();
 
 		return suite;

@@ -221,8 +221,9 @@ public class BindSelect implements PlanNode {
 			@Override
 			public void close() throws SailException {
 				try {
-					assert !iterator.hasNext();
-					iterator.close();
+					try (iterator) {
+						assert !iterator.hasNext();
+					}
 				} finally {
 					if (bindingSet != null) {
 						bindingSet.close();

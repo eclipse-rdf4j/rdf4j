@@ -117,12 +117,13 @@ class AllocatedNodesList implements Closeable {
 	}
 
 	public synchronized void close(boolean syncChanges) throws IOException {
-		if (syncChanges) {
-			sync();
+		try (nioFile) {
+			if (syncChanges) {
+				sync();
+			}
+			allocatedNodes = null;
+			needsSync = false;
 		}
-		allocatedNodes = null;
-		needsSync = false;
-		nioFile.close();
 	}
 
 	/**

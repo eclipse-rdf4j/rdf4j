@@ -813,16 +813,17 @@ class TripleStore implements Closeable {
 		// iterate over this file to set the REMOVED flag
 		RecordCache removedTriplesCache = new SequentialRecordCache(dir, RECORD_LENGTH);
 		try {
-			while (data != null) {
-				if ((data[FLAG_IDX] & REMOVED_FLAG) == 0) {
-					data[FLAG_IDX] |= REMOVED_FLAG;
-					removedTriplesCache.storeRecord(data);
-					int context = ByteArrayUtil.getInt(data, CONTEXT_IDX);
-					perContextCounts.merge(context, 1L, (c, one) -> c + one);
+			try (iter) {
+				while (data != null) {
+					if ((data[FLAG_IDX] & REMOVED_FLAG) == 0) {
+						data[FLAG_IDX] |= REMOVED_FLAG;
+						removedTriplesCache.storeRecord(data);
+						int context = ByteArrayUtil.getInt(data, CONTEXT_IDX);
+						perContextCounts.merge(context, 1L, (c, one) -> c + one);
+					}
+					data = iter.next();
 				}
-				data = iter.next();
 			}
-			iter.close();
 
 			updatedTriplesCache.storeRecords(removedTriplesCache);
 

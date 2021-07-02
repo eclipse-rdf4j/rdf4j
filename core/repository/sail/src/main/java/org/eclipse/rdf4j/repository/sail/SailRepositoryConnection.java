@@ -230,12 +230,10 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public void close() throws RepositoryException {
-		try {
+		try (sailConnection) {
 			super.close();
 		} catch (SailException e) {
 			throw new RepositoryException(e);
-		} finally {
-			sailConnection.close();
 		}
 	}
 

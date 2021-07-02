@@ -156,8 +156,9 @@ public class Unique implements PlanNode {
 
 			@Override
 			public void close() throws SailException {
-				targetAndValueDedupeSet = null;
-				parentIterator.close();
+				try (parentIterator) {
+					targetAndValueDedupeSet = null;
+				}
 			}
 
 			@Override

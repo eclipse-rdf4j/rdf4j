@@ -65,15 +65,15 @@ public class NegativeParserTest extends TestCase {
 
 			targetParser.setRDFHandler(new StatementCollector());
 
-			InputStream in = this.getClass().getResourceAsStream(inputURL);
-			assertNotNull("Test resource was not found: inputURL=" + inputURL, in);
+			try (InputStream in = this.getClass().getResourceAsStream(inputURL)) {
+				assertNotNull("Test resource was not found: inputURL=" + inputURL, in);
 
-			logger.debug("test: " + inputURL);
+				logger.debug("test: " + inputURL);
 
-			targetParser.setParseErrorListener(el);
+				targetParser.setParseErrorListener(el);
 
-			targetParser.parse(in, baseURL);
-			in.close();
+				targetParser.parse(in, baseURL);
+			}
 
 			if (failureMode.ignoreFailure()) {
 				this.didIgnoreFailure = true;

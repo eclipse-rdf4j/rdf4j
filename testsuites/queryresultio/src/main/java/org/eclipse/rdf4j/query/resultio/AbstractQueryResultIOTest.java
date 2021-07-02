@@ -354,9 +354,10 @@ public abstract class AbstractQueryResultIOTest {
 	protected void doTupleNoLinks(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected)
 			throws IOException, QueryResultParseException, UnsupportedQueryResultFormatException,
 			QueryEvaluationException, QueryResultHandlerException {
-		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
-		QueryResultIO.writeTuple(input, format, out);
-		input.close();
+		try (input) {
+			out = new ByteArrayOutputStream(4096);
+			QueryResultIO.writeTuple(input, format, out);
+		}
 
 		// System.out.println("output: " + out.toString("UTF-8"));
 
@@ -411,13 +412,11 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		writer.endHeader();
 		writer.endHeader();
-		try {
+		try (input) {
 			while (input.hasNext()) {
 				BindingSet bindingSet = input.next();
 				writer.handleSolution(bindingSet);
 			}
-		} finally {
-			input.close();
 		}
 		writer.endQueryResult();
 
@@ -446,7 +445,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.startHeader();
 		writer.handleLinks(links);
 		writer.endHeader();
-		try {
+		try (input) {
 			while (input.hasNext()) {
 				BindingSet bindingSet = input.next();
 				writer.handleSolution(bindingSet);
@@ -455,8 +454,6 @@ public abstract class AbstractQueryResultIOTest {
 			fail("Expected exception when calling handleSolution without startQueryResult");
 		} catch (IllegalStateException ise) {
 			// Expected exception
-		} finally {
-			input.close();
 		}
 	}
 

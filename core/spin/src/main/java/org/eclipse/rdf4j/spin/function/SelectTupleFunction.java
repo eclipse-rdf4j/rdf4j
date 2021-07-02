@@ -145,10 +145,8 @@ public class SelectTupleFunction extends AbstractSpinFunction implements TupleFu
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
+			try (queryResult) {
 				super.handleClose();
-			} finally {
-				queryResult.close();
 			}
 		}
 	}

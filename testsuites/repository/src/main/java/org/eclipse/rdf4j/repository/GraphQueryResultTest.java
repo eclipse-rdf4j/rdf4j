@@ -73,12 +73,9 @@ public abstract class GraphQueryResultTest {
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return repository;
 	}
@@ -101,11 +98,8 @@ public abstract class GraphQueryResultTest {
 	}
 
 	private void addData() throws IOException, UnsupportedRDFormatException, RDFParseException, RepositoryException {
-		InputStream defaultGraph = GraphQueryResultTest.class.getResourceAsStream("/testcases/graph3.ttl");
-		try {
+		try (InputStream defaultGraph = GraphQueryResultTest.class.getResourceAsStream("/testcases/graph3.ttl")) {
 			con.add(defaultGraph, "", RDFFormat.TURTLE);
-		} finally {
-			defaultGraph.close();
 		}
 	}
 

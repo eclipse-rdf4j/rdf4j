@@ -50,20 +50,20 @@ public abstract class SparqlSetBindingTest {
 	public void testBinding() throws Exception {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBinding);
 		query.setBinding("name", ringo);
-		TupleQueryResult result = query.evaluate();
-		assertEquals(ringo, result.next().getValue("name"));
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertEquals(ringo, result.next().getValue("name"));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
 	public void testBindingSubselect() throws Exception {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBindingSubselect);
 		query.setBinding("x", ringoRes);
-		TupleQueryResult result = query.evaluate();
-		assertEquals(ringo, result.next().getValue("name"));
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertEquals(ringo, result.next().getValue("name"));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Before
@@ -82,12 +82,9 @@ public abstract class SparqlSetBindingTest {
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return repository;
 	}
@@ -104,14 +101,14 @@ public abstract class SparqlSetBindingTest {
 	}
 
 	private void createUser(String id, String name, String email) throws RepositoryException {
-		RepositoryConnection conn = repository.getConnection();
-		IRI subj = vf.createIRI("http://example.org/ns#", id);
-		IRI foafName = vf.createIRI("http://xmlns.com/foaf/0.1/", "name");
-		IRI foafMbox = vf.createIRI("http://xmlns.com/foaf/0.1/", "mbox");
+		try (RepositoryConnection conn = repository.getConnection()) {
+			IRI subj = vf.createIRI("http://example.org/ns#", id);
+			IRI foafName = vf.createIRI("http://xmlns.com/foaf/0.1/", "name");
+			IRI foafMbox = vf.createIRI("http://xmlns.com/foaf/0.1/", "mbox");
 
-		conn.add(subj, RDF.TYPE, vf.createIRI("http://xmlns.com/foaf/0.1/", "Person"));
-		conn.add(subj, foafName, vf.createLiteral(name));
-		conn.add(subj, foafMbox, vf.createIRI("mailto:", email));
-		conn.close();
+			conn.add(subj, RDF.TYPE, vf.createIRI("http://xmlns.com/foaf/0.1/", "Person"));
+			conn.add(subj, foafName, vf.createLiteral(name));
+			conn.add(subj, foafMbox, vf.createIRI("mailto:", email));
+		}
 	}
 }

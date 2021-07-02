@@ -126,10 +126,8 @@ public class ConstructTupleFunction extends AbstractSpinFunction implements Tupl
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
+			try (queryResult) {
 				super.handleClose();
-			} finally {
-				queryResult.close();
 			}
 		}
 	}

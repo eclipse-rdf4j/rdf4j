@@ -255,11 +255,8 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	}
 
 	private String readUpdateString() throws IOException {
-		InputStream stream = new URL(requestFileURL).openStream();
-		try {
+		try (InputStream stream = new URL(requestFileURL).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 
@@ -283,103 +280,103 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		// Read manifest and create declared test cases
 		Repository manifestRep = new SailRepository(new MemoryStore());
 		manifestRep.initialize();
-		RepositoryConnection con = manifestRep.getConnection();
+		try (RepositoryConnection con = manifestRep.getConnection()) {
+			SPARQL11ManifestTest.addTurtle(con, new URL(manifestFileURL), manifestFileURL);
 
-		SPARQL11ManifestTest.addTurtle(con, new URL(manifestFileURL), manifestFileURL);
+			suite.setName(getManifestName(manifestRep, con, manifestFileURL));
 
-		suite.setName(getManifestName(manifestRep, con, manifestFileURL));
+			// Extract test case information from the manifest file. Note that we
+			// only
+			// select those test cases that are mentioned in the list.
+			StringBuilder query = new StringBuilder(512);
+			query.append(
+					" SELECT DISTINCT testURI, testName, result, action, requestFile, defaultGraph, resultDefaultGraph ");
+			query.append(" FROM {} rdf:first {testURI} rdf:type {mf:UpdateEvaluationTest}; ");
+			if (approvedOnly) {
+				query.append("                          dawgt:approval {dawgt:Approved}; ");
+			}
+			query.append("                             mf:name {testName}; ");
+			query.append("                             mf:action {action} ut:request {requestFile}; ");
+			query.append("                                                [ ut:data {defaultGraph} ],  ");
+			query.append("                   {testURI} mf:result {result} [ut:data {resultDefaultGraph}] ");
+			query.append(" USING NAMESPACE ");
+			query.append("  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, ");
+			query.append("  dawgt = <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#>, ");
+			query.append("  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>, ");
+			query.append("  ut = <http://www.w3.org/2009/sparql/tests/test-update#>, ");
+			query.append("  sd = <http://www.w3.org/ns/sparql-service-description#>, ");
+			query.append("  ent = <http://www.w3.org/ns/entailment/> ");
 
-		// Extract test case information from the manifest file. Note that we
-		// only
-		// select those test cases that are mentioned in the list.
-		StringBuilder query = new StringBuilder(512);
-		query.append(
-				" SELECT DISTINCT testURI, testName, result, action, requestFile, defaultGraph, resultDefaultGraph ");
-		query.append(" FROM {} rdf:first {testURI} rdf:type {mf:UpdateEvaluationTest}; ");
-		if (approvedOnly) {
-			query.append("                          dawgt:approval {dawgt:Approved}; ");
-		}
-		query.append("                             mf:name {testName}; ");
-		query.append("                             mf:action {action} ut:request {requestFile}; ");
-		query.append("                                                [ ut:data {defaultGraph} ],  ");
-		query.append("                   {testURI} mf:result {result} [ut:data {resultDefaultGraph}] ");
-		query.append(" USING NAMESPACE ");
-		query.append("  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, ");
-		query.append("  dawgt = <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#>, ");
-		query.append("  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>, ");
-		query.append("  ut = <http://www.w3.org/2009/sparql/tests/test-update#>, ");
-		query.append("  sd = <http://www.w3.org/ns/sparql-service-description#>, ");
-		query.append("  ent = <http://www.w3.org/ns/entailment/> ");
+			TupleQuery testCaseQuery = con.prepareTupleQuery(QueryLanguage.SERQL, query.toString());
 
-		TupleQuery testCaseQuery = con.prepareTupleQuery(QueryLanguage.SERQL, query.toString());
+			query.setLength(0);
+			query.append(" SELECT DISTINCT namedGraphData, namedGraphLabel ");
+			query.append(" FROM {graphDef} ut:graphData {} ut:graph {namedGraphData} ; ");
+			query.append("                               rdfs:label {namedGraphLabel} ");
+			query.append(" USING NAMESPACE ");
+			query.append("  ut = <http://www.w3.org/2009/sparql/tests/test-update#> ");
 
-		query.setLength(0);
-		query.append(" SELECT DISTINCT namedGraphData, namedGraphLabel ");
-		query.append(" FROM {graphDef} ut:graphData {} ut:graph {namedGraphData} ; ");
-		query.append("                               rdfs:label {namedGraphLabel} ");
-		query.append(" USING NAMESPACE ");
-		query.append("  ut = <http://www.w3.org/2009/sparql/tests/test-update#> ");
+			TupleQuery namedGraphsQuery = con.prepareTupleQuery(QueryLanguage.SERQL, query.toString());
 
-		TupleQuery namedGraphsQuery = con.prepareTupleQuery(QueryLanguage.SERQL, query.toString());
+			logger.debug("evaluating query..");
+			TupleQueryResult testCases = testCaseQuery.evaluate();
+			while (testCases.hasNext()) {
+				BindingSet bindingSet = testCases.next();
 
-		logger.debug("evaluating query..");
-		TupleQueryResult testCases = testCaseQuery.evaluate();
-		while (testCases.hasNext()) {
-			BindingSet bindingSet = testCases.next();
+				IRI testURI = (IRI) bindingSet.getValue("testURI");
+				String testName = bindingSet.getValue("testName").toString();
+				Value result = bindingSet.getValue("result");
+				Value action = bindingSet.getValue("action");
+				IRI requestFile = (IRI) bindingSet.getValue("requestFile");
+				IRI defaultGraphURI = (IRI) bindingSet.getValue("defaultGraph");
+				IRI resultDefaultGraphURI = (IRI) bindingSet.getValue("resultDefaultGraph");
 
-			IRI testURI = (IRI) bindingSet.getValue("testURI");
-			String testName = bindingSet.getValue("testName").toString();
-			Value result = bindingSet.getValue("result");
-			Value action = bindingSet.getValue("action");
-			IRI requestFile = (IRI) bindingSet.getValue("requestFile");
-			IRI defaultGraphURI = (IRI) bindingSet.getValue("defaultGraph");
-			IRI resultDefaultGraphURI = (IRI) bindingSet.getValue("resultDefaultGraph");
+				logger.debug("found test case : {}", testName);
 
-			logger.debug("found test case : {}", testName);
+				// Query input named graphs
+				namedGraphsQuery.setBinding("graphDef", action);
+				TupleQueryResult inputNamedGraphsResult = namedGraphsQuery.evaluate();
 
-			// Query input named graphs
-			namedGraphsQuery.setBinding("graphDef", action);
-			TupleQueryResult inputNamedGraphsResult = namedGraphsQuery.evaluate();
+				HashMap<String, IRI> inputNamedGraphs = new HashMap<>();
 
-			HashMap<String, IRI> inputNamedGraphs = new HashMap<>();
+				if (inputNamedGraphsResult.hasNext()) {
+					while (inputNamedGraphsResult.hasNext()) {
+						BindingSet graphBindings = inputNamedGraphsResult.next();
+						IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
+						String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel")).getLabel();
+						logger.debug(" adding named graph : {}", namedGraphLabel);
+						inputNamedGraphs.put(namedGraphLabel, namedGraphData);
+					}
+				}
 
-			if (inputNamedGraphsResult.hasNext()) {
-				while (inputNamedGraphsResult.hasNext()) {
-					BindingSet graphBindings = inputNamedGraphsResult.next();
-					IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
-					String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel")).getLabel();
-					logger.debug(" adding named graph : {}", namedGraphLabel);
-					inputNamedGraphs.put(namedGraphLabel, namedGraphData);
+				// Query result named graphs
+				namedGraphsQuery.setBinding("graphDef", result);
+				TupleQueryResult resultNamedGraphsResult = namedGraphsQuery.evaluate();
+
+				HashMap<String, IRI> resultNamedGraphs = new HashMap<>();
+
+				if (resultNamedGraphsResult.hasNext()) {
+					while (resultNamedGraphsResult.hasNext()) {
+						BindingSet graphBindings = resultNamedGraphsResult.next();
+						IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
+						String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel")).getLabel();
+						logger.debug(" adding named graph : {}", namedGraphLabel);
+						resultNamedGraphs.put(namedGraphLabel, namedGraphData);
+					}
+				}
+
+				SPARQLUpdateConformanceTest test = factory.createSPARQLUpdateConformanceTest(testURI.toString(),
+						testName,
+						requestFile.toString(), defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
+						resultNamedGraphs);
+
+				if (test != null) {
+					suite.addTest(test);
 				}
 			}
 
-			// Query result named graphs
-			namedGraphsQuery.setBinding("graphDef", result);
-			TupleQueryResult resultNamedGraphsResult = namedGraphsQuery.evaluate();
-
-			HashMap<String, IRI> resultNamedGraphs = new HashMap<>();
-
-			if (resultNamedGraphsResult.hasNext()) {
-				while (resultNamedGraphsResult.hasNext()) {
-					BindingSet graphBindings = resultNamedGraphsResult.next();
-					IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
-					String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel")).getLabel();
-					logger.debug(" adding named graph : {}", namedGraphLabel);
-					resultNamedGraphs.put(namedGraphLabel, namedGraphData);
-				}
-			}
-
-			SPARQLUpdateConformanceTest test = factory.createSPARQLUpdateConformanceTest(testURI.toString(), testName,
-					requestFile.toString(), defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,
-					resultNamedGraphs);
-
-			if (test != null) {
-				suite.addTest(test);
-			}
+			testCases.close();
 		}
-
-		testCases.close();
-		con.close();
 
 		manifestRep.shutDown();
 		logger.info("Created test suite with " + suite.countTestCases() + " test cases.");
@@ -392,13 +389,10 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		TupleQuery manifestNameQuery = con.prepareTupleQuery(QueryLanguage.SERQL,
 				"SELECT ManifestName FROM {ManifestURL} rdfs:label {ManifestName}");
 		manifestNameQuery.setBinding("ManifestURL", manifestRep.getValueFactory().createIRI(manifestFileURL));
-		TupleQueryResult manifestNames = manifestNameQuery.evaluate();
-		try {
+		try (TupleQueryResult manifestNames = manifestNameQuery.evaluate()) {
 			if (manifestNames.hasNext()) {
 				return manifestNames.next().getValue("ManifestName").stringValue();
 			}
-		} finally {
-			manifestNames.close();
 		}
 
 		// Derive name from manifest URL

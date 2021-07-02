@@ -861,37 +861,37 @@ public abstract class AbstractLuceneSailTest {
 				String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
 						+ "> {\"sfourponecone\"} ";
 				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
-				TupleQueryResult result = query.evaluate();
-
 				// check the results
-				assertTrue(result.hasNext());
-				@SuppressWarnings("unused")
-				BindingSet bindings = result.next();
+				try (TupleQueryResult result = query.evaluate()) {
+					// check the results
+					assertTrue(result.hasNext());
+					@SuppressWarnings("unused")
+					BindingSet bindings = result.next();
 
-				connection.add(SUBJECT_3, PREDICATE_1, vf.createLiteral("sfourponecone"), CONTEXT_1);
+					connection.add(SUBJECT_3, PREDICATE_1, vf.createLiteral("sfourponecone"), CONTEXT_1);
 
-				assertTrue(result.hasNext());
-				bindings = result.next();
-				result.close();
+					assertTrue(result.hasNext());
+					bindings = result.next();
+				}
 				connection.commit();
 			}
 			{
 				String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
 						+ "> {\"sfourponecone\"} ";
 				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
-				TupleQueryResult result = query.evaluate();
-
 				// check the results
-				assertTrue(result.hasNext());
-				@SuppressWarnings("unused")
-				BindingSet bindings = result.next();
+				try (TupleQueryResult result = query.evaluate()) {
+					// check the results
+					assertTrue(result.hasNext());
+					@SuppressWarnings("unused")
+					BindingSet bindings = result.next();
 
-				connection.add(SUBJECT_3, PREDICATE_1, vf.createLiteral("blubbb"), CONTEXT_1);
-				connection.commit();
+					connection.add(SUBJECT_3, PREDICATE_1, vf.createLiteral("blubbb"), CONTEXT_1);
+					connection.commit();
 
-				assertTrue(result.hasNext());
-				bindings = result.next();
-				result.close();
+					assertTrue(result.hasNext());
+					bindings = result.next();
+				}
 			}
 		}
 	}

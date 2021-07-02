@@ -71,10 +71,8 @@ public class SPARQLCrossProductIteration extends LookAheadIteration<BindingSet, 
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		try {
+		try (resultIteration) {
 			super.handleClose();
-		} finally {
-			resultIteration.close();
 		}
 	}
 }

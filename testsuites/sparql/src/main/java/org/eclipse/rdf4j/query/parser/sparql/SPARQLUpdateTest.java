@@ -584,8 +584,7 @@ public abstract class SPARQLUpdateTest {
 			assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
 			assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
 
-			RepositoryConnection con2 = rep.getConnection();
-			try {
+			try (RepositoryConnection con2 = rep.getConnection()) {
 				// update should not yet be visible to separate connection
 				assertFalse(con2.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true));
 				assertFalse(con2.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true));
@@ -601,8 +600,6 @@ public abstract class SPARQLUpdateTest {
 
 				assertFalse(con2.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
 				assertFalse(con2.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
-			} finally {
-				con2.close();
 			}
 		} catch (Exception e) {
 			if (con.isActive()) {
@@ -966,24 +963,24 @@ public abstract class SPARQLUpdateTest {
 
 		operation.execute();
 
-		RepositoryResult<Statement> titleStatements = con.getStatements(null, DC.TITLE, f.createLiteral("book 1"),
-				true);
-		assertNotNull(titleStatements);
+		RepositoryResult<Statement> creatorStatements;
+		BNode bookNode;
+		try (RepositoryResult<Statement> titleStatements = con.getStatements(null, DC.TITLE, f.createLiteral("book 1"),
+				true)) {
+			assertNotNull(titleStatements);
+			creatorStatements = con.getStatements(null, DC.CREATOR, f.createLiteral("Ringo"),
+					true);
+			assertNotNull(creatorStatements);
+			bookNode = null;
+			if (titleStatements.hasNext()) {
+				Statement ts = titleStatements.next();
+				assertFalse(titleStatements.hasNext());
 
-		RepositoryResult<Statement> creatorStatements = con.getStatements(null, DC.CREATOR, f.createLiteral("Ringo"),
-				true);
-		assertNotNull(creatorStatements);
-
-		BNode bookNode = null;
-		if (titleStatements.hasNext()) {
-			Statement ts = titleStatements.next();
-			assertFalse(titleStatements.hasNext());
-
-			Resource subject = ts.getSubject();
-			assertTrue(subject instanceof BNode);
-			bookNode = (BNode) subject;
+				Resource subject = ts.getSubject();
+				assertTrue(subject instanceof BNode);
+				bookNode = (BNode) subject;
+			}
 		}
-		titleStatements.close();
 		assertNotNull(bookNode);
 		assertFalse("_:foo".equals(bookNode.getID()));
 
@@ -1780,11 +1777,8 @@ public abstract class SPARQLUpdateTest {
 
 	protected void loadDataset(String datasetFile) throws RDFParseException, RepositoryException, IOException {
 		logger.debug("loading dataset...");
-		InputStream dataset = SPARQLUpdateTest.class.getResourceAsStream(datasetFile);
-		try {
+		try (InputStream dataset = SPARQLUpdateTest.class.getResourceAsStream(datasetFile)) {
 			con.add(dataset, "", RDFFormat.TRIG);
-		} finally {
-			dataset.close();
 		}
 		logger.debug("dataset loaded.");
 	}
@@ -1816,10 +1810,10 @@ public abstract class SPARQLUpdateTest {
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		con.clear();
-		con.clearNamespaces();
-		con.close();
+		try (RepositoryConnection con = repository.getConnection()) {
+			con.clear();
+			con.clearNamespaces();
+		}
 		return repository;
 	}
 

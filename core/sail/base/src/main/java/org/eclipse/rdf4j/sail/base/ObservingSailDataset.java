@@ -45,11 +45,9 @@ class ObservingSailDataset extends DelegatingSailDataset {
 		try {
 			super.close();
 		} finally {
-			try {
+			try (observer) {
 				// flush observer regardless of consistency
 				observer.flush();
-			} finally {
-				observer.close();
 			}
 		}
 	}

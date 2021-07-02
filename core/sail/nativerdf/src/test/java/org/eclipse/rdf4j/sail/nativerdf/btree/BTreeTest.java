@@ -122,16 +122,15 @@ public class BTreeTest {
 		try (RecordIterator iter1 = btree.iterateAll()) {
 			iter1.next();
 
-			RecordIterator iter2 = btree.iterateAll();
-			iter2.next();
-			iter2.next();
-			iter2.next();
+			try (RecordIterator iter2 = btree.iterateAll()) {
+				iter2.next();
+				iter2.next();
+				iter2.next();
 
-			for (byte[] value : TEST_VALUES) {
-				btree.insert(value);
+				for (byte[] value : TEST_VALUES) {
+					btree.insert(value);
+				}
 			}
-
-			iter2.close();
 		}
 	}
 

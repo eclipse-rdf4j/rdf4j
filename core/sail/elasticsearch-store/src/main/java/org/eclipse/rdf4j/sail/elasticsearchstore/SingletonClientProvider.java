@@ -69,9 +69,9 @@ public class SingletonClientProvider implements ClientProvider {
 		if (!closed) {
 			closed = true;
 			if (client != null) {
-				Client temp = client;
-				client = null;
-				temp.close();
+				try (Client temp = client) {
+					client = null;
+				}
 			}
 		}
 	}

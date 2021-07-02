@@ -84,11 +84,9 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult implements 
 	@Override
 	public void run() {
 		try {
-			try {
+			try (in) {
 				parser.setQueryResultHandler(this);
 				parser.parseQueryResult(in);
-			} finally {
-				in.close();
 			}
 		} catch (Exception e) {
 			queue.toss(e);

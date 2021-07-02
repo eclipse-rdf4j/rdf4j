@@ -86,10 +86,11 @@ public abstract class SeRQLParserTestCase extends TestCase {
 
 	@Override
 	protected void runTest() throws Exception {
-		// Read query from file
-		InputStream stream = url(queryFile).openStream();
-		String query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		stream.close();
+		String query;
+		try ( // Read query from file
+				InputStream stream = url(queryFile).openStream()) {
+			query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
+		}
 
 		try {
 			QueryParser parser = createParser();
@@ -125,35 +126,34 @@ public abstract class SeRQLParserTestCase extends TestCase {
 		// Read manifest and create declared test cases
 		Repository manifestRep = new SailRepository(new MemoryStore());
 		manifestRep.initialize();
-		RepositoryConnection con = manifestRep.getConnection();
+		try (RepositoryConnection con = manifestRep.getConnection()) {
+			URL manifestURL = SeRQLParserTestCase.class.getResource(MANIFEST_FILE);
+			RDFFormat format = Rio.getParserFormatForFileName(MANIFEST_FILE).orElse(RDFFormat.TURTLE);
+			con.add(manifestURL, base(manifestURL.toExternalForm()), format);
 
-		URL manifestURL = SeRQLParserTestCase.class.getResource(MANIFEST_FILE);
-		RDFFormat format = Rio.getParserFormatForFileName(MANIFEST_FILE).orElse(RDFFormat.TURTLE);
-		con.add(manifestURL, base(manifestURL.toExternalForm()), format);
+			String query = "SELECT testName, query, result " + "FROM {} mf:name {testName}; "
+					+ "        mf:action {query}; " + "        mf:result {result} " + "USING NAMESPACE "
+					+ "  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
+					+ "  mfx = <http://www.openrdf.org/test-manifest-extensions#>, "
+					+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
 
-		String query = "SELECT testName, query, result " + "FROM {} mf:name {testName}; "
-				+ "        mf:action {query}; " + "        mf:result {result} " + "USING NAMESPACE "
-				+ "  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
-				+ "  mfx = <http://www.openrdf.org/test-manifest-extensions#>, "
-				+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
-
-		TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
-		while (tests.hasNext()) {
-			BindingSet testBindings = tests.next();
-			String testName = testBindings.getValue("testName").toString();
-			String queryFile = testBindings.getValue("query").toString();
-			Value result = testBindings.getValue("result");
-			if (MFX_CORRECT.equals(result)) {
-				positiveTests.addTest(factory.createTest(testName, queryFile, result));
-			} else if (MFX_PARSE_ERROR.equals(result)) {
-				negativeTests.addTest(factory.createTest(testName, queryFile, result));
-			} else {
-				logger.warn("Unexpected result value for test \"" + testName + "\": " + result);
+			TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
+			while (tests.hasNext()) {
+				BindingSet testBindings = tests.next();
+				String testName = testBindings.getValue("testName").toString();
+				String queryFile = testBindings.getValue("query").toString();
+				Value result = testBindings.getValue("result");
+				if (MFX_CORRECT.equals(result)) {
+					positiveTests.addTest(factory.createTest(testName, queryFile, result));
+				} else if (MFX_PARSE_ERROR.equals(result)) {
+					negativeTests.addTest(factory.createTest(testName, queryFile, result));
+				} else {
+					logger.warn("Unexpected result value for test \"" + testName + "\": " + result);
+				}
 			}
-		}
 
-		tests.close();
-		con.close();
+			tests.close();
+		}
 		manifestRep.shutDown();
 
 		suite.addTest(positiveTests);

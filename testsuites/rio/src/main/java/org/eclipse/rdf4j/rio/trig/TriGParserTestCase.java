@@ -67,19 +67,19 @@ public abstract class TriGParserTestCase {
 		// Add the manifest for W3C test cases to a repository and query it
 		Repository w3cRepository = new SailRepository(new MemoryStore());
 		w3cRepository.initialize();
-		RepositoryConnection w3cCon = w3cRepository.getConnection();
+		try (RepositoryConnection w3cCon = w3cRepository.getConnection()) {
+			InputStream inputStream = this.getClass().getResourceAsStream(TEST_W3C_MANIFEST_URL);
+			w3cCon.add(inputStream, TEST_W3C_MANIFEST_URI_BASE, RDFFormat.TURTLE);
 
-		InputStream inputStream = this.getClass().getResourceAsStream(TEST_W3C_MANIFEST_URL);
-		w3cCon.add(inputStream, TEST_W3C_MANIFEST_URI_BASE, RDFFormat.TURTLE);
-
-		parsePositiveTriGSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
-				w3cCon);
-		parseNegativeTriGSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
-				w3cCon);
-		parsePositiveTriGEvalTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE, w3cCon);
-		parseNegativeTriGEvalTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE, w3cCon);
-
-		w3cCon.close();
+			parsePositiveTriGSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
+					w3cCon);
+			parseNegativeTriGSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
+					w3cCon);
+			parsePositiveTriGEvalTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
+					w3cCon);
+			parseNegativeTriGEvalTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
+					w3cCon);
+		}
 		w3cRepository.shutDown();
 
 		return suite;
@@ -98,23 +98,24 @@ public abstract class TriGParserTestCase {
 		positiveQuery.append("     ?test mf:action ?inputURL . ");
 		positiveQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString()).evaluate();
-
 		// Add all positive parser tests to the test suite
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			IRI nextTestUri = (IRI) bindingSet.getValue("test");
-			String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(), testLocationBaseUri);
-			String nextInputURL = fileBasePath + nextTestFile;
+		try (TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString())
+				.evaluate()) {
+			// Add all positive parser tests to the test suite
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				IRI nextTestUri = (IRI) bindingSet.getValue("test");
+				String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
+				String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(),
+						testLocationBaseUri);
+				String nextInputURL = fileBasePath + nextTestFile;
 
-			String nextBaseUrl = testBaseUrl + nextTestFile;
+				String nextBaseUrl = testBaseUrl + nextTestFile;
 
-			suite.addTest(new PositiveParserTest(nextTestUri, nextTestName, nextInputURL, null, nextBaseUrl,
-					createTriGParser(), createNQuadsParser()));
+				suite.addTest(new PositiveParserTest(nextTestUri, nextTestName, nextInputURL, null, nextBaseUrl,
+						createTriGParser(), createNQuadsParser()));
+			}
 		}
-
-		queryResult.close();
 
 	}
 
@@ -131,23 +132,23 @@ public abstract class TriGParserTestCase {
 		negativeQuery.append("     ?test mf:action ?inputURL . ");
 		negativeQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString()).evaluate();
-
 		// Add all negative parser tests to the test suite
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			IRI nextTestUri = (IRI) bindingSet.getValue("test");
-			String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
-			String nextInputURL = fileBasePath + nextTestFile;
+		try (TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString())
+				.evaluate()) {
+			// Add all negative parser tests to the test suite
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				IRI nextTestUri = (IRI) bindingSet.getValue("test");
+				String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
+				String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
+				String nextInputURL = fileBasePath + nextTestFile;
 
-			String nextBaseUrl = testBaseUrl + nextTestFile;
+				String nextBaseUrl = testBaseUrl + nextTestFile;
 
-			suite.addTest(new NegativeParserTest(nextTestUri, nextTestName, nextInputURL, nextBaseUrl,
-					createTriGParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
+				suite.addTest(new NegativeParserTest(nextTestUri, nextTestName, nextInputURL, nextBaseUrl,
+						createTriGParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
+			}
 		}
-
-		queryResult.close();
 
 	}
 
@@ -165,38 +166,38 @@ public abstract class TriGParserTestCase {
 		positiveEvalQuery.append("     ?test mf:result ?outputURL . ");
 		positiveEvalQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveEvalQuery.toString())
-				.evaluate();
-
 		// Add all positive eval tests to the test suite
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			IRI nextTestUri = (IRI) bindingSet.getValue("test");
-			String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
-			String nextInputURL = fileBasePath + nextTestFile;
-			String nextOutputURL = fileBasePath
-					+ removeBase(((IRI) bindingSet.getValue("outputURL")).toString(), manifestBaseUrl);
+		try (TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveEvalQuery.toString())
+				.evaluate()) {
+			// Add all positive eval tests to the test suite
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				IRI nextTestUri = (IRI) bindingSet.getValue("test");
+				String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
+				String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(), manifestBaseUrl);
+				String nextInputURL = fileBasePath + nextTestFile;
+				String nextOutputURL = fileBasePath
+						+ removeBase(((IRI) bindingSet.getValue("outputURL")).toString(), manifestBaseUrl);
 
-			String nextBaseUrl = testBaseUrl + nextTestFile;
+				String nextBaseUrl = testBaseUrl + nextTestFile;
 
-			if (nextTestName.contains("CARRIAGE_RETURN")) {
-				// FIXME: Sesame seems not to preserve the CARRIAGE_RETURN character
-				// right now
-				logger.warn("Ignoring TriG Positive Parser Eval Test: " + nextInputURL);
-				continue;
-			} else if (nextTestName.contains("UTF8_boundaries")
-					|| nextTestName.contains("PN_CHARS_BASE_character_boundaries")) {
-				// FIXME: UTF8 support not implemented yet
-				logger.warn("Ignoring TriG Positive Parser Eval Test: " + nextInputURL);
-				continue;
+				if (nextTestName.contains("CARRIAGE_RETURN")) {
+					// FIXME: Sesame seems not to preserve the CARRIAGE_RETURN character
+					// right now
+					logger.warn("Ignoring TriG Positive Parser Eval Test: " + nextInputURL);
+					continue;
+				} else if (nextTestName.contains("UTF8_boundaries")
+						|| nextTestName.contains("PN_CHARS_BASE_character_boundaries")) {
+					// FIXME: UTF8 support not implemented yet
+					logger.warn("Ignoring TriG Positive Parser Eval Test: " + nextInputURL);
+					continue;
+				}
+
+				suite.addTest(
+						new PositiveParserTest(nextTestUri, nextTestName, nextInputURL, nextOutputURL, nextBaseUrl,
+								createTriGParser(), createNQuadsParser()));
 			}
-
-			suite.addTest(new PositiveParserTest(nextTestUri, nextTestName, nextInputURL, nextOutputURL, nextBaseUrl,
-					createTriGParser(), createNQuadsParser()));
 		}
-
-		queryResult.close();
 	}
 
 	private void parseNegativeTriGEvalTests(TestSuite suite, String fileBasePath, String testBaseUrl,
@@ -212,24 +213,24 @@ public abstract class TriGParserTestCase {
 		negativeEvalQuery.append("     ?test mf:action ?inputURL . ");
 		negativeEvalQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeEvalQuery.toString())
-				.evaluate();
-
 		// Add all negative eval tests to the test suite
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			IRI nextTestUri = (IRI) bindingSet.getValue("test");
-			String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).stringValue(), manifestBaseUrl);
-			String nextInputURL = fileBasePath + nextTestFile;
+		try (TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeEvalQuery.toString())
+				.evaluate()) {
+			// Add all negative eval tests to the test suite
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				IRI nextTestUri = (IRI) bindingSet.getValue("test");
+				String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
+				String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).stringValue(),
+						manifestBaseUrl);
+				String nextInputURL = fileBasePath + nextTestFile;
 
-			String nextBaseUrl = testBaseUrl + nextTestFile;
+				String nextBaseUrl = testBaseUrl + nextTestFile;
 
-			suite.addTest(new NegativeParserTest(nextTestUri, nextTestName, nextInputURL, nextBaseUrl,
-					createTriGParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
+				suite.addTest(new NegativeParserTest(nextTestUri, nextTestName, nextInputURL, nextBaseUrl,
+						createTriGParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
+			}
 		}
-
-		queryResult.close();
 	}
 
 	/**

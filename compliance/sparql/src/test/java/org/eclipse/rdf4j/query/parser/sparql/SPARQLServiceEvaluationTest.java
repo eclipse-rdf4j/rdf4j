@@ -297,8 +297,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		qb.append("     ?X a <" + FOAF.PERSON + "> . \n");
 		qb.append(" } \n");
 
-		RepositoryConnection conn = localRepository.getConnection();
-		try {
+		try (RepositoryConnection conn = localRepository.getConnection()) {
 			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb.toString());
 
 			TupleQueryResult tqr = tq.evaluate();
@@ -330,8 +329,6 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 			fail(e.getMessage());
 		} catch (QueryEvaluationException e) {
 			fail(e.getMessage());
-		} finally {
-			conn.close();
 		}
 	}
 
@@ -506,11 +503,8 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	 * @throws IOException
 	 */
 	private String readQueryString(String queryResource) throws RepositoryException, IOException {
-		InputStream stream = SPARQLServiceEvaluationTest.class.getResourceAsStream(queryResource);
-		try {
+		try (InputStream stream = SPARQLServiceEvaluationTest.class.getResourceAsStream(queryResource)) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 
@@ -526,8 +520,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		Optional<QueryResultFormat> tqrFormat = QueryResultIO.getParserFormatForFileName(resultFile);
 
 		if (tqrFormat.isPresent()) {
-			InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile);
-			try {
+			try (InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile)) {
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat.get());
 				parser.setValueFactory(SimpleValueFactory.getInstance());
 
@@ -536,8 +529,6 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 				parser.parseQueryResult(in);
 				return qrBuilder.getQueryResult();
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult(resultFile);
@@ -563,11 +554,8 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		Set<Statement> result = new LinkedHashSet<>();
 		parser.setRDFHandler(new StatementCollector(result));
 
-		InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile);
-		try {
+		try (InputStream in = SPARQLServiceEvaluationTest.class.getResourceAsStream(resultFile)) {
 			parser.parse(in, null); // TODO check
-		} finally {
-			in.close();
 		}
 
 		return result;

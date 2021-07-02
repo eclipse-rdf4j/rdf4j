@@ -315,9 +315,8 @@ public abstract class RDFStoreTest {
 		con.addStatement(subj, pred, obj);
 		con.commit();
 
-		CloseableIteration<? extends Statement, SailException> stIter = con.getStatements(null, null, null, false);
-
-		try {
+		try (CloseableIteration<? extends Statement, SailException> stIter = con.getStatements(null, null, null,
+				false)) {
 			Assert.assertTrue(stIter.hasNext());
 
 			Statement st = stIter.next();
@@ -325,8 +324,6 @@ public abstract class RDFStoreTest {
 			Assert.assertEquals(pred, st.getPredicate());
 			Assert.assertEquals(obj, st.getObject());
 			Assert.assertTrue(!stIter.hasNext());
-		} finally {
-			stIter.close();
 		}
 
 		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL,
@@ -763,9 +760,9 @@ public abstract class RDFStoreTest {
 		Statement st = vf.createStatement(picasso, RDF.TYPE, painter);
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		ObjectOutputStream out = new ObjectOutputStream(baos);
-		out.writeObject(st);
-		out.close();
+		try (ObjectOutputStream out = new ObjectOutputStream(baos)) {
+			out.writeObject(st);
+		}
 
 		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
 		ObjectInputStream in = new ObjectInputStream(bais);
@@ -781,15 +778,12 @@ public abstract class RDFStoreTest {
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.commit();
 
-		CloseableIteration<? extends Namespace, SailException> namespaces = con.getNamespaces();
-		try {
+		try (CloseableIteration<? extends Namespace, SailException> namespaces = con.getNamespaces()) {
 			Assert.assertTrue(namespaces.hasNext());
 			Namespace rdf = namespaces.next();
 			Assert.assertEquals("rdf", rdf.getPrefix());
 			Assert.assertEquals(RDF.NAMESPACE, rdf.getName());
 			Assert.assertTrue(!namespaces.hasNext());
-		} finally {
-			namespaces.close();
 		}
 	}
 
@@ -899,8 +893,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testDualConnections() throws Exception {
-		SailConnection con2 = sail.getConnection();
-		try {
+		try (SailConnection con2 = sail.getConnection()) {
 			Assert.assertEquals(0, countAllElements());
 			con.begin();
 			con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
@@ -930,8 +923,6 @@ public abstract class RDFStoreTest {
 			Thread.yield();
 			con2.commit();
 			thread.join();
-		} finally {
-			con2.close();
 		}
 	}
 

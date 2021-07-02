@@ -119,9 +119,10 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 
 	@Override
 	protected void runTest() throws Exception {
-		InputStream stream = new URL(queryFileURL).openStream();
-		String query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		stream.close();
+		String query;
+		try (InputStream stream = new URL(queryFileURL).openStream()) {
+			query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
+		}
 
 		try {
 			ParsedOperation operation = parseOperation(query, queryFileURL);
@@ -137,8 +138,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 
 							MemoryStore store = new MemoryStore();
 							store.initialize();
-							NotifyingSailConnection conn = store.getConnection();
-							try {
+							try (NotifyingSailConnection conn = store.getConnection()) {
 								conn.begin();
 								SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(), null);
 								exec.executeUpdate(updateExpr, null, null, true, -1);
@@ -152,8 +152,6 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 								// fall through - a parse exception is expected for a
 								// negative test case
 								conn.rollback();
-							} finally {
-								conn.close();
 							}
 						}
 					}
@@ -204,13 +202,12 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 							f.mkdir();
 							continue;
 						}
-						InputStream is = jar.getInputStream(file);
-						try (OutputStream fos = new BufferedOutputStream(new FileOutputStream(f))) {
+						try (InputStream is = jar.getInputStream(file);
+								OutputStream fos = new BufferedOutputStream(new FileOutputStream(f))) {
 							while (is.available() > 0) {
 								fos.write(is.read());
 							}
 						}
-						is.close();
 					}
 					File localFile = new File(tmpDir, con.getEntryName());
 					host = localFile.toURI().toURL().toString();
@@ -248,56 +245,46 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 		Repository manifestRep = new SailRepository(new MemoryStore());
 		manifestRep.initialize();
 
-		RepositoryConnection con = manifestRep.getConnection();
-
-		logger.debug("Loading manifest data");
-		URL manifest = new URL(manifestFile);
-		SPARQL11ManifestTest.addTurtle(con, manifest, manifestFile);
-
-		logger.info("Searching for sub-manifests");
-		List<String> subManifestList = new ArrayList<>();
-
-		TupleQueryResult subManifests = con.prepareTupleQuery(QueryLanguage.SPARQL, SUBMANIFEST_QUERY).evaluate();
-		while (subManifests.hasNext()) {
-			BindingSet bindings = subManifests.next();
-			subManifestList.add(bindings.getValue("subManifest").toString());
-		}
-		subManifests.close();
-
-		logger.info("Found {} sub-manifests", subManifestList.size());
-
-		for (String subManifest : subManifestList) {
-			logger.info("Loading sub manifest {}", subManifest);
-			con.clear();
-
-			URL subManifestURL = new URL(subManifest);
-			SPARQL11ManifestTest.addTurtle(con, subManifestURL, subManifest);
-
-			TestSuite subSuite = new TestSuite(subManifest.substring(host.length()));
-
-			logger.info("Creating test cases for {}", subManifest);
-			TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SPARQL, TESTCASE_QUERY).evaluate();
-			while (tests.hasNext()) {
-				BindingSet bindingSet = tests.next();
-
-				String testURI = bindingSet.getValue("TestURI").toString();
-				String testName = bindingSet.getValue("Name").toString();
-				String testAction = bindingSet.getValue("Action").toString();
-
-				String type = bindingSet.getValue("Type").toString();
-				boolean positiveTest = type
-						.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
-						|| type.equals(
-								"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
-
-				subSuite.addTest(factory.createSPARQLSyntaxTest(testURI, testName, testAction, positiveTest));
+		try (RepositoryConnection con = manifestRep.getConnection()) {
+			logger.debug("Loading manifest data");
+			URL manifest = new URL(manifestFile);
+			SPARQL11ManifestTest.addTurtle(con, manifest, manifestFile);
+			logger.info("Searching for sub-manifests");
+			List<String> subManifestList = new ArrayList<>();
+			TupleQueryResult subManifests = con.prepareTupleQuery(QueryLanguage.SPARQL, SUBMANIFEST_QUERY).evaluate();
+			while (subManifests.hasNext()) {
+				BindingSet bindings = subManifests.next();
+				subManifestList.add(bindings.getValue("subManifest").toString());
 			}
-			tests.close();
+			subManifests.close();
+			logger.info("Found {} sub-manifests", subManifestList.size());
+			for (String subManifest : subManifestList) {
+				logger.info("Loading sub manifest {}", subManifest);
+				con.clear();
+				URL subManifestURL = new URL(subManifest);
+				SPARQL11ManifestTest.addTurtle(con, subManifestURL, subManifest);
+				TestSuite subSuite = new TestSuite(subManifest.substring(host.length()));
+				logger.info("Creating test cases for {}", subManifest);
+				try (TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SPARQL, TESTCASE_QUERY).evaluate()) {
+					while (tests.hasNext()) {
+						BindingSet bindingSet = tests.next();
 
-			suite.addTest(subSuite);
+						String testURI = bindingSet.getValue("TestURI").toString();
+						String testName = bindingSet.getValue("Name").toString();
+						String testAction = bindingSet.getValue("Action").toString();
+
+						String type = bindingSet.getValue("Type").toString();
+						boolean positiveTest = type
+								.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
+								|| type.equals(
+										"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
+
+						subSuite.addTest(factory.createSPARQLSyntaxTest(testURI, testName, testAction, positiveTest));
+					}
+				}
+				suite.addTest(subSuite);
+			}
 		}
-
-		con.close();
 		manifestRep.shutDown();
 
 		logger.info("Added {} tests to suite ", suite.countTestCases());

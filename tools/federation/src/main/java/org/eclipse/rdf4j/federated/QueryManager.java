@@ -378,18 +378,18 @@ public class QueryManager {
 
 		HashSet<String> res = new HashSet<>();
 
-		Scanner sc = new Scanner(queryString);
-		while (true) {
-			while (sc.findInLine(prefixPattern) != null) {
-				MatchResult m = sc.match();
-				res.add(m.group(1));
+		try (Scanner sc = new Scanner(queryString)) {
+			while (true) {
+				while (sc.findInLine(prefixPattern) != null) {
+					MatchResult m = sc.match();
+					res.add(m.group(1));
+				}
+				if (!sc.hasNextLine()) {
+					break;
+				}
+				sc.nextLine();
 			}
-			if (!sc.hasNextLine()) {
-				break;
-			}
-			sc.nextLine();
 		}
-		sc.close();
 		return res;
 	}
 

@@ -259,15 +259,13 @@ public class QueryResults extends Iterations {
 	public static void report(TupleQueryResult tqr, QueryResultHandler handler)
 			throws TupleQueryResultHandlerException, QueryEvaluationException {
 
-		try {
+		try (tqr) {
 			handler.startQueryResult(tqr.getBindingNames());
 
 			while (tqr.hasNext()) {
 				BindingSet bindingSet = tqr.next();
 				handler.handleSolution(bindingSet);
 			}
-		} finally {
-			tqr.close();
 		}
 		handler.endQueryResult();
 	}
@@ -284,7 +282,7 @@ public class QueryResults extends Iterations {
 	 */
 	public static void report(GraphQueryResult gqr, RDFHandler rdfHandler)
 			throws RDFHandlerException, QueryEvaluationException {
-		try {
+		try (gqr) {
 			rdfHandler.startRDF();
 
 			for (Map.Entry<String, String> entry : gqr.getNamespaces().entrySet()) {
@@ -297,8 +295,6 @@ public class QueryResults extends Iterations {
 				Statement st = gqr.next();
 				rdfHandler.handleStatement(st);
 			}
-		} finally {
-			gqr.close();
 		}
 		rdfHandler.endRDF();
 	}
@@ -582,10 +578,8 @@ public class QueryResults extends Iterations {
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
+			try (filter) {
 				super.handleClose();
-			} finally {
-				filter.close();
 			}
 		}
 
@@ -650,10 +644,8 @@ public class QueryResults extends Iterations {
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
+			try (filter) {
 				super.handleClose();
-			} finally {
-				filter.close();
 			}
 		}
 

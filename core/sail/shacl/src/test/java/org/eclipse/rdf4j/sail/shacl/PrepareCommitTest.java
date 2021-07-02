@@ -61,8 +61,7 @@ public class PrepareCommitTest {
 	@Test
 	public void testPrepareFollowedByRollback() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclMinCountZero.ttl");
-		NotifyingSailConnection conn = shaclSail.getConnection();
-		try {
+		try (NotifyingSailConnection conn = shaclSail.getConnection()) {
 			Model otherShaclData = Rio.parse(getClass().getResourceAsStream("/shacl.ttl"), "",
 					RDFFormat.TURTLE);
 			conn.begin();
@@ -84,8 +83,6 @@ public class PrepareCommitTest {
 			Set<Literal> minCountValues = Models
 					.objectLiterals(restoredShapeGraph.getStatements(null, SHACL.MIN_COUNT, null));
 			assertThat(minCountValues).hasSize(1).allMatch(l -> l.intValue() == 0);
-		} finally {
-			conn.close();
 		}
 	}
 

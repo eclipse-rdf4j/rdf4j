@@ -36,10 +36,8 @@ public class AlternativeCursor<E> extends LookAheadIteration<E, QueryEvaluationE
 		try {
 			super.handleClose();
 		} finally {
-			try {
+			try (alternative) {
 				primary.close();
-			} finally {
-				alternative.close();
 			}
 		}
 	}

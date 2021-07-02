@@ -145,9 +145,7 @@ public class RepositoryPerformance {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
 					"SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
 
-			TupleQueryResult res = null;
-			try {
-				res = query.evaluate();
+			try (TupleQueryResult res = query.evaluate()) {
 				int count = 0;
 				while (res.hasNext()) {
 					res.next();
@@ -156,10 +154,6 @@ public class RepositoryPerformance {
 				System.out.println("Instance " + instance.stringValue() + " has " + count + " results. Duration: "
 						+ (System.currentTimeMillis() - start) + "ms");
 				return count;
-			} finally {
-				if (res != null) {
-					res.close();
-				}
 			}
 		}
 

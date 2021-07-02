@@ -195,10 +195,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	@Override
 	public void close() throws RepositoryException {
-		try {
+		try (client) {
 			super.close();
-		} finally {
-			client.close();
 		}
 	}
 

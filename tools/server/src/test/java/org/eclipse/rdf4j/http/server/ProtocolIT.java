@@ -518,14 +518,9 @@ public class ProtocolIT {
 		conn.setRequestMethod("PUT");
 		conn.setDoOutput(true);
 
-		try (InputStream dataStream = new ByteArrayInputStream(namespace.getBytes("UTF-8"))) {
-			OutputStream connOut = conn.getOutputStream();
-
-			try {
-				IOUtil.transfer(dataStream, connOut);
-			} finally {
-				connOut.close();
-			}
+		try (InputStream dataStream = new ByteArrayInputStream(namespace.getBytes("UTF-8"));
+				OutputStream connOut = conn.getOutputStream()) {
+			IOUtil.transfer(dataStream, connOut);
 		}
 
 		conn.connect();
@@ -571,14 +566,9 @@ public class ProtocolIT {
 		RDFFormat dataFormat = Rio.getParserFormatForFileName(file).orElse(RDFFormat.RDFXML);
 		conn.setRequestProperty("Content-Type", dataFormat.getDefaultMIMEType());
 
-		try (InputStream dataStream = ProtocolIT.class.getResourceAsStream(file)) {
-			OutputStream connOut = conn.getOutputStream();
-
-			try {
-				IOUtil.transfer(dataStream, connOut);
-			} finally {
-				connOut.close();
-			}
+		try (InputStream dataStream = ProtocolIT.class.getResourceAsStream(file);
+				OutputStream connOut = conn.getOutputStream()) {
+			IOUtil.transfer(dataStream, connOut);
 		}
 
 		conn.connect();

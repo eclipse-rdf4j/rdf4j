@@ -1046,12 +1046,10 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 			@Override
 			public void writeTo(OutputStream out) throws IOException {
-				try {
+				try (contents) {
 					OutputStreamWriter writer = new OutputStreamWriter(out, charset);
 					IOUtil.transfer(contents, writer);
 					writer.flush();
-				} finally {
-					contents.close();
 				}
 			}
 		};

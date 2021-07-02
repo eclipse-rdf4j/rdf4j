@@ -98,24 +98,24 @@ public class SPARQL10ManifestTest {
 
 		Repository manifestRep = new SailRepository(new MemoryStore());
 		manifestRep.initialize();
-		RepositoryConnection con = manifestRep.getConnection();
+		try (RepositoryConnection con = manifestRep.getConnection()) {
+			addTurtle(con, new URL(manifestFile), manifestFile);
 
-		addTurtle(con, new URL(manifestFile), manifestFile);
+			String query = "SELECT DISTINCT manifestFile FROM {x} rdf:first {manifestFile} "
+					+ "USING NAMESPACE mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
+					+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
 
-		String query = "SELECT DISTINCT manifestFile FROM {x} rdf:first {manifestFile} "
-				+ "USING NAMESPACE mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
-				+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
+			TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SERQL, query, manifestFile)
+					.evaluate();
 
-		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SERQL, query, manifestFile).evaluate();
+			while (manifestResults.hasNext()) {
+				BindingSet bindingSet = manifestResults.next();
+				String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
+				suite.addTest(SPARQLQueryTest.suite(subManifestFile, factory));
+			}
 
-		while (manifestResults.hasNext()) {
-			BindingSet bindingSet = manifestResults.next();
-			String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
-			suite.addTest(SPARQLQueryTest.suite(subManifestFile, factory));
+			manifestResults.close();
 		}
-
-		manifestResults.close();
-		con.close();
 		manifestRep.shutDown();
 
 		logger.info("Created aggregated test suite with " + suite.countTestCases() + " test cases.");
@@ -129,9 +129,7 @@ public class SPARQL10ManifestTest {
 			baseURI = url.toExternalForm();
 		}
 
-		InputStream in = url.openStream();
-
-		try {
+		try (InputStream in = url.openStream()) {
 			final ValueFactory vf = con.getRepository().getValueFactory();
 			RDFParser rdfParser = new TurtleParser();
 			rdfParser.setValueFactory(vf);
@@ -166,8 +164,6 @@ public class SPARQL10ManifestTest {
 				}
 				throw e;
 			}
-		} finally {
-			in.close();
 		}
 	}
 }

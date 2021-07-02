@@ -150,14 +150,12 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 					toCloseEvaluationThread.interrupt();
 				}
 			} finally {
-				try {
+				try (leftIter) {
 					CloseableIteration<BindingSet, QueryEvaluationException> toCloseRightIter = rightIter;
 					rightIter = null; // NOPMD
 					if (toCloseRightIter != null) {
 						toCloseRightIter.close();
 					}
-				} finally {
-					leftIter.close();
 				}
 			}
 		}

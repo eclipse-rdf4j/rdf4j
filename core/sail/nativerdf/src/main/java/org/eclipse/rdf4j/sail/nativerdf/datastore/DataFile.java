@@ -256,9 +256,9 @@ public class DataFile implements Closeable {
 	 */
 	@Override
 	public void close() throws IOException {
-		flush();
-
-		nioFile.close();
+		try (nioFile) {
+			flush();
+		}
 	}
 
 	/**

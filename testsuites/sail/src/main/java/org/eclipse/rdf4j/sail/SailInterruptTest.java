@@ -53,8 +53,7 @@ public abstract class SailInterruptTest {
 	public void testQueryInterrupt() throws Exception {
 		// System.out.println("Preparing data set for query interruption test");
 		final Random r = new Random(12345);
-		SailConnection con = store.getConnection();
-		try {
+		try (SailConnection con = store.getConnection()) {
 			con.begin();
 			for (int i = 0; i < 1000; i++) {
 				insertTestStatement(con, r.nextInt());
@@ -63,8 +62,6 @@ public abstract class SailInterruptTest {
 		} catch (Exception e) {
 			con.rollback();
 			Assert.fail(e.getMessage());
-		} finally {
-			con.close();
 		}
 
 		Runnable queryJob = () -> {

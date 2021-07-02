@@ -58,15 +58,13 @@ public abstract class AbstractNTriplesParserTest {
 		// Add the manifest for W3C test cases to a repository and query it
 		Repository w3cRepository = new SailRepository(new MemoryStore());
 		w3cRepository.initialize();
-		RepositoryConnection w3cCon = w3cRepository.getConnection();
+		try (RepositoryConnection w3cCon = w3cRepository.getConnection()) {
+			InputStream inputStream = this.getClass().getResourceAsStream(TEST_W3C_MANIFEST_URL);
+			w3cCon.add(inputStream, TEST_W3C_MANIFEST_URI_BASE, RDFFormat.TURTLE);
 
-		InputStream inputStream = this.getClass().getResourceAsStream(TEST_W3C_MANIFEST_URL);
-		w3cCon.add(inputStream, TEST_W3C_MANIFEST_URI_BASE, RDFFormat.TURTLE);
-
-		parsePositiveNTriplesSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TEST_W3C_TEST_URI_BASE, w3cCon);
-		parseNegativeNTriplesSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TEST_W3C_TEST_URI_BASE, w3cCon);
-
-		w3cCon.close();
+			parsePositiveNTriplesSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TEST_W3C_TEST_URI_BASE, w3cCon);
+			parseNegativeNTriplesSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TEST_W3C_TEST_URI_BASE, w3cCon);
+		}
 		w3cRepository.shutDown();
 
 		return suite;
@@ -85,23 +83,24 @@ public abstract class AbstractNTriplesParserTest {
 		positiveQuery.append("     ?test mf:action ?inputURL . ");
 		positiveQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString()).evaluate();
-
 		// Add all positive parser tests to the test suite
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			IRI nextTestUri = (IRI) bindingSet.getValue("test");
-			String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(), testLocationBaseUri);
-			String nextInputURL = fileBasePath + nextTestFile;
+		try (TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString())
+				.evaluate()) {
+			// Add all positive parser tests to the test suite
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				IRI nextTestUri = (IRI) bindingSet.getValue("test");
+				String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
+				String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(),
+						testLocationBaseUri);
+				String nextInputURL = fileBasePath + nextTestFile;
 
-			String nextBaseUrl = testLocationBaseUri + nextTestFile;
+				String nextBaseUrl = testLocationBaseUri + nextTestFile;
 
-			suite.addTest(new PositiveParserTest(nextTestUri, nextTestName, nextInputURL, null, nextBaseUrl,
-					createRDFParser(), createRDFParser()));
+				suite.addTest(new PositiveParserTest(nextTestUri, nextTestName, nextInputURL, null, nextBaseUrl,
+						createRDFParser(), createRDFParser()));
+			}
 		}
-
-		queryResult.close();
 
 	}
 
@@ -118,23 +117,24 @@ public abstract class AbstractNTriplesParserTest {
 		negativeQuery.append("     ?test mf:action ?inputURL . ");
 		negativeQuery.append(" }");
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString()).evaluate();
-
 		// Add all negative parser tests to the test suite
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			IRI nextTestUri = (IRI) bindingSet.getValue("test");
-			String nextTestName = ((Literal) bindingSet.getValue("testName")).toString();
-			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(), testLocationBaseUri);
-			String nextInputURL = fileBasePath + nextTestFile;
+		try (TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString())
+				.evaluate()) {
+			// Add all negative parser tests to the test suite
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				IRI nextTestUri = (IRI) bindingSet.getValue("test");
+				String nextTestName = ((Literal) bindingSet.getValue("testName")).toString();
+				String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString(),
+						testLocationBaseUri);
+				String nextInputURL = fileBasePath + nextTestFile;
 
-			String nextBaseUrl = testLocationBaseUri + nextTestFile;
+				String nextBaseUrl = testLocationBaseUri + nextTestFile;
 
-			suite.addTest(new NegativeParserTest(nextTestUri, nextTestName, nextInputURL, nextBaseUrl,
-					createRDFParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
+				suite.addTest(new NegativeParserTest(nextTestUri, nextTestName, nextInputURL, nextBaseUrl,
+						createRDFParser(), FailureMode.DO_NOT_IGNORE_FAILURE));
+			}
 		}
-
-		queryResult.close();
 
 	}
 

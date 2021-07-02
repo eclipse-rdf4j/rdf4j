@@ -87,8 +87,7 @@ public abstract class CustomGraphQueryInferencerTest {
 		// Initialize
 		Repository sail = new SailRepository(inferencer);
 		sail.initialize();
-		RepositoryConnection connection = sail.getConnection();
-		try {
+		try (RepositoryConnection connection = sail.getConnection()) {
 			connection.begin();
 			connection.clear();
 			connection.add(new StringReader(initial), BASE, RDFFormat.TURTLE);
@@ -124,8 +123,6 @@ public abstract class CustomGraphQueryInferencerTest {
 			// in order to properly clear out any inferred statements.
 			connection.clear();
 			connection.commit();
-		} finally {
-			connection.close();
 		}
 		sail.shutDown();
 	}

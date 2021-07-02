@@ -139,13 +139,10 @@ public abstract class RepositoryTest {
 
 	@Test
 	public void testAutoInit() throws Exception {
-		RepositoryConnection conn = testRepository.getConnection();
-		try {
+		try (RepositoryConnection conn = testRepository.getConnection()) {
 			conn.add(bob, mbox, mboxBob);
 			assertTrue(conn.hasStatement(bob, mbox, mboxBob, true));
 			assertTrue(testRepository.isInitialized());
-		} finally {
-			conn.close();
 		}
 	}
 

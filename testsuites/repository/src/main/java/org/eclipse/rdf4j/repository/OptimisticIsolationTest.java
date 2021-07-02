@@ -62,12 +62,9 @@ public abstract class OptimisticIsolationTest {
 		Repository repository = factory.getRepository(factory.getConfig());
 		repository.setDataDir(dataDir);
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return repository;
 	}

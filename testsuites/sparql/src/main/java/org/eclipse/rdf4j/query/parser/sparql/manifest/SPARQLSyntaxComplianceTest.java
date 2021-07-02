@@ -176,9 +176,10 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
 	@Override
 	protected void runTest() throws Exception {
-		InputStream stream = new URL(queryFileURL).openStream();
-		String query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		stream.close();
+		String query;
+		try (InputStream stream = new URL(queryFileURL).openStream()) {
+			query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
+		}
 
 		try {
 			ParsedOperation operation = parseOperation(query, queryFileURL);
@@ -194,8 +195,7 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
 							MemoryStore store = new MemoryStore();
 							store.initialize();
-							NotifyingSailConnection conn = store.getConnection();
-							try {
+							try (NotifyingSailConnection conn = store.getConnection()) {
 								conn.begin();
 								SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(), null);
 								exec.executeUpdate(updateExpr, null, null, true, -1);
@@ -209,8 +209,6 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 								// fall through - a parse exception is expected for a
 								// negative test case
 								conn.rollback();
-							} finally {
-								conn.close();
 							}
 						}
 					}

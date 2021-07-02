@@ -58,20 +58,20 @@ public abstract class SparqlRegexTest {
 	@Test
 	public void testInline() throws Exception {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryInline);
-		TupleQueryResult result = query.evaluate();
-		assertEquals(hunt, result.next().getValue("name"));
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertEquals(hunt, result.next().getValue("name"));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
 	public void testBinding() throws Exception {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBinding);
 		query.setBinding("pattern", vf.createLiteral("@work.example"));
-		TupleQueryResult result = query.evaluate();
-		assertEquals(hunt, result.next().getValue("name"));
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertEquals(hunt, result.next().getValue("name"));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
@@ -79,10 +79,10 @@ public abstract class SparqlRegexTest {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryBindingFlags);
 		query.setBinding("pattern", vf.createLiteral("@Work.example"));
 		query.setBinding("flags", vf.createLiteral("i"));
-		TupleQueryResult result = query.evaluate();
-		assertEquals(hunt, result.next().getValue("name"));
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertEquals(hunt, result.next().getValue("name"));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test
@@ -93,10 +93,10 @@ public abstract class SparqlRegexTest {
 		conn.add(bnode, pattern, vf.createLiteral("@Work.example"));
 		conn.add(bnode, flags, vf.createLiteral("i"));
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryExpr);
-		TupleQueryResult result = query.evaluate();
-		assertEquals(hunt, result.next().getValue("name"));
-		assertFalse(result.hasNext());
-		result.close();
+		try (TupleQueryResult result = query.evaluate()) {
+			assertEquals(hunt, result.next().getValue("name"));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Before
@@ -113,12 +113,9 @@ public abstract class SparqlRegexTest {
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return repository;
 	}
@@ -135,12 +132,12 @@ public abstract class SparqlRegexTest {
 	}
 
 	private void createUser(String id, String name, String email) throws RepositoryException {
-		RepositoryConnection conn = repository.getConnection();
-		IRI subj = vf.createIRI("http://example.org/ns#", id);
-		IRI foafName = vf.createIRI("http://xmlns.com/foaf/0.1/", "name");
-		IRI foafMbox = vf.createIRI("http://xmlns.com/foaf/0.1/", "mbox");
-		conn.add(subj, foafName, vf.createLiteral(name));
-		conn.add(subj, foafMbox, vf.createIRI("mailto:", email));
-		conn.close();
+		try (RepositoryConnection conn = repository.getConnection()) {
+			IRI subj = vf.createIRI("http://example.org/ns#", id);
+			IRI foafName = vf.createIRI("http://xmlns.com/foaf/0.1/", "name");
+			IRI foafMbox = vf.createIRI("http://xmlns.com/foaf/0.1/", "mbox");
+			conn.add(subj, foafName, vf.createLiteral(name));
+			conn.add(subj, foafMbox, vf.createIRI("mailto:", email));
+		}
 	}
 }

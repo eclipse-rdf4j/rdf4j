@@ -60,96 +60,95 @@ public abstract class RDFJSONParserTestCase {
 		// Add the manifest for positive test cases to a repository and query it
 		Repository repository = new SailRepository(new MemoryStore());
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
+		try (RepositoryConnection con = repository.getConnection()) {
+			InputStream inputStream = this.getClass().getResourceAsStream(MANIFEST_GOOD_URL);
+			con.add(inputStream, BASE_URL, RDFFormat.TURTLE);
 
-		InputStream inputStream = this.getClass().getResourceAsStream(MANIFEST_GOOD_URL);
-		con.add(inputStream, BASE_URL, RDFFormat.TURTLE);
+			StringBuilder positiveQuery = new StringBuilder();
+			positiveQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
+			positiveQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
+			positiveQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
+			positiveQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
+			positiveQuery.append(" WHERE { \n");
+			positiveQuery.append("     ?test a rdft:TestRDFJSONPositiveSyntax . ");
+			positiveQuery.append("     ?test mf:name ?testName . ");
+			positiveQuery.append("     ?test mf:action ?inputURL . ");
+			positiveQuery.append(" }");
 
-		StringBuilder positiveQuery = new StringBuilder();
-		positiveQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
-		positiveQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
-		positiveQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
-		positiveQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
-		positiveQuery.append(" WHERE { \n");
-		positiveQuery.append("     ?test a rdft:TestRDFJSONPositiveSyntax . ");
-		positiveQuery.append("     ?test mf:name ?testName . ");
-		positiveQuery.append("     ?test mf:action ?inputURL . ");
-		positiveQuery.append(" }");
+			TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString())
+					.evaluate();
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString()).evaluate();
+			// Add all positive parser tests to the test suite
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
+				String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString());
+				String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;
 
-		// Add all positive parser tests to the test suite
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString());
-			String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;
+				String nextBaseUrl = BASE_URL + nextTestFile;
 
-			String nextBaseUrl = BASE_URL + nextTestFile;
+				suite.addTest(new PositiveParserTest(nextTestName, nextInputURL, null, nextBaseUrl));
+			}
 
-			suite.addTest(new PositiveParserTest(nextTestName, nextInputURL, null, nextBaseUrl));
+			queryResult.close();
+
+			StringBuilder negativeQuery = new StringBuilder();
+			negativeQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
+			negativeQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
+			negativeQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
+			negativeQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
+			negativeQuery.append(" WHERE { \n");
+			negativeQuery.append("     ?test a rdft:TestRDFJSONNegativeSyntax . ");
+			negativeQuery.append("     ?test mf:name ?testName . ");
+			negativeQuery.append("     ?test mf:action ?inputURL . ");
+			negativeQuery.append(" }");
+
+			queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString()).evaluate();
+
+			// Add all negative parser tests to the test suite
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				String nextTestName = ((Literal) bindingSet.getValue("testName")).toString();
+				String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString());
+				String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;
+
+				String nextBaseUrl = BASE_URL + nextTestFile;
+
+				suite.addTest(new NegativeParserTest(nextTestName, nextInputURL, nextBaseUrl));
+			}
+
+			queryResult.close();
+
+			StringBuilder positiveEvalQuery = new StringBuilder();
+			positiveEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
+			positiveEvalQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
+			positiveEvalQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
+			positiveEvalQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
+			positiveEvalQuery.append(" WHERE { \n");
+			positiveEvalQuery.append("     ?test a rdft:TestRDFJSONEval . ");
+			positiveEvalQuery.append("     ?test mf:name ?testName . ");
+			positiveEvalQuery.append("     ?test mf:action ?inputURL . ");
+			positiveEvalQuery.append("     ?test mf:result ?outputURL . ");
+			positiveEvalQuery.append(" }");
+
+			queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveEvalQuery.toString()).evaluate();
+
+			// Add all positive eval tests to the test suite
+			while (queryResult.hasNext()) {
+				BindingSet bindingSet = queryResult.next();
+				String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
+				String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString());
+				String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;
+				String nextOutputURL = TEST_FILE_BASE_PATH
+						+ removeBase(((IRI) bindingSet.getValue("outputURL")).toString());
+
+				String nextBaseUrl = BASE_URL + nextTestFile;
+
+				suite.addTest(new PositiveParserTest(nextTestName, nextInputURL, nextOutputURL, nextBaseUrl));
+			}
+
+			queryResult.close();
 		}
-
-		queryResult.close();
-
-		StringBuilder negativeQuery = new StringBuilder();
-		negativeQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
-		negativeQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
-		negativeQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
-		negativeQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
-		negativeQuery.append(" WHERE { \n");
-		negativeQuery.append("     ?test a rdft:TestRDFJSONNegativeSyntax . ");
-		negativeQuery.append("     ?test mf:name ?testName . ");
-		negativeQuery.append("     ?test mf:action ?inputURL . ");
-		negativeQuery.append(" }");
-
-		queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString()).evaluate();
-
-		// Add all negative parser tests to the test suite
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			String nextTestName = ((Literal) bindingSet.getValue("testName")).toString();
-			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString());
-			String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;
-
-			String nextBaseUrl = BASE_URL + nextTestFile;
-
-			suite.addTest(new NegativeParserTest(nextTestName, nextInputURL, nextBaseUrl));
-		}
-
-		queryResult.close();
-
-		StringBuilder positiveEvalQuery = new StringBuilder();
-		positiveEvalQuery.append(" PREFIX mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n");
-		positiveEvalQuery.append(" PREFIX qt:   <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
-		positiveEvalQuery.append(" PREFIX rdft: <http://www.w3.org/ns/rdftest#>\n");
-		positiveEvalQuery.append(" SELECT ?test ?testName ?inputURL ?outputURL \n");
-		positiveEvalQuery.append(" WHERE { \n");
-		positiveEvalQuery.append("     ?test a rdft:TestRDFJSONEval . ");
-		positiveEvalQuery.append("     ?test mf:name ?testName . ");
-		positiveEvalQuery.append("     ?test mf:action ?inputURL . ");
-		positiveEvalQuery.append("     ?test mf:result ?outputURL . ");
-		positiveEvalQuery.append(" }");
-
-		queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveEvalQuery.toString()).evaluate();
-
-		// Add all positive eval tests to the test suite
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			String nextTestName = ((Literal) bindingSet.getValue("testName")).getLabel();
-			String nextTestFile = removeBase(((IRI) bindingSet.getValue("inputURL")).toString());
-			String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;
-			String nextOutputURL = TEST_FILE_BASE_PATH
-					+ removeBase(((IRI) bindingSet.getValue("outputURL")).toString());
-
-			String nextBaseUrl = BASE_URL + nextTestFile;
-
-			suite.addTest(new PositiveParserTest(nextTestName, nextInputURL, nextOutputURL, nextBaseUrl));
-		}
-
-		queryResult.close();
-
-		con.close();
 		repository.shutDown();
 
 		return suite;
@@ -279,9 +278,9 @@ public abstract class RDFJSONParserTestCase {
 
 				rdfjsonParser.setRDFHandler(new StatementCollector());
 
-				InputStream in = this.getClass().getResourceAsStream(inputURL);
-				rdfjsonParser.parse(in, baseURL);
-				in.close();
+				try (InputStream in = this.getClass().getResourceAsStream(inputURL)) {
+					rdfjsonParser.parse(in, baseURL);
+				}
 
 				fail("Parser parses erroneous data without reporting errors");
 			} catch (RDFParseException e) {

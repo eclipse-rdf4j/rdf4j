@@ -87,10 +87,8 @@ public class StatementConversionIteration extends AbstractCloseableIteration<Bin
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		try {
+		try (repoResult) {
 			super.handleClose();
-		} finally {
-			repoResult.close();
 		}
 	}
 

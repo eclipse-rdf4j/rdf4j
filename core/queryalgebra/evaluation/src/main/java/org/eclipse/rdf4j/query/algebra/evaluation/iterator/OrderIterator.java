@@ -273,7 +273,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		List<BindingSet> list = new LinkedList<>();
 		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;
 		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
-		try {
+		try (iter) {
 			while (iter.hasNext()) {
 				if (list.size() >= syncThreshold && list.size() < limit) {
 					SerializedQueue<BindingSet> queue = new SerializedQueue<>("orderiter");
@@ -302,8 +302,6 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 			}
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
-		} finally {
-			iter.close();
 		}
 		SortedIterators<BindingSet> iterator;
 		List<Iterator<BindingSet>> iterators = new ArrayList<>(serialized.size() + 1);

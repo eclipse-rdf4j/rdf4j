@@ -1199,9 +1199,9 @@ public abstract class RepositoryConnectionTest {
 		}
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		ObjectOutputStream out = new ObjectOutputStream(baos);
-		out.writeObject(st);
-		out.close();
+		try (ObjectOutputStream out = new ObjectOutputStream(baos)) {
+			out.writeObject(st);
+		}
 
 		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
 		ObjectInputStream in = new ObjectInputStream(bais);
@@ -1226,9 +1226,9 @@ public abstract class RepositoryConnectionTest {
 		BNode bnode = (BNode) st.getSubject();
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		ObjectOutputStream out = new ObjectOutputStream(baos);
-		out.writeObject(bnode);
-		out.close();
+		try (ObjectOutputStream out = new ObjectOutputStream(baos)) {
+			out.writeObject(bnode);
+		}
 
 		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
 		ObjectInputStream in = new ObjectInputStream(bais);
@@ -1253,9 +1253,9 @@ public abstract class RepositoryConnectionTest {
 		IRI uri = st.getPredicate();
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		ObjectOutputStream out = new ObjectOutputStream(baos);
-		out.writeObject(uri);
-		out.close();
+		try (ObjectOutputStream out = new ObjectOutputStream(baos)) {
+			out.writeObject(uri);
+		}
 
 		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
 		ObjectInputStream in = new ObjectInputStream(bais);
@@ -1280,9 +1280,9 @@ public abstract class RepositoryConnectionTest {
 		Literal literal = (Literal) st.getObject();
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		ObjectOutputStream out = new ObjectOutputStream(baos);
-		out.writeObject(literal);
-		out.close();
+		try (ObjectOutputStream out = new ObjectOutputStream(baos)) {
+			out.writeObject(literal);
+		}
 
 		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
 		ObjectInputStream in = new ObjectInputStream(bais);
@@ -1304,9 +1304,9 @@ public abstract class RepositoryConnectionTest {
 			Model graph = Iterations.addAll(statements, new LinkedHashModel());
 
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
-			ObjectOutputStream out = new ObjectOutputStream(baos);
-			out.writeObject(graph);
-			out.close();
+			try (ObjectOutputStream out = new ObjectOutputStream(baos)) {
+				out.writeObject(graph);
+			}
 
 			ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
 			ObjectInputStream in = new ObjectInputStream(bais);
@@ -1759,24 +1759,20 @@ public abstract class RepositoryConnectionTest {
 		SimpleDataset dataset = new SimpleDataset();
 		dataset.addDefaultGraph(defaultGraph);
 		qry.setDataset(dataset);
-		TupleQueryResult result = qry.evaluate();
-		try {
+		try (TupleQueryResult result = qry.evaluate()) {
 			int count = 0;
 			while (result.hasNext()) {
 				result.next();
 				count++;
 			}
 			return count;
-		} finally {
-			result.close();
 		}
 	}
 
 	private int getTotalStatementCount(RepositoryConnection connection) throws RepositoryException {
-		CloseableIteration<? extends Statement, RepositoryException> iter = connection.getStatements(null, null, null,
-				true);
-
-		try {
+		try (CloseableIteration<? extends Statement, RepositoryException> iter = connection.getStatements(null, null,
+				null,
+				true)) {
 			int size = 0;
 
 			while (iter.hasNext()) {
@@ -1785,8 +1781,6 @@ public abstract class RepositoryConnectionTest {
 			}
 
 			return size;
-		} finally {
-			iter.close();
 		}
 	}
 

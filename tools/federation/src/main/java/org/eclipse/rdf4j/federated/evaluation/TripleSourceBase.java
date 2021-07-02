@@ -147,8 +147,9 @@ public abstract class TripleSourceBase implements TripleSource {
 					res = new FilteringIteration(filterExpr, res, this.strategy);
 				}
 				if (!res.hasNext()) {
-					Iterations.closeCloseable(res);
-					conn.close();
+					try (conn) {
+						Iterations.closeCloseable(res);
+					}
 					resultHolder.set(new EmptyIteration<>());
 					return;
 				}

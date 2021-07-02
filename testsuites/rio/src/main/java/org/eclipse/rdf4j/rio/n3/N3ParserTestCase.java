@@ -207,9 +207,9 @@ public abstract class N3ParserTestCase {
 
 				turtleParser.setRDFHandler(new StatementCollector());
 
-				InputStream in = inputURL.openStream();
-				turtleParser.parse(in, base(inputURL.toExternalForm()));
-				in.close();
+				try (InputStream in = inputURL.openStream()) {
+					turtleParser.parse(in, base(inputURL.toExternalForm()));
+				}
 
 				fail("Parser parses erroneous data without reporting errors");
 			} catch (RDFParseException e) {

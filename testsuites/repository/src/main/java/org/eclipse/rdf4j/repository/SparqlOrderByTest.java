@@ -78,12 +78,9 @@ public abstract class SparqlOrderByTest {
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return repository;
 	}
@@ -103,21 +100,21 @@ public abstract class SparqlOrderByTest {
 		ValueFactory vf = repository.getValueFactory();
 		String foafName = "http://xmlns.com/foaf/0.1/name";
 		String exEmpId = "http://example.org/ns#empId";
-		RepositoryConnection conn = repository.getConnection();
-		conn.add(vf.createIRI("http://example.org/ns#" + id), vf.createIRI(foafName), vf.createLiteral(name));
-		conn.add(vf.createIRI("http://example.org/ns#" + id), vf.createIRI(exEmpId), vf.createLiteral(empId));
-		conn.close();
+		try (RepositoryConnection conn = repository.getConnection()) {
+			conn.add(vf.createIRI("http://example.org/ns#" + id), vf.createIRI(foafName), vf.createLiteral(name));
+			conn.add(vf.createIRI("http://example.org/ns#" + id), vf.createIRI(exEmpId), vf.createLiteral(empId));
+		}
 	}
 
 	private void assertResult(String queryStr, List<String> names)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);
-		TupleQueryResult result = query.evaluate();
-		for (String name : names) {
-			Value value = result.next().getValue("name");
-			assertEquals(name, ((Literal) value).getLabel());
+		try (TupleQueryResult result = query.evaluate()) {
+			for (String name : names) {
+				Value value = result.next().getValue("name");
+				assertEquals(name, ((Literal) value).getLabel());
+			}
+			assertFalse(result.hasNext());
 		}
-		assertFalse(result.hasNext());
-		result.close();
 	}
 }

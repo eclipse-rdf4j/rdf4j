@@ -70,10 +70,10 @@ public class ResultGenerator {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q);
 		TupleQueryResult res = query.evaluate();
 
-		OutputStream out = new FileOutputStream(new File("test" + baseDir, queryFile + ".srx"));
-		TupleQueryResultWriter qrWriter = new SPARQLResultsXMLWriter(out);
-		QueryResults.report(res, qrWriter);
-		out.close();
+		try (OutputStream out = new FileOutputStream(new File("test" + baseDir, queryFile + ".srx"))) {
+			TupleQueryResultWriter qrWriter = new SPARQLResultsXMLWriter(out);
+			QueryResults.report(res, qrWriter);
+		}
 	}
 
 	protected void printResult(String baseDir, String queryFile) throws Exception {
@@ -114,11 +114,8 @@ public class ResultGenerator {
 	 * @throws IOException
 	 */
 	private String readQueryString(String queryFile) throws RepositoryException, IOException {
-		InputStream stream = SPARQLBaseTest.class.getResourceAsStream(queryFile);
-		try {
+		try (InputStream stream = SPARQLBaseTest.class.getResourceAsStream(queryFile)) {
 			return IOUtil.readString(new InputStreamReader(stream, "UTF-8"));
-		} finally {
-			stream.close();
 		}
 	}
 

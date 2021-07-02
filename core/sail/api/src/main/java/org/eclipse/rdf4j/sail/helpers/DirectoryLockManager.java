@@ -229,8 +229,9 @@ public class DirectoryLockManager implements LockManager {
 			synchronized void delete() {
 				try {
 					if (raf.getChannel().isOpen()) {
-						fileLock.release();
-						raf.close();
+						try (raf) {
+							fileLock.release();
+						}
 					}
 				} catch (IOException e) {
 					logger.warn(e.toString(), e);

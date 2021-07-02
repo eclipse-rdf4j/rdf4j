@@ -75,10 +75,10 @@ public abstract class TupleQueryResultTest {
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
 		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		con.clear();
-		con.clearNamespaces();
-		con.close();
+		try (RepositoryConnection con = repository.getConnection()) {
+			con.clear();
+			con.clearNamespaces();
+		}
 		return repository;
 	}
 
@@ -116,24 +116,19 @@ public abstract class TupleQueryResultTest {
 	}
 
 	private void addData() throws IOException, UnsupportedRDFormatException, RDFParseException, RepositoryException {
-		InputStream defaultGraph = TupleQueryResultTest.class.getResourceAsStream("/testcases/default-graph-1.ttl");
-		try {
+		try (InputStream defaultGraph = TupleQueryResultTest.class
+				.getResourceAsStream("/testcases/default-graph-1.ttl")) {
 			con.add(defaultGraph, "", RDFFormat.TURTLE);
-		} finally {
-			defaultGraph.close();
 		}
 	}
 
 	@Test
 	public void testGetBindingNames() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, multipleResultQuery).evaluate();
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, multipleResultQuery).evaluate()) {
 			List<String> headers = result.getBindingNames();
 
 			assertThat(headers.get(0)).isEqualTo("P").as("first header element");
 			assertThat(headers.get(1)).isEqualTo("D").as("second header element");
-		} finally {
-			result.close();
 		}
 	}
 
@@ -147,9 +142,7 @@ public abstract class TupleQueryResultTest {
 
 	@Test
 	public void testIterator() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, multipleResultQuery).evaluate();
-
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, multipleResultQuery).evaluate()) {
 			int count = 0;
 			while (result.hasNext()) {
 				result.next();
@@ -157,19 +150,13 @@ public abstract class TupleQueryResultTest {
 			}
 
 			assertTrue("query should have multiple results.", count > 1);
-		} finally {
-			result.close();
 		}
 	}
 
 	@Test
 	public void testIsEmpty() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, emptyResultQuery).evaluate();
-
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, emptyResultQuery).evaluate()) {
 			assertFalse("Query result should be empty", result.hasNext());
-		} finally {
-			result.close();
 		}
 	}
 

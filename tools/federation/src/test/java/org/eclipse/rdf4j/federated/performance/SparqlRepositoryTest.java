@@ -34,12 +34,13 @@ public class SparqlRepositoryTest {
 
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
 				"SELECT DISTINCT ?President ?Party ?Articles ?TopicPage WHERE {  ?President <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> . }");
-		TupleQueryResult res = query.evaluate();
-		List<IRI> list = new ArrayList<>();
-		while (res.hasNext()) {
-			list.add((IRI) res.next().getValue("President"));
+		List<IRI> list;
+		try (TupleQueryResult res = query.evaluate()) {
+			list = new ArrayList<>();
+			while (res.hasNext()) {
+				list.add((IRI) res.next().getValue("President"));
+			}
 		}
-		res.close();
 
 		System.out.println("Retrieved " + list.size() + " instances");
 		List<Future<?>> tasks = new ArrayList<>();
