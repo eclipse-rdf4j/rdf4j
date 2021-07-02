@@ -54,7 +54,7 @@ public abstract class SailInterruptTest {
 		// System.out.println("Preparing data set for query interruption test");
 		final Random r = new Random(12345);
 		SailConnection con = store.getConnection();
-		try(con) {
+		try (con) {
 			con.begin();
 			for (int i = 0; i < 1000; i++) {
 				insertTestStatement(con, r.nextInt());
