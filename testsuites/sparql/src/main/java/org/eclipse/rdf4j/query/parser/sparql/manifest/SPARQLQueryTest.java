@@ -427,7 +427,8 @@ public abstract class SPARQLQueryTest extends TestCase {
 	}
 
 	private void upload(IRI graphURI, Resource context) throws Exception {
-		try (RepositoryConnection con = dataRep.getConnection()) {
+		RepositoryConnection con = dataRep.getConnection();
+		try {
 			con.begin();
 			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
 			RDFParser rdfParser = Rio.createParser(rdfFormat, dataRep.getValueFactory());
@@ -453,6 +454,8 @@ public abstract class SPARQLQueryTest extends TestCase {
 				con.rollback();
 			}
 			throw e;
+		} finally {
+			con.close();
 		}
 	}
 

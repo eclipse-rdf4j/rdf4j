@@ -139,7 +139,8 @@ public abstract class SPARQLComplianceTest {
 	}
 
 	protected void upload(IRI graphURI, Resource context) throws Exception {
-		try (RepositoryConnection con = getDataRepository().getConnection()) {
+		RepositoryConnection con = getDataRepository().getConnection();
+		try {
 			con.begin();
 			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
 			RDFParser rdfParser = Rio.createParser(rdfFormat, getDataRepository().getValueFactory());
@@ -165,6 +166,8 @@ public abstract class SPARQLComplianceTest {
 				con.rollback();
 			}
 			throw e;
+		} finally {
+			con.close();
 		}
 	}
 

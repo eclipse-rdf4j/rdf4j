@@ -138,7 +138,8 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 
 							MemoryStore store = new MemoryStore();
 							store.initialize();
-							try (NotifyingSailConnection conn = store.getConnection()) {
+							NotifyingSailConnection conn = store.getConnection();
+							try {
 								conn.begin();
 								SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(), null);
 								exec.executeUpdate(updateExpr, null, null, true, -1);
@@ -152,6 +153,8 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 								// fall through - a parse exception is expected for a
 								// negative test case
 								conn.rollback();
+							} finally {
+								conn.close();
 							}
 						}
 					}
