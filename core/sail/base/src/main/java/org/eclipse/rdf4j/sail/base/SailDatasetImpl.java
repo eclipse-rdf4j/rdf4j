@@ -71,9 +71,8 @@ class SailDatasetImpl implements SailDataset {
 
 	@Override
 	public void close() throws SailException {
-		try (derivedFrom) {
-			changes.removeRefback(this);
-		}
+		changes.removeRefback(this);
+		derivedFrom.close();
 	}
 
 	@Override
