@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
-import org.junit.Ignore;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -184,8 +183,8 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		try (SailRepositoryConnection connection1 = sailRepository.getConnection()) {
-			SailRepositoryConnection connection2 = sailRepository.getConnection();
+		try (SailRepositoryConnection connection1 = sailRepository.getConnection(); 
+			SailRepositoryConnection connection2 = sailRepository.getConnection()) {
 			add(connection1, "ex:pete a ex:Person .");
 			connection2.begin();
 			StringReader shaclRules = new StringReader(String.join("\n", "",
@@ -209,9 +208,9 @@ public class TransactionalIsolationTest {
 			connection2.rollback();
 			add(connection1, "ex:steve a ex:Person .");
 			connection2.close();
-
+		}
 		sailRepository.shutDown();
-
+		
 	}
 
 	@Test

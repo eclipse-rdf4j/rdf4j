@@ -119,7 +119,9 @@ public abstract class AbstractSHACLTest extends TestCase {
 	}
 
 	protected void upload(Repository rep, Model dataGraph) {
-		try (RepositoryConnection con = rep.getConnection()) {
+		RepositoryConnection con = rep.getConnection();
+
+		try {
 			con.begin();
 			con.add(dataGraph);
 			con.commit();
@@ -128,6 +130,8 @@ public abstract class AbstractSHACLTest extends TestCase {
 				con.rollback();
 			}
 			throw e;
+		} finally {
+			con.close();
 		}
 	}
 }
