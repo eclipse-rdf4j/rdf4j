@@ -362,12 +362,13 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 
 	@Override
 	public void close() throws RepositoryException {
-		try (super) {
+		try {
 			if (isActive()) {
 				logger.warn("Rolling back transaction due to connection close", new Throwable());
 				rollback();
 			}
 		} finally {
+			super.close();
 			client.close();
 		}
 	}
