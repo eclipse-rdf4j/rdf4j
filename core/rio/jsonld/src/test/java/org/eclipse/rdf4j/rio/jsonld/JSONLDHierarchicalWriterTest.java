@@ -363,9 +363,8 @@ public class JSONLDHierarchicalWriterTest {
 
 		@Override
 		public void close() throws IOException {
-			try (super) {
-				assertTrue("Streams match", is.read() == -1);
-			}
+			assertTrue("Streams match", is.read() == -1);
+			super.close();
 		}
 	}
 }
