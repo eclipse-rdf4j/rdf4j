@@ -1,4 +1,0 @@
-SELECT
-   datatype(X), P, O
-FROM
-  {S} P {O}

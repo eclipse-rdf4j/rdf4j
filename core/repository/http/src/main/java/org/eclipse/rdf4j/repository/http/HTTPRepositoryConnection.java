@@ -206,18 +206,6 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			} else {
 				return prepareGraphQuery(ql, queryString, baseURI);
 			}
-		} else if (QueryLanguage.SERQL.equals(ql)) {
-			String strippedQuery = queryString;
-
-			// remove all opening brackets
-			strippedQuery = strippedQuery.replace('(', ' ');
-			strippedQuery = strippedQuery.trim();
-
-			if (strippedQuery.toUpperCase().startsWith("SELECT")) {
-				return prepareTupleQuery(ql, queryString, baseURI);
-			} else {
-				return prepareGraphQuery(ql, queryString, baseURI);
-			}
 		} else {
 			throw new UnsupportedOperationException("Operation not supported for query language " + ql);
 		}

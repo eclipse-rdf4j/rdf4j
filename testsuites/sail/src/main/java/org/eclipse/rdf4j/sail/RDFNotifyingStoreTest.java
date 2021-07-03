@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.junit.Assert;
@@ -69,8 +71,7 @@ public abstract class RDFNotifyingStoreTest extends RDFStoreTest implements Sail
 
 		Assert.assertEquals("Named context should contain 3 statements", 3, countContext1Elements());
 
-		Assert.assertEquals("Statement (Painting, type, Class) should no longer be in the repository", 0,
-				countQueryResults("select 1 from {ex:Painting} rdf:type {rdfs:Class}"));
+		assertThat(con.hasStatement(painting, RDF.TYPE, RDFS.CLASS, true)).isFalse();
 
 		con.begin();
 		con.removeStatements(null, null, null, context1);

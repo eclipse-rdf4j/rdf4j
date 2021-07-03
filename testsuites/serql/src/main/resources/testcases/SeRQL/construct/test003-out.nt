@@ -1,3 +1,0 @@
-# Output file for SeRQL CfwQuery test
-# description: query for english literals.
-<http://example.org/A> <http://example.org/propA> "Hello World!"@en .

@@ -94,10 +94,10 @@ public abstract class AbstractLuceneSailTest {
 
 	static {
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("SELECT Subject, Score ");
-		buffer.append("FROM {Subject} <" + MATCHES + "> {} ");
-		buffer.append(" <" + QUERY + "> {Query}; ");
-		buffer.append(" <" + SCORE + "> {Score} ");
+		buffer.append("SELECT ?Subject ?Score\n");
+		buffer.append("WHERE { ?Subject <" + MATCHES + "> [\n");
+		buffer.append("                              <" + QUERY + "> ?Query; \n");
+		buffer.append("                              <" + SCORE + "> ?Score ].}");
 		QUERY_STRING = buffer.toString();
 	}
 
@@ -165,7 +165,7 @@ public abstract class AbstractLuceneSailTest {
 	public void testRegularQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, QUERY_STRING);
+			TupleQuery query = connection.prepareTupleQuery(QUERY_STRING);
 			query.setBinding("Query", vf.createLiteral("one"));
 			try (TupleQueryResult result = query.evaluate()) {
 
@@ -202,16 +202,16 @@ public abstract class AbstractLuceneSailTest {
 	public void testComplexQueryOne() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("SELECT Resource, Matching, Score ");
-		buffer.append("FROM {Resource} <" + PREDICATE_3 + "> {Matching} ");
-		buffer.append(" <" + MATCHES + "> {} ");
-		buffer.append(" <" + QUERY + "> {\"one\"}; ");
-		buffer.append(" <" + SCORE + "> {Score} ");
+		buffer.append("SELECT ?Resource ?Matching ?Score ");
+		buffer.append("WHERE { ?Resource <" + PREDICATE_3 + "> ?Matching. ");
+		buffer.append(" ?Matching <" + MATCHES + "> [ ");
+		buffer.append(" <" + QUERY + "> \"one\"; ");
+		buffer.append(" <" + SCORE + "> ?Score ]. } ");
 		String q = buffer.toString();
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
+			TupleQuery query = connection.prepareTupleQuery(q);
 			try (TupleQueryResult result = query.evaluate()) {
 
 				// check the results
@@ -242,16 +242,17 @@ public abstract class AbstractLuceneSailTest {
 	public void testComplexQueryTwo() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("SELECT Resource, Matching, Score ");
-		buffer.append("FROM {Resource} <" + PREDICATE_3 + "> {Matching} ");
-		buffer.append(" <" + MATCHES + "> {} ");
-		buffer.append(" <" + QUERY + "> {\"two\"}; ");
-		buffer.append(" <" + SCORE + "> {Score} ");
+		buffer.append("SELECT ?Resource ?Matching ?Score ");
+		buffer.append("WHERE { ?Resource <" + PREDICATE_3 + "> ?Matching. ");
+		buffer.append(" ?Matching <" + MATCHES + "> [ ");
+		buffer.append(" <" + QUERY + "> \"two\"; ");
+		buffer.append(" <" + SCORE + "> ?Score ]. } ");
+
 		String q = buffer.toString();
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
+			TupleQuery query = connection.prepareTupleQuery(q);
 			try (TupleQueryResult result = query.evaluate()) {
 
 				// check the results
@@ -272,26 +273,50 @@ public abstract class AbstractLuceneSailTest {
 			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		String[] queries = new String[] {
-				"SELECT \n" + "  Resource1, Resource2, R1Score, R2Score \n" + "FROM \n" + "  {Resource1} <"
-						+ PREDICATE_3 + "> {Resource2}, \n" + "  {Resource1} <" + MATCHES + "> {} \n" + "    <" + QUERY
-						+ "> {\"one\"}; \n" + "    <" + SCORE + "> {R1Score}, \n" + "  {Resource2} <" + MATCHES
-						+ "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE + "> {R2Score} ",
-				"SELECT \n" + "  Resource1, Resource3, R1Score, R3Score \n" + "FROM \n"
-						+ "  {Resource2} p21 {Resource1}, \n" + "  {Resource2} p23 {Resource3}, \n" + "  {Resource1} <"
-						+ MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE
-						+ "> {R1Score}, \n" + "  {Resource3} <" + MATCHES + "> {} \n" + "    <" + QUERY
-						+ "> {\"one\"}; \n" + "    <" + SCORE + "> {R3Score}" + "WHERE \n" + "  Resource1 != Resource3",
-				"SELECT \n" + "  Resource1, Resource3, R1Score, R3Score \n" + "FROM \n"
-						+ "  {Resource2} p21 {Resource1}, \n" + "  {Resource2} p23 {Resource3}, \n" + "  {Resource1} <"
-						+ MATCHES + "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <" + PROPERTY + "> {<"
-						+ PREDICATE_1 + ">}; \n" + "    <" + SCORE + "> {R1Score}, \n" + "  {Resource3} <" + MATCHES
-						+ "> {} \n" + "    <" + QUERY + "> {\"two\"}; \n" + "    <" + PROPERTY + "> {<" + PREDICATE_2
-						+ ">}; \n" + "    <" + SCORE + "> {R3Score}",
-				"SELECT \n" + "  Resource1, Resource2, R1Score, R2Score \n" + "FROM \n" + "  {Resource1} <" + MATCHES
-						+ "> {} \n" + "    <" + QUERY + "> {\"one\"}; \n" + "    <" + PROPERTY + "> {<" + PREDICATE_1
-						+ ">}; \n" + "    <" + SCORE + "> {R1Score}, \n" + "  {Resource2} <" + MATCHES + "> {} \n"
-						+ "    <" + QUERY + "> {\"one\"}; \n" + "    <" + PROPERTY + "> {<" + PREDICATE_2 + ">}; \n"
-						+ "    <" + SCORE + "> {R2Score}" };
+				"SELECT ?Resource1 ?Resource2 ?R1Score ?R2Score \n"
+						+ "WHERE {\n"
+						+ "  ?Resource1 <" + PREDICATE_3 + "> ?Resource2 ; \n"
+						+ "             <" + MATCHES + "> [ \n"
+						+ "                                  <" + QUERY + "> \"one\"; \n"
+						+ "                                  <" + SCORE + "> ?R1Score ]. \n"
+						+ "  ?Resource2 <" + MATCHES + "> [ \n"
+						+ "                                  <" + QUERY + "> \"one\"; \n"
+						+ "                                  <" + SCORE + "> ?R2Score ]. } ",
+
+				"SELECT ?Resource1 ?Resource3 ?R1Score ?R3Score \n"
+						+ "WHERE {\n"
+						+ "  ?Resource2 ?p21 ?Resource1 . \n"
+						+ "  ?Resource2 ?p23 ?Resource3 . \n"
+						+ "  ?Resource1 <" + MATCHES + "> [ \n"
+						+ "                                 <" + QUERY + "> \"one\"; \n"
+						+ "                                 <" + SCORE + "> ?R1Score ]. \n"
+						+ "  ?Resource3 <" + MATCHES + "> [ \n"
+						+ "                                 <" + QUERY + "> \"one\"; \n"
+						+ "                                 <" + SCORE + "> ?R3Score ] ."
+						+ " FILTER(?Resource1 != ?Resource3)\n}",
+
+				"SELECT ?Resource1 ?Resource3 ?R1Score ?R3Score \n"
+						+ "WHERE { \n"
+						+ "  ?Resource2 ?p21 ?Resource1; \n"
+						+ "             ?p23 ?Resource3 . \n"
+						+ "  ?Resource1 <" + MATCHES + "> [ \n"
+						+ "                           <" + QUERY + "> \"one\"; \n"
+						+ "                           <" + PROPERTY + "> <" + PREDICATE_1 + ">; \n"
+						+ "                           <" + SCORE + "> ?R1Score ].\n"
+						+ "  ?Resource3 <" + MATCHES + "> [ \n"
+						+ "                           <" + QUERY + "> \"two\"; \n"
+						+ "                           <" + PROPERTY + "> <" + PREDICATE_2 + ">; \n"
+						+ "                           <" + SCORE + "> ?R3Score ].}",
+				"SELECT ?Resource1 ?Resource2 ?R1Score ?R2Score \n"
+						+ "WHERE { \n"
+						+ "   ?Resource1 <" + MATCHES + "> [ \n"
+						+ "                            <" + QUERY + "> \"one\"; \n"
+						+ "                            <" + PROPERTY + "> <" + PREDICATE_1 + ">; \n"
+						+ "                            <" + SCORE + "> ?R1Score ].\n"
+						+ "   ?Resource2 <" + MATCHES + "> [ \n"
+						+ "                             <" + QUERY + "> \"one\"; \n"
+						+ "                             <" + PROPERTY + "> <" + PREDICATE_2 + ">; \n"
+						+ "                             <" + SCORE + "> ?R2Score ].}" };
 
 		ArrayList<List<Map<String, String>>> results = new ArrayList<>();
 		ArrayList<Map<String, String>> resultSet = null;
@@ -392,11 +417,11 @@ public abstract class AbstractLuceneSailTest {
 			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			for (int queryID = 0; queryID < queries.length; queryID++) {
-				String serql = queries[queryID];
+				String sparql = queries[queryID];
 				List<Map<String, String>> expectedResultSet = expectedResults.get(queryID);
 
 				// fire the query
-				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, serql);
+				TupleQuery query = connection.prepareTupleQuery(sparql);
 				try (TupleQueryResult tqr = query.evaluate()) {
 
 					// check the results
@@ -474,12 +499,18 @@ public abstract class AbstractLuceneSailTest {
 			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		// prepare the query
 		String[] queries = new String[] {
-				"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES + "> {} \n"
-						+ "    <" + QUERY + "> {\"one\"}; \n" + "    <" + SCORE + "> {Score}; \n" + "    <" + SNIPPET
-						+ "> {Snippet}",
-				"SELECT \n" + "  Resource, Score, Snippet \n" + "FROM \n" + "  {Resource} <" + MATCHES + "> {} \n"
-						+ "    <" + QUERY + "> {\"five\"}; \n" + "    <" + SCORE + "> {Score}; \n" + "    <" + SNIPPET
-						+ "> {Snippet}" };
+				"SELECT ?Resource ?Score ?Snippet \n"
+						+ "WHERE { \n"
+						+ "  ?Resource <" + MATCHES + "> [ \n"
+						+ "                            <" + QUERY + "> \"one\"; \n"
+						+ "                            <" + SCORE + "> ?Score; \n"
+						+ "                            <" + SNIPPET + "> ?Snippet ].}",
+				"SELECT ?Resource ?Score ?Snippet \n"
+						+ "WHERE { \n"
+						+ "  ?Resource <" + MATCHES + "> [ \n"
+						+ "                            <" + QUERY + "> \"five\"; \n"
+						+ "                            <" + SCORE + "> ?Score; \n"
+						+ "                            <" + SNIPPET + "> ?Snippet ].}" };
 
 		ArrayList<List<Map<String, String>>> results = new ArrayList<>();
 		ArrayList<Map<String, String>> resultSet = null;
@@ -533,18 +564,17 @@ public abstract class AbstractLuceneSailTest {
 		// prepare the query
 		// search for the term "one", but only in predicate 1
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("SELECT \n");
-		buffer.append("  Resource, Score \n");
-		buffer.append("FROM \n");
-		buffer.append("  {Resource} <" + MATCHES + "> {} ");
-		buffer.append("    <" + QUERY + "> {\"one\"}; ");
-		buffer.append("    <" + PROPERTY + "> {<" + PREDICATE_1 + ">}; ");
-		buffer.append("    <" + SCORE + "> {Score} ");
+		buffer.append("SELECT ?Resource ?Score \n");
+		buffer.append("WHERE {\n");
+		buffer.append("  ?Resource <" + MATCHES + "> [\n ");
+		buffer.append("    <" + QUERY + "> \"one\"; ");
+		buffer.append("    <" + PROPERTY + "> <" + PREDICATE_1 + ">; ");
+		buffer.append("    <" + SCORE + "> ?Score ].} ");
 		String q = buffer.toString();
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire the query
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
+			TupleQuery query = connection.prepareTupleQuery(q);
 			try (TupleQueryResult result = query.evaluate()) {
 				// check the results
 				BindingSet bindings = null;
@@ -596,19 +626,18 @@ public abstract class AbstractLuceneSailTest {
 			// prepare the query
 			// search for the term "charly", but only in predicate 1
 			StringBuilder buffer = new StringBuilder();
-			buffer.append("SELECT \n");
-			buffer.append("  Resource, Score, Snippet \n");
-			buffer.append("FROM \n");
-			buffer.append("  {Resource} <" + MATCHES + "> {} ");
-			buffer.append("    <" + QUERY + "> {\"charly\"}; ");
-			buffer.append("    <" + PROPERTY + "> {<" + PREDICATE_1 + ">}; ");
-			buffer.append("    <" + SNIPPET + "> {Snippet}; ");
-			buffer.append("    <" + SCORE + "> {Score} ");
+			buffer.append("SELECT ?Resource ?Score ?Snippet \n");
+			buffer.append("WHERE { \n");
+			buffer.append("  ?Resource <" + MATCHES + "> [\n ");
+			buffer.append("    <" + QUERY + "> \"charly\"; ");
+			buffer.append("    <" + PROPERTY + "> <" + PREDICATE_1 + ">; ");
+			buffer.append("    <" + SNIPPET + "> ?Snippet; ");
+			buffer.append("    <" + SCORE + "> ?Score ]. } ");
 			String q = buffer.toString();
 
 			// fire the query
 			try (RepositoryConnection connection = repository.getConnection()) {
-				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
+				TupleQuery query = connection.prepareTupleQuery(q);
 				try (TupleQueryResult result = query.evaluate()) {
 
 					// check the results
@@ -663,18 +692,17 @@ public abstract class AbstractLuceneSailTest {
 			// prepare the query
 			// search for the term "charly" in all predicates
 			StringBuilder buffer = new StringBuilder();
-			buffer.append("SELECT \n");
-			buffer.append("  Resource, Score, Snippet \n");
-			buffer.append("FROM \n");
-			buffer.append("  {Resource} <" + MATCHES + "> {} ");
-			buffer.append("    <" + QUERY + "> {\"charly\"}; ");
-			buffer.append("    <" + SNIPPET + "> {Snippet}; ");
-			buffer.append("    <" + SCORE + "> {Score} ");
+			buffer.append("SELECT ?Resource ?Score ?Snippet \n");
+			buffer.append("WHERE { \n");
+			buffer.append("  ?Resource <" + MATCHES + "> [\n ");
+			buffer.append("    <" + QUERY + "> \"charly\"; ");
+			buffer.append("    <" + SNIPPET + "> ?Snippet; ");
+			buffer.append("    <" + SCORE + "> ?Score ].} ");
 			String q = buffer.toString();
 
 			try (RepositoryConnection connection = repository.getConnection()) {
 				// fire the query
-				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
+				TupleQuery query = connection.prepareTupleQuery(q);
 				try (TupleQueryResult result = query.evaluate()) {
 
 					// check the results
@@ -729,21 +757,20 @@ public abstract class AbstractLuceneSailTest {
 
 		// here we would expect two links from SUBJECT3 to SUBJECT1 and SUBJECT2
 		// and one link from SUBJECT3 to its score
-		query.append("CONSTRUCT DISTINCT \n");
-		query.append("    {r} <" + PREDICATE_3 + "> {r2} , \n");
-		query.append("    {r} <" + score + "> {s} \n");
-		query.append("FROM \n");
-		query.append("    {r} lucenesail:matches {match} lucenesail:query {\"four\"}; \n");
-		query.append("                                   lucenesail:score {s}, \n");
-		query.append("    {r} <" + PREDICATE_3.toString() + "> {r2} \n");
-		query.append("USING NAMESPACE\n");
-		query.append("    lucenesail = <" + LuceneSailSchema.NAMESPACE + "> \n");
+		query.append("PREFIX lucenesail: <" + LuceneSailSchema.NAMESPACE + "> \n");
+		query.append("CONSTRUCT { \n");
+		query.append("    ?r <" + PREDICATE_3 + "> ?r2 ;\n");
+		query.append("       <" + score + "> ?s } \n");
+		query.append("WHERE { \n");
+		query.append("    ?r lucenesail:matches ?match. ?match lucenesail:query \"four\"; \n");
+		query.append("                                         lucenesail:score ?s. \n");
+		query.append("    ?r <" + PREDICATE_3 + "> ?r2. }\n");
 
 		int r = 0;
 		int n = 0;
 
 		try (RepositoryConnection connection = repository.getConnection()) {
-			GraphQuery gq = connection.prepareGraphQuery(QueryLanguage.SERQL, query.toString());
+			GraphQuery gq = connection.prepareGraphQuery(query.toString());
 			try (GraphQueryResult result = gq.evaluate()) {
 				while (result.hasNext()) {
 					Statement statement = result.next();
@@ -775,7 +802,7 @@ public abstract class AbstractLuceneSailTest {
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query with the subject pre-specified
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, QUERY_STRING);
+			TupleQuery query = connection.prepareTupleQuery(QUERY_STRING);
 			query.setBinding("Subject", SUBJECT_1);
 			query.setBinding("Query", vf.createLiteral("one"));
 			TupleQueryResult result = query.evaluate();
@@ -858,9 +885,9 @@ public abstract class AbstractLuceneSailTest {
 			connection.commit();
 
 			{
-				String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
-						+ "> {\"sfourponecone\"} ";
-				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
+				String queryString = "SELECT ?Resource " + "WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY
+						+ "> \"sfourponecone\"].} ";
+				TupleQuery query = connection.prepareTupleQuery(queryString);
 				TupleQueryResult result = query.evaluate();
 
 				// check the results
@@ -876,9 +903,9 @@ public abstract class AbstractLuceneSailTest {
 				connection.commit();
 			}
 			{
-				String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY
-						+ "> {\"sfourponecone\"} ";
-				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
+				String queryString = "SELECT ?Resource " + "WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY
+						+ "> \"sfourponecone\"].} ";
+				TupleQuery query = connection.prepareTupleQuery(queryString);
 				TupleQueryResult result = query.evaluate();
 
 				// check the results
@@ -935,17 +962,16 @@ public abstract class AbstractLuceneSailTest {
 		// prepare the query
 		// search for the term "one" with 80% fuzzyness
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("SELECT \n");
-		buffer.append("  Resource, Score \n");
-		buffer.append("FROM \n");
-		buffer.append("  {Resource} <" + MATCHES + "> {} ");
-		buffer.append("    <" + QUERY + "> {\"one~0.8\"}; ");
-		buffer.append("    <" + SCORE + "> {Score} ");
+		buffer.append("SELECT ?Resource ?Score \n");
+		buffer.append("WHERE { \n");
+		buffer.append("  ?Resource <" + MATCHES + "> [\n");
+		buffer.append("    <" + QUERY + "> \"one~0.8\"; ");
+		buffer.append("    <" + SCORE + "> ?Score ].} ");
 		String q = buffer.toString();
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire the query
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
+			TupleQuery query = connection.prepareTupleQuery(q);
 			try (TupleQueryResult result = query.evaluate()) {
 
 				// check the results
@@ -985,17 +1011,16 @@ public abstract class AbstractLuceneSailTest {
 	@Test
 	public void testPropertyVar() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("SELECT \n");
-		buffer.append("  Resource, Property \n");
-		buffer.append("FROM \n");
-		buffer.append("  {Resource} <" + MATCHES + "> {} ");
-		buffer.append("    <" + QUERY + "> {\"one\"}; ");
-		buffer.append("    <" + PROPERTY + "> {Property} ");
+		buffer.append("SELECT ?Resource ?Property \n");
+		buffer.append("WHERE {\n");
+		buffer.append("  ?Resource <" + MATCHES + "> [\n ");
+		buffer.append("    <" + QUERY + "> \"one\";\n ");
+		buffer.append("    <" + PROPERTY + "> ?Property ]. } ");
 		String q = buffer.toString();
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire the query
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, q);
+			TupleQuery query = connection.prepareTupleQuery(q);
 			try (TupleQueryResult result = query.evaluate()) {
 
 				int results = 0;
@@ -1058,9 +1083,9 @@ public abstract class AbstractLuceneSailTest {
 	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) throws Exception {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
-			String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY + "> {\""
-					+ literal + "\"} ";
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
+			String queryString = "SELECT ?Resource WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY + "> \""
+					+ literal + "\" ]. } ";
+			TupleQuery query = connection.prepareTupleQuery(queryString);
 			try (TupleQueryResult result = query.evaluate()) {
 				// check the result
 				assertTrue("query for literal '" + literal + " did not return any results, expected was " + resultUri,
@@ -1076,9 +1101,9 @@ public abstract class AbstractLuceneSailTest {
 	protected void assertNoQueryResult(String literal) throws Exception {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
-			String queryString = "SELECT Resource " + "FROM {Resource} <" + MATCHES + "> {} " + " <" + QUERY + "> {\""
-					+ literal + "\"} ";
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
+			String queryString = "SELECT ?Resource WHERE { ?Resource <" + MATCHES + "> [ " + " <" + QUERY + "> \""
+					+ literal + "\" ]. } ";
+			TupleQuery query = connection.prepareTupleQuery(queryString);
 			try (TupleQueryResult result = query.evaluate()) {
 
 				// check the result

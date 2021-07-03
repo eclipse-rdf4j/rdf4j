@@ -102,11 +102,13 @@ public class SPARQL10ManifestTest {
 
 		addTurtle(con, new URL(manifestFile), manifestFile);
 
-		String query = "SELECT DISTINCT manifestFile FROM {x} rdf:first {manifestFile} "
-				+ "USING NAMESPACE mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
-				+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
+		String query = ""
+				+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n "
+				+ "PRFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>"
+				+ "SELECT DISTINCT ?manifestFile\n"
+				+ "WHERE { ?x rdf:first ?manifestFile .} ";
 
-		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SERQL, query, manifestFile).evaluate();
+		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile).evaluate();
 
 		while (manifestResults.hasNext()) {
 			BindingSet bindingSet = manifestResults.next();

@@ -51,7 +51,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -488,12 +487,12 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, mbox, mboxBob, context1);
 		testCon.add(context1, publisher, nameBob);
 		StringBuilder queryBuilder = new StringBuilder(128);
-		queryBuilder.append(" SELECT name, mbox");
-		queryBuilder.append(" FROM {} foaf:name {name};");
-		queryBuilder.append("         foaf:mbox {mbox}");
-		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
+		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
+		queryBuilder.append(" SELECT ?name ?mbox");
+		queryBuilder.append(" WHERE { [] foaf:name ?name;");
+		queryBuilder.append("            foaf:mbox ?mbox. }");
 
-		try (TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SERQL, queryBuilder.toString())
+		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder.toString())
 				.evaluate();) {
 			assertThat(result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
@@ -506,38 +505,6 @@ public abstract class RepositoryConnectionTest {
 				assertThat(nameResult).isIn(nameAlice, nameBob);
 				assertThat(mboxResult).isIn(mboxAlice, mboxBob);
 			}
-		}
-	}
-
-	@Test
-	public void testPrepareSeRQLQuery() throws Exception {
-
-		StringBuilder queryBuilder = new StringBuilder();
-		queryBuilder.append(" SELECT person");
-		queryBuilder.append(" FROM {person} foaf:name {").append(Александър.getLabel()).append("}");
-		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
-
-		try {
-			testCon.prepareQuery(QueryLanguage.SERQL, queryBuilder.toString());
-		} catch (UnsupportedOperationException e) {
-			fail(UNSUPPORTED_OP + e.getMessage());
-		} catch (ClassCastException e) {
-			fail(UNEXPECTED_TYPE + e.getMessage());
-		}
-
-		queryBuilder = new StringBuilder();
-		queryBuilder.append(" (SELECT person");
-		queryBuilder.append(" FROM {person} foaf:name {").append(Александър.getLabel()).append("}");
-		queryBuilder.append(") UNION ");
-		queryBuilder.append("(SELECT x FROM {x} p {y} )");
-		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
-
-		try {
-			testCon.prepareQuery(QueryLanguage.SERQL, queryBuilder.toString());
-		} catch (UnsupportedOperationException e) {
-			fail(UNSUPPORTED_OP + e.getMessage());
-		} catch (ClassCastException e) {
-			fail(UNEXPECTED_TYPE + e.getMessage());
 		}
 	}
 
@@ -578,11 +545,11 @@ public abstract class RepositoryConnectionTest {
 	public void testSimpleTupleQueryUnicode() throws Exception {
 		testCon.add(alexander, name, Александър);
 		StringBuilder queryBuilder = new StringBuilder(128);
-		queryBuilder.append(" SELECT person");
-		queryBuilder.append(" FROM {person} foaf:name {").append(Александър.getLabel()).append("}");
-		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
+		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
+		queryBuilder.append(" SELECT ?person");
+		queryBuilder.append(" WHERE { ?person foaf:name \"").append(Александър.getLabel()).append("\". }");
 
-		try (TupleQueryResult result = testCon.prepareTupleQuery(QueryLanguage.SERQL, queryBuilder.toString())
+		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder.toString())
 				.evaluate();) {
 			assertThat(result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
@@ -603,11 +570,11 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(bob, mbox, mboxBob, context1);
 		testCon.add(context1, publisher, nameBob);
 		StringBuilder queryBuilder = new StringBuilder();
-		queryBuilder.append(" SELECT name, mbox");
-		queryBuilder.append(" FROM {} foaf:name {name};");
-		queryBuilder.append("         foaf:mbox {mbox}");
-		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
-		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SERQL, queryBuilder.toString());
+		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
+		queryBuilder.append(" SELECT ?name ?mbox \n");
+		queryBuilder.append(" WHERE { [] foaf:name ?name; \n");
+		queryBuilder.append("            foaf:mbox ?mbox . }");
+		TupleQuery query = testCon.prepareTupleQuery(queryBuilder.toString());
 		query.setBinding(NAME, nameBob);
 
 		try (TupleQueryResult result = query.evaluate();) {
@@ -630,11 +597,11 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(alexander, name, Александър);
 
 		StringBuilder queryBuilder = new StringBuilder();
-		queryBuilder.append(" SELECT person");
-		queryBuilder.append(" FROM {person} foaf:name {name}");
-		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
+		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
+		queryBuilder.append(" SELECT ?person \n");
+		queryBuilder.append(" WHERE { ?person foaf:name ?name . }");
 
-		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SERQL, queryBuilder.toString());
+		TupleQuery query = testCon.prepareTupleQuery(queryBuilder.toString());
 		query.setBinding(NAME, Александър);
 
 		try (TupleQueryResult result = query.evaluate();) {
@@ -660,12 +627,12 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(context1, publisher, nameBob);
 
 		StringBuilder queryBuilder = new StringBuilder(128);
-		queryBuilder.append(" CONSTRUCT *");
-		queryBuilder.append(" FROM {} foaf:name {name};");
-		queryBuilder.append("         foaf:mbox {mbox}");
-		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
+		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
+		queryBuilder.append(" CONSTRUCT\n");
+		queryBuilder.append(" WHERE { [] foaf:name ?name;\n");
+		queryBuilder.append("            foaf:mbox ?mbox.}");
 
-		try (GraphQueryResult result = testCon.prepareGraphQuery(QueryLanguage.SERQL, queryBuilder.toString())
+		try (GraphQueryResult result = testCon.prepareGraphQuery(queryBuilder.toString())
 				.evaluate();) {
 			assertThat(result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
@@ -693,11 +660,11 @@ public abstract class RepositoryConnectionTest {
 		testCon.add(context1, publisher, nameBob);
 		testCon.commit();
 		StringBuilder queryBuilder = new StringBuilder(128);
-		queryBuilder.append(" CONSTRUCT *");
-		queryBuilder.append(" FROM {} foaf:name {name};");
-		queryBuilder.append("         foaf:mbox {mbox}");
-		queryBuilder.append(" USING NAMESPACE foaf = <" + FOAF_NS + ">");
-		GraphQuery query = testCon.prepareGraphQuery(QueryLanguage.SERQL, queryBuilder.toString());
+		queryBuilder.append(" PREFIX foaf: <" + FOAF_NS + "> \n");
+		queryBuilder.append(" CONSTRUCT\n");
+		queryBuilder.append(" WHERE { [] foaf:name ?name;\n");
+		queryBuilder.append("            foaf:mbox ?mbox.}");
+		GraphQuery query = testCon.prepareGraphQuery(queryBuilder.toString());
 		query.setBinding(NAME, nameBob);
 
 		try (GraphQueryResult result = query.evaluate();) {

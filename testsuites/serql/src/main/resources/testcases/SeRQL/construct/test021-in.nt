@@ -1,4 +1,0 @@
-# Input file for SeRQL CfwQuery test
-# description: test creation of new bnodes in CONSTRUCT-clause
-<http://www.example.org/grandparent1> <http://www.example.org/grandParentOf> <http://www.example.org/child1>.
-<http://www.example.org/grandparent2> <http://www.example.org/grandParentOf> <http://www.example.org/child2>.
