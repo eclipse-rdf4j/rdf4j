@@ -1,7 +1,0 @@
-CONSTRUCT DISTINCT
-  {} rdf:type {<http://example.org/Person>};
-     <http://example.org/name> {Name}
-FROM
-  {Person} rdf:type {<http://example.org/Person>};
-           <http://example.org/name> {Name};
-           <http://example.org/id> {ID}

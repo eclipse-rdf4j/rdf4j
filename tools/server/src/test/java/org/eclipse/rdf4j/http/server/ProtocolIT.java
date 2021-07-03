@@ -142,12 +142,12 @@ public class ProtocolIT {
 	}
 
 	/**
-	 * Tests the server's methods for quering a repository using GET requests to send SeRQL-select queries.
+	 * Tests the server's methods for quering a repository using GET requests to send SPARQL-select queries.
 	 */
 	@Test
-	public void testSeRQLselect() throws Exception {
-		TupleQueryResult queryResult = evaluateTupleQuery(TestServer.REPOSITORY_URL, "select * from {X} P {Y}",
-				QueryLanguage.SERQL);
+	public void testSPARQLselect() throws Exception {
+		TupleQueryResult queryResult = evaluateTupleQuery(TestServer.REPOSITORY_URL, "select * where{ ?X ?P ?Y }",
+				QueryLanguage.SPARQL);
 		QueryResultIO.writeTuple(queryResult, TupleQueryResultFormat.SPARQL, System.out);
 	}
 

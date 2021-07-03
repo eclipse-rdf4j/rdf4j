@@ -169,11 +169,6 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 			if (matcher.matches()) {
 				result = matcher.group(1) + "WHERE" + matcher.group(2);
 			}
-		} else if (QueryLanguage.SERQL == language) {
-			Matcher matcher = SERQL_PATTERN.matcher(ruleQuery);
-			if (matcher.matches()) {
-				result = "CONSTRUCT * FROM" + matcher.group(1) + matcher.group(2);
-			}
 		} else {
 			throw new IllegalStateException("language");
 		}

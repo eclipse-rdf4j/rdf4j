@@ -85,32 +85,30 @@ public abstract class TupleQueryResultTest {
 	protected abstract Repository newRepository() throws Exception;
 
 	/*
-	 * build some simple SeRQL queries to use for testing the result set object.
+	 * build some simple SPARQL queries to use for testing the result set object.
 	 */
 	private void buildQueries() {
 		StringBuilder query = new StringBuilder();
 
 		query.append("SELECT * ");
-		query.append("FROM {X} P {Y} ");
-		query.append("WHERE X != X ");
+		query.append("WHERE { ?X ?P ?Y . FILTER (?X != ?X) }");
 
 		emptyResultQuery = query.toString();
 
 		query = new StringBuilder();
 
-		query.append("SELECT DISTINCT P ");
-		query.append("FROM {} dc:publisher {P} ");
-		query.append("USING NAMESPACE ");
-		query.append("   dc = <http://purl.org/dc/elements/1.1/>");
+		query.append("PREFIX dc: <http://purl.org/dc/elements/1.1/>\n");
+		query.append("SELECT DISTINCT ?P \n");
+		query.append("WHERE { [] dc:publisher ?P }\n");
 
 		singleResultQuery = query.toString();
 
 		query = new StringBuilder();
-		query.append("SELECT DISTINCT P, D ");
-		query.append("FROM {} dc:publisher {P}; ");
-		query.append("        dc:date {D} ");
-		query.append("USING NAMESPACE ");
-		query.append("   dc = <http://purl.org/dc/elements/1.1/>");
+
+		query.append("PREFIX dc: <http://purl.org/dc/elements/1.1/>\n");
+		query.append("SELECT DISTINCT ?P ?D \n");
+		query.append("WHERE { [] dc:publisher ?P;\n");
+		query.append("        dc:date ?D. }\n");
 
 		multipleResultQuery = query.toString();
 	}
@@ -126,7 +124,7 @@ public abstract class TupleQueryResultTest {
 
 	@Test
 	public void testGetBindingNames() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, multipleResultQuery).evaluate();
+		TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate();
 		try {
 			List<String> headers = result.getBindingNames();
 
@@ -137,17 +135,9 @@ public abstract class TupleQueryResultTest {
 		}
 	}
 
-	/*
-	 * deprecated public void testIsDistinct() throws Exception { TupleQueryResult result =
-	 * con.prepareTupleQuery(QueryLanguage.SERQL, emptyResultQuery).evaluate(); try { if (result.isDistinct()) {
-	 * fail("query result should not be distinct."); } } finally { result.close(); } result =
-	 * con.prepareTupleQuery(QueryLanguage.SERQL, singleResultQuery).evaluate(); try { if (!result.isDistinct()) {
-	 * fail("query result should be distinct."); } } finally { result.close(); } }
-	 */
-
 	@Test
 	public void testIterator() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, multipleResultQuery).evaluate();
+		TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate();
 
 		try {
 			int count = 0;
@@ -164,7 +154,7 @@ public abstract class TupleQueryResultTest {
 
 	@Test
 	public void testIsEmpty() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SERQL, emptyResultQuery).evaluate();
+		TupleQueryResult result = con.prepareTupleQuery(emptyResultQuery).evaluate();
 
 		try {
 			assertFalse("Query result should be empty", result.hasNext());

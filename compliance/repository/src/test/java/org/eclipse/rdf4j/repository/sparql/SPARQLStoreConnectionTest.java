@@ -132,12 +132,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	}
 
 	@Override
-	@Ignore("SeRQL language not supported on SPARQL endpoints")
-	public void testPrepareSeRQLQuery() throws Exception {
-		System.err.println("disabled testPrepareSeRQLQuery() for SPARQLRepository");
-	}
-
-	@Override
 	@Ignore
 	public void testSizeCommit() throws Exception {
 		System.err.println("temporarily disabled testSizeCommit() for SPARQLRepository");

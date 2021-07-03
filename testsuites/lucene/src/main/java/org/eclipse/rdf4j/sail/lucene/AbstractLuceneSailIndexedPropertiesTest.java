@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
@@ -152,10 +151,10 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 	public void testRegularQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// fire a query for all subjects with a given term
-			String queryString = "SELECT Subject, Score " + "FROM {Subject} <" + MATCHES + "> {} " + " <" + QUERY
-					+ "> {Query}; " + " <" + PROPERTY + "> {Property}; " + " <" + SCORE + "> {Score} ";
+			String queryString = "SELECT ?Subject ?Score " + "WHERE { ?Subject <" + MATCHES + "> [ " + " <" + QUERY
+					+ "> ?Query; " + " <" + PROPERTY + "> ?Property; " + " <" + SCORE + "> ?Score ].} ";
 			{
-				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
+				TupleQuery query = connection.prepareTupleQuery(queryString);
 				query.setBinding("Query", vf.createLiteral("resource"));
 				query.setBinding("Property", RDFSLABEL);
 				try (TupleQueryResult result = query.evaluate()) {
@@ -176,7 +175,7 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 			}
 
 			{
-				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
+				TupleQuery query = connection.prepareTupleQuery(queryString);
 				query.setBinding("Query", vf.createLiteral("groucho"));
 				query.setBinding("Property", RDFSLABEL);
 				try (TupleQueryResult result = query.evaluate()) {
@@ -195,7 +194,7 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 			}
 
 			{
-				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SERQL, queryString);
+				TupleQuery query = connection.prepareTupleQuery(queryString);
 				query.setBinding("Query", vf.createLiteral("cigarillos"));
 				query.setBinding("Property", FOAFPLAN);
 				try (TupleQueryResult result = query.evaluate()) {

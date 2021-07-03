@@ -1,8 +1,0 @@
-SELECT
-    *
-FROM	
-   {S} rdf:type {O1};
-       rdfs:subClassOf {O2};
-       owl:sameAs {O3};
-       P {xsd:integer};
-       serql:directType {O4}

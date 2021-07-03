@@ -1,6 +1,0 @@
-CONSTRUCT DISTINCT
-  *
-FROM
-  {Doc} rdf:type {<foo:Document>};
-       [<foo:author> {Author} [<foo:name> {Name}];
-                              [<foo:address> {Address}]]
