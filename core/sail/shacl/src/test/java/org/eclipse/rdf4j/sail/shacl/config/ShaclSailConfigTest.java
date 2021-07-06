@@ -59,8 +59,8 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isSerializableValidation()).isTrue();
 		assertThat(shaclSailConfig.isEclipseRdf4jShaclExtensions()).isFalse();
 		assertThat(shaclSailConfig.isDashDataShapes()).isFalse();
-		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(-1);
-		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(-1);
+		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(1000000);
+		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(1000);
 
 	}
 
