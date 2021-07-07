@@ -114,7 +114,13 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			);
 
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner = connectionsGroup.getRdfsSubClassOfReasoner();
-			Set<Resource> clazzForwardChained = rdfsSubClassOfReasoner.backwardsChain(clazz);
+			Set<Resource> clazzForwardChained;
+
+			if (rdfsSubClassOfReasoner != null) {
+				clazzForwardChained = rdfsSubClassOfReasoner.backwardsChain(clazz);
+			} else {
+				clazzForwardChained = Collections.singleton(clazz);
+			}
 
 			// filter by type against the base sail
 			PlanNode falseNode = new ExternalPredicateObjectFilter(
@@ -279,7 +285,15 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	private String getFilter(ConnectionsGroup connectionsGroup, StatementMatcher.Variable target) {
-		Set<Resource> allClasses = connectionsGroup.getRdfsSubClassOfReasoner().backwardsChain(clazz);
+
+		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = connectionsGroup.getRdfsSubClassOfReasoner();
+		Set<Resource> allClasses;
+
+		if (rdfsSubClassOfReasoner != null) {
+			allClasses = rdfsSubClassOfReasoner.backwardsChain(clazz);
+		} else {
+			allClasses = Collections.singleton(clazz);
+		}
 
 		String condition = allClasses.stream()
 				.map(c -> "EXISTS{?" + target.getName() + " a <" + c.stringValue() + ">}")
