@@ -62,24 +62,26 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 		if (isClosed()) {
 			return null;
 		}
-		Iteration<? extends E, X> nextCurrentIter = currentIter;
-		if (nextCurrentIter != null && nextCurrentIter.hasNext()) {
-			return nextCurrentIter.next();
-		}
 
-		// Current Iteration exhausted, continue with the next one
-		Iterations.closeCloseable(nextCurrentIter);
+		while (true) {
 
-		synchronized (this) {
-			if (argIter.hasNext()) {
-				currentIter = argIter.next();
-			} else {
-				// All elements have been returned
-				return null;
+			Iteration<? extends E, X> nextCurrentIter = currentIter;
+			if (nextCurrentIter != null && nextCurrentIter.hasNext()) {
+				return nextCurrentIter.next();
+			}
+
+			// Current Iteration exhausted, continue with the next one
+			Iterations.closeCloseable(nextCurrentIter);
+
+			synchronized (this) {
+				if (argIter.hasNext()) {
+					currentIter = argIter.next();
+				} else {
+					// All elements have been returned
+					return null;
+				}
 			}
 		}
-
-		return getNextElement();
 	}
 
 	@Override
