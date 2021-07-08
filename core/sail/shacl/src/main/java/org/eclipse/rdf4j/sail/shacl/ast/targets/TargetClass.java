@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -104,13 +105,19 @@ public class TargetClass extends Target {
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
-		return targetClass
-				.stream()
-				.map(rdfsSubClassOfReasoner::backwardsChain)
-				.flatMap(Collection::stream)
-				.distinct()
+		Stream<Resource> stream = targetClass.stream();
+
+		if (rdfsSubClassOfReasoner != null) {
+			stream = stream
+					.map(rdfsSubClassOfReasoner::backwardsChain)
+					.flatMap(Collection::stream)
+					.distinct();
+		}
+
+		return stream
 				.map(t -> new StatementMatcher(object, new StatementMatcher.Variable(RDF.TYPE),
 						new StatementMatcher.Variable(t)));
+
 	}
 
 	@Override
@@ -119,13 +126,18 @@ public class TargetClass extends Target {
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		assert (subject == null);
 
-		List<Resource> targetClass = this.targetClass
-				.stream()
-				.map(rdfsSubClassOfReasoner::backwardsChain)
-				.flatMap(Collection::stream)
+		Collection<Resource> targetClass;
 
-				.distinct()
-				.collect(Collectors.toList());
+		if (rdfsSubClassOfReasoner != null) {
+			targetClass = this.targetClass
+					.stream()
+					.map(rdfsSubClassOfReasoner::backwardsChain)
+					.flatMap(Collection::stream)
+					.distinct()
+					.collect(Collectors.toList());
+		} else {
+			targetClass = this.targetClass;
+		}
 
 		if (targetClass.size() == 1) {
 

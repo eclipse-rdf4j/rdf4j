@@ -335,7 +335,7 @@ abstract public class AbstractShaclTest {
 		return ret;
 	}
 
-	static void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
+	void runTestCase(String shaclPath, String dataPath, ExpectedResult expectedResult,
 			IsolationLevel isolationLevel, boolean preloadWithDummyData) {
 
 		if (!dataPath.endsWith("/")) {
@@ -816,7 +816,7 @@ abstract public class AbstractShaclTest {
 		return s;
 	}
 
-	static void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
+	void runTestCaseSingleTransaction(String shaclPath, String dataPath, ExpectedResult expectedResult,
 			IsolationLevel isolationLevel) {
 
 		if (!dataPath.endsWith("/")) {
@@ -895,7 +895,7 @@ abstract public class AbstractShaclTest {
 
 	}
 
-	static void runTestCaseRevalidate(String shaclPath, String dataPath, ExpectedResult expectedResult,
+	void runTestCaseRevalidate(String shaclPath, String dataPath, ExpectedResult expectedResult,
 			IsolationLevel isolationLevel) {
 
 		if (!dataPath.endsWith("/")) {
@@ -966,7 +966,7 @@ abstract public class AbstractShaclTest {
 
 	}
 
-	static void runParsingTest(String shaclPath, String dataPath, ExpectedResult expectedResult) {
+	void runParsingTest(String shaclPath, String dataPath, ExpectedResult expectedResult) {
 		if (!dataPath.endsWith("/")) {
 			dataPath = dataPath + "/";
 		}
@@ -1053,7 +1053,7 @@ abstract public class AbstractShaclTest {
 		printResults(validationReport);
 	}
 
-	private static SailRepository getShaclSail() {
+	SailRepository getShaclSail() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository repository = new SailRepository(shaclSail);
