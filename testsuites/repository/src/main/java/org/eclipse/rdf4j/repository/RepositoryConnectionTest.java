@@ -67,6 +67,7 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.Update;
@@ -1719,6 +1720,33 @@ public abstract class RepositoryConnectionTest {
 		up.execute();
 		assertThat(size(g1)).isEqualTo(0);
 		assertThat(size(g2)).isEqualTo(1);
+	}
+
+	/**
+	 * @see https://github.com/eclipse/rdf4j/issues/3156
+	 */
+	@Test
+	public void testGetStatementswithDanglingResults() throws Exception {
+		IRI g1 = vf.createIRI("urn:test:g1");
+		IRI s = vf.createIRI("urn:test:s");
+		IRI d = vf.createIRI("urn:test:d");
+
+		testCon.add(s, RDF.TYPE, d, g1);
+
+		// dangling connection 1
+		RepositoryResult<Statement> orphan1 = testCon.getStatements(s, RDF.TYPE, d);
+		assertThat(QueryResults.asModel(testCon.getStatements(null, null, null, g1)).size()).isEqualTo(1);
+
+		testCon.clear(g1);
+//		testCon.close();
+//		testCon = testRepository.getConnection();
+		testCon.add(s, RDF.TYPE, d, g1);
+
+		// dangling connection 2
+		RepositoryResult<Statement> orphan2 = testCon.getStatements(s, RDF.TYPE, d);
+		orphan2.hasNext();
+
+		assertThat(QueryResults.asModel(testCon.getStatements(null, null, null, g1)).size()).isEqualTo(1);
 	}
 
 	private int size(IRI defaultGraph) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
