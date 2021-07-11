@@ -448,13 +448,15 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							before = System.currentTimeMillis();
 						}
 
+						if (GlobalValidationExecutionLogging.loggingEnabled) {
+							logger.info("Start execution of plan:\n{}\n", shapePlanNodeTuple.getShape().toString());
+						}
+
 						try (CloseableIteration<? extends ValidationTuple, SailException> iterator = planNode
 								.iterator()) {
-							if (GlobalValidationExecutionLogging.loggingEnabled) {
-								logger.info("Start execution of plan:\n{}\n", shapePlanNodeTuple.getShape().toString());
-							}
 
 							ValidationResultIterator validationResults;
+
 							try {
 								validationResults = new ValidationResultIterator(iterator,
 										sail.getEffectiveValidationResultsLimitPerConstraint());
