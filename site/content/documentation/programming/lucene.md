@@ -75,12 +75,12 @@ results.forEach(res -> {
 
 ## SearchIndex implementations
 
-The LuceneSail can currently be used with five SearchIndex implementations:
+The LuceneSail can currently be used with three SearchIndex implementations:
 
 |                   |  SearchIndex implementation                 | Maven module                          |
 |------------------ |---------------------------------------------|---------------------|
-| Apachce Lucence 6 | `org.eclipse.rdf4j.sail.lucene.LuceneIndex` | `rdf4j-sail-lucene` |
-| ElasticSearch     | `org.eclipse.rdf4j.sail.elasticSearch.ElasticSearchIndex` | `rdf4j-sail-elasticsearch` |
+| Apache Lucene     | `org.eclipse.rdf4j.sail.lucene.LuceneIndex` | `rdf4j-sail-lucene` |
+| ElasticSearch     | `org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchIndex` | `rdf4j-sail-elasticsearch` |
 | Apache Solr       | `org.eclipse.rdf4j.sail.solr.SolrIndex`     | `rdf4j-sail-solr`   |
 
 Each SearchIndex implementation can easily be extended if you need to add extra features or store/access data with a different schema.
