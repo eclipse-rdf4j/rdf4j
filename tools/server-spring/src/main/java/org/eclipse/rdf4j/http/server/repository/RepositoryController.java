@@ -64,6 +64,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.manager.SystemRepository;
@@ -167,8 +168,15 @@ public class RepositoryController extends AbstractController {
 								.orElseThrow(() -> new HTTPException(HttpStatus.SC_BAD_REQUEST,
 										"unrecognized content type " + request.getContentType())));
 				RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(model, repId);
+				if (config == null) {
+					throw new RepositoryConfigException("could not read repository config from supplied data");
+				}
 				repositoryManager.addRepositoryConfig(config);
 				return new ModelAndView(EmptySuccessView.getInstance());
+			} catch (RepositoryConfigException e) {
+				ErrorInfo errorInfo = new ErrorInfo(ErrorType.MALFORMED_DATA,
+						"Supplied repository configuration is invalid: " + e.getMessage());
+				throw new ClientHTTPException(HttpStatus.SC_BAD_REQUEST, errorInfo.toString());
 			} catch (RDF4JException e) {
 				logger.error("error while attempting to create/configure repository '" + repId + "'", e);
 				throw new ServerHTTPException("Repository create error: " + e.getMessage(), e);
