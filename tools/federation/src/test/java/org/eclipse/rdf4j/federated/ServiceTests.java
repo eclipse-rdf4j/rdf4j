@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.repository.util.Repositories;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.Sets;
@@ -366,6 +367,7 @@ public class ServiceTests extends SPARQLBaseTest {
 	}
 
 	@Test
+	@Disabled("test is flaky - see https://github.com/eclipse/rdf4j/issues/3160")
 	public void test11_errorHandling() throws Exception {
 
 		assumeSparqlEndpoint();
