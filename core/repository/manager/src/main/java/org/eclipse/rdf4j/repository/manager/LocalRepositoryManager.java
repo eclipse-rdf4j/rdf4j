@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.http.client.HttpClient;
@@ -378,6 +379,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	@Override
 	public synchronized void addRepositoryConfig(RepositoryConfig config)
 			throws RepositoryException, RepositoryConfigException {
+		Objects.requireNonNull(config).validate();
 		addRepositoryConfig(config, true);
 	}
 
