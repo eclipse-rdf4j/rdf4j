@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  - name: RDF4J Discussion Forum
+    url: https://github.com/eclipse/rdf4j/discussions
+    about: Please ask questions or discuss ideas, possible improvements, and so on here.
+  - name: Report a security vulnerability
+    url: https://www.eclipse.org/security/
+    about: Please report possible security vulnerabilities directly to the Eclipse Security Team.
+
