@@ -16,6 +16,7 @@ import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -31,6 +32,8 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.sail.config.ProxyRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
 import org.junit.After;
 import org.junit.Before;
@@ -252,4 +255,14 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 			fail(e.getMessage());
 		}
 	}
+
+	@Test(expected = RepositoryConfigException.class)
+	public void testAddConfig_validation() throws Exception {
+		InputStream in = getClass().getResourceAsStream("/fixtures/memory-invalid.ttl");
+		Model model = Rio.parse(in, RDFFormat.TURTLE);
+		RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(model, "Test");
+
+		subject.addRepositoryConfig(config);
+	}
+
 }
