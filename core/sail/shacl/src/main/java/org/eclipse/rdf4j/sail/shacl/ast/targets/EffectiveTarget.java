@@ -91,7 +91,8 @@ public class EffectiveTarget {
 				parent = filter.apply(parent);
 			}
 
-			return connectionsGroup.getCachedNodeFor(getTargetFilter(connectionsGroup, new Unique(parent, false)));
+			return connectionsGroup
+					.getCachedNodeFor(getTargetFilter(connectionsGroup, Unique.getInstance(parent, false)));
 		} else {
 
 			PlanNode parent = new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, varNames, scope,
@@ -100,11 +101,11 @@ public class EffectiveTarget {
 			if (filter != null) {
 				parent = connectionsGroup.getCachedNodeFor(parent);
 				parent = filter.apply(parent);
-				parent = new Unique(parent, true);
+				parent = Unique.getInstance(parent, true);
 				return parent;
 			} else {
 				return connectionsGroup.getCachedNodeFor(
-						new Unique(parent, true));
+						Unique.getInstance(parent, true));
 			}
 
 		}
@@ -225,9 +226,9 @@ public class EffectiveTarget {
 			}
 
 			if (filter != null) {
-				return connectionsGroup.getCachedNodeFor(new Unique(filter.apply(targetChainRetriever), true));
+				return connectionsGroup.getCachedNodeFor(Unique.getInstance(filter.apply(targetChainRetriever), true));
 			} else {
-				return connectionsGroup.getCachedNodeFor(new Unique(targetChainRetriever, true));
+				return connectionsGroup.getCachedNodeFor(Unique.getInstance(targetChainRetriever, true));
 			}
 
 		}

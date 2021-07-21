@@ -96,10 +96,10 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 		PlanNode planNode = and.stream()
 				.map(a -> a.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans,
 						overrideTargetNode, scope))
-				.reduce(UnionNode::new)
+				.reduce(UnionNode::getInstance)
 				.orElse(EmptyNode.getInstance());
 
-		return new Unique(planNode, false);
+		return Unique.getInstance(planNode, false);
 
 	}
 
@@ -108,10 +108,10 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 		PlanNode planNode = and.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, scope))
 				.distinct()
-				.reduce(UnionNode::new)
+				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
 
-		planNode = new Unique(planNode, false);
+		planNode = Unique.getInstance(planNode, false);
 
 		return planNode;
 	}

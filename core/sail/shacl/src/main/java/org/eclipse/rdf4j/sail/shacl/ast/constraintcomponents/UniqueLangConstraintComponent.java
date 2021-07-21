@@ -128,7 +128,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			);
 
 			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
-			return new Unique(new TrimToTarget(nonUniqueTargetLang), false);
+			return Unique.getInstance(new TrimToTarget(nonUniqueTargetLang), false);
 		}
 
 		if (connectionsGroup.getStats().isBaseSailEmpty()) {
@@ -139,7 +139,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			PlanNode innerJoin = new InnerJoin(addedTargets, addedByPath).getJoined(UnBufferedPlanNode.class);
 
 			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(innerJoin);
-			return new Unique(new TrimToTarget(nonUniqueTargetLang), false);
+			return Unique.getInstance(new TrimToTarget(nonUniqueTargetLang), false);
 		}
 
 		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false, null);
@@ -147,16 +147,16 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);
 
 		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
-				new Unique(new TrimToTarget(addedByPath), false));
+				Unique.getInstance(new TrimToTarget(addedByPath), false));
 
 		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false,
 				null);
 
-		PlanNode mergeNode = new UnionNode(addedTargets, addedByPath);
+		PlanNode mergeNode = UnionNode.getInstance(addedTargets, addedByPath);
 
 		mergeNode = new TrimToTarget(mergeNode);
 
-		PlanNode allRelevantTargets = new Unique(mergeNode, false);
+		PlanNode allRelevantTargets = Unique.getInstance(mergeNode, false);
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 				allRelevantTargets,
@@ -171,7 +171,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
 
-		return new Unique(new TrimToTarget(nonUniqueTargetLang), false);
+		return Unique.getInstance(new TrimToTarget(nonUniqueTargetLang), false);
 
 	}
 
@@ -182,7 +182,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
-			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
+			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
 		return EmptyNode.getInstance();
 	}

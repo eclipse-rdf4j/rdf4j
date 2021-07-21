@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
@@ -79,7 +80,7 @@ public class UniqueTest {
 				Arrays.asList("a", "a", "2")
 		);
 
-		Unique unique = new Unique(input, true);
+		PlanNode unique = Unique.getInstance(input, true);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
 
@@ -88,7 +89,7 @@ public class UniqueTest {
 	}
 
 	private void runTest(MockInputPlanNode input, boolean compress) {
-		Unique unique = new Unique(input, compress);
+		PlanNode unique = Unique.getInstance(input, compress);
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
 

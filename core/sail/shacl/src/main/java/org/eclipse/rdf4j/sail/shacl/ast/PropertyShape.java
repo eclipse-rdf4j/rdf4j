@@ -187,12 +187,12 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 //
 //				PlanNode allTargetsPlan = getAllLocalTargetsPlan(connectionsGroup, negatePlan);
 //
-//				Unique invalid = new Unique(planNode);
+//				Unique invalid = Unique.getInstance(planNode);
 //
 //				PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
 //						.getDiscardedLeft(BufferedPlanNode.class);
 //
-//				ret = new UnionNode(ret, discardedLeft);
+//				ret = UnionNode.getInstance(ret, discardedLeft);
 //
 //			}
 //
@@ -218,12 +218,12 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			}
 
 			if (scope == Scope.propertyShape) {
-				validationPlanNode = new Unique(new TargetChainPopper(validationPlanNode), true);
+				validationPlanNode = Unique.getInstance(new TargetChainPopper(validationPlanNode), true);
 			} else {
-				validationPlanNode = new Unique(new ShiftToNodeShape(validationPlanNode), true);
+				validationPlanNode = Unique.getInstance(new ShiftToNodeShape(validationPlanNode), true);
 			}
 
-			union = new UnionNode(union, validationPlanNode);
+			union = UnionNode.getInstance(union, validationPlanNode);
 		}
 
 		return union;
@@ -234,22 +234,22 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 		PlanNode planNode = constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, Scope.propertyShape))
 				.distinct()
-				.reduce(UnionNode::new)
+				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
 
-		planNode = new UnionNode(planNode,
+		planNode = UnionNode.getInstanceDedupe(planNode,
 				getTargetChain()
 						.getEffectiveTarget("_target", Scope.propertyShape,
 								connectionsGroup.getRdfsSubClassOfReasoner())
 						.getPlanNode(connectionsGroup, Scope.propertyShape, true, null));
 
 		if (scope == Scope.propertyShape) {
-			planNode = new Unique(new TargetChainPopper(planNode), true);
+			planNode = Unique.getInstance(new TargetChainPopper(planNode), true);
 		} else {
 			planNode = new ShiftToNodeShape(planNode);
 		}
 
-		planNode = new Unique(planNode, false);
+		planNode = Unique.getInstance(planNode, false);
 
 		return planNode;
 	}

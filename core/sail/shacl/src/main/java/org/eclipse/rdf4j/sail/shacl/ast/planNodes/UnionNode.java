@@ -29,9 +29,16 @@ public class UnionNode implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public UnionNode(PlanNode... nodes) {
+	private UnionNode(PlanNode... nodes) {
 
-		this.nodes = Arrays.stream(nodes)
+		this.nodes = nodes;
+		this.nodesSet = new HashSet<>(Arrays.asList(nodes));
+
+		// this.stackTrace = Thread.currentThread().getStackTrace();
+	}
+
+	public static PlanNode getInstance(PlanNode... nodes) {
+		PlanNode[] planNodes = Arrays.stream(nodes)
 				.filter(n -> !(n instanceof EmptyNode))
 				.flatMap(n -> {
 					if (n instanceof UnionNode) {
@@ -39,12 +46,38 @@ public class UnionNode implements PlanNode {
 					}
 					return Stream.of(n);
 				})
-				.map(n -> PlanNodeHelper.handleSorting(this, n))
+				.map(n -> PlanNodeHelper.handleSorting(true, n))
 				.toArray(PlanNode[]::new);
 
-		this.nodesSet = new HashSet<>(Arrays.asList(this.nodes));
+		if (planNodes.length == 1)
+			return planNodes[0];
+		if (planNodes.length == 0)
+			return EmptyNode.getInstance();
 
-		// this.stackTrace = Thread.currentThread().getStackTrace();
+		return new UnionNode(planNodes);
+
+	}
+
+	public static PlanNode getInstanceDedupe(PlanNode... nodes) {
+		PlanNode[] planNodes = Arrays.stream(nodes)
+				.filter(n -> !(n instanceof EmptyNode))
+				.distinct()
+				.flatMap(n -> {
+					if (n instanceof UnionNode) {
+						return Arrays.stream(((UnionNode) n).nodes);
+					}
+					return Stream.of(n);
+				})
+				.map(n -> PlanNodeHelper.handleSorting(true, n))
+				.toArray(PlanNode[]::new);
+
+		if (planNodes.length == 1)
+			return planNodes[0];
+		if (planNodes.length == 0)
+			return EmptyNode.getInstance();
+
+		return new UnionNode(planNodes);
+
 	}
 
 	@Override

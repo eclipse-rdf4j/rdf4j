@@ -72,7 +72,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		}
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
-				new Unique(new TrimToTarget(target), false),
+				Unique.getInstance(new TrimToTarget(target), false),
 				connectionsGroup.getBaseConnection(),
 				getTargetChain().getPath()
 						.get()
@@ -85,7 +85,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count < minCount);
 
-		return new Unique(new TrimToTarget(groupByCount), false);
+		return Unique.getInstance(new TrimToTarget(groupByCount), false);
 
 	}
 

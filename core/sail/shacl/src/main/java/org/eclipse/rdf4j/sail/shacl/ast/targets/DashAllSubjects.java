@@ -47,7 +47,7 @@ public class DashAllSubjects extends Target {
 	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
 			SailConnection connection) {
 
-		return new Unique(new UnorderedSelect(connection, null,
+		return Unique.getInstance(new UnorderedSelect(connection, null,
 				null, null, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope)), false);
 
 	}
