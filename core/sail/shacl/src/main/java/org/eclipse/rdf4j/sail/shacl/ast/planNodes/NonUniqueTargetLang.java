@@ -159,7 +159,7 @@ class OnlyNonUnique extends LoggingCloseableIteration {
 	}
 
 	@Override
-	public void close() throws SailException {
+	public void localClose() throws SailException {
 		parentIterator.close();
 	}
 

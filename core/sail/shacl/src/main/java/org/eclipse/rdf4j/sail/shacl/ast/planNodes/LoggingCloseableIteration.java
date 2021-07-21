@@ -10,24 +10,12 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 
 	private final ValidationExecutionLogger validationExecutionLogger;
 	private final PlanNode planNode;
-	private final Logger logger = LoggerFactory.getLogger(getClass());
 	private boolean empty = false;
+	private boolean closed;
 
 	public LoggingCloseableIteration(PlanNode planNode, ValidationExecutionLogger validationExecutionLogger) {
 		this.planNode = planNode;
 		this.validationExecutionLogger = validationExecutionLogger;
-	}
-
-	static String leadingSpace(PlanNode planNode) {
-		return leadingSpace(planNode.depth());
-	}
-
-	static String leadingSpace(int depth) {
-		StringBuilder builder = new StringBuilder();
-		for (int i = depth; i > 0; i--) {
-			builder.append("  ");
-		}
-		return builder.toString();
 	}
 
 	@Override
@@ -44,20 +32,34 @@ public abstract class LoggingCloseableIteration implements CloseableIteration<Va
 
 	@Override
 	public final boolean hasNext() throws SailException {
+		if (empty) {
+			return false;
+		}
+
 		boolean hasNext = localHasNext();
-		if (!hasNext)
+
+		if (!hasNext) {
 			empty = true;
-		assert !hasNext || !empty : this.getClass();
+			assert !localHasNext() : "Iterator was initially empty, but still has more elements! " + this.getClass();
+			close();
+		}
+
 		return hasNext;
+	}
+
+	@Override
+	public void close() throws SailException {
+		if (!closed) {
+			this.closed = true;
+			localClose();
+		}
 	}
 
 	protected abstract ValidationTuple loggingNext() throws SailException;
 
 	protected abstract boolean localHasNext() throws SailException;
 
-	private String leadingSpace() {
-		return leadingSpace(planNode);
-	}
+	protected abstract void localClose() throws SailException;
 
 	/**
 	 * A default method since the iterators in the ShaclSail don't support remove.

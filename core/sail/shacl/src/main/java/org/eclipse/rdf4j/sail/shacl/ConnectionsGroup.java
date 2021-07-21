@@ -83,6 +83,8 @@ public class ConnectionsGroup implements Closeable {
 		for (SailConnection sailConnection : connectionsToClose) {
 			sailConnection.close();
 		}
+
+		nodeCache.clear();
 	}
 
 	public SailConnection getBaseConnection() {

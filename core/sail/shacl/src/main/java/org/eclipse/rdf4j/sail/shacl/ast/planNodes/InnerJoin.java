@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
@@ -36,7 +37,6 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	private NotifyingPushablePlanNode joined;
 	private NotifyingPushablePlanNode discardedLeft;
 	private NotifyingPushablePlanNode discardedRight;
-	private ValidationExecutionLogger validationExecutionLogger;
 
 	public InnerJoin(PlanNode left, PlanNode right) {
 		left = PlanNodeHelper.handleSorting(this, left);
@@ -359,16 +359,9 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
-		this.validationExecutionLogger = validationExecutionLogger;
-
-		PlanNode[] planNodes = { joined, discardedLeft, discardedRight, left, right };
-
-		for (PlanNode planNode : planNodes) {
-			if (planNode != null) {
-				planNode.receiveLogger(validationExecutionLogger);
-			}
-		}
-
+		Stream.of(joined, discardedLeft, discardedRight, left, right)
+				.filter(Objects::nonNull)
+				.forEach(p -> p.receiveLogger(validationExecutionLogger));
 	}
 
 	@Override

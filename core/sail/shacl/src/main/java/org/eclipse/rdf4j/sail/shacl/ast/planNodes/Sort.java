@@ -44,7 +44,7 @@ public class Sort implements PlanNode {
 			boolean closed = false;
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				if (closed) {
 					throw new IllegalStateException("Already closed");
 				}

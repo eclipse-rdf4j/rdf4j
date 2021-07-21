@@ -39,11 +39,10 @@ public class BufferedSplitter implements PlanNodeProvider {
 		parent = planNode;
 	}
 
-	synchronized private void init() {
+	private synchronized void init() {
 		if (tuplesBuffer == null) {
 			tuplesBuffer = new ArrayList<>();
 			try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
-
 				while (iterator.hasNext()) {
 					ValidationTuple next = iterator.next();
 					tuplesBuffer.add(next);
@@ -77,7 +76,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 		return Objects.hash(parent);
 	}
 
-	class BufferedSplitterPlaneNode implements PlanNode {
+	static class BufferedSplitterPlaneNode implements PlanNode {
 		private final BufferedSplitter bufferedSplitter;
 		private boolean printed = false;
 
@@ -90,10 +89,16 @@ public class BufferedSplitter implements PlanNodeProvider {
 		@Override
 		public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
-			bufferedSplitter.init();
-			Iterator<ValidationTuple> iterator = bufferedSplitter.tuplesBuffer.iterator();
-
 			return new CloseableIteration<ValidationTuple, SailException>() {
+
+				Iterator<ValidationTuple> iterator;
+
+				private void init() {
+					if (iterator == null) {
+						bufferedSplitter.init();
+						iterator = bufferedSplitter.tuplesBuffer.iterator();
+					}
+				}
 
 				@Override
 				public void close() throws SailException {
@@ -102,11 +107,13 @@ public class BufferedSplitter implements PlanNodeProvider {
 
 				@Override
 				public boolean hasNext() throws SailException {
+					init();
 					return iterator.hasNext();
 				}
 
 				@Override
 				public ValidationTuple next() throws SailException {
+					init();
 					ValidationTuple tuple = iterator.next();
 					if (GlobalValidationExecutionLogging.loggingEnabled) {
 						validationExecutionLogger.log(depth(),
