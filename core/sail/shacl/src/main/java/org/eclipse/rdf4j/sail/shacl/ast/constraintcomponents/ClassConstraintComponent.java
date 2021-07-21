@@ -113,19 +113,10 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
 			);
 
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner = connectionsGroup.getRdfsSubClassOfReasoner();
-			Set<Resource> clazzForwardChained;
-
-			if (rdfsSubClassOfReasoner != null) {
-				clazzForwardChained = rdfsSubClassOfReasoner.backwardsChain(clazz);
-			} else {
-				clazzForwardChained = Collections.singleton(clazz);
-			}
-
 			// filter by type against the base sail
 			PlanNode falseNode = new ExternalPredicateObjectFilter(
 					connectionsGroup.getBaseConnection(),
-					RDF.TYPE, clazzForwardChained,
+					RDF.TYPE, Collections.singleton(clazz),
 					joined, false, ExternalPredicateObjectFilter.FilterOn.value);
 
 			return falseNode;
