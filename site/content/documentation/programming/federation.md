@@ -138,11 +138,11 @@ In order to deploy a FedX configuration the repository configuration template ne
 
 FedX is implemented as a RDF4J Repository. To initialize FedX and the underlying federation SAIL, we provide the FedXFactory class, which provides various methods for intuitive configuration. In the following, we present various Java code snippets that illustrate how FedX can be used in an application.
 
-Basically, FedX can be used and accessed using the SAIL architecture (see the [RDF4J SAIL documentation](http://docs.rdf4j.org/sail/) for details). The Repository can be obtained from any FedXFactory initialization method. Besides using the Repository interface for creating queries, we also provide a _QueryManager_ class to conveniently create queries. The advantage of the _QueryManager_ over using the _RepositoryConnection_ to create queries, is that preconfigured PREFIX declarations are added automatically to the query, i.e. the user can use common prefixes (such as rdf, foaf, etc.) without the need to specify them in the prologue of the query. See PREFIX Declarations for a detailed documentation.
+Basically, FedX can be used and accessed using the SAIL architecture (see the [RDF4J SAIL documentation](http://docs.rdf4j.org/sail/) for details). The Repository can be obtained from any FedXFactory initialization method. Besides using the Repository interface for creating queries, we also provide a _QueryManager_ class to conveniently create queries. The advantage of the _QueryManager_ over using the _RepositoryConnection_ to create queries, is that preconfigured PREFIX declarations are added automatically to the query, i.e. the user can use common prefixes (such as rdf, foaf, etc.) without the need to specify them in the prologue of the query. See [PREFIX Declarations](#prefix-declarations) for a detailed documentation.
 
 **Example 1: Using a simple SPARQL Federation as a Repository**
 
-In the following example, we configure a federation with the publicly available DBpedia and SemanticWebDogFood SPARQL endpoints. Please refer to Configuring FedX for details.
+In the following example, we configure a federation with the publicly available DBpedia and SemanticWebDogFood SPARQL endpoints. Please refer to [FedX configuration](#fedx-configuration) for details.
 
 ```java
 Repository repo = FedXFactory.createSparqlFederation(Arrays.asList(
@@ -299,7 +299,8 @@ FedX provides various means for configuration. Configuration settings can be def
 ### Available Properties
 
 |Property | Description |
-|prefixDeclarations | Path to prefix declarations file, see PREFIX Declarations |
+|---------|-------------|
+|prefixDeclarations | Path to prefix declarations file, see [PREFIX Declarations](#prefix-declarations) |
 |cacheLocation | Location where the memory cache gets persisted at shutdown, default _cache.db_ |
 |joinWorkerThreads | The number of join worker threads for parallelization, default _20_ |
 |unionWorkerThreads | The number of union worker threads for parallelization, default _20_ |
@@ -353,7 +354,7 @@ qm.addPrefixDeclaration("dbpedia", "http://dbpedia.org/ontology/");
 
 ## Member configuration
 
-Federation members can be added to a federation either directly as a list of endpoints, or using a data configuration file (see section FedX in Java applications). In a data configuration the federation members are specified using turtle syntax.
+Federation members can be added to a federation either directly as a list of endpoints, or using a data configuration file (see section [FedX in Java applications](#fedx-in-java-applications)). In a data configuration the federation members are specified using turtle syntax.
 
 
 ### Example 1: SPARQL Federation:
