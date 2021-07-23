@@ -27,8 +27,8 @@ body:
           2. With this config...
           3. Run '...' (include code example if possible)
           4. See error...
-        validations:
-          required: false
+      validations:
+        required: false
     - type: input
       id: version
       attributes:
@@ -46,8 +46,8 @@ body:
             - Yes
             - No
             - Perhaps?
-        validations:
-            required: false
+      validations:
+          required: false
     - type: textarea
       attributes:
         label: Anything else?
