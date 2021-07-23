@@ -25,17 +25,17 @@ body:
         label: Are you interested in contributing a solution yourself?
         description: We welcome your feature request, but please keep in mind that we're a small team, with limited capacity. Let us know if you would like to get involved in actually contributing a fix yourself. We'd be overjoyed to help you get started.
         options:
-            - Yes
-            - No
-            - Perhaps?
-        validations:
-            required: false
+            - 'Yes'
+            - 'No'
+            - 'Perhaps?'
+      validations:
+          required: false
     - type: textarea
       attributes:
         label: Alternatives you've considered
         description: Let us know about other solutions you have tried or researched.
-        validations:
-          required: false
+      validations:
+        required: false
     - type: textarea
       attributes:
         label: Anything else?
