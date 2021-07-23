@@ -6,7 +6,7 @@ jobs:
     timeout-minutes: 5
     steps:
     - name: add-new-issues-to-repository-based-project-column
-      uses: docker://takanabe/github-actions-automate-projects:v0.0.1
+      uses: docker://takanabe/github-actions-automate-projects:latest
       if: github.event_name == 'issues' && github.event.action == 'opened'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
