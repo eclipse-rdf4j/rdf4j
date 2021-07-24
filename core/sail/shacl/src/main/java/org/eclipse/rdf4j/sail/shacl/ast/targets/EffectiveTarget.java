@@ -74,6 +74,14 @@ public class EffectiveTarget {
 	public PlanNode extend(PlanNode source, ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
 			Extend direction, boolean includePropertyShapeValues, Function<PlanNode, PlanNode> filter) {
 
+		if (source instanceof AllTargetsPlanNode && !includePropertyShapeValues) {
+			PlanNode allTargets = getAllTargets(connectionsGroup, scope);
+			if (filter != null) {
+				allTargets = filter.apply(allTargets);
+			}
+			return allTargets;
+		}
+
 		String query = getQuery(includePropertyShapeValues);
 		List<StatementMatcher.Variable> vars = getVars();
 		if (includePropertyShapeValues) {
