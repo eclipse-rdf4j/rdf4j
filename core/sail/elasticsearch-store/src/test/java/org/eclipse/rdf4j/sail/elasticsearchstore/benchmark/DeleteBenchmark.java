@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.util.Files;
 import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;

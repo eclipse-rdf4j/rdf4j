@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;

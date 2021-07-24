@@ -5,10 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j;
-
-import org.eclipse.rdf4j.common.transaction.TransactionSetting;
-import org.eclipse.rdf4j.model.IRI;
+package org.eclipse.rdf4j.common.transaction;
 
 /**
  * A Transaction Isolation Level. Default levels supported by RDF4J are provided by {@link IsolationLevels}, third-party
@@ -33,16 +30,6 @@ public interface IsolationLevel extends TransactionSetting {
 	 * @return true iff this isolation level is compatible with the supplied other isolation level, false otherwise.
 	 */
 	boolean isCompatibleWith(IsolationLevel otherLevel);
-
-	/**
-	 * Get a URI uniquely representing this isolation level.
-	 *
-	 * @deprecated use getName() and getValue() instead.
-	 *
-	 * @return a URI that uniquely represents this isolation level.
-	 */
-	@Deprecated
-	IRI getURI();
 
 	@Override
 	default String getName() {

@@ -5,15 +5,10 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j;
+package org.eclipse.rdf4j.common.transaction;
 
 import java.util.Arrays;
 import java.util.List;
-
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.SESAME;
 
 /**
  * Enumeration of Transaction {@link IsolationLevel}s supported by Sesame. Note that Sesame stores are not required to
@@ -107,11 +102,5 @@ public enum IsolationLevels implements IsolationLevel {
 		} else {
 			return level;
 		}
-	}
-
-	@Override
-	public IRI getURI() {
-		final ValueFactory f = SimpleValueFactory.getInstance();
-		return f.createIRI(SESAME.NAMESPACE, this.name());
 	}
 }

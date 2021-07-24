@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j;
+package org.eclipse.rdf4j.common.transaction;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -25,7 +25,9 @@ import org.junit.Test;
 public class IsolationLevelsTest {
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.IsolationLevels#isCompatibleWith(org.eclipse.rdf4j.IsolationLevel)} .
+	 * Test method for
+	 * {@link org.eclipse.rdf4j.common.transaction.IsolationLevels#isCompatibleWith(org.eclipse.rdf4j.common.transaction.IsolationLevel)}
+	 * .
 	 */
 	@Test
 	public void testIsCompatibleWith() {
@@ -37,7 +39,7 @@ public class IsolationLevelsTest {
 
 	/**
 	 * Test method for
-	 * {@link org.eclipse.rdf4j.IsolationLevels#getCompatibleIsolationLevel(org.eclipse.rdf4j.IsolationLevel, java.util.List)}
+	 * {@link org.eclipse.rdf4j.common.transaction.IsolationLevels#getCompatibleIsolationLevel(org.eclipse.rdf4j.common.transaction.IsolationLevel, java.util.List)}
 	 * .
 	 */
 	@Test

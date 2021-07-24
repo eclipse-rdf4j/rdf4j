@@ -14,10 +14,10 @@ import java.io.Reader;
 import java.net.URL;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;

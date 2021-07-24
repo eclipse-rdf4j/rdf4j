@@ -19,8 +19,8 @@ import java.util.concurrent.ExecutionException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.common.transaction.TransactionSettingRegistry;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
@@ -83,14 +83,12 @@ public class TransactionStartController extends AbstractController {
 
 		// process legacy isolation level param for backward compatibility with older clients
 		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
-		if (isolationLevelString != null) {
-			final IRI level = SimpleValueFactory.getInstance().createIRI(isolationLevelString);
+		final IRI level = Values.iri(isolationLevelString);
 
-			for (IsolationLevel standardLevel : IsolationLevels.values()) {
-				if (standardLevel.getURI().equals(level)) {
-					isolationLevel[0] = standardLevel;
-					break;
-				}
+		for (IsolationLevel standardLevel : IsolationLevels.values()) {
+			if (standardLevel.getName().equals(level.getLocalName())) {
+				isolationLevel[0] = standardLevel;
+				break;
 			}
 		}
 

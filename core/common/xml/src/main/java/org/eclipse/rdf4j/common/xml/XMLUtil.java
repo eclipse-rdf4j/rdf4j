@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.common.xml;
 
-import org.eclipse.rdf4j.common.text.StringUtil;
-
 /**
  * Utility methods for handling and processing XML data.
  */
@@ -21,10 +19,10 @@ public class XMLUtil {
 	 * return (\r)</tt>.
 	 */
 	public static String escapeCharacterData(String text) {
-		text = StringUtil.gsub("&", "&amp;", text);
-		text = StringUtil.gsub("<", "&lt;", text);
-		text = StringUtil.gsub(">", "&gt;", text);
-		text = StringUtil.gsub("\r", "&#xD;", text);
+		text = text.replace("&", "&amp;");
+		text = text.replace("<", "&lt;");
+		text = text.replace(">", "&gt;");
+		text = text.replace("\r", "&#xD;");
 		return text;
 	}
 
@@ -35,7 +33,7 @@ public class XMLUtil {
 	 */
 	public static String escapeDoubleQuotedAttValue(String value) {
 		value = _escapeAttValue(value);
-		value = StringUtil.gsub("\"", "&quot;", value);
+		value = value.replace("\"", "&quot;");
 		return value;
 	}
 
@@ -46,17 +44,17 @@ public class XMLUtil {
 	 */
 	public static String escapeSingleQuotedAttValue(String value) {
 		value = _escapeAttValue(value);
-		value = StringUtil.gsub("'", "&apos;", value);
+		value = value.replace("'", "&apos;");
 		return value;
 	}
 
 	private static String _escapeAttValue(String value) {
-		value = StringUtil.gsub("&", "&amp;", value);
-		value = StringUtil.gsub("<", "&lt;", value);
-		value = StringUtil.gsub(">", "&gt;", value);
-		value = StringUtil.gsub("\t", "&#x9;", value);
-		value = StringUtil.gsub("\n", "&#xA;", value);
-		value = StringUtil.gsub("\r", "&#xD;", value);
+		value = value.replace("&", "&amp;");
+		value = value.replace("<", "&lt;");
+		value = value.replace(">", "&gt;");
+		value = value.replace("\t", "&#x9;");
+		value = value.replace("\n", "&#xA;");
+		value = value.replace("\r", "&#xD;");
 		return value;
 	}
 
@@ -217,11 +215,11 @@ public class XMLUtil {
 	 * @see #resolveEntities
 	 */
 	public static String escapeAttributeValue(String value) {
-		String result = StringUtil.gsub("&", "&amp;", value);
-		result = StringUtil.gsub("<", "&lt;", result);
-		result = StringUtil.gsub(">", "&gt;", result);
-		result = StringUtil.gsub("\"", "&quot;", result);
-		result = StringUtil.gsub("'", "&apos;", result);
+		String result = value.replace("&", "&amp;");
+		result = result.replace("<", "&lt;");
+		result = result.replace(">", "&gt;");
+		result = result.replace("\"", "&quot;");
+		result = result.replace("'", "&apos;");
 		return result;
 	}
 
@@ -232,9 +230,9 @@ public class XMLUtil {
 	 * @see #resolveEntities
 	 */
 	public static String escapeText(String text) {
-		String result = StringUtil.gsub("&", "&amp;", text);
-		result = StringUtil.gsub("<", "&lt;", result);
-		result = StringUtil.gsub(">", "&gt;", result);
+		String result = text.replace("&", "&amp;");
+		result = result.replace("<", "&lt;");
+		result = result.replace(">", "&gt;");
 		return result;
 	}
 

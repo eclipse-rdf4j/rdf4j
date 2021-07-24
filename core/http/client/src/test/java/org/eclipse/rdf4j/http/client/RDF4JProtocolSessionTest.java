@@ -28,7 +28,7 @@ import java.util.HashMap;
 import org.apache.http.Header;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.message.BasicHeader;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;

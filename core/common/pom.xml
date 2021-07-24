@@ -11,6 +11,7 @@
 	<name>RDF4J: common</name>
 	<description>RDF4J common: shared classes</description>
 	<modules>
+		<module>annotation</module>
 		<module>io</module>
 		<module>iterator</module>
 		<module>text</module>
@@ -18,40 +19,4 @@
 		<module>util</module>
 		<module>xml</module>
 	</modules>
-	<!--
-	<dependencies>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-model-api</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>slf4j-api</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.openjdk.jmh</groupId>
-			<artifactId>jmh-core</artifactId>
-			<version>${jmhVersion}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.openjdk.jmh</groupId>
-			<artifactId>jmh-generator-annprocess</artifactId>
-			<version>${jmhVersion}</version>
-			<scope>test</scope>
-		</dependency>
-	</dependencies>
-	<build>
-		<plugins>
-			<plugin>
-				<artifactId>maven-assembly-plugin</artifactId>
-			</plugin>
-			<plugin>
-				<groupId>com.github.siom79.japicmp</groupId>
-				<artifactId>japicmp-maven-plugin</artifactId>
-			</plugin>
-		</plugins>
-	</build>
-		-->
 </project>

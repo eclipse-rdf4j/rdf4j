@@ -28,9 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -56,10 +54,10 @@ import org.apache.http.entity.StringEntity;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
@@ -652,13 +650,6 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			for (TransactionSetting transactionSetting : transactionSettings) {
 				if (transactionSetting == null) {
 					continue;
-				}
-				if (transactionSetting instanceof IsolationLevel) {
-					// also send isolation level with dedicated parameter for backward compatibility with older RDF4J
-					// Server
-					IsolationLevel isolationLevel = (IsolationLevel) transactionSetting;
-					params.add(new BasicNameValuePair(Protocol.ISOLATION_LEVEL_PARAM_NAME,
-							isolationLevel.getURI().stringValue()));
 				}
 				params.add(
 						new BasicNameValuePair(

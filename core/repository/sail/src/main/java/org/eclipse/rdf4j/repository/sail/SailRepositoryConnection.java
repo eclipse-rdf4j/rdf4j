@@ -12,9 +12,9 @@ import java.util.Objects;
 import java.util.Optional;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
