@@ -95,7 +95,7 @@
 							</execution>
 						</executions>
 						<configuration>
-							<source>8</source>
+							<source>11</source>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -158,44 +158,33 @@
 									<goal>aggregate</goal>
 								</goals>
 								<configuration>
-									<doctitle>Eclipse RDF4J ${project.version} API</doctitle>
-									<windowtitle>Eclipse RDF4J ${project.version} API</windowtitle>
+									<overview>src/main/javadoc/overview.html</overview>
+									<windowtitle>Eclipse RDF4J ${project.version}</windowtitle>
+									<doctitle>Eclipse RDF4J version ${project.version} API specification</doctitle>
 									<groups>
 										<group>
 											<title>RDF Model API</title>
 											<packages>org.eclipse.rdf4j.model*</packages>
 										</group>
 										<group>
-											<title>Repository API: database and SPARQL endpoint access</title>
+											<title>Repository API</title>
 											<packages>org.eclipse.rdf4j.repository*</packages>
 										</group>
 										<group>
-											<title>Rio: RDF Parsers and Writers</title>
+											<title>Rio: RDF Parsers/Writers</title>
 											<packages>org.eclipse.rdf4j.rio*</packages>
-										</group>
-										<group>
-											<title>Query API and query parsers</title>
-											<packages>org.eclipse.rdf4j.query:org.eclipse.rdf4j.query.impl:org.eclipse.rdf4j.query.algebra*:org.eclipse.rdf4j.query.parser*</packages>
 										</group>
 										<group>
 											<title>Query Result Parsers and Writers</title>
 											<packages>org.eclipse.rdf4j.query.resultio*</packages>
 										</group>
 										<group>
-											<title>SPARQLBuilder</title>
-											<packages>org.eclipse.rdf4j.sparqlbuilder*</packages>
-										</group>
-										<group>
-											<title>Storage And Inference Layer (SAIL) SPI</title>
+											<title>SAIL API</title>
 											<packages>org.eclipse.rdf4j.sail*</packages>
-										</group>
-										<group>
-											<title>RDF4J REST Client and Protocol</title>
-											<packages>org.eclipse.rdf4j.http*</packages>
 										</group>
 									</groups>
 									<links>
-										<link>http://docs.oracle.com/javase/8/docs/api/</link>
+										<link>http://docs.oracle.com/javase/11/docs/api/</link>
 									</links>
 									<excludePackageNames>*.ast:*.AST:*.benchmark</excludePackageNames>
 								</configuration>
@@ -245,7 +234,6 @@
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
-				<additional.j.option>--no-module-directories</additional.j.option>
 			</properties>
 		</profile>
 		<profile>
