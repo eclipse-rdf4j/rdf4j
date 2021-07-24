@@ -111,6 +111,8 @@ public class Unique implements PlanNode {
 
 						if (tuples.isEmpty()) {
 							next = temp;
+						} else if (tuples.size() == 1 && tuples.contains(temp)) {
+							next = temp;
 						} else {
 							tuples.add(temp);
 							next = new ValidationTuple(temp, tuples);
