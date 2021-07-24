@@ -12,9 +12,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.JarURLConnection;
 import java.net.URL;
+import java.util.Objects;
 import java.util.jar.JarFile;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.io.ZipUtil;
 import org.eclipse.rdf4j.model.Resource;
@@ -126,7 +126,8 @@ public class SPARQL10ManifestTest {
 
 	static void addTurtle(RepositoryConnection con, URL url, String baseURI, Resource... contexts)
 			throws IOException, RepositoryException, RDFParseException, RDFHandlerException {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}

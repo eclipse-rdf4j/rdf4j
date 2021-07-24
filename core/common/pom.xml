@@ -12,6 +12,7 @@
 	<description>RDF4J common: shared classes</description>
 	<modules>
 		<module>annotation</module>
+		<module>exception</module>
 		<module>io</module>
 		<module>iterator</module>
 		<module>text</module>

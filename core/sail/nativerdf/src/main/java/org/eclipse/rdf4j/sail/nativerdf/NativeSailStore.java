@@ -15,10 +15,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -454,7 +454,8 @@ class NativeSailStore implements SailStore {
 
 		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 				throws SailException {
-			OpenRDFUtil.verifyContextNotNull(contexts);
+			Objects.requireNonNull(contexts,
+					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 			boolean result = false;
 			sinkStoreAccessLock.lock();
 			try {
@@ -493,7 +494,8 @@ class NativeSailStore implements SailStore {
 
 		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 				throws SailException {
-			OpenRDFUtil.verifyContextNotNull(contexts);
+			Objects.requireNonNull(contexts,
+					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 			sinkStoreAccessLock.lock();
 			try {

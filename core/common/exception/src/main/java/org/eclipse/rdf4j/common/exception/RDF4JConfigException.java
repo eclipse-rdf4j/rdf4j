@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  */
-package org.eclipse.rdf4j;
+package org.eclipse.rdf4j.common.exception;
 
 /**
  * Exception indicating a configuration problem in an RDF4J component.
@@ -14,7 +14,7 @@ package org.eclipse.rdf4j;
  */
 public class RDF4JConfigException extends RDF4JException {
 
-	private static final long serialVersionUID = -8121506409791182977L;
+	private static final long serialVersionUID = 1268120252034047961L;
 
 	public RDF4JConfigException() {
 		super();

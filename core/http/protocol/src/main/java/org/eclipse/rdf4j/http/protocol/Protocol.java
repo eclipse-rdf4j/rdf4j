@@ -7,7 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.protocol;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
@@ -529,7 +530,8 @@ public abstract class Protocol {
 	 * @throws IllegalArgumentException If the <tt>contexts</tt> is <tt>null</tt>.
 	 */
 	public static String[] encodeContexts(Resource... contexts) {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		String[] result = new String[contexts.length];
 		for (int index = 0; index < contexts.length; index++) {

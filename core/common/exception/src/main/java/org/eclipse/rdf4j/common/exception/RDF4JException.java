@@ -5,17 +5,16 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j;
+package org.eclipse.rdf4j.common.exception;
 
 /**
  * General superclass of all unchecked exceptions that parts of RDF4J can throw.
  *
  * @author Jeen Broekstra
  */
-@SuppressWarnings("deprecation")
-public abstract class RDF4JException extends OpenRDFException {
+public abstract class RDF4JException extends RuntimeException {
 
-	private static final long serialVersionUID = 8913366826930181397L;
+	private static final long serialVersionUID = 169031751338226782L;
 
 	public RDF4JException() {
 		super();

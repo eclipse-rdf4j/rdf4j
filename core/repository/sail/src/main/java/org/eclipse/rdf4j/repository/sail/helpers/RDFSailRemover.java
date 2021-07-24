@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail.helpers;
 
+import java.util.Objects;
 import java.util.Set;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -74,7 +74,8 @@ class RDFSailRemover extends AbstractRDFHandler {
 	 * @param contexts the contexts to use. Use an empty array (not null!) to indicate no context(s) should be enforced.
 	 */
 	public void enforceContext(Resource... contexts) {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 		this.contexts = contexts;
 	}
 
