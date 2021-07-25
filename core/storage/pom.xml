@@ -188,10 +188,6 @@
 				</exclusion>
 				<exclusion>
 					<groupId>org.eclipse.rdf4j</groupId>
-					<artifactId>rdf4j-queryparser-serql</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.eclipse.rdf4j</groupId>
 					<artifactId>rdf4j-repository-api</artifactId>
 				</exclusion>
 				<exclusion>
