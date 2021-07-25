@@ -18,6 +18,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.common.iterator.EmptyIterator;
 import org.eclipse.rdf4j.common.iterator.UnionIterator;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -28,7 +29,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.util.iterators.EmptyIterator;
 
 /**
  * Generic hash join implementation suitable for use by Sail implementations.

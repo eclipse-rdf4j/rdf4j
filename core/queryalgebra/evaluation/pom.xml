@@ -34,12 +34,12 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-http-client</artifactId>
+			<artifactId>rdf4j-common-iterator</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-util</artifactId>
+			<artifactId>rdf4j-http-client</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
