@@ -83,12 +83,14 @@ public class TransactionStartController extends AbstractController {
 
 		// process legacy isolation level param for backward compatibility with older clients
 		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
-		final IRI level = Values.iri(isolationLevelString);
+		if (isolationLevelString != null) {
+			final IRI level = Values.iri(isolationLevelString);
 
-		for (IsolationLevel standardLevel : IsolationLevels.values()) {
-			if (standardLevel.getName().equals(level.getLocalName())) {
-				isolationLevel[0] = standardLevel;
-				break;
+			for (IsolationLevel standardLevel : IsolationLevels.values()) {
+				if (standardLevel.getName().equals(level.getLocalName())) {
+					isolationLevel[0] = standardLevel;
+					break;
+				}
 			}
 		}
 
