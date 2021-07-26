@@ -41,10 +41,10 @@
 		<module>assembly-descriptors</module>
 		<module>core</module>
 		<module>tools</module>
+		<module>spring-components</module>
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>examples</module>
-		<module>spring-components</module>
 		<!-- for maven Central deployment it is important that bom is the last module -->
 		<module>bom</module>
 	</modules>
