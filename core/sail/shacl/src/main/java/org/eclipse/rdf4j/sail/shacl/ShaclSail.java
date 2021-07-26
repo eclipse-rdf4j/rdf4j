@@ -1004,25 +1004,29 @@ public class ShaclSail extends NotifyingSailWrapper {
 			/**
 			 * Do not run any validation. This could potentially lead to your database becoming invalid.
 			 */
-			Disabled("Disabled"),
-
-			/**
-			 * Let the SHACL engine decide on the best approach for validating. This typically means that it will use
-			 * transactional validation except when changing the SHACL Shape.
-			 */
-			Auto("Auto"),
+			Disabled("Disabled", 0),
 
 			/**
 			 * Use a validation approach that is optimized for bulk operations such as adding or removing large amounts
 			 * of data. This will automatically disable parallel validation and turn off caching. Add performance hints
 			 * to enable parallel validation or caching if you have enough resources (RAM).
 			 */
-			Bulk("Bulk");
+			Bulk("Bulk", 1),
+
+			/**
+			 * Let the SHACL engine decide on the best approach for validating. This typically means that it will use
+			 * transactional validation except when changing the SHACL Shape.
+			 */
+			Auto("Auto", 2);
 
 			private final String value;
 
-			ValidationApproach(String value) {
+			// lowest priority wins
+			private final int priority;
+
+			ValidationApproach(String value, int priority) {
 				this.value = value;
+				this.priority = priority;
 			}
 
 			@Override
@@ -1033,6 +1037,22 @@ public class ShaclSail extends NotifyingSailWrapper {
 			@Override
 			public String getValue() {
 				return value;
+			}
+
+			public static ValidationApproach getHighestPriority(ValidationApproach v1, ValidationApproach v2) {
+				assert v1 != null || v2 != null;
+				if (v1 == null) {
+					return v2;
+				}
+				if (v2 == null) {
+					return v1;
+				}
+
+				if (v1.priority < v2.priority) {
+					return v1;
+				}
+
+				return v2;
 			}
 
 		}

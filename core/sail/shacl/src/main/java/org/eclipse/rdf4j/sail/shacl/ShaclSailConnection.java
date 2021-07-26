@@ -948,10 +948,25 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			return isolationLevel;
 		}
 
+		static ShaclSail.TransactionSettings.ValidationApproach getMostSignificantValidationApproach(
+				ShaclSail.TransactionSettings.ValidationApproach base,
+				ShaclSail.TransactionSettings.ValidationApproach overriding) {
+			if (base == null && overriding == null) {
+				return ShaclSail.TransactionSettings.ValidationApproach.Auto;
+			}
+
+			return ShaclSail.TransactionSettings.ValidationApproach.getHighestPriority(base, overriding);
+
+		}
+
 		void applyTransactionSettings(Settings transactionSettingsLocal) {
+			// get the most significant validation approach first (eg. if validation is disabled on the sail level, then
+			// validation can not be enabled on the transaction level
+			validationApproach = getMostSignificantValidationApproach(validationApproach,
+					transactionSettingsLocal.validationApproach);
+
 			// apply restrictions first
-			if (transactionSettingsLocal.validationApproach == ShaclSail.TransactionSettings.ValidationApproach.Bulk) {
-				validationApproach = ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+			if (validationApproach == ShaclSail.TransactionSettings.ValidationApproach.Bulk) {
 				cacheSelectedNodes = false;
 				parallelValidation = false;
 			}
@@ -965,10 +980,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				cacheSelectedNodes = transactionSettingsLocal.cacheSelectedNodes;
 			}
 
-			if (transactionSettingsLocal.validationApproach != null) {
-				validationApproach = transactionSettingsLocal.validationApproach;
-			}
-
 			assert transactionSettingsLocal.isolationLevel == null;
 
 			if (isolationLevel == IsolationLevels.SERIALIZABLE) {
@@ -979,6 +990,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				parallelValidation = false;
 			}
 
+		}
+
+		@Override
+		public String toString() {
+			return "Settings{" +
+					"validationApproach=" + validationApproach +
+					", cacheSelectedNodes=" + cacheSelectedNodes +
+					", parallelValidation=" + parallelValidation +
+					", isolationLevel=" + isolationLevel +
+					'}';
 		}
 	}
 
