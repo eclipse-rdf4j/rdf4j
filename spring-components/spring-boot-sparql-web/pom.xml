@@ -6,9 +6,6 @@
 		<artifactId>rdf4j-spring-boot-components</artifactId>
 		<version>3.7.0</version>
 	</parent>
-	<properties>
-		<spring.boot.version>2.4.3</spring.boot.version>
-	</properties>
 	<artifactId>rdf4j-spring-boot-sparql-web</artifactId>
 	<name>RDF4J: Spring boot component for a HTTP sparql server</name>
 	<description>HTTP server component implementing only the SPARQL protocol</description>
