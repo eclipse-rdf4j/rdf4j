@@ -366,34 +366,29 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@InternalUseOnly
 	public List<Shape> getShapes(RepositoryConnection shapesRepoConnection) throws SailException {
-		SailRepository shapesRepoCache = new SailRepository(
+		SailRepository shapesRepoWithReasoning = new SailRepository(
 				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
 
-		shapesRepoCache.init();
+		shapesRepoWithReasoning.init();
 		List<Shape> shapes;
 
-		try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
-			shapesRepoCacheConnection.begin(IsolationLevels.NONE);
+		try (SailRepositoryConnection shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
+			shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
 			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null,
 					false)) {
-				shapesRepoCacheConnection.add(statements);
+				shapesRepoWithReasoningConnection.add(statements);
 			}
-			enrichShapes(shapesRepoCacheConnection);
-			shapesRepoCacheConnection.commit();
-			shapes = Shape.Factory.getShapes(shapesRepoCacheConnection, this);
+			enrichShapes(shapesRepoWithReasoningConnection);
+			shapesRepoWithReasoningConnection.commit();
+			shapes = Shape.Factory.getShapes(shapesRepoWithReasoningConnection, this);
 		}
 
-		shapesRepoCache.shutDown();
+		shapesRepoWithReasoning.shutDown();
 		return shapes;
 	}
 
 	private void forceRefreshShapes() {
-		if (shapesRepo != null) {
-			try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
-				shapesRepoConnection.begin(IsolationLevels.NONE, TransactionSettings.ValidationApproach.Bulk);
-				shapesRepoConnection.commit();
-			}
-		}
+		// there is no shapes cache, so this is no-op
 	}
 
 	@Override
@@ -835,7 +830,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@InternalUseOnly
 	public List<Shape> getCurrentShapes() {
 		try (SailRepositoryConnection connection = shapesRepo.getConnection()) {
-			return getShapes(connection);
+			connection.begin(IsolationLevels.SNAPSHOT);
+			try {
+				return getShapes(connection);
+			} finally {
+				connection.commit();
+			}
 		}
 	}
 
@@ -957,6 +957,17 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Override
 	public IsolationLevel getDefaultIsolationLevel() {
 		return super.getDefaultIsolationLevel();
+	}
+
+	boolean hasShapes() {
+		try (SailRepositoryConnection connection = shapesRepo.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			try {
+				return !connection.isEmpty();
+			} finally {
+				connection.commit();
+			}
+		}
 	}
 
 	public static class TransactionSettings {

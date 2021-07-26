@@ -169,19 +169,19 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		synchronized (sail) {
 			super.begin(level);
 			hasStatement(null, null, null, false); // actually force a transaction to start
-			shapesRepoConnection.begin(currentIsolationLevel);
+			shapesRepoConnection.begin(currentIsolationLevel != IsolationLevels.SERIALIZABLE ? IsolationLevels.SNAPSHOT
+					: currentIsolationLevel);
+			shapesRepoConnection.hasStatement(null, null, null, false); // actually force a transaction to start
+
 			previousStateConnection.begin(currentIsolationLevel);
 			previousStateConnection.hasStatement(null, null, null, false); // actually force a transaction to start
 		}
 
-		stats.setBaseSailEmpty(isEmpty());
+		stats.setEmptyBeforeTransaction(isEmpty());
 
-		if (this.transactionSettings
-				.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Disabled ||
-				this.transactionSettings
-						.getValidationApproach() == ShaclSail.TransactionSettings.ValidationApproach.Bulk) {
+		if (isBulkValidation() || !isValidationEnabled()) {
 			removeConnectionListener(this);
-		} else if (stats.isBaseSailEmpty()) {
+		} else if (stats.wasEmptyBeforeTransaction()) {
 			removeConnectionListener(this);
 		} else {
 			addConnectionListener(this);
@@ -376,11 +376,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private ValidationReport validate(List<Shape> shapes, boolean validateEntireBaseSail) {
 
-		try {
-			if (!isValidationEnabled()) {
-				return new ValidationReport(true);
-			}
+		assert isValidationEnabled();
 
+		try {
 			try (ConnectionsGroup connectionsGroup = getConnectionsGroup()) {
 				return performValidation(shapes, validateEntireBaseSail, connectionsGroup);
 			}
@@ -392,9 +390,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	void prepareValidation() {
 
-		if (!isValidationEnabled()) {
-			return;
-		}
+		assert isValidationEnabled();
 
 		if (sail.isRdfsSubClassReasoning()) {
 			rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this);
@@ -553,7 +549,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			before = System.currentTimeMillis();
 		}
 
-		if (stats.isBaseSailEmpty()) {
+		if (stats.wasEmptyBeforeTransaction()) {
 
 			flush();
 
@@ -683,21 +679,28 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		flush();
 
 		try {
+			if (!isValidationEnabled()) {
+				logger.debug("Validation skipped because validation was disabled");
+				return;
+			}
+
 			long before = 0;
 			if (sail.isPerformanceLogging()) {
 				before = System.currentTimeMillis();
 			}
 
+			// Serializable validation uses synchronized validation (with locking) to allow a transaction to run in
+			// SNAPSHOT isolation but validate as if it was using SERIALIZABLE isolation
 			boolean useSerializableValidation = sail.isSerializableValidation() &&
 					currentIsolationLevel == IsolationLevels.SNAPSHOT &&
-					!isBulkValidation() &&
-					isValidationEnabled();
+					!isBulkValidation();
 
 			if (useSerializableValidation) {
 				if (!(writeLock != null && writeLock.isActive())) {
 					writeLock = sail.acquireExclusiveWriteLock(writeLock);
 				}
 			} else {
+
 				// only allow one transaction to modify the shapes at a time
 				if (isShapeRefreshNeeded) {
 					if (!(writeLock != null && writeLock.isActive())) {
@@ -707,6 +710,28 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					if (!(readLock != null && readLock.isActive())) {
 						readLock = sail.acquireReadLock();
 					}
+				}
+			}
+
+			assert !isShapeRefreshNeeded
+					|| !shapesModifiedInCurrentTransaction : "isShapeRefreshNeeded should trigger shapesModifiedInCurrentTransaction once we have loaded the modified shapes, but shapesModifiedInCurrentTransaction should be null until then";
+
+			// since we are within the locked section we can assume that if there are no shapes to validate then we can
+			// skip validation
+			if (!isShapeRefreshNeeded && !sail.hasShapes()) {
+				logger.debug("Validation skipped because there are no shapes to validate");
+				return;
+			}
+
+			stats.setEmptyIncludingCurrentTransaction(isEmpty());
+
+			if (!isShapeRefreshNeeded && !isBulkValidation() && addedStatementsSet.isEmpty()
+					&& removedStatementsSet.isEmpty()) {
+				// on the first transaction we can elect to not use the statements tracking mechanism and instead use
+				// the underlying sail as the "added" source
+				if (!(stats.wasEmptyBeforeTransaction() && !stats.isEmptyIncludingCurrentTransaction())) {
+					logger.debug("Nothing has changed, nothing to validate.");
+					return;
 				}
 			}
 
@@ -721,27 +746,23 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				shapesAfterRefresh = shapesBeforeRefresh;
 			}
 
-			stats.setEmpty(isEmpty());
+			if (!isBulkValidation() && addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()) {
+				if (shapesModifiedInCurrentTransaction) {
+					// we can optimize which shapes to revalidate since no data has changed.
+					assert shapesBeforeRefresh != shapesAfterRefresh;
 
-			if (connectionListenerActive && addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()
-					&& !shapesModifiedInCurrentTransaction) {
-				if (!(stats.isBaseSailEmpty() && !stats.isEmpty())) {
-					logger.debug("Nothing has changed, nothing to validate.");
-					return;
+					HashSet<Shape> shapesBeforeRefreshSet = new HashSet<>(shapesBeforeRefresh);
+
+					shapesAfterRefresh = shapesAfterRefresh.stream()
+							.filter(shape -> !shapesBeforeRefreshSet.contains(shape))
+							.collect(Collectors.toList());
+
 				}
 			}
 
-			if (shapesModifiedInCurrentTransaction && addedStatementsSet.isEmpty() && removedStatementsSet.isEmpty()
-					&& !isBulkValidation()) {
-				// we can optimize which shapes to revalidate since no data has changed.
-				assert shapesBeforeRefresh != shapesAfterRefresh;
-
-				HashSet<Shape> shapesBeforeRefreshSet = new HashSet<>(shapesBeforeRefresh);
-
-				shapesAfterRefresh = shapesAfterRefresh.stream()
-						.filter(shape -> !shapesBeforeRefreshSet.contains(shape))
-						.collect(Collectors.toList());
-
+			if (shapesAfterRefresh.isEmpty()) {
+				logger.debug("Validation skipped because there are no shapes to validate");
+				return;
 			}
 
 			prepareValidation();
@@ -813,7 +834,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					// actually force a transaction to start
 					connectionsGroup.getPreviousStateConnection().hasStatement(null, null, null, false);
 
-					stats.setBaseSailEmpty(ConnectionHelper.isEmpty(connectionsGroup.getBaseConnection()));
+					stats.setEmptyBeforeTransaction(ConnectionHelper.isEmpty(connectionsGroup.getBaseConnection()));
 
 					try (SailConnection connection = addedStatements.getConnection()) {
 						SailConnection baseConnection = connectionsGroup.getBaseConnection();

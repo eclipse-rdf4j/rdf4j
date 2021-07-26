@@ -218,7 +218,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
 				invalidValuesDirectOnPath);
 
-		if (connectionsGroup.getStats().isBaseSailEmpty()) {
+		if (connectionsGroup.getStats().wasEmptyBeforeTransaction()) {
 			return innerJoin.getJoined(UnBufferedPlanNode.class);
 
 		} else {
