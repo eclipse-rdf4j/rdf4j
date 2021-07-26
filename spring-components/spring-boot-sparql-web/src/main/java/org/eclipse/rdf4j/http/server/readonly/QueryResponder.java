@@ -17,6 +17,7 @@ import java.util.function.Predicate;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -47,6 +48,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+@Experimental
 @RestController
 public class QueryResponder {
 	/**
