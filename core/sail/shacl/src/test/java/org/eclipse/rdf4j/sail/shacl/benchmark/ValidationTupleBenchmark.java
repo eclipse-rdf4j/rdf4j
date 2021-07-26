@@ -8,7 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import ch.qos.logback.classic.Logger;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
+
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -30,22 +35,19 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.TimeUnit;
+import ch.qos.logback.classic.Logger;
 
 /**
+ * Test how many validation tuples we can keep in memory.
+ *
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 2)
-@BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms512M", "-Xmx512M", "-XX:+UseG1GC"})
+@Warmup(iterations = 0)
+@BenchmarkMode({ Mode.AverageTime })
+@Fork(value = 1, jvmArgs = { "-Xms512M", "-Xmx512M", "-XX:+UseG1GC" })
 //@Fork(value = 1, jvmArgs = {"-Xms512M", "-Xmx512M", "-XX:+UseG1GC", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 2)
+@Measurement(iterations = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ValidationTupleBenchmark {
 
@@ -61,13 +63,13 @@ public class ValidationTupleBenchmark {
 	public void setUp() throws InterruptedException {
 		Thread.sleep(100);
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
-			.setLevel(ch.qos.logback.classic.Level.ERROR);
+				.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 	}
 
 	@Benchmark
-	public int randomData() throws IOException {
+	public int randomData() {
 
 		int size = 670_000;
 
@@ -77,25 +79,23 @@ public class ValidationTupleBenchmark {
 
 		ArrayList<Object> objects = new ArrayList<>(size);
 
-		for(int i = 0; i< size; i++){
+		for (int i = 0; i < size; i++) {
 			List<Value> values = Arrays.asList(
-				vf.createIRI(NS1 + r.nextInt(size *1000)),
-				vf.createIRI(NS2 + r.nextInt(size *1000)),
-				vf.createIRI(NS3 + r.nextInt(size *1000)),
-				vf.createLiteral(NS3 + r.nextInt(size *1000)),
-				vf.createLiteral(r.nextInt(size *1000))
-
+					vf.createIRI(NS1 + r.nextInt(size * 1000)),
+					vf.createIRI(NS2 + r.nextInt(size * 1000)),
+					vf.createIRI(NS3 + r.nextInt(size * 1000)),
+					vf.createLiteral(NS3 + r.nextInt(size * 1000)),
+					vf.createLiteral(r.nextInt(size * 1000))
 			);
 
-			ValidationTuple validationTuple = new ValidationTuple(values, ConstraintComponent.Scope.propertyShape, true);
+			ValidationTuple validationTuple = new ValidationTuple(values, ConstraintComponent.Scope.propertyShape,
+					true);
 			objects.add(validationTuple);
 
 		}
 
 		return objects.size();
 
-
 	}
-
 
 }
