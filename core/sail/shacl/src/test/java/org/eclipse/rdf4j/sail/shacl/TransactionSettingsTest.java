@@ -8,16 +8,34 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.CacheDisabled;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.SerialValidation;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach.Auto;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach.Disabled;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import java.io.InputStream;
+
 import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 public class TransactionSettingsTest {
 
@@ -30,13 +48,12 @@ public class TransactionSettingsTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+			connection.begin(Bulk);
 
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assertSame(transactionSettings.getValidationApproach(),
-					ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+			assertSame(transactionSettings.getValidationApproach(), Bulk);
 			assertFalse(transactionSettings.isCacheSelectNodes());
 			assertFalse(transactionSettings.isParallelValidation());
 
@@ -57,14 +74,12 @@ public class TransactionSettingsTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk,
-					ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation);
+			connection.begin(Bulk, ParallelValidation);
 
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assertSame(transactionSettings.getValidationApproach(),
-					ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+			assertSame(transactionSettings.getValidationApproach(), Bulk);
 			assertFalse(transactionSettings.isCacheSelectNodes());
 			assertTrue(transactionSettings.isParallelValidation());
 
@@ -84,15 +99,12 @@ public class TransactionSettingsTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk,
-					ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation,
-					ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled);
+			connection.begin(Bulk, ParallelValidation, CacheEnabled);
 
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assertSame(transactionSettings.getValidationApproach(),
-					ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+			assertSame(transactionSettings.getValidationApproach(), Bulk);
 			assertTrue(transactionSettings.isCacheSelectNodes());
 			assertTrue(transactionSettings.isParallelValidation());
 
@@ -117,8 +129,7 @@ public class TransactionSettingsTest {
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assertSame(transactionSettings.getValidationApproach(),
-					ShaclSail.TransactionSettings.ValidationApproach.Auto);
+			assertSame(transactionSettings.getValidationApproach(), Auto);
 			assertTrue(transactionSettings.isCacheSelectNodes());
 			assertTrue(transactionSettings.isParallelValidation());
 
@@ -161,14 +172,12 @@ public class TransactionSettingsTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			connection.begin(ShaclSail.TransactionSettings.PerformanceHint.CacheDisabled,
-					ShaclSail.TransactionSettings.PerformanceHint.SerialValidation);
+			connection.begin(CacheDisabled, SerialValidation);
 
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assertSame(transactionSettings.getValidationApproach(),
-					ShaclSail.TransactionSettings.ValidationApproach.Auto);
+			assertSame(transactionSettings.getValidationApproach(), Auto);
 			assertFalse(transactionSettings.isCacheSelectNodes());
 			assertFalse(transactionSettings.isParallelValidation());
 			assertSame(transactionSettings.getIsolationLevel(), IsolationLevels.SNAPSHOT_READ);
@@ -189,20 +198,312 @@ public class TransactionSettingsTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			connection.begin(IsolationLevels.SERIALIZABLE,
-					ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation);
+			connection.begin(IsolationLevels.SERIALIZABLE, ParallelValidation);
 
 			ShaclSailConnection sailConnection = (ShaclSailConnection) connection.getSailConnection();
 			ShaclSailConnection.Settings transactionSettings = sailConnection.getTransactionSettings();
 
-			assertSame(transactionSettings.getValidationApproach(),
-					ShaclSail.TransactionSettings.ValidationApproach.Auto);
+			assertSame(transactionSettings.getValidationApproach(), Auto);
 			assertFalse(transactionSettings.isParallelValidation());
 
 			connection.commit();
 
 		} finally {
 			sailRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void testPriority() {
+		// test default behaviour
+		assertEquals(Auto, ShaclSailConnection.Settings.getMostSignificantValidationApproach(null, null));
+
+		// test single null
+		assertEquals(Bulk, ShaclSailConnection.Settings.getMostSignificantValidationApproach(Bulk, null));
+		assertEquals(Bulk, ShaclSailConnection.Settings.getMostSignificantValidationApproach(null, Bulk));
+
+		// test base overrides transaction
+		assertEquals(Bulk, ShaclSailConnection.Settings.getMostSignificantValidationApproach(Bulk, Auto));
+		assertEquals(Disabled, ShaclSailConnection.Settings.getMostSignificantValidationApproach(Disabled, Auto));
+		assertEquals(Disabled, ShaclSailConnection.Settings.getMostSignificantValidationApproach(Disabled, Bulk));
+
+		// test transaction overrides base
+		assertEquals(Bulk, ShaclSailConnection.Settings.getMostSignificantValidationApproach(Auto, Bulk));
+		assertEquals(Disabled, ShaclSailConnection.Settings.getMostSignificantValidationApproach(Auto, Disabled));
+		assertEquals(Disabled, ShaclSailConnection.Settings.getMostSignificantValidationApproach(Bulk, Disabled));
+
+	}
+
+	@Test
+	public void testValid() throws Exception {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(Bulk, IsolationLevels.NONE);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("a"));
+			connection.commit();
+
+		} finally {
+			repository.shutDown();
+		}
+
+	}
+
+	@Test(expected = ShaclSailValidationException.class)
+	public void testInvalid() throws Throwable {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(Bulk, IsolationLevels.NONE);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				throw e.getCause();
+			}
+
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test(expected = ShaclSailValidationException.class)
+	public void testInvalidSnapshot() throws Throwable {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(Bulk, IsolationLevels.SNAPSHOT);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			try {
+				connection.commit();
+			} catch (RepositoryException e) {
+				throw e.getCause();
+			}
+
+		} finally {
+			repository.shutDown();
+		}
+
+	}
+
+	@Test
+	public void testInvalidRollsBackCorrectly() {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(Bulk, IsolationLevels.NONE);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+
+			connection.commit();
+
+		} catch (Exception ignored) {
+
+		}
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(IsolationLevels.NONE);
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+			connection.commit();
+
+		} finally {
+			repository.shutDown();
+		}
+
+	}
+
+	@Test(expected = ShaclSailValidationException.class)
+	public void testValidationDisabled() throws Throwable {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(Disabled);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+
+			connection.commit();
+
+			connection.begin(Bulk);
+			try (SailRepositoryConnection connection1 = repository.getConnection()) {
+
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			}
+
+		} finally {
+			repository.shutDown();
+		}
+
+	}
+
+	@Test
+	public void testValidationDisabledSnapshotSerializableValidation() throws Throwable {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(Disabled, IsolationLevels.SNAPSHOT);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.commit();
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.CLASS);
+
+			connection.begin(Disabled, IsolationLevels.SNAPSHOT);
+
+			try (SailRepositoryConnection connection1 = repository.getConnection()) {
+
+				connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+
+				connection.commit();
+
+			}
+
+		} finally {
+			repository.shutDown();
+		}
+
+	}
+
+	@Test
+	public void testDisabledValidationBulk() throws Throwable {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		((ShaclSail) repository.getSail()).disableValidation();
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(Bulk);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+
+			connection.commit();
+
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testDisabledValidationAuto() throws Throwable {
+
+		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
+
+		((ShaclSail) repository.getSail()).disableValidation();
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin(Auto);
+
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.commit();
+
+			connection.begin(Auto);
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
+
+			connection.commit();
+
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testSerialOverrideWithModifiedShapes() throws Throwable {
+
+		ShaclSail sail = new ShaclSail(new MemoryStore());
+		ShaclSail spy = Mockito.spy(sail);
+		SailRepository repository = new SailRepository(spy);
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+
+			connection.begin();
+
+			connection.add(RDFS.RESOURCE, RDF.TYPE, FOAF.PERSON);
+			connection.add(RDFS.RESOURCE, FOAF.AGE, connection.getValueFactory().createLiteral(1));
+			connection.add(RDFS.RESOURCE, FOAF.AGE, connection.getValueFactory().createLiteral(2));
+
+			connection.commit();
+
+			connection.begin(SerialValidation);
+
+			try (InputStream shapesData = Utils.class.getClassLoader()
+					.getResourceAsStream("shaclDatatypeAndMinCount.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.commit();
+
+			Mockito.verify(spy, Mockito.never()).submitRunnableToExecutorService(Mockito.any());
+
+			connection.clear(RDF4J.SHACL_SHAPE_GRAPH);
+
+			Mockito.verify(spy, Mockito.never()).submitRunnableToExecutorService(Mockito.any());
+
+			connection.begin(ParallelValidation);
+
+			try (InputStream shapesData = Utils.class.getClassLoader()
+					.getResourceAsStream("shaclDatatypeAndMinCount.ttl")) {
+				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			}
+
+			connection.commit();
+
+			Mockito.verify(spy, Mockito.atLeastOnce()).submitRunnableToExecutorService(Mockito.any());
+
+		} finally {
+			repository.shutDown();
 		}
 	}
 
