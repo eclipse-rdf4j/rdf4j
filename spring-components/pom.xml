@@ -14,8 +14,8 @@
 		<spring.boot.version>2.4.3</spring.boot.version>
 	</properties>
 	<artifactId>rdf4j-spring-boot-components</artifactId>
-	<name>RDF4J: Spring boot components</name>
-	<description>Components to use with Spring-Boot</description>
+	<name>RDF4J: Spring components</name>
+	<description>Components to use with Spring</description>
 	<dependencyManagement>
 		<dependencies>
 			<dependency>
