@@ -9,7 +9,7 @@ spring-boot application
 
 <dependency>
 	<groupId>org.eclipse.rdf4j</groupId>
-	<artifactId>rdf4j-http-server-readonly</artifactId>
+	<artifactId>spring-boot-sparql-web</artifactId>
 	<version>${rdf4j.version}</version>
 </dependency>
 
@@ -52,4 +52,4 @@ public class Server {
 And that is it, you have a single `/sparql` api endpoint on your spring-boot application
 that provides readonly access to the store you have configured.
 
-This allows the usuall docker image build etc.
+This allows the usuall docker image build and more that spring-boot provides.
