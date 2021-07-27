@@ -80,7 +80,7 @@ public class RSXTargetShape extends Target {
 
 		List<StatementMatcher.Variable> vars = Collections.singletonList(object);
 
-		return new Unique(new TargetChainRetriever(
+		return Unique.getInstance(new TargetChainRetriever(
 				connectionsGroup,
 				statementMatchers,
 				statementMatchers,

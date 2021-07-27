@@ -37,7 +37,7 @@ public class Unique implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public Unique(PlanNode parent, boolean compress) {
+	private Unique(PlanNode parent, boolean compress) {
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
@@ -53,6 +53,12 @@ public class Unique implements PlanNode {
 
 		this.parent = parent;
 		this.compress = compress;
+	}
+
+	public static PlanNode getInstance(PlanNode parent, boolean compress) {
+		if (parent == EmptyNode.getInstance())
+			return parent;
+		return new Unique(parent, compress);
 	}
 
 	@Override

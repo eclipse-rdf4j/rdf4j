@@ -129,7 +129,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 		planNode = new LeftOuterJoin(target, planNode);
 
 		GroupByCountFilter groupByCountFilter = new GroupByCountFilter(planNode, count -> count > qualifiedMaxCount);
-		return new Unique(new TrimToTarget(groupByCountFilter), false);
+		return Unique.getInstance(new TrimToTarget(groupByCountFilter), false);
 
 	}
 
@@ -149,7 +149,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 								false, null);
 			}
 
-			target = new Unique(new TrimToTarget(target), false);
+			target = Unique.getInstance(new TrimToTarget(target), false);
 
 			PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 					target,
@@ -178,7 +178,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 				scope
 		);
 
-		PlanNode invalid = new Unique(planNode, false);
+		PlanNode invalid = Unique.getInstance(planNode, false);
 
 		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, scope);
 
@@ -189,7 +189,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 							false, null);
 		}
 
-		allTargetsPlan = new Unique(new TrimToTarget(allTargetsPlan), false);
+		allTargetsPlan = Unique.getInstance(new TrimToTarget(allTargetsPlan), false);
 
 		allTargetsPlan = new BulkedExternalLeftOuterJoin(
 				allTargetsPlan,
@@ -219,8 +219,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, scope);
 
-		PlanNode unique = new Unique(new TrimToTarget(new UnionNode(allTargets, subTargets)), false);
-		return unique;
+		return Unique.getInstance(new TrimToTarget(UnionNode.getInstanceDedupe(allTargets, subTargets)), false);
 
 	}
 

@@ -112,6 +112,12 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+			throws SailException {
+		return wrappedCon.hasStatement(subj, pred, obj, includeInferred, contexts);
+	}
+
+	@Override
 	public long size(Resource... contexts) throws SailException {
 		return wrappedCon.size(contexts);
 	}

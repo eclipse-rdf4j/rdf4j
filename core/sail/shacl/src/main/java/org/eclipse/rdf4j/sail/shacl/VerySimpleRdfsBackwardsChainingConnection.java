@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Very simple RDFS backwardschaining connection that supports type inference on hasStatement and getStatement. It does
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
 public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWrapper {
 
 	private final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
+	private static final Logger logger = LoggerFactory.getLogger(VerySimpleRdfsBackwardsChainingConnection.class);
 
 	VerySimpleRdfsBackwardsChainingConnection(SailConnection wrappedCon,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
@@ -47,17 +50,34 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws SailException {
 
-		boolean hasStatement = super.hasStatement(subj, pred, obj, includeInferred, contexts);
+		boolean hasStatement = super.hasStatement(subj, pred, obj, false, contexts);
+
+		if (hasStatement) {
+			return true;
+		}
 
 		if (rdfsSubClassOfReasoner != null && includeInferred && obj != null && obj.isResource()
 				&& RDF.TYPE.equals(pred)) {
-			return hasStatement | rdfsSubClassOfReasoner.backwardsChain((Resource) obj)
-					.stream()
-					.map(type -> super.hasStatement(subj, pred, type, false, contexts))
-					.reduce((a, b) -> a || b)
-					.orElse(false);
+
+			Set<Resource> types = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
+			if (types.size() > 10) {
+				try (CloseableIteration<? extends Statement, SailException> statements = super.getStatements(subj,
+						RDF.TYPE, null, false, contexts)) {
+					return statements.stream()
+							.map(Statement::getObject)
+							.filter(Value::isResource)
+							.map(type -> ((Resource) type))
+							.anyMatch(types::contains);
+				}
+			} else {
+				return types
+						.stream()
+						.anyMatch(type -> super.hasStatement(subj, pred, type, false, contexts));
+			}
+
 		}
-		return hasStatement;
+
+		return false;
 	}
 
 	@Override
