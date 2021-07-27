@@ -175,10 +175,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 			}
 
 			if (scope == Scope.propertyShape) {
-				validationPlanNode = new Unique(new ShiftToPropertyShape(validationPlanNode), true);
+				validationPlanNode = Unique.getInstance(new ShiftToPropertyShape(validationPlanNode), true);
 			}
 
-			union = new UnionNode(union,
+			union = UnionNode.getInstance(union,
 					validationPlanNode);
 		}
 
@@ -204,19 +204,19 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 		PlanNode planNode = constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, Scope.nodeShape))
 				.distinct()
-				.reduce(UnionNode::new)
+				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
 
-		planNode = new UnionNode(planNode,
+		planNode = UnionNode.getInstanceDedupe(planNode,
 				getTargetChain()
 						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.getPlanNode(connectionsGroup, Scope.nodeShape, true, null));
 
 		if (scope == Scope.propertyShape) {
-			planNode = new Unique(new ShiftToPropertyShape(planNode), true);
+			planNode = Unique.getInstance(new ShiftToPropertyShape(planNode), true);
 		}
 
-		planNode = new Unique(planNode, false);
+		planNode = Unique.getInstance(planNode, false);
 
 		return planNode;
 	}

@@ -10,7 +10,11 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 public class PlanNodeHelper {
 
 	public static PlanNode handleSorting(PlanNode child, PlanNode parent) {
-		if (child.requiresSorted()) {
+		return handleSorting(child.requiresSorted(), parent);
+	}
+
+	public static PlanNode handleSorting(boolean requiresSorted, PlanNode parent) {
+		if (requiresSorted) {
 			if (!parent.producesSorted()) {
 				parent = new Sort(parent);
 			}

@@ -53,10 +53,10 @@ public class TargetObjectsOf extends Target {
 		PlanNode planNode = targetObjectsOf.stream()
 				.map(predicate -> (PlanNode) new UnorderedSelect(connection, null,
 						predicate, null, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope)))
-				.reduce(UnionNode::new)
+				.reduce(UnionNode::getInstance)
 				.orElse(EmptyNode.getInstance());
 
-		return new Unique(planNode, false);
+		return Unique.getInstance(planNode, false);
 	}
 
 	@Override

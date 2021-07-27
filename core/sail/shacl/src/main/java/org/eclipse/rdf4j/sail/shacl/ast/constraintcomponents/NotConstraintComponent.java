@@ -94,7 +94,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 				scope
 		);
 
-		PlanNode invalid = new Unique(planNode, false);
+		PlanNode invalid = Unique.getInstance(planNode, false);
 
 		PlanNode allTargetsPlan;
 		if (overrideTargetNode != null) {
@@ -103,7 +103,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 						.extend(planNodeProvider.getPlanNode(), connectionsGroup, Scope.nodeShape,
 								EffectiveTarget.Extend.right, false, null);
-				allTargetsPlan = new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
+				allTargetsPlan = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 			} else {
 				allTargetsPlan = getTargetChain()
 						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
@@ -132,7 +132,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	 * PlanNode planNode = not.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, targetProvider,
 	 * negateChildren, false, scope);
 	 *
-	 * PlanNode invalid = new Unique(planNode);
+	 * PlanNode invalid = Unique.getInstance(planNode);
 	 *
 	 * PlanNode discardedLeft = new NotValuesIn(allTargetsPlan, invalid);
 	 *
@@ -151,7 +151,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
-			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
+			allTargets = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
@@ -161,7 +161,7 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, scope);
 
-		return new Unique(new UnionNode(allTargets, notTargets), false);
+		return Unique.getInstance(UnionNode.getInstanceDedupe(allTargets, notTargets), false);
 	}
 
 	@Override
