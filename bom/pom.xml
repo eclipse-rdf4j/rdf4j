@@ -368,11 +368,6 @@
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-serql-testsuite</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-sparql-testsuite</artifactId>
 				<version>${project.version}</version>
 			</dependency>
