@@ -20,7 +20,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.Locale;
 
-import org.eclipse.rdf4j.OpenRDFException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -112,7 +112,7 @@ public class SpifSailTest {
 		}
 	}
 
-	private void loadRDF(String path) throws IOException, OpenRDFException {
+	private void loadRDF(String path) throws IOException, RDF4JException {
 		URL url = getClass().getResource(path);
 		try (InputStream in = url.openStream()) {
 			conn.add(in, url.toString(), RDFFormat.TURTLE);

@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.Assert.assertEquals;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;

@@ -351,7 +351,7 @@
 		<httpcore.version>4.4.14</httpcore.version>
 		<jackson.version>2.11.4</jackson.version>
 		<jsonldjava.version>0.13.3</jsonldjava.version>
-		<last.japicmp.compare.version>3.6.3</last.japicmp.compare.version>
+		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
 		<lucene.version>8.5.1</lucene.version>
 		<solr.version>8.4.1</solr.version>
@@ -920,6 +920,7 @@
 							</overrideCompatibilityChangeParameters>
 						</parameter>
 					</configuration>
+					<!-- API compatibility checks disabled for major release. Should be re-enabled after 4.0.0 is final
 					<executions>
 						<execution>
 							<phase>verify</phase>
@@ -928,6 +929,7 @@
 							</goals>
 						</execution>
 					</executions>
+					-->
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>

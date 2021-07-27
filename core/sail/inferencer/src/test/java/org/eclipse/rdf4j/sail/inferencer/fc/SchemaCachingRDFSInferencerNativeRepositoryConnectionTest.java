@@ -12,7 +12,7 @@ import static org.junit.Assert.assertEquals;
 import java.io.IOException;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;

@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.SystemRepository;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.inferencer.fc.config.SchemaCachingRDFSInferencerConfig;
@@ -98,30 +98,25 @@ public class TestServer {
 	}
 
 	private void createTestRepositories() throws RepositoryException, RepositoryConfigException {
-		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
-
+		RemoteRepositoryManager manager = RemoteRepositoryManager.getInstance(SERVER_URL);
 		// create a (non-inferencing) memory store
 		MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();
 		SailRepositoryConfig sailRepConfig = new SailRepositoryConfig(memStoreConfig);
 		RepositoryConfig repConfig = new RepositoryConfig(TEST_REPO_ID, sailRepConfig);
-
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
+		manager.addRepositoryConfig(repConfig);
 
 		// create an inferencing memory store
 		SchemaCachingRDFSInferencerConfig inferMemStoreConfig = new SchemaCachingRDFSInferencerConfig(
 				new MemoryStoreConfig());
 		sailRepConfig = new SailRepositoryConfig(inferMemStoreConfig);
 		repConfig = new RepositoryConfig(TEST_INFERENCE_REPO_ID, sailRepConfig);
-
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
+		manager.addRepositoryConfig(repConfig);
 
 		// create memory store with shacl support
 		ShaclSailConfig shaclConfig = new ShaclSailConfig(new MemoryStoreConfig());
 		sailRepConfig = new SailRepositoryConfig(shaclConfig);
 		repConfig = new RepositoryConfig(TEST_SHACL_REPO_ID, sailRepConfig);
-
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
-
+		manager.addRepositoryConfig(repConfig);
 	}
 
 	static class PropertiesReader {

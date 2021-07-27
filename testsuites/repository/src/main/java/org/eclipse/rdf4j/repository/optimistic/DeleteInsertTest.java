@@ -9,9 +9,9 @@ package org.eclipse.rdf4j.repository.optimistic;
 
 import static org.junit.Assert.assertTrue;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.OptimisticIsolationTest;
 import org.eclipse.rdf4j.repository.Repository;

@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 
 /**
  * A parse exception that can be thrown by a parser when it encounters an error from which it cannot or doesn't want to
