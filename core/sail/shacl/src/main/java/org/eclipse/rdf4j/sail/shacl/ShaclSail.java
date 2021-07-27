@@ -989,7 +989,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 			@Override
 			public String getName() {
-				return ValidationApproach.class.getCanonicalName();
+				return PerformanceHint.class.getCanonicalName();
 			}
 
 			@Override
