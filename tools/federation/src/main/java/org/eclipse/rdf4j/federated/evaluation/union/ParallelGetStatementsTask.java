@@ -56,8 +56,7 @@ public class ParallelGetStatementsTask extends ParallelTaskBase<Statement> {
 	}
 
 	@Override
-	public CloseableIteration<Statement, QueryEvaluationException> performTask()
-			throws Exception {
+	protected CloseableIteration<Statement, QueryEvaluationException> performTaskInternal() throws Exception {
 		TripleSource tripleSource = endpoint.getTripleSource();
 		return tripleSource.getStatements(subj, pred, obj, queryInfo, contexts);
 	}

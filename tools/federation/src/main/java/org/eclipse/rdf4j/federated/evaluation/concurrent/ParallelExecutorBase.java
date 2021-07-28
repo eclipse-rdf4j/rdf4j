@@ -46,9 +46,8 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	/* Variables */
 	protected volatile Thread evaluationThread;
 	protected FedXQueueCursor<T> rightQueue = FedXQueueCursor.create(1024);
-	protected CloseableIteration<T, QueryEvaluationException> rightIter;
-	protected volatile boolean closed;
-	protected boolean finished = false;
+	protected volatile CloseableIteration<T, QueryEvaluationException> rightIter;
+	protected volatile boolean finished = false;
 
 	public ParallelExecutorBase(FederationEvalStrategy strategy, QueryInfo queryInfo) throws QueryEvaluationException {
 		this.strategy = strategy;
@@ -58,25 +57,32 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 
 	@Override
 	public final void run() {
+
+		if (isClosed()) {
+			return;
+		}
+
 		evaluationThread = Thread.currentThread();
 
 		if (log.isTraceEnabled()) {
 			log.trace("Performing execution of " + getDisplayId() + ", thread: " + evaluationThread.getName());
 		}
-
 		try {
 			performExecution();
 			checkTimeout();
+
+			if (log.isTraceEnabled()) {
+				log.trace(getDisplayId() + " is finished.");
+			}
+			done();
+
 		} catch (Throwable t) {
 			toss(ExceptionUtil.toException(t));
 		} finally {
+			// signal DONE to queue: unblock polling
+			rightQueue.done();
 			finished = true;
 			evaluationThread = null;
-			rightQueue.done();
-		}
-
-		if (log.isTraceEnabled()) {
-			log.trace(getDisplayId() + " is finished.");
 		}
 	}
 
@@ -95,10 +101,19 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 		if (res instanceof EmptyIteration<?, ?>) {
 			return;
 		}
+		if (isClosed() || rightQueue.isClosed()) {
+			res.close();
+			return;
+		}
 
 		try {
 			rightQueue.put(res);
+
+			if (isClosed() || rightQueue.isClosed()) {
+				res.close();
+			}
 		} catch (InterruptedException e) {
+			res.close();
 			throw new RuntimeException("Error adding element to right queue", e);
 		}
 	}
@@ -158,11 +173,15 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 		} finally {
 
 			if (rightIter != null) {
-				rightIter.close();
-				rightIter = null;
+				try {
+					rightIter.close();
+					rightIter = null;
+				} catch (Throwable ignore) {
+					log.trace("Failed to send interrupt signal:", ignore);
+				}
 			}
 		}
-		closed = true;
+
 		super.handleClose();
 	}
 

@@ -50,13 +50,21 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 
 		innerIter = iter;
 
-		while (consumed.size() < max && iter.hasNext()) {
-			consumed.add(iter.next());
+		boolean completed = false;
+		try {
+			while (consumed.size() < max && iter.hasNext()) {
+				consumed.add(iter.next());
+			}
+			if (!iter.hasNext()) {
+				iter.close();
+			}
+			completed = true;
+		} finally {
+			if (!completed) {
+				iter.close();
+			}
 		}
 
-		if (!iter.hasNext()) {
-			iter.close();
-		}
 	}
 
 	@Override

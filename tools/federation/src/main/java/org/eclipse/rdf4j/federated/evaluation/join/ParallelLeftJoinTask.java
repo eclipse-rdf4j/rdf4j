@@ -46,7 +46,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> performTask() throws Exception {
+	protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
 
 		return new FedXLeftJoinIteration(strategy, join, leftBindings);
 
@@ -92,6 +92,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 				rightIter = strategy.evaluate(join.getRightArg(), leftBindings);
 
 				if (!rightIter.hasNext() && !exhausted.getAndSet(true)) {
+					rightIter.close();
 					return leftBindings;
 				}
 			}
@@ -123,6 +124,9 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 					return leftBindings;
 				}
 			}
+
+			// proactively close
+			rightIter.close();
 
 			return null;
 		}

@@ -33,7 +33,7 @@ public class SynchronousJoin extends JoinExecutorBase<BindingSet> {
 
 		int totalBindings = 0;
 
-		while (!closed && leftIter.hasNext()) {
+		while (!isClosed() && leftIter.hasNext()) {
 			rightQueue.put(strategy.evaluate(rightArg, leftIter.next()));
 			totalBindings++;
 		}

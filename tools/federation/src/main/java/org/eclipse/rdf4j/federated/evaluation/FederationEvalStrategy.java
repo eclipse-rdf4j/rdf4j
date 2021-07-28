@@ -449,10 +449,18 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		ControlledWorkerScheduler<BindingSet> joinScheduler = federationContext.getManager().getJoinScheduler();
 
-		for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
+		boolean completed = false;
+		try {
+			for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
 
-			result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,
-					join.getQueryInfo());
+				result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,
+						join.getQueryInfo());
+			}
+			completed = true;
+		} finally {
+			if (!completed) {
+				result.close();
+			}
 		}
 		return result;
 	}

@@ -162,6 +162,7 @@ public class QueryInfo {
 	 */
 	public synchronized void registerScheduledTask(ParallelTask<?> task) throws QueryEvaluationException {
 		if (done) {
+			task.cancel();
 			throw new QueryEvaluationException("Query is aborted or closed, cannot accept new tasks");
 		}
 		scheduledSubtasks.add(task);
