@@ -30,12 +30,6 @@ import com.google.common.collect.Lists;
  */
 public class ConsumingIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
 
-	/**
-	 * Maximum number of bindings that are consumed at construction time. Remaining items, if any are consumed from the
-	 * iterator itself
-	 */
-	private static final int max = 1000; // TODO make configurable
-
 	private final List<BindingSet> consumed = Lists.newArrayList();
 
 	private final CloseableIteration<BindingSet, QueryEvaluationException> innerIter;
@@ -45,7 +39,12 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 	 */
 	private int currentIndex = 0;
 
-	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter)
+	/**
+	 * @param iter iteration to be consumed
+	 * @param max  the number of results to be consumed.
+	 * @throws QueryEvaluationException
+	 */
+	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, int max)
 			throws QueryEvaluationException {
 
 		innerIter = iter;
