@@ -20,6 +20,7 @@ import java.util.StringTokenizer;
  */
 public class FileUtil {
 
+	@Deprecated
 	private static final String ILLEGAL_FILE_NAME_CHARS = "\\/:*?\"<>|";
 
 	/**
@@ -29,6 +30,7 @@ public class FileUtil {
 	 * @param relativeTo The File 'subj' should be made relative to.
 	 * @return The relative representation of subj.
 	 */
+	@Deprecated
 	public static String getRelativePath(File subj, File relativeTo) {
 		// Get the absolute path to both files.
 		String subjPath = subj.getAbsolutePath();
@@ -101,6 +103,7 @@ public class FileUtil {
 	 * @param relativeTo The File 'subj' should be made relative to.
 	 * @return The relative representation of subj.
 	 */
+	@Deprecated
 	public static File getRelativeFile(File subj, File relativeTo) {
 		return new File(getRelativePath(subj, relativeTo));
 	}
@@ -112,6 +115,7 @@ public class FileUtil {
 	 * @return The file name extension (e.g. "exe" or "txt"), or <tt>null</tt> if the file name does not have a (valid)
 	 *         extension.
 	 */
+	@Deprecated
 	public static String getFileExtension(String fileName) {
 		int lastDotIdx = fileName.lastIndexOf('.');
 
@@ -132,6 +136,7 @@ public class FileUtil {
 	 * @param fileName name of the file
 	 * @return true if all characters of the name are legal to use
 	 */
+	@Deprecated
 	public static boolean isLegalFileName(String fileName) {
 		for (int i = 0; i < fileName.length(); i++) {
 			char c = fileName.charAt(i);
@@ -149,6 +154,7 @@ public class FileUtil {
 	 * @param c character to check
 	 * @return true if character is legal to use
 	 */
+	@Deprecated
 	public static boolean isLegalFileNameChar(char c) {
 		return ILLEGAL_FILE_NAME_CHARS.indexOf(c) == -1;
 	}
@@ -160,6 +166,7 @@ public class FileUtil {
 	 * @param destination destination file
 	 * @throws IOException
 	 */
+	@Deprecated
 	public static void copyFile(File source, File destination) throws IOException {
 		try (FileInputStream in = new FileInputStream(source)) {
 			IOUtil.writeStream(in, destination);
@@ -172,6 +179,7 @@ public class FileUtil {
 	 * @param dir The directory to create.
 	 * @throws IOException If the creation of the directory failed.
 	 */
+	@Deprecated
 	public static void createDirIfNotExists(File dir) throws IOException {
 		if (!dir.exists() && !dir.mkdirs()) {
 			throw new IOException("Unable to create directory: " + dir.toString());
@@ -184,6 +192,7 @@ public class FileUtil {
 	 * @param directory file or directory to delete
 	 * @return true if all files were deleted successfully.
 	 */
+	@Deprecated
 	public static boolean deltree(File directory) {
 		if (directory == null || !directory.exists()) {
 			return true;
@@ -213,6 +222,7 @@ public class FileUtil {
 	 * @return true when all files in the specified directory were successfully deleted, when there where no files or
 	 *         when the specified file was not a directory.
 	 */
+	@Deprecated
 	public static boolean deleteFiles(File directory) {
 		boolean result = true;
 
@@ -237,6 +247,7 @@ public class FileUtil {
 	 * @return true when all children were successfully deleted, when there were no children or when the file was not a
 	 *         directory.
 	 */
+	@Deprecated
 	public static boolean deleteChildren(File directory) {
 		boolean result = true;
 
@@ -260,6 +271,7 @@ public class FileUtil {
 	 *                 well!
 	 * @return Whether moving was successful
 	 */
+	@Deprecated
 	public static boolean moveRecursive(File from, File to, Collection<File> excludes) {
 		if (from == null || !from.exists()) {
 			return false;
