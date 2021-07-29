@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.repository;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.FileUtil;
@@ -58,7 +59,7 @@ public abstract class OptimisticIsolationTest {
 			FileUtil.deleteDir(dataDir);
 			dataDir = null;
 		}
-		dataDir = FileUtil.createTempDir(caller.getSimpleName());
+		dataDir = Files.createTempDirectory(caller.getSimpleName()).toFile();
 		Repository repository = factory.getRepository(factory.getConfig());
 		repository.setDataDir(dataDir);
 		repository.initialize();
