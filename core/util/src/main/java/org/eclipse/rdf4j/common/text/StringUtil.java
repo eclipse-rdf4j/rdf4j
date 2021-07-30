@@ -25,11 +25,13 @@ public class StringUtil {
 	/**
 	 * The minimum length of initial text.
 	 */
+	@Deprecated
 	private static final int MIN_INITIAL_TEXT_LENGTH = 3;
 
 	/**
 	 * The maximum length of derived initial text.
 	 */
+	@Deprecated
 	private static final int MAX_INITIAL_TEXT_LENGTH = 250;
 
 	/**
@@ -145,6 +147,7 @@ public class StringUtil {
 	 * @param separatorChar The character to look for.
 	 * @return All text occurring after the separator character, or the entire string when the character does not occur.
 	 */
+	@Deprecated
 	public static String getAllAfter(String string, char separatorChar) {
 		int index = string.indexOf(separatorChar);
 		if (index < 0 || index == string.length() - 1) {
@@ -163,6 +166,7 @@ public class StringUtil {
 	 * @return All text occurring before the separator character, or the entire string when the character does not
 	 *         occur.
 	 */
+	@Deprecated
 	public static String getAllBefore(String string, char separatorChar) {
 		int index = string.indexOf(separatorChar);
 		return index <= 0 ? string : string.substring(0, index - 1);
@@ -175,6 +179,7 @@ public class StringUtil {
 	 * @param array array of strings
 	 * @return single string
 	 */
+	@Deprecated
 	public static String encodeArray(String[] array) {
 		StringBuilder buffer = new StringBuilder();
 		int nrItems = array.length;
@@ -198,6 +203,7 @@ public class StringUtil {
 	 * @param encodedArray
 	 * @return array of strings
 	 */
+	@Deprecated
 	public static String[] decodeArray(String encodedArray) {
 		String[] items = encodedArray.split("_\\.");
 		ArrayList<String> list = new ArrayList<>();
@@ -220,6 +226,7 @@ public class StringUtil {
 	 * @param text
 	 * @return
 	 */
+	@Deprecated
 	public static String deriveInitialText(String text) {
 		String result = null;
 
@@ -262,6 +269,7 @@ public class StringUtil {
 	 * @param text
 	 * @return true if considered garbage
 	 */
+	@Deprecated
 	public static boolean isGarbageText(String text) {
 		boolean result = false;
 
@@ -314,7 +322,7 @@ public class StringUtil {
 
 	// A nice overview of Unicode character categories can be found at:
 	// http://oss.software.ibm.com/cgi-bin/icu/ub
-
+	@Deprecated
 	private static boolean isInitialTextStartChar(char c) {
 		int charType = Character.getType(c);
 
@@ -324,6 +332,7 @@ public class StringUtil {
 				|| charType == Character.START_PUNCTUATION || charType == Character.INITIAL_QUOTE_PUNCTUATION;
 	}
 
+	@Deprecated
 	private static boolean isInitialTextChar(char c) {
 		int charType = Character.getType(c);
 
@@ -342,6 +351,7 @@ public class StringUtil {
 	 * @param strings the String to concatenate
 	 * @return a String that is the results of concatenating the input strings.
 	 */
+	@Deprecated
 	public static String concat(String... strings) {
 		// Determine total length of concatenated string to prevent expensive char
 		// array copies for growing StringBuilder's internal array
