@@ -118,8 +118,9 @@ public class QueryStorage {
 	 * @throws RepositoryException if there is an issue creating the object to access the repository
 	 * @throws IOException
 	 */
-	protected QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
+	private QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
 		queries = new SailRepository(new NativeStore(new File(appConfig.getDataDir(), "queries")));
+		queries.init();
 	}
 
 	public void shutdown() {

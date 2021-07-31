@@ -7,7 +7,7 @@
  *******************************************************************************/
 /**
  * This package contains classes for working with RDF4J query objects. It includes utilities for rendering, building,
- * modifying, and executing SPARQL & SeRQL queries. This functionality was contributed to RDF4J by Michael Grove of
+ * modifying, and executing SPARQL queries. This functionality was contributed to RDF4J by Michael Grove of
  * <a href="http://www.clarkparsia.com/">Clark & Parsia, LLC</a>.
  */
 package org.eclipse.rdf4j.queryrender;

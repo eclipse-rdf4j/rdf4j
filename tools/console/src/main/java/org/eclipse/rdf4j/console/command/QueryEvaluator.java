@@ -246,7 +246,6 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Parse and evaluate a SERQL or SPARQL query. Check if query is multi-line or to be read from input file, and check
 	 * if results are to be written to an output file.
 	 *
 	 * @param queryLn   query language
@@ -366,7 +365,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Evaluate a SPARQL or SERQL query that has already been parsed
+	 * Evaluate a SPARQL query that has already been parsed
 	 *
 	 * @param queryLn query language
 	 * @param query   parsed query
@@ -407,7 +406,7 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Add namespace prefixes to SPARQL or SERQL query
+	 * Add namespace prefixes to SPARQL query
 	 *
 	 * @param queryString query string
 	 * @return query string with prefixes

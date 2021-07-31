@@ -32,7 +32,7 @@ public abstract class Protocol {
 		GET,
 		/** retrieving repository size */
 		SIZE,
-		/** SPARQL or SeRQL query */
+		/** SPARQL query */
 		QUERY,
 		/** SPARQL Update */
 		UPDATE,
