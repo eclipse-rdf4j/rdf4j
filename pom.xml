@@ -41,6 +41,7 @@
 		<module>assembly-descriptors</module>
 		<module>core</module>
 		<module>tools</module>
+		<module>spring-components</module>
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>examples</module>
