@@ -116,7 +116,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * Render the ParsedQuery as a query string
 	 *
 	 * @param theQuery the parsed query to render
-	 * @return the query object rendered in the serql syntax
+	 * @return the query object rendered in the query language syntax
 	 * @throws Exception if there is an error while rendering
 	 */
 	public String render(ParsedQuery theQuery) throws Exception {
@@ -127,7 +127,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * Render the TupleExpr as a query or query fragment depending on what kind of TupleExpr it is
 	 *
 	 * @param theExpr the expression to render
-	 * @return the TupleExpr rendered in the serql syntax
+	 * @return the TupleExpr rendered in the query language syntax
 	 * @throws Exception if there is an error while rendering
 	 */
 	public abstract String render(TupleExpr theExpr) throws Exception;

@@ -56,8 +56,8 @@ public interface QueryResultHandler {
 
 	/**
 	 * Indicates the start of a sequence of Solutions. The supplied bindingNames are an indication of the values that
-	 * are in the Solutions. For example, a SeRQL query like <tt>select X, Y from {X} P {Y} </tt> will have binding
-	 * names <tt>X</tt> and <tt>Y</tt>.
+	 * are in the Solutions. For example, a SPARQL query like <tt>select ?X ?Y where { ?X ?P ?Y } </tt> will have
+	 * binding names <tt>X</tt> and <tt>Y</tt>.
 	 *
 	 * @param bindingNames An ordered set of binding names.
 	 * @throws TupleQueryResultHandlerException If there was an error during the starting of the query result handler.

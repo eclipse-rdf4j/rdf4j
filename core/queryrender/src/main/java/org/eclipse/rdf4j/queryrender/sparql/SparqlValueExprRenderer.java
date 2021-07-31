@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
@@ -101,7 +100,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 		if (theVar.isAnonymous() && !theVar.hasValue()) {
 			mBuffer.append("?").append(BaseTupleExprRenderer.scrubVarName(theVar.getName()));
 		} else if (theVar.hasValue()) {
-			mBuffer.append(RenderUtils.getSPARQLQueryString(theVar.getValue()));
+			mBuffer.append(RenderUtils.toSPARQL(theVar.getValue()));
 		} else {
 			mBuffer.append("?").append(theVar.getName());
 		}
@@ -192,7 +191,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 */
 	@Override
 	public void meet(ValueConstant theVal) throws Exception {
-		mBuffer.append(RenderUtils.getSPARQLQueryString(theVal.getValue()));
+		mBuffer.append(RenderUtils.toSPARQL(theVal.getValue()));
 	}
 
 	/**

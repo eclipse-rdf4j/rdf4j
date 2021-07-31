@@ -121,26 +121,6 @@
             </xsl:for-each>
         };
         </script>
-		<pre id="SeRQL-namespaces" style="display:none">
-			`
-			<xsl:text>
-USING NAMESPACE</xsl:text>
-			<xsl:for-each
-				select="document(//sparql:link[@href='namespaces']/@href)//sparql:results/sparql:result">
-				<xsl:text>
-</xsl:text>
-				<xsl:choose>
-					<xsl:when test="following-sibling::sparql:result">
-						<xsl:value-of
-							select="concat(sparql:binding[@name='prefix']/sparql:literal, ' = &lt;', sparql:binding[@name='namespace']/sparql:literal, '&gt;,')" />
-					</xsl:when>
-					<xsl:otherwise>
-						<xsl:value-of
-							select="concat(sparql:binding[@name='prefix']/sparql:literal, ' = &lt;', sparql:binding[@name='namespace']/sparql:literal, '&gt;')" />
-					</xsl:otherwise>
-				</xsl:choose>
-			</xsl:for-each>
-		</pre>
 		<script src="../../scripts/codemirror.4.5.0.min.js" type="text/javascript"></script>
 		<script src="../../scripts/yasqe.min.js" type="text/javascript"></script>
 		<script src="../../scripts/yasqeHelper.js" type="text/javascript"></script>
