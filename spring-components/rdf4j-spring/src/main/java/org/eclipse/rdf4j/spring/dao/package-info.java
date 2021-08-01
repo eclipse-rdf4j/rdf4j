@@ -1,0 +1,28 @@
+/**
+ *
+ *
+ * <H1>Rdf4j-Spring DAO</H1>
+ *
+ * Support for custom DAO (data access object) implementations.
+ *
+ * <p>
+ * Such custom DAO implementations get access to the following subsystems:
+ *
+ * <ul>
+ * <li>{@link org.eclipse.rdf4j.spring.support.Rdf4JTemplate Rdf4JTemplate}: Central service for accessing
+ * repositories,executing queries and updates, as well as transforming results into java entities or collections
+ * <li>{@link org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier NamedSparqlSupplier}: DAO-specific map of
+ * SPARQL Strings aiding efficient generation and caching of operaitons
+ * </ul>
+ *
+ * <p>
+ * There are two variants of DAOs:
+ *
+ * <ul>
+ * <li>{@link org.eclipse.rdf4j.spring.dao.Rdf4JDao Rdf4JDao}: Base class for DAOs with support for named operations and
+ * access
+ * <li>{@link org.eclipse.rdf4j.spring.dao.Rdf4JCRUDDao Rdf4JCRUDDao}: Base class for DAOs that are associated with
+ * specific entity classes, providing additional support for CRUD operations on these entities.
+ * </ul>
+ */
+package org.eclipse.rdf4j.spring.dao;

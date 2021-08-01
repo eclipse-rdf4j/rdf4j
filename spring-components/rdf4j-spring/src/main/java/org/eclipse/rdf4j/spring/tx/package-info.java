@@ -1,0 +1,19 @@
+/**
+ *
+ *
+ * <h1>Rdf4J-Spring Tx</h1>
+ *
+ * Automatically configures spring transaction handling via {@link org.eclipse.rdf4j.spring.Rdf4JConfig Rdf4JConfig}.
+ *
+ * <p>
+ * To enable, set <code>rdf4j.spring.tx.enabled=true</code>
+ *
+ * <p>
+ * If enabled, @{@link org.springframework.transaction.annotation.Transactional @Transactional} annotations and Spring's
+ * {@link org.springframework.transaction.support.TransactionTemplate TransactionTemplate} can be used to configure
+ * transactionality of Rdf4J repository accesses.
+ *
+ * <p>
+ * <b>Beware:</b> suspending transactions is not supported.
+ */
+package org.eclipse.rdf4j.spring.tx;
