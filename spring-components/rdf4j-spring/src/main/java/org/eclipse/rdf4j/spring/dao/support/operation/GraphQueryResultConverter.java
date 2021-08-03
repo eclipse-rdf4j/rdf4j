@@ -18,16 +18,16 @@ public class GraphQueryResultConverter {
 		this.graphQueryResult = graphQueryResult;
 	}
 
-	public Model toModel(GraphQueryResult result) {
+	public Model toModel() {
 		try {
 			Model resultModel = new TreeModelFactory().createEmptyModel();
-			result.forEach(resultModel::add);
+			graphQueryResult.forEach(resultModel::add);
 			return resultModel;
 		} catch (Exception e) {
 			logger.debug("Error converting graph query result to model", e);
 			throw mapException("Error converting graph query result to model", e);
 		} finally {
-			result.close();
+			graphQueryResult.close();
 		}
 	}
 }

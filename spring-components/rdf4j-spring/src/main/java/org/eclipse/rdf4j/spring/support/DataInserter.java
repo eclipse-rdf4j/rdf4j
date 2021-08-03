@@ -1,5 +1,8 @@
 package org.eclipse.rdf4j.spring.support;
 
+import java.lang.invoke.MethodHandles;
+import java.util.Objects;
+
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
@@ -10,9 +13,6 @@ import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.lang.invoke.MethodHandles;
-import java.util.Objects;
 
 @Component
 public class DataInserter {

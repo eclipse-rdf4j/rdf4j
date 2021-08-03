@@ -9,6 +9,6 @@
 		<appender-ref ref="STDOUT"/>
 	</root>
 	<logger name="at" level="WARN"/>
-	<logger name="org.eclipse.rdf4j.spring" level="WARN"/>
-	<logger name="org.springframework" level="WARN"/>
+	<logger name="org.eclipse.rdf4j.spring" level="debug"/>
+	<logger name="org.springframework" level="info"/>
 </configuration>

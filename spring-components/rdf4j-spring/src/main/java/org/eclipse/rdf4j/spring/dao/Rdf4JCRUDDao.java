@@ -16,6 +16,15 @@ import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.support.Rdf4JTemplate;
 
+/**
+ * Base class for DAOs providing CRUD functionality. The class allows for entities to be represented with different
+ * classes for read (ENTITY type) vs write (INPUT type) operations. DAOs that do not require this distinction must use
+ * the same class for both parameters.
+ *
+ * @param <ENTITY>
+ * @param <INPUT>
+ * @param <ID>
+ */
 public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 	private static final String KEY_READ_QUERY = "readQuery";
 	public static final String KEY_PREFIX_INSERT = "insert";
@@ -38,19 +47,49 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 		this(rdf4JTemplate, (Class<ID>) IRI.class);
 	}
 
+	/**
+	 * Saves the entity, loads it again and returns it. If the modified entity is not required, clients should prefer
+	 * {@link #saveAndReturnId(Object, Object)} or {@link #saveAndReturnId(Object)}
+	 */
 	public final ENTITY save(INPUT input) {
 		ID id = getInputId(input);
 		final ID finalId = saveAndReturnId(input, id);
 		return getById(finalId);
 	}
 
+	public ID saveAndReturnId(INPUT input) {
+		return saveAndReturnId(input, getInputId(input));
+	}
+
+	/**
+	 * Saves the entity and returns its (possibly newly generated) ID.
+	 * 
+	 * @param input the entity
+	 * @param id    the id or null for a new entity.
+	 * @return the id (a newly generated one if the specified <code>id</code> is null, otherwise just <code>id</code>.
+	 */
 	public ID saveAndReturnId(INPUT input, ID id) {
+		if (id != null) {
+			// delete triples for the modify case
+			deleteForUpdate(id);
+		}
 		final ID finalId = getOrGenerateId(id);
 		getInsertQueryOrUseCached(input)
 				.withBindings(bindingsBuilder -> populateIdBindings(bindingsBuilder, finalId))
 				.withBindings(bindingsBuilder -> populateBindingsForUpdate(bindingsBuilder, input))
 				.execute(bindings -> postProcessUpdate(input, bindings));
 		return finalId;
+	}
+
+	/**
+	 * When updating an entity via {@link #save(Object)}, its triples are removed first using this method. The default
+	 * implementation used {@link Rdf4JTemplate#deleteTriplesWithSubject(IRI)}. If more complex deletion behaviour (e.g.
+	 * cascading) is needed, this method should be overriden.
+	 * 
+	 */
+	protected void deleteForUpdate(ID id) {
+		IRI iri = convertIdToIri(id);
+		getRdf4JTemplate().deleteTriplesWithSubject(iri);
 	}
 
 	private ID getOrGenerateId(ID id) {
@@ -66,18 +105,23 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 		return id;
 	}
 
+	protected IRI convertIdToIri(ID id) {
+		if (id == null) {
+			return null;
+		}
+		if (idClass.equals(IRI.class)) {
+			return (IRI) id;
+		}
+		throw new UnsupportedOperationException(
+				"Cannot generically convert IDs to IRIs. The subclass must implement convertToIri(ID)");
+	}
+
 	protected ID generateNewId(ID providedId) {
 		if (idClass.equals(IRI.class)) {
 			return (ID) getRdf4JTemplate().getNewUUID();
 		}
 		throw new UnsupportedOperationException(
 				"Cannot generically generate any other IDs than IRIs. The subclass must implement generateNewId(ID)");
-	}
-
-	private UpdateExecutionBuilder getUpdateQueryOrUseCached(final INPUT input) {
-		final NamedSparqlSupplier generator = getUpdateSparql(input);
-		String key = KEY_PREFIX_UPDATE + generator.getName();
-		return getRdf4JTemplate().update(getClass(), key, generator.getSparqlSupplier());
 	}
 
 	private UpdateExecutionBuilder getInsertQueryOrUseCached(INPUT input) {
@@ -96,6 +140,13 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 		return getRdf4JTemplate().tupleQuery(getClass(), KEY_READ_QUERY, this::getReadQuery);
 	}
 
+	/**
+	 * Obtains the entity with the specified id, throwing an exception if none is found.
+	 * 
+	 * @param id the id
+	 * @throws IncorrectResultSetSizeException if no entity is found with the specified id
+	 * @return the entity
+	 */
 	public final ENTITY getById(ID id) {
 		return getByIdOptional(id)
 				.orElseThrow(
@@ -103,6 +154,12 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 								"Expected to find exactly one entity but found 0", 1, 0));
 	}
 
+	/**
+	 * Obtains an optional entity with the specified id.
+	 * 
+	 * @param id the id
+	 * @return an Optional maybe containing the entity
+	 */
 	public final Optional<ENTITY> getByIdOptional(ID id) {
 		return getReadQueryOrUseCached()
 				.withBindings(bindingsBuilder -> populateIdBindings(bindingsBuilder, id))
@@ -110,7 +167,12 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 				.toSingletonOptional(this::mapSolution, this::postProcessMappedSolution);
 	}
 
-	public final void delete(ID id) {
+	/**
+	 * Naive implementation using {@link Rdf4JTemplate#delete(IRI)}. DAOs that need more complex deletion behaviour
+	 * (e.g. cascading) should override this method.
+	 * 
+	 */
+	public void delete(ID id) {
 		if (idClass.equals(IRI.class)) {
 			getRdf4JTemplate().delete((IRI) id);
 		} else {
@@ -180,7 +242,7 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 	 */
 	protected void populateBindingsForUpdate(MutableBindings bindingsBuilder, INPUT input) {
 		throw new UnsupportedOperationException(
-				"Cannot perform generic write operation: subclass does not override populateUpdate()");
+				"Cannot perform generic write operation: subclass does not override populateBindingsForUpdate()");
 	}
 
 	/**
