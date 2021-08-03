@@ -55,11 +55,12 @@ public class StatementSourcePattern extends FedXStatementPattern {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
 			throws QueryEvaluationException {
 
+		WorkerUnionBase<BindingSet> union = null;
 		try {
 
 			AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated in prepared query
 			String preparedQuery = null; // used for some triple sources
-			WorkerUnionBase<BindingSet> union = federationContext.getManager().createWorkerUnion(queryInfo);
+			union = federationContext.getManager().createWorkerUnion(queryInfo);
 
 			for (StatementSource source : statementSources) {
 
@@ -113,7 +114,11 @@ public class StatementSourcePattern extends FedXStatementPattern {
 			}
 
 		} catch (RepositoryException | MalformedQueryException e) {
+			union.close();
 			throw new QueryEvaluationException(e);
+		} catch (Throwable t) {
+			union.close();
+			throw t;
 		}
 	}
 

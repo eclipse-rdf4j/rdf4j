@@ -44,7 +44,7 @@ public class ParallelUnionTask extends ParallelTaskBase<BindingSet> {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> performTask() throws Exception {
+	protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
 		TripleSource tripleSource = endpoint.getTripleSource();
 		return tripleSource.getStatements(stmt, bindings, filterExpr, queryInfo);
 	}
