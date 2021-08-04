@@ -1,9 +1,6 @@
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -27,12 +24,12 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 
 public class TargetClass extends Target {
+
 	private final Set<Resource> targetClass;
 
 	public TargetClass(Set<Resource> targetClass) {
 		this.targetClass = targetClass;
 		assert !this.targetClass.isEmpty();
-
 	}
 
 	@Override
@@ -68,8 +65,6 @@ public class TargetClass extends Target {
 		Set<Resource> targets = targetClass;
 
 		if (rdfsSubClassOfReasoner != null) {
-			targets = new HashSet<>(targets);
-
 			targets = targets.stream()
 					.flatMap(target -> rdfsSubClassOfReasoner.backwardsChain(target).stream())
 					.collect(Collectors.toSet());
@@ -78,8 +73,17 @@ public class TargetClass extends Target {
 		assert targets.size() >= 1;
 
 		return targets.stream()
-				.map(r -> "{ BIND(rdf:type as ?b1) \n BIND(<" + r + "> as " + objectVariable + ") \n " + subjectVariable
-						+ " ?b1 " + objectVariable + ". } \n")
+				.map(r -> "<" + r + ">")
+				.sorted()
+				.map(r -> String.join("\n", "",
+						"{",
+						"\tBIND(rdf:type as " + stableRandomVariableProvider.next().asSparqlVariable() + ")",
+						"\tBIND(" + r + " as " + objectVariable + ")",
+						"\t" + subjectVariable + " " + stableRandomVariableProvider.current().asSparqlVariable()
+								+ objectVariable + ".",
+						"}"
+				)
+				)
 				.reduce((l, r) -> l + " UNION " + r)
 				.get();
 
@@ -94,9 +98,7 @@ public class TargetClass extends Target {
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
-		targetClass.forEach(t -> {
-			model.add(subject, getPredicate(), t);
-		});
+		targetClass.forEach(t -> model.add(subject, getPredicate(), t));
 	}
 
 	@Override
@@ -142,19 +144,22 @@ public class TargetClass extends Target {
 		if (targetClass.size() == 1) {
 
 			return targetClass.stream()
-					.map(t -> "?" + object.getName() + " a <" + t + "> .")
-					.reduce((a, b) -> a + "\n" + b)
-					.orElse("");
+					.findFirst()
+					.map(r -> object.asSparqlVariable() + " a <" + r + "> .")
+					.orElseThrow(IllegalStateException::new);
 
 		} else {
 
 			String in = targetClass.stream()
-					.map(t -> "<" + t + ">")
+					.map(r -> "<" + r + ">")
+					.sorted()
 					.reduce((a, b) -> a + " , " + b)
 					.orElse("");
 
-			return "?" + object.getName() + " a ?typekokokopko.\n" +
-					"FILTER(?typekokokopko in (" + in + ")) \n";
+			String randomSparqlVariable = stableRandomVariableProvider.next().asSparqlVariable();
+
+			return object.asSparqlVariable() + " a " + randomSparqlVariable + ".\n" +
+					"FILTER(" + randomSparqlVariable + " in ( " + in + " )) \n";
 		}
 
 	}
