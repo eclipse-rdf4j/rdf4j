@@ -59,19 +59,19 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 		// first item is always sent in a non-bound way
 
 		boolean hasFreeVars = true;
-		if (!closed && leftIter.hasNext()) {
+		if (!isClosed() && leftIter.hasNext()) {
 			BindingSet b = leftIter.next();
 			totalBindings++;
 			hasFreeVars = stmt.hasFreeVarsFor(b);
 			if (!hasFreeVars) {
 				stmt = new CheckStatementPattern(stmt, queryInfo);
 			}
-			rightQueue.put(strategy.evaluate(stmt, b));
+			addResult(strategy.evaluate(stmt, b));
 		}
 
 		int nBindings;
 		List<BindingSet> bindings = null;
-		while (!closed && leftIter.hasNext()) {
+		while (!isClosed() && leftIter.hasNext()) {
 
 			/*
 			 * XXX idea:
@@ -91,13 +91,14 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 			bindings = new ArrayList<>(nBindings);
 
 			int count = 0;
-			while (count < nBindings && leftIter.hasNext()) {
+			while (!isClosed() && count < nBindings && leftIter.hasNext()) {
 				bindings.add(leftIter.next());
 				count++;
 			}
 
 			totalBindings += count;
-
+			if (isClosed())
+				return;
 			if (hasFreeVars) {
 				addResult(strategy.evaluateBoundJoinStatementPattern(stmt, bindings));
 			} else {

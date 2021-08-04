@@ -58,7 +58,7 @@ public class UnorderedSelect implements PlanNode {
 					predicate, object, true);
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				statements.close();
 			}
 

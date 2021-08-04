@@ -131,7 +131,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			return Unique.getInstance(new TrimToTarget(nonUniqueTargetLang), false);
 		}
 
-		if (connectionsGroup.getStats().isBaseSailEmpty()) {
+		if (connectionsGroup.getStats().wasEmptyBeforeTransaction()) {
 			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, scope, false, null);
 
 			PlanNode addedByPath = path.get().getAdded(connectionsGroup, null);

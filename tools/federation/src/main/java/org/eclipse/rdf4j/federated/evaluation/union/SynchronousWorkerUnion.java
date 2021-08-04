@@ -26,6 +26,12 @@ public class SynchronousWorkerUnion<T> extends WorkerUnionBase<T> {
 	@Override
 	protected void union() throws Exception {
 		for (ParallelTask<T> task : tasks) {
+			try {
+				task.getQueryInfo().registerScheduledTask(task);
+			} catch (Throwable e) {
+				task.cancel();
+				throw e;
+			}
 			addResult(task.performTask());
 		}
 	}

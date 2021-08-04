@@ -34,7 +34,7 @@ public class TupleMapper implements PlanNode {
 			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				parentIterator.close();
 			}
 

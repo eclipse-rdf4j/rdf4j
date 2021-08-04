@@ -1110,7 +1110,7 @@ public class QueryExplainExample {
 
 The RepositoryConnection can also be used for adding, retrieving, removing or otherwise manipulating individual statements, or sets of statements.
 
-To be able to add new statements, we can use either the {{ < javadoc "Values" "model/util/Values.html" > }} factory methods or a `ValueFactory` to create the Values out of which the statements consist. For example, we want to add a few statements about two resources, Alice and Bob:
+To be able to add new statements, we can use either the {{< javadoc "Values" "model/util/Values.html" >}} factory methods or a `ValueFactory` to create the Values out of which the statements consist. For example, we want to add a few statements about two resources, Alice and Bob:
 
 ```java
 import org.eclipse.rdf4j.model.vocabulary.RDF;

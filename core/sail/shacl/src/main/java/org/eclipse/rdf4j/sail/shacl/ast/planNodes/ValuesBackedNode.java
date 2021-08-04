@@ -39,7 +39,7 @@ public class ValuesBackedNode implements PlanNode {
 	public ValuesBackedNode(SortedSet<Value> values, ConstraintComponent.Scope scope) {
 
 		this.tuples = values.stream()
-				.map(c -> new ValidationTuple(Collections.singletonList(c), scope, false))
+				.map(c -> new ValidationTuple(c, scope, false))
 				.collect(Collectors.toList());
 
 		this.values = values;
@@ -53,7 +53,7 @@ public class ValuesBackedNode implements PlanNode {
 			final Iterator<ValidationTuple> iterator = tuples.iterator();
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 			}
 
 			@Override

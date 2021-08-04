@@ -314,7 +314,7 @@ public class SourceSelection {
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> performTask() throws Exception {
+		protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
 			try {
 				TripleSource t = endpoint.getTripleSource();
 				boolean hasResults = false;

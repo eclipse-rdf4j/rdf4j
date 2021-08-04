@@ -81,7 +81,8 @@ public class GroupByFilter implements PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
+				group.clear();
 				parentIterator.close();
 			}
 

@@ -8,6 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.CacheDisabled;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.SerialValidation;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach.Bulk;
+
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -17,18 +23,17 @@ import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
-import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -48,11 +53,11 @@ import ch.qos.logback.classic.Logger;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 0)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms45M", "-Xmx45M", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = { "-Xms45M", "-Xmx45M", "-XX:+UseSerialGC", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Fork(value = 1, jvmArgs = { "-Xms35M", "-Xmx35M", "-XX:+UseSerialGC" })
+//@Fork(value = 1, jvmArgs = { "-Xms35M", "-Xmx35M", "-XX:+UseSerialGC", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Measurement(iterations = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class NativeStoreBenchmark {
 	{
@@ -66,7 +71,7 @@ public class NativeStoreBenchmark {
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
-		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
+		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "false");
 	}
 
 	@Benchmark
@@ -76,14 +81,18 @@ public class NativeStoreBenchmark {
 
 		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
-		// significantly reduce required memory
-		shaclSail.setCacheSelectNodes(false);
+		runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk);
 
-		// run validation in parallel as much as possible,
-		// this can be disabled to reduce memory load further
-		shaclSail.setParallelValidation(false);
+	}
 
-		runBenchmark(file, shaclSail);
+	@Benchmark
+	public void shaclNativeStoreLoadShapesFirst() throws IOException {
+
+		File file = Files.newTemporaryFolder();
+
+		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
+
+		runBenchmark(file, shaclSail, false, IsolationLevels.NONE, Bulk);
 
 	}
 
@@ -94,14 +103,7 @@ public class NativeStoreBenchmark {
 
 		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
-		// significantly reduce required memory
-		shaclSail.setCacheSelectNodes(false);
-
-		// run validation in parallel as much as possible,
-		// this can be disabled to reduce memory load further
-		shaclSail.setParallelValidation(true);
-
-		runBenchmark(file, shaclSail);
+		runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk, ParallelValidation, CacheDisabled);
 
 	}
 
@@ -112,15 +114,7 @@ public class NativeStoreBenchmark {
 
 		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
-		// significantly reduce required memory
-		shaclSail.setCacheSelectNodes(true);
-
-		// run validation in parallel as much as possible,
-		// this can be disabled to reduce memory load further
-		shaclSail.setParallelValidation(false);
-
-		runBenchmark(file, shaclSail);
-
+		runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk, SerialValidation, CacheEnabled);
 	}
 
 	@Benchmark
@@ -130,48 +124,40 @@ public class NativeStoreBenchmark {
 
 		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
-		// significantly reduce required memory
-		shaclSail.setCacheSelectNodes(true);
-
-		// run validation in parallel as much as possible,
-		// this can be disabled to reduce memory load further
-		shaclSail.setParallelValidation(true);
-
-		runBenchmark(file, shaclSail);
+		runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk, ParallelValidation, CacheEnabled);
 
 	}
 
-	private void runBenchmark(File file, ShaclSail shaclSail) throws IOException {
+	private void runBenchmark(File file, ShaclSail shaclSail, boolean singleTransaction,
+			TransactionSetting... transactionSettings) throws IOException {
 		SailRepository sailRepository = new SailRepository(shaclSail);
-		sailRepository.init();
-		shaclSail.disableValidation();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
-				connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			}
-			connection.commit();
+			if (singleTransaction) {
+				connection.begin(transactionSettings);
+				try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
+					connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+				}
 
-			connection.begin(IsolationLevels.NONE);
+				try (InputStream inputStream = getFile("complexBenchmark/generated.ttl")) {
+					connection.add(inputStream, "", RDFFormat.TURTLE);
+				}
+				connection.commit();
 
-			try (InputStream inputStream = new BufferedInputStream(getFile("complexBenchmark/generated.ttl"))) {
-				connection.add(inputStream, "", RDFFormat.TURTLE);
-			}
-			connection.commit();
+			} else {
+				connection.begin(transactionSettings);
+				try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
+					connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+				}
 
-		}
-		shaclSail.enableValidation();
+				connection.commit();
+				connection.begin(transactionSettings);
 
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-			connection.begin(IsolationLevels.NONE);
-			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-			connection.commit();
-
-			if (!revalidate.conforms()) {
-				Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+				try (InputStream inputStream = getFile("complexBenchmark/generated.ttl")) {
+					connection.add(inputStream, "", RDFFormat.TURTLE);
+				}
+				connection.commit();
 			}
 
 		}
@@ -198,11 +184,8 @@ public class NativeStoreBenchmark {
 			try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
 				connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			}
-			connection.commit();
 
-			connection.begin(IsolationLevels.NONE);
-
-			try (InputStream inputStream = new BufferedInputStream(getFile("complexBenchmark/generated.ttl"))) {
+			try (InputStream inputStream = getFile("complexBenchmark/generated.ttl")) {
 				connection.add(inputStream, "", RDFFormat.TURTLE);
 			}
 			connection.commit();
@@ -230,11 +213,8 @@ public class NativeStoreBenchmark {
 			try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
 				connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 			}
-			connection.commit();
 
-			connection.begin(IsolationLevels.NONE);
-
-			try (InputStream inputStream = new BufferedInputStream(getFile("complexBenchmark/generated.ttl"))) {
+			try (InputStream inputStream = getFile("complexBenchmark/generated.ttl")) {
 				connection.add(inputStream, "", RDFFormat.TURTLE);
 			}
 			connection.commit();
@@ -246,8 +226,7 @@ public class NativeStoreBenchmark {
 	}
 
 	private InputStream getFile(String s) {
-		return NativeStoreBenchmark.class.getClassLoader()
-				.getResourceAsStream(s);
+		return new BufferedInputStream(NativeStoreBenchmark.class.getClassLoader().getResourceAsStream(s));
 	}
 
 }

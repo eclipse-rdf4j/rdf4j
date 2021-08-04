@@ -56,7 +56,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 		try (LazyMutableClosableIteration rightArgIter = new LazyMutableClosableIteration(
 				strategy.evaluate(rightArg, bindings))) {
 
-			while (!closed && leftIter.hasNext()) {
+			while (!isClosed() && leftIter.hasNext()) {
 
 				int blockSizeL = 10;
 				if (totalBindingsLeft > 20) {
@@ -69,7 +69,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 				}
 
 				int blockSizeR = 10;
-				while (!closed && rightArgIter.hasNext()) {
+				while (!isClosed() && rightArgIter.hasNext()) {
 					if (totalBindingsRight > 20) {
 						blockSizeR = 100;
 					}
