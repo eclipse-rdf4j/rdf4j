@@ -11,8 +11,8 @@ import static org.junit.Assert.assertNull;
 
 import java.util.concurrent.CountDownLatch;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;

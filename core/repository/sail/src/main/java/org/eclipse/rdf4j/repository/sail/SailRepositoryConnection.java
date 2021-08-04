@@ -12,9 +12,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
@@ -337,7 +336,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public RepositoryResult<Statement> getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts) throws RepositoryException {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		try {
 			return createRepositoryResult(sailConnection.getStatements(subj, pred, obj, includeInferred, contexts));
@@ -416,7 +416,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public void clear(Resource... contexts) throws RepositoryException {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		try {
 			boolean local = startLocalTransaction();

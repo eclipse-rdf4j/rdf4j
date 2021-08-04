@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.io.output.StringBuilderWriter;
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.SP;

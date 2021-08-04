@@ -42,10 +42,6 @@
 					<groupId>org.eclipse.rdf4j</groupId>
 					<artifactId>rdf4j-http-client</artifactId>
 				</exclusion>
-				<exclusion>
-					<groupId>org.eclipse.rdf4j</groupId>
-					<artifactId>rdf4j-util</artifactId>
-				</exclusion>
 			</exclusions>
 		</dependency>
 		<dependency>
@@ -117,10 +113,6 @@
 					<groupId>org.eclipse.rdf4j</groupId>
 					<artifactId>rdf4j-rio-turtle</artifactId>
 				</exclusion>
-				<exclusion>
-					<groupId>org.eclipse.rdf4j</groupId>
-					<artifactId>rdf4j-util</artifactId>
-				</exclusion>
 			</exclusions>
 		</dependency>
 		<dependency>
@@ -139,10 +131,6 @@
 				<exclusion>
 					<groupId>org.eclipse.rdf4j</groupId>
 					<artifactId>rdf4j-queryalgebra-model</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.eclipse.rdf4j</groupId>
-					<artifactId>rdf4j-util</artifactId>
 				</exclusion>
 			</exclusions>
 		</dependency>
@@ -188,19 +176,11 @@
 				</exclusion>
 				<exclusion>
 					<groupId>org.eclipse.rdf4j</groupId>
-					<artifactId>rdf4j-queryparser-serql</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.eclipse.rdf4j</groupId>
 					<artifactId>rdf4j-repository-api</artifactId>
 				</exclusion>
 				<exclusion>
 					<groupId>org.eclipse.rdf4j</groupId>
 					<artifactId>rdf4j-rio-api</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.eclipse.rdf4j</groupId>
-					<artifactId>rdf4j-util</artifactId>
 				</exclusion>
 			</exclusions>
 		</dependency>
@@ -236,10 +216,6 @@
 					<groupId>org.eclipse.rdf4j</groupId>
 					<artifactId>rdf4j-query</artifactId>
 				</exclusion>
-				<exclusion>
-					<groupId>org.eclipse.rdf4j</groupId>
-					<artifactId>rdf4j-util</artifactId>
-				</exclusion>
 			</exclusions>
 		</dependency>
 		<dependency>
@@ -259,20 +235,11 @@
 					<groupId>org.eclipse.rdf4j</groupId>
 					<artifactId>rdf4j-query</artifactId>
 				</exclusion>
-				<exclusion>
-					<groupId>org.eclipse.rdf4j</groupId>
-					<artifactId>rdf4j-util</artifactId>
-				</exclusion>
 			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-sail-spin</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.eclipse.rdf4j</groupId>
-			<artifactId>rdf4j-lucene-spin</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>

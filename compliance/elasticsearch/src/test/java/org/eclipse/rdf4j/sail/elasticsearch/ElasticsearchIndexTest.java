@@ -148,7 +148,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 				.setTypes(index.getTypes())
 				.get()
 				.getHits()
-				.getTotalHits();
+				.getTotalHits().value;
 		assertEquals(1, count);
 
 		SearchHits hits = client.prepareSearch(index.getIndexName())
@@ -178,7 +178,11 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// See if everything remains consistent. We must create a new
 		// IndexReader
 		// in order to be able to see the updates
-		count = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).get().getHits().getTotalHits();
+		count = client.prepareSearch(index.getIndexName())
+				.setTypes(index.getTypes())
+				.get()
+				.getHits()
+				.getTotalHits().value;
 		assertEquals(1, count); // #docs should *not* have increased
 
 		hits = client.prepareSearch(index.getIndexName())
@@ -204,7 +208,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 				.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object1.getLabel())))
 				.get()
 				.getHits()
-				.getTotalHits();
+				.getTotalHits().value;
 		assertEquals(1, count);
 
 		count = client.prepareSearch(index.getIndexName())
@@ -212,7 +216,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 				.setSource(new SearchSourceBuilder().size(0).query(QueryBuilders.queryStringQuery(object2.getLabel())))
 				.get()
 				.getHits()
-				.getTotalHits();
+				.getTotalHits().value;
 		assertEquals(1, count);
 
 		// remove the first statement
@@ -224,7 +228,11 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// still
 		// exists
 
-		count = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).get().getHits().getTotalHits();
+		count = client.prepareSearch(index.getIndexName())
+				.setTypes(index.getTypes())
+				.get()
+				.getHits()
+				.getTotalHits().value;
 		assertEquals(1, count);
 
 		hits = client.prepareSearch(index.getIndexName())
@@ -252,7 +260,11 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		// check that there are no documents left (i.e. the last Document was
 		// removed completely, rather than its remaining triple removed)
 
-		count = client.prepareSearch(index.getIndexName()).setTypes(index.getTypes()).get().getHits().getTotalHits();
+		count = client.prepareSearch(index.getIndexName())
+				.setTypes(index.getTypes())
+				.get()
+				.getHits()
+				.getTotalHits().value;
 		assertEquals(0, count);
 	}
 
@@ -275,7 +287,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 				.setTypes(index.getTypes())
 				.get()
 				.getHits()
-				.getTotalHits();
+				.getTotalHits().value;
 		assertEquals(2, count);
 
 		// check the documents

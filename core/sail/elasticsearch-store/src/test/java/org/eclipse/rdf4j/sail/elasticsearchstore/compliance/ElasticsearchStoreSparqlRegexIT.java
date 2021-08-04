@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 
 import org.assertj.core.util.Files;
+import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.SparqlRegexTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -20,29 +21,22 @@ import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
-import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
-
 public class ElasticsearchStoreSparqlRegexIT extends SparqlRegexTest {
 
-	private static EmbeddedElastic embeddedElastic;
-
 	private static File installLocation = Files.newTemporaryFolder();
+	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider clientPool;
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
-
-		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
-		clientPool = new SingletonClientProvider("localhost", embeddedElastic.getTransportTcpPort(), "cluster1");
-
+		runner = TestHelpers.startElasticsearch(installLocation);
+		clientPool = new SingletonClientProvider("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER);
 	}
 
 	@AfterClass
 	public static void afterClass() throws Exception {
-
 		clientPool.close();
-		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
-
+		TestHelpers.stopElasticsearch(runner);
 	}
 
 	@Override

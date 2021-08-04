@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.http.protocol.transaction.operations;
 
 import java.util.Arrays;
+import java.util.Objects;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.model.Resource;
 
 /**
@@ -31,7 +31,8 @@ public abstract class ContextOperation implements TransactionOperation {
 	}
 
 	public void setContexts(Resource... contexts) {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		this.contexts = contexts;
 	}

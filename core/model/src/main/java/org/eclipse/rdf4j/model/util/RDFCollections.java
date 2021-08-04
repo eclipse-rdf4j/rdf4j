@@ -16,8 +16,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -324,7 +323,8 @@ public class RDFCollections {
 	public static <E extends RDF4JException> void extract(GetStatementOptional statementSupplier, Resource head,
 			Consumer<Statement> collectionConsumer, Function<String, Supplier<E>> exceptionSupplier,
 			Resource... contexts) throws E {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 		Objects.requireNonNull(head, "list head may not be null");
 		Objects.requireNonNull(collectionConsumer, "collection consumer may not be null");
 

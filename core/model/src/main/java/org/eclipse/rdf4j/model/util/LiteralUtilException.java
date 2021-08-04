@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 
 /**
  * An exception thrown by {@link Literals} when specific conditions are not met.

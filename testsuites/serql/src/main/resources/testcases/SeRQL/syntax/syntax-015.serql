@@ -1,4 +1,0 @@
-SELECT
-   S, P, datatype(O) AS "dt"
-FROM
-  {S} P {O}

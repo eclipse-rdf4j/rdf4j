@@ -153,10 +153,10 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 	}
 
 	/**
-	 * Execute a SPARQL or SERQL query, defaults to SPARQL
+	 * Execute a SPARQL query
 	 *
 	 * @param command   to execute
-	 * @param operation "sparql", "serql", "base" or SPARQL query form
+	 * @param operation "sparql", "base" or SPARQL query form
 	 */
 	public void executeQuery(final String command, final String operation) {
 		Repository repository = state.getRepository();
@@ -167,8 +167,6 @@ public abstract class QueryEvaluator extends ConsoleCommand {
 
 		if (sparqlQueryStart.contains(operation)) {
 			parseAndEvaluateQuery(QueryLanguage.SPARQL, command);
-		} else if ("serql".equals(operation)) {
-			parseAndEvaluateQuery(QueryLanguage.SERQL, command.substring("serql".length()));
 		} else if ("sparql".equals(operation)) {
 			parseAndEvaluateQuery(QueryLanguage.SPARQL, command.substring("sparql".length()));
 		} else {

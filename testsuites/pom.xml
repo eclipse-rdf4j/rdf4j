@@ -15,7 +15,6 @@
 		<module>rio</module>
 		<module>queryresultio</module>
 		<module>sparql</module>
-		<module>serql</module>
 		<module>repository</module>
 		<module>sail</module>
 		<module>shacl</module>

@@ -1,4 +1,0 @@
-SELECT
-  label(O)
-FROM
-  {S} P {O}

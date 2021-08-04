@@ -9,6 +9,13 @@
 	<artifactId>rdf4j-model-api</artifactId>
 	<name>RDF4J: Model API</name>
 	<description>RDF model interfaces.</description>
+	<dependencies>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-common-annotation</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+	</dependencies>
 	<build>
 		<plugins>
 			<plugin>

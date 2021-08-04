@@ -23,7 +23,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.InputStream;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;

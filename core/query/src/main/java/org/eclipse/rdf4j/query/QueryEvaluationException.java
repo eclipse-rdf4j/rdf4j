@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 
 /**
  * An exception indicating that the evaluation of a query failed.

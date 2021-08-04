@@ -13,7 +13,7 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.io.StringReader;
 
-import org.eclipse.rdf4j.exceptions.ValidationException;
+import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;

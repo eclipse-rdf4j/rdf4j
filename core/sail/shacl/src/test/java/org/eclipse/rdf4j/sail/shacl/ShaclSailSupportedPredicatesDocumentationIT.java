@@ -16,7 +16,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.DASH;

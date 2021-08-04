@@ -11,9 +11,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;

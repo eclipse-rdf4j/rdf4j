@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;

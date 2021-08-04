@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.sail.SailRepository;

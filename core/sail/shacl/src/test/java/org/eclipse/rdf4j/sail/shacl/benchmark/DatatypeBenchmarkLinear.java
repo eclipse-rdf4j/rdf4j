@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;

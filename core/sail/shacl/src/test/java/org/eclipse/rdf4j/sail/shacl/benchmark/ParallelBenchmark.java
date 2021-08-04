@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;

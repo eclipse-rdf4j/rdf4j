@@ -11,7 +11,7 @@ import static org.junit.Assert.fail;
 
 import java.io.StringReader;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.Resource;

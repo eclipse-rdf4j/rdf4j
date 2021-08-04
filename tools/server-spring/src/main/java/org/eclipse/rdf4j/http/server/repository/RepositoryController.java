@@ -29,7 +29,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpStatus;
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;

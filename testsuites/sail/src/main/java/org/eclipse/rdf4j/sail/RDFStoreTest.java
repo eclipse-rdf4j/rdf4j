@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
@@ -42,7 +44,6 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
@@ -186,7 +187,7 @@ public abstract class RDFStoreTest {
 				countElements(con.getContextIDs()));
 
 		Assert.assertEquals("Empty repository should not return any query results", 0,
-				countQueryResults("select * from {S} P {O}"));
+				countQueryResults("select * where { ?s ?p ?o}"));
 	}
 
 	@Test
@@ -329,8 +330,8 @@ public abstract class RDFStoreTest {
 			stIter.close();
 		}
 
-		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL,
-				"SELECT S, P, O FROM {S} P {O} WHERE P = <" + pred.stringValue() + ">", null);
+		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?S ?P ?O. FILTER(?P = <" + pred.stringValue() + ">)}", null);
 
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);
@@ -423,37 +424,34 @@ public abstract class RDFStoreTest {
 		Assert.assertEquals("Repository should have 1 context identifier", 1, countElements(con.getContextIDs()));
 
 		Assert.assertEquals("Repository should contain 5 statements in total", 5,
-				countQueryResults("select * from {S} P {O}"));
+				countQueryResults("select * where {?s ?p ?o}"));
 
 		// Check for presence of the added statements
-		Assert.assertEquals("Statement (Painter, type, Class) should be in the repository", 1,
-				countQueryResults("select 1 from {ex:Painter} rdf:type {rdfs:Class}"));
 
-		Assert.assertEquals("Statement (picasso, type, Painter) should be in the repository", 1,
-				countQueryResults("select 1 from {ex:picasso} rdf:type {ex:Painter}"));
+		assertThat(con.hasStatement(painter, RDF.TYPE, RDFS.CLASS, true)).isTrue();
+		assertThat(con.hasStatement(painting, RDF.TYPE, RDFS.CLASS, true)).isTrue();
+		assertThat(con.hasStatement(picasso, RDF.TYPE, painter, true)).isTrue();
+		assertThat(con.hasStatement(guernica, RDF.TYPE, painting, true)).isTrue();
+		assertThat(con.hasStatement(picasso, paints, guernica, true)).isTrue();
 
-		// Check for absense of non-added statements
-		Assert.assertEquals("Statement (Painter, paints, Painting) should not be in the repository", 0,
-				countQueryResults("select 1 from {ex:Painter} ex:paints {ex:Painting}"));
-
-		Assert.assertEquals("Statement (picasso, creates, guernica) should not be in the repository", 0,
-				countQueryResults("select 1 from {ex:picasso} ex:creates {ex:guernica}"));
+		// Check for absence of non-added statements
+		assertThat(con.hasStatement(painter, paints, painting, true)).isFalse();
 
 		// Various other checks
 		Assert.assertEquals("Repository should contain 2 statements matching (picasso, _, _)", 2,
-				countQueryResults("select * from {ex:picasso} P {O}"));
+				countQueryResults("select * where { ex:picasso ?P ?O}"));
 
 		Assert.assertEquals("Repository should contain 1 statement matching (picasso, paints, _)", 1,
-				countQueryResults("select * from {ex:picasso} ex:paints {O}"));
+				countQueryResults("select * where {ex:picasso ex:paints ?O}"));
 
 		Assert.assertEquals("Repository should contain 4 statements matching (_, type, _)", 4,
-				countQueryResults("select * from {S} rdf:type {O}"));
+				countQueryResults("select * where {?S rdf:type ?O}"));
 
 		Assert.assertEquals("Repository should contain 2 statements matching (_, _, Class)", 2,
-				countQueryResults("select * from {S} P {rdfs:Class}"));
+				countQueryResults("select * where { ?S ?P rdfs:Class }"));
 
 		Assert.assertEquals("Repository should contain 0 statements matching (_, _, type)", 0,
-				countQueryResults("select * from {S} P {rdf:type}"));
+				countQueryResults("select * where {?S ?P rdf:type}"));
 	}
 
 	@Test
@@ -467,8 +465,8 @@ public abstract class RDFStoreTest {
 		con.addStatement(picasso, paints, guernica);
 		con.commit();
 
-		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL,
-				"SELECT C FROM {} rdf:type {C}", null);
+		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?C WHERE { [] a ?C }", null);
 
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);
@@ -488,7 +486,7 @@ public abstract class RDFStoreTest {
 		Assert.assertEquals(3, countElements(con.getStatements(null, RDF.TYPE, RDFS.CLASS, false)));
 
 		// simulate auto-commit
-		tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL, "SELECT P FROM {} P {}", null);
+		tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, "SELECT ?P WHERE { [] ?P [] .}", null);
 		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);
 
 		while (iter.hasNext()) {
@@ -524,8 +522,7 @@ public abstract class RDFStoreTest {
 
 		Assert.assertEquals("Named context should contain 3 statements", 3, countContext1Elements());
 
-		Assert.assertEquals("Statement (Painting, type, Class) should no longer be in the repository", 0,
-				countQueryResults("select 1 from {ex:Painting} rdf:type {rdfs:Class}"));
+		assertThat(con.hasStatement(painting, RDF.TYPE, RDFS.CLASS, true)).isFalse();
 
 		con.begin();
 		con.removeStatements(null, null, null, context1);
@@ -621,8 +618,8 @@ public abstract class RDFStoreTest {
 		con.commit();
 
 		// Query 1
-		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL,
-				"select X from {X} rdf:type {Y} rdf:type {rdfs:Class}", null);
+		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"select ?X where { ?X a ?Y . ?Y a rdfs:Class. }", null);
 		TupleExpr tupleExpr = tupleQuery.getTupleExpr();
 
 		MapBindingSet bindings = new MapBindingSet(2);
@@ -648,8 +645,8 @@ public abstract class RDFStoreTest {
 		Assert.assertEquals("Wrong number of query results", 2, resultCount);
 
 		// Query 2
-		tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL,
-				"select X from {X} rdf:type {Y} rdf:type {rdfs:Class} where Y = Z", null);
+		tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"select ?X WHERE { ?X a ?Y . ?Y a rdfs:Class. filter(?Y = ?Z) }", null);
 		tupleExpr = tupleQuery.getTupleExpr();
 		bindings.clear();
 
@@ -661,93 +658,6 @@ public abstract class RDFStoreTest {
 		iter = con.evaluate(tupleExpr, null, bindings, false);
 		resultCount = verifyQueryResult(iter, 1);
 		Assert.assertEquals("Wrong number of query results", 1, resultCount);
-	}
-
-	@Test
-	@Ignore("test is fundamentelly flawed as it uses multithreaded access on the same connection")
-	@Deprecated
-	public void testMultiThreadedAccess() {
-
-		Runnable runnable = new Runnable() {
-
-			SailConnection sharedCon = con;
-
-			@Override
-			public void run() {
-				Assert.assertTrue(sharedCon != null);
-
-				try {
-					while (sharedCon.isActive()) {
-						Thread.sleep(10);
-					}
-					sharedCon.begin();
-					sharedCon.addStatement(painter, RDF.TYPE, RDFS.CLASS);
-					sharedCon.commit();
-
-					// wait a bit to allow other thread to add stuff as well.
-					Thread.sleep(500L);
-					CloseableIteration<? extends Statement, SailException> result = sharedCon.getStatements(null, null,
-							null, true);
-
-					Assert.assertTrue(result.hasNext());
-					int numberOfStatements = 0;
-					while (result.hasNext()) {
-						numberOfStatements++;
-						Statement st = result.next();
-						Assert.assertTrue(st.getSubject().equals(painter) || st.getSubject().equals(picasso));
-						Assert.assertTrue(st.getPredicate().equals(RDF.TYPE));
-						Assert.assertTrue(st.getObject().equals(RDFS.CLASS) || st.getObject().equals(painter));
-					}
-					Assert.assertTrue("we should have retrieved statements from both threads", numberOfStatements == 2);
-
-				} catch (SailException e) {
-					e.printStackTrace();
-					Assert.fail(e.getMessage());
-				} catch (InterruptedException e) {
-					Assert.fail(e.getMessage());
-				}
-
-				// let this thread sleep so the other thread can invoke close()
-				// first.
-				try {
-					Thread.sleep(1000L);
-
-					// the connection should now be closed (by the other thread),
-					// invoking any further operation should cause a
-					// IllegalStateException
-					sharedCon.getStatements(null, null, null, true);
-					Assert.fail("should have caused an IllegalStateException");
-				} catch (InterruptedException e) {
-					Assert.fail(e.getMessage());
-				} catch (SailException e) {
-					e.printStackTrace();
-					Assert.fail(e.getMessage());
-				} catch (IllegalStateException e) {
-					// do nothing, this is the expected behaviour
-				}
-			}
-		}; // end anonymous class declaration
-
-		// execute the other thread
-		Thread newThread = new Thread(runnable, "B (parallel)");
-		newThread.start();
-
-		try {
-			while (con.isActive()) {
-				Thread.sleep(10);
-			}
-			con.begin();
-			con.addStatement(picasso, RDF.TYPE, painter);
-			con.commit();
-			// let this thread sleep to enable other thread to finish its business.
-			Thread.sleep(1000L);
-			con.close();
-		} catch (SailException e) {
-			e.printStackTrace();
-			Assert.fail(e.getMessage());
-		} catch (InterruptedException e) {
-			Assert.fail(e.getMessage());
-		}
 	}
 
 	@Test
@@ -911,8 +821,8 @@ public abstract class RDFStoreTest {
 			Assert.assertEquals(4, countAllElements());
 			con2.begin();
 			con2.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
-			String query = "SELECT S, P, O FROM {S} P {O}";
-			ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL, query, null);
+			String query = "SELECT * WHERE { ?S ?P ?O }";
+			ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 			Assert.assertEquals(5, countElements(
 					con2.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)));
 			Runnable clearer = () -> {
@@ -1058,8 +968,8 @@ public abstract class RDFStoreTest {
 	}
 
 	protected int countQueryResults(String query) throws Exception {
-		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL,
-				query + " using namespace ex = <" + EXAMPLE_NS + ">", null);
+		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"PREFIX ex: <" + EXAMPLE_NS + "> \n" + query, null);
 
 		return countElements(con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false));
 	}

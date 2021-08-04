@@ -18,9 +18,9 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;

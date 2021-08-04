@@ -8,10 +8,10 @@
 package org.eclipse.rdf4j.model.impl;
 
 import java.util.Iterator;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
@@ -37,7 +37,7 @@ public abstract class FilteredModel extends AbstractModel {
 	protected Resource[] contexts;
 
 	protected FilteredModel(AbstractModel model, Resource subj, IRI pred, Value obj, Resource... contexts) {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts);
 
 		this.model = model;
 		this.subj = subj;
@@ -216,8 +216,8 @@ public abstract class FilteredModel extends AbstractModel {
 	}
 
 	private boolean matches(Resource[] stContext, Resource... contexts) {
-		OpenRDFUtil.verifyContextNotNull(stContext);
-		if (stContext != null && stContext.length > 0) {
+		Objects.requireNonNull(stContext);
+		if (stContext.length > 0) {
 			for (Resource c : stContext) {
 				if (!matches(c, contexts)) {
 					return false;
@@ -228,11 +228,11 @@ public abstract class FilteredModel extends AbstractModel {
 	}
 
 	private boolean matches(Resource stContext, Resource... contexts) {
-		if (contexts != null && contexts.length == 0) {
+		Objects.requireNonNull(contexts);
+		if (contexts.length == 0) {
 			// Any context matches
 			return true;
 		} else {
-			OpenRDFUtil.verifyContextNotNull(contexts);
 			// Accept if one of the contexts from the pattern matches
 			for (Resource context : contexts) {
 				if (context == null && stContext == null) {

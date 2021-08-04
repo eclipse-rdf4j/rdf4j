@@ -1,4 +1,0 @@
-SELECT
-   S, P, O, "foo"
-FROM
-  {S} P {O}

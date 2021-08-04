@@ -17,8 +17,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -375,8 +374,9 @@ public class RDFContainers {
 			Resource container,
 			Consumer<Statement> collectionConsumer, Function<String, Supplier<E>> exceptionSupplier,
 			Resource... contexts) throws E {
-		OpenRDFUtil.verifyContextNotNull(contexts);
-		Objects.requireNonNull(container, "containter head may not be null");
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
+		Objects.requireNonNull(container, "container head may not be null");
 		Objects.requireNonNull(collectionConsumer, "collection consumer may not be null");
 
 		ValueFactory vf = SimpleValueFactory.getInstance();

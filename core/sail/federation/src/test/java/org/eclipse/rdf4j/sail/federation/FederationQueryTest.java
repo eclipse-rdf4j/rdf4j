@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.query.BindingSet;

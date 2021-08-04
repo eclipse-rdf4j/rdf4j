@@ -18,6 +18,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 
 import org.assertj.core.util.Files;
+import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.elasticsearch.action.admin.indices.get.GetIndexRequest;
+import org.elasticsearch.client.Requests;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.TransportAddress;
@@ -39,53 +41,48 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
-
 public class InferenceIT {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreIT.class);
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
-	private static EmbeddedElastic embeddedElastic;
+	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider singletonClientProvider;
 
 	private static File installLocation = Files.newTemporaryFolder();
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
-
-		embeddedElastic = TestHelpers.startElasticsearch(installLocation);
-
+		runner = TestHelpers.startElasticsearch(installLocation);
 		singletonClientProvider = new SingletonClientProvider("localhost",
-				embeddedElastic.getTransportTcpPort(), "cluster1");
+				TestHelpers.getPort(runner), TestHelpers.CLUSTER);
 	}
 
 	@AfterClass
 	public static void afterClass() throws Exception {
 		singletonClientProvider.close();
-		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
+		TestHelpers.stopElasticsearch(runner);
 	}
 
 	@After
 	public void after() {
-		embeddedElastic.refreshIndices();
+		runner.admin().indices().refresh(Requests.refreshRequest("*")).actionGet();
 		deleteAllIndexes();
 	}
 
 	private void deleteAllIndexes() {
 		for (String index : getIndexes()) {
-			System.out.println("deleting: " + index);
-			embeddedElastic.deleteIndex(index);
-
+			logger.info("deleting: " + index);
+			runner.admin().indices().delete(Requests.deleteIndexRequest(index)).actionGet();
 		}
 	}
 
 	private String[] getIndexes() {
 
-		Settings settings = Settings.builder().put("cluster.name", "cluster1").build();
+		Settings settings = Settings.builder().put("cluster.name", TestHelpers.CLUSTER).build();
 		try (TransportClient client = new PreBuiltTransportClient(settings)) {
 			client.addTransportAddress(
-					new TransportAddress(InetAddress.getByName("localhost"), embeddedElastic.getTransportTcpPort()));
+					new TransportAddress(InetAddress.getByName("localhost"), TestHelpers.getPort(runner)));
 
 			return client.admin()
 					.indices()
