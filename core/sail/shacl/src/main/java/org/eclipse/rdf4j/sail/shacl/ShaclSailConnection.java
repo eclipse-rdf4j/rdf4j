@@ -400,7 +400,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this);
 		}
 
-		fillAddedAndRemovedStatementRepositories();
+		if (!isBulkValidation()) {
+			fillAddedAndRemovedStatementRepositories();
+		}
 
 	}
 
@@ -542,6 +544,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	void fillAddedAndRemovedStatementRepositories() {
+
+		assert !isBulkValidation();
+		assert isValidationEnabled();
 
 		long before = 0;
 		if (sail.isPerformanceLogging()) {
