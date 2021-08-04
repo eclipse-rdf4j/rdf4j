@@ -18,10 +18,10 @@ import org.eclipse.rdf4j.model.Statement;
 @InternalUseOnly
 public class Stats {
 
-	private boolean baseSailEmpty;
+	private boolean emptyBeforeTransaction;
 	private boolean hasAdded;
 	private boolean hasRemoved;
-	private boolean empty;
+	private boolean emptyIncludingCurrentTransaction;
 
 	public void added(Statement statement) {
 		hasAdded = true;
@@ -51,23 +51,23 @@ public class Stats {
 	 *
 	 * @return true if the sail was empty before this transaction started
 	 */
-	public boolean isBaseSailEmpty() {
-		return baseSailEmpty;
+	public boolean wasEmptyBeforeTransaction() {
+		return emptyBeforeTransaction;
 	}
 
-	void setBaseSailEmpty(boolean baseSailEmpty) {
-		this.baseSailEmpty = baseSailEmpty;
+	void setEmptyBeforeTransaction(boolean emptyBeforeTransaction) {
+		this.emptyBeforeTransaction = emptyBeforeTransaction;
 	}
 
 	/**
 	 *
-	 * @return true if the entire sail is empty
+	 * @return true if the entire sail is empty, even with the current transaction
 	 */
-	public boolean isEmpty() {
-		return empty;
+	public boolean isEmptyIncludingCurrentTransaction() {
+		return emptyIncludingCurrentTransaction;
 	}
 
-	void setEmpty(boolean empty) {
-		this.empty = empty;
+	void setEmptyIncludingCurrentTransaction(boolean emptyIncludingCurrentTransaction) {
+		this.emptyIncludingCurrentTransaction = emptyIncludingCurrentTransaction;
 	}
 }
