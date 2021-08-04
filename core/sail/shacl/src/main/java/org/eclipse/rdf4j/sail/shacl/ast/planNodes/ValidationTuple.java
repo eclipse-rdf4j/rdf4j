@@ -2,7 +2,6 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -26,7 +25,7 @@ public class ValidationTuple {
 	private static final ValueComparator valueComparator = new ValueComparator();
 
 	// all fields should be immutable
-	private final List<Value> chain;
+	private final Value[] chain;
 	private final ConstraintComponent.Scope scope;
 	private final boolean propertyShapeScopeWithValue;
 	private final List<ValidationResult> validationResults;
@@ -39,28 +38,41 @@ public class ValidationTuple {
 
 	public ValidationTuple(BindingSet bindingSet, List<String> variables, ConstraintComponent.Scope scope,
 			boolean hasValue) {
-		List<Value> chain = new ArrayList<>();
-		for (String variable : variables) {
-			chain.add(bindingSet.getValue(variable));
+
+		chain = new Value[variables.size()];
+
+		for (int i = 0; i < variables.size(); i++) {
+			chain[i] = bindingSet.getValue(variables.get(i));
 		}
-		this.chain = Collections.unmodifiableList(chain);
+
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 		this.validationResults = Collections.emptyList();
 		this.compressedTuples = Collections.emptySet();
 	}
 
-	public ValidationTuple(List<Value> targets, ConstraintComponent.Scope scope, boolean hasValue) {
-		this.chain = Collections.unmodifiableList(targets);
+	public ValidationTuple(List<Value> chain, ConstraintComponent.Scope scope, boolean hasValue) {
+		this.chain = chain.toArray(new Value[0]);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 		this.validationResults = Collections.emptyList();
 		this.compressedTuples = Collections.emptySet();
 
+	}
+
+	// We will assume that the provided chain will not be mutated elsewhere.
+	public ValidationTuple(Value[] chain, ConstraintComponent.Scope scope, boolean hasValue) {
+		this.chain = chain;
+		this.scope = scope;
+		this.propertyShapeScopeWithValue = hasValue;
+		this.validationResults = Collections.emptyList();
+		this.compressedTuples = Collections.emptySet();
 	}
 
 	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue) {
-		this.chain = Collections.unmodifiableList(Arrays.asList(a, c));
+		chain = new Value[2];
+		chain[0] = a;
+		chain[1] = c;
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 		this.validationResults = Collections.emptyList();
@@ -69,7 +81,8 @@ public class ValidationTuple {
 	}
 
 	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue) {
-		this.chain = Collections.singletonList(subject);
+		chain = new Value[1];
+		chain[0] = subject;
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 		this.validationResults = Collections.emptyList();
@@ -77,11 +90,11 @@ public class ValidationTuple {
 
 	}
 
-	private ValidationTuple(List<ValidationResult> validationResults, List<Value> chain,
+	private ValidationTuple(List<ValidationResult> validationResults, Value[] chain,
 			ConstraintComponent.Scope scope, boolean propertyShapeScopeWithValue,
 			Set<ValidationTuple> compressedTuples) {
 		this.validationResults = Collections.unmodifiableList(validationResults);
-		this.chain = Collections.unmodifiableList(chain);
+		this.chain = chain;
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = propertyShapeScopeWithValue;
 		this.compressedTuples = Collections.unmodifiableSet(compressedTuples);
@@ -103,7 +116,6 @@ public class ValidationTuple {
 		Value currentRight = other.getActiveTarget();
 
 		return current.equals(currentRight);
-
 	}
 
 	public boolean hasValue() {
@@ -114,7 +126,7 @@ public class ValidationTuple {
 	public Value getValue() {
 		assert scope != null;
 		if (hasValue()) {
-			return chain.get(chain.size() - 1);
+			return chain[(chain.length - 1)];
 		}
 
 		return null;
@@ -136,8 +148,8 @@ public class ValidationTuple {
 
 		int min = Math.min(getFullChainSize(false), other.getFullChainSize(false));
 
-		Collection<Value> targetChain = getTargetChain(false);
-		ArrayList<Value> otherTargetChain = new ArrayList<>(other.getTargetChain(false));
+		List<Value> targetChain = getTargetChain(false);
+		List<Value> otherTargetChain = other.getTargetChain(false);
 
 		Iterator<Value> iterator = targetChain.iterator();
 
@@ -165,9 +177,7 @@ public class ValidationTuple {
 			validationResults = Collections.singletonList(validationResult.apply(this));
 		}
 
-		Set<ValidationTuple> compressedTuples = this.compressedTuples.stream()
-				.map(t -> t.addValidationResult(validationResult))
-				.collect(Collectors.toSet());
+		Set<ValidationTuple> compressedTuples = enrichCompressedTuples(t -> t.addValidationResult(validationResult));
 
 		return new ValidationTuple(validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples);
 	}
@@ -175,19 +185,19 @@ public class ValidationTuple {
 	public Value getActiveTarget() {
 		assert scope != null;
 		if (!propertyShapeScopeWithValue || scope != ConstraintComponent.Scope.propertyShape) {
-			return chain.get(chain.size() - 1);
+			return chain[chain.length - 1];
 		}
 
-		assert chain.size() >= 2;
+		assert chain.length >= 2;
 
-		return chain.get(chain.size() - 2);
+		return chain[chain.length - 2];
 
 	}
 
 	@Override
 	public String toString() {
 		return "ValidationTuple{" +
-				"chain=" + chain +
+				"chain=" + Arrays.toString(chain) +
 				", scope=" + scope +
 				", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
 //			", validationResults=" + validationResults +
@@ -199,22 +209,25 @@ public class ValidationTuple {
 		assert scope == ConstraintComponent.Scope.propertyShape;
 
 		if (compressedTuples.isEmpty()) {
-			List<Value> chain = this.chain;
+			Value[] chain;
 			boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;
 			ConstraintComponent.Scope scope = ConstraintComponent.Scope.nodeShape;
 
 			if (this.propertyShapeScopeWithValue) {
 				propertyShapeScopeWithValue = false;
-				chain = chain.subList(0, chain.size() - 1);
+				chain = Arrays.copyOf(this.chain, this.chain.length - 1);
+			} else {
+				chain = this.chain;
 			}
 
-			return Collections.singletonList(new ValidationTuple(this.validationResults, chain, scope,
-					propertyShapeScopeWithValue, Collections.emptySet()));
+			return Collections
+					.singletonList(new ValidationTuple(this.validationResults, chain, scope,
+							propertyShapeScopeWithValue, Collections.emptySet()));
 
 		} else {
 			return this.compressedTuples.stream()
 					.map(t -> {
-						List<Value> chain = t.chain;
+						List<Value> chain = Arrays.asList(t.chain);
 
 						boolean propertyShapeScopeWithValue = t.propertyShapeScopeWithValue;
 						ConstraintComponent.Scope scope = ConstraintComponent.Scope.nodeShape;
@@ -224,7 +237,8 @@ public class ValidationTuple {
 							chain = chain.subList(0, chain.size() - 1);
 						}
 
-						return new ValidationTuple(t.validationResults, chain, scope, propertyShapeScopeWithValue,
+						return new ValidationTuple(t.validationResults, chain.toArray(new Value[chain.size()]), scope,
+								propertyShapeScopeWithValue,
 								Collections.emptySet());
 
 					})
@@ -236,7 +250,7 @@ public class ValidationTuple {
 
 	public List<ValidationTuple> shiftToPropertyShapeScope() {
 		assert scope == ConstraintComponent.Scope.nodeShape;
-		assert chain.size() >= 2;
+		assert chain.length >= 2;
 
 		boolean propertyShapeScopeWithValue = true;
 		ConstraintComponent.Scope scope = ConstraintComponent.Scope.propertyShape;
@@ -258,10 +272,10 @@ public class ValidationTuple {
 
 	public int getFullChainSize(boolean includePropertyShapeValue) {
 		if (!includePropertyShapeValue && propertyShapeScopeWithValue) {
-			return chain.size() - 1;
+			return chain.length - 1;
 		}
 
-		return chain.size();
+		return chain.length;
 
 	}
 
@@ -274,10 +288,10 @@ public class ValidationTuple {
 	public List<Value> getTargetChain(boolean includePropertyShapeValues) {
 
 		if (scope == ConstraintComponent.Scope.propertyShape && hasValue() && !includePropertyShapeValues) {
-			return chain.stream().limit(chain.size() - 1).collect(Collectors.toList());
+			return Collections.unmodifiableList(Arrays.asList(chain).subList(0, chain.length - 1));
 		}
 
-		return new ArrayList<>(chain);
+		return Collections.unmodifiableList(Arrays.asList(chain));
 	}
 
 	public ValidationTuple setValue(Value value) {
@@ -285,24 +299,34 @@ public class ValidationTuple {
 			return this;
 		}
 
-		List<Value> chain = new ArrayList<>(this.chain);
+		assert scope == ConstraintComponent.Scope.propertyShape : "Can't set value on NodeShape scoped ValidationTuple because it will also change the target!";
 
-		if (scope == ConstraintComponent.Scope.propertyShape) {
-			if (propertyShapeScopeWithValue) {
-				chain.remove(this.chain.size() - 1);
-			}
-			chain.add(value);
+		Value[] chain;
+
+		if (propertyShapeScopeWithValue) {
+			// we will replace the last value, so we just need a copy because the chain should be immutable
+			chain = Arrays.copyOf(this.chain, this.chain.length);
 		} else {
-			throw new IllegalStateException(
-					"Can't set value on NodeShape scoped ValidationTuple because it will also change the target!");
-
+			chain = Arrays.copyOf(this.chain, this.chain.length + 1);
 		}
 
-		boolean propertyShapeScopeWithValue = true;
-		Set<ValidationTuple> compressedTuples = this.compressedTuples.stream()
-				.map(t -> t.setValue(value))
+		chain[chain.length - 1] = value;
+
+		Set<ValidationTuple> compressedTuples = enrichCompressedTuples(t -> t.setValue(value));
+
+		return new ValidationTuple(this.validationResults, chain, scope, true, compressedTuples);
+	}
+
+	private Set<ValidationTuple> enrichCompressedTuples(
+			Function<ValidationTuple, ValidationTuple> validationTupleValidationTupleFunction) {
+		if (compressedTuples.isEmpty()) {
+			return compressedTuples;
+		}
+
+		return this.compressedTuples.stream()
+				.map(validationTupleValidationTupleFunction)
 				.collect(Collectors.toSet());
-		return new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples);
+
 	}
 
 	public int compareValue(ValidationTuple other) {
@@ -316,14 +340,11 @@ public class ValidationTuple {
 		if (scope == ConstraintComponent.Scope.propertyShape) {
 			if (propertyShapeScopeWithValue) {
 
-				List<Value> chain = this.chain.subList(0, this.chain.size() - 1);
-				boolean propertyShapeScopeWithValue = false;
-				Set<ValidationTuple> compressedTuples = this.compressedTuples.stream()
-						.map(ValidationTuple::trimToTarget)
-						.collect(Collectors.toSet());
+				Value[] chain = Arrays.copyOf(this.chain, this.chain.length - 1);
 
-				return new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue,
-						compressedTuples);
+				Set<ValidationTuple> compressedTuples = enrichCompressedTuples(ValidationTuple::trimToTarget);
+
+				return new ValidationTuple(this.validationResults, chain, scope, false, compressedTuples);
 			}
 		}
 		return this;
@@ -332,20 +353,23 @@ public class ValidationTuple {
 	public List<ValidationTuple> pop() {
 
 		if (compressedTuples.isEmpty()) {
-			List<Value> chain = this.chain;
+
+			Value[] chain;
+
 			boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;
 			if (getScope() == ConstraintComponent.Scope.propertyShape) {
 				if (hasValue()) {
-					assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! "
-							+ toString();
-					chain = chain.subList(0, chain.size() - 1);
+					assert this.chain.length > 1 : "Attempting to pop chain will not leave any elements on the chain! "
+							+ this;
+					chain = Arrays.copyOf(this.chain, this.chain.length - 1);
 				} else {
 					propertyShapeScopeWithValue = true;
+					chain = this.chain;
 				}
 			} else {
-				assert chain.size() > 1 : "Attempting to pop chain will not leave any elements on the chain! "
-						+ toString();
-				chain = chain.subList(0, chain.size() - 1);
+				assert this.chain.length > 1 : "Attempting to pop chain will not leave any elements on the chain! "
+						+ this;
+				chain = Arrays.copyOf(this.chain, this.chain.length - 1);
 			}
 
 			return Collections.singletonList(
@@ -377,20 +401,28 @@ public class ValidationTuple {
 			return false;
 		}
 		ValidationTuple that = (ValidationTuple) o;
-		return propertyShapeScopeWithValue == that.propertyShapeScopeWithValue && chain.equals(that.chain)
+		return propertyShapeScopeWithValue == that.propertyShapeScopeWithValue && Arrays.equals(chain, that.chain)
 				&& scope == that.scope && validationResults.equals(that.validationResults)
 				&& compressedTuples.equals(that.compressedTuples);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(chain, scope, propertyShapeScopeWithValue, validationResults, compressedTuples);
+		return Objects.hash(Arrays.hashCode(chain), scope, propertyShapeScopeWithValue, validationResults,
+				compressedTuples);
 	}
 
 	public ValidationTuple join(ValidationTuple right) {
 
-		HashSet<ValidationTuple> compressedTuples = new HashSet<>(this.compressedTuples);
-		compressedTuples.addAll(right.getCompressedTuples());
+		Set<ValidationTuple> compressedTuples;
+		if (this.compressedTuples.isEmpty()) {
+			compressedTuples = right.getCompressedTuples();
+		} else if (right.compressedTuples.isEmpty()) {
+			compressedTuples = this.compressedTuples;
+		} else {
+			compressedTuples = new HashSet<>(this.compressedTuples);
+			compressedTuples.addAll(right.getCompressedTuples());
+		}
 
 		ValidationTuple validationTuple = new ValidationTuple(validationResults, chain, scope,
 				propertyShapeScopeWithValue, compressedTuples);
