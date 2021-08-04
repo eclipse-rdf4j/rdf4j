@@ -169,10 +169,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		synchronized (sail) {
 			super.begin(level);
 			hasStatement(null, null, null, false); // actually force a transaction to start
-			shapesRepoConnection.begin(currentIsolationLevel != IsolationLevels.SERIALIZABLE ? IsolationLevels.SNAPSHOT
-					: currentIsolationLevel);
-			shapesRepoConnection.hasStatement(null, null, null, false); // actually force a transaction to start
-
+			shapesRepoConnection.begin(currentIsolationLevel);
 			previousStateConnection.begin(currentIsolationLevel);
 			previousStateConnection.hasStatement(null, null, null, false); // actually force a transaction to start
 		}

@@ -388,7 +388,12 @@ public class ShaclSail extends NotifyingSailWrapper {
 	}
 
 	private void forceRefreshShapes() {
-		// there is no shapes cache, so this is no-op
+		if (shapesRepo != null) {
+			try (SailRepositoryConnection shapesRepoConnection = shapesRepo.getConnection()) {
+				shapesRepoConnection.begin(IsolationLevels.NONE, TransactionSettings.ValidationApproach.Bulk);
+				shapesRepoConnection.commit();
+			}
+		}
 	}
 
 	@Override
@@ -830,12 +835,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@InternalUseOnly
 	public List<Shape> getCurrentShapes() {
 		try (SailRepositoryConnection connection = shapesRepo.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
-			try {
-				return getShapes(connection);
-			} finally {
-				connection.commit();
-			}
+			return getShapes(connection);
 		}
 	}
 
