@@ -214,7 +214,7 @@ public class TargetChainRetriever implements PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 
 				try {
 					if (statements != null) {

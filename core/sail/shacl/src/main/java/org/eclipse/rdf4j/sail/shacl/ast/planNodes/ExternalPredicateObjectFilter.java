@@ -73,28 +73,28 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 						throw new IllegalStateException("Unknown filterOn: " + filterOn);
 					}
 
-					Resource matchedType = isType(value);
+					boolean matches = matches(value);
 
 					if (returnMatching) {
-						if (matchedType != null) {
+						if (matches) {
 							next = temp;
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(depth(),
 										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
-												+ ":IgnoredAsTypeMismatch",
+												+ ":IgnoredAsNotMatching",
 										temp, ExternalPredicateObjectFilter.this,
 										getId(), null);
 							}
 						}
 					} else {
-						if (matchedType == null) {
+						if (!matches) {
 							next = temp;
 						} else {
 							if (GlobalValidationExecutionLogging.loggingEnabled) {
 								validationExecutionLogger.log(depth(),
 										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
-												+ ":IgnoredAsTypeMismatch",
+												+ ":IgnoredAsMatching",
 										temp, ExternalPredicateObjectFilter.this,
 										getId(), null);
 							}
@@ -106,18 +106,17 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 				assert next != null || !parentIterator.hasNext() : parentIterator.toString();
 			}
 
-			private Resource isType(Value subject) {
+			private boolean matches(Value subject) {
 				if (subject.isResource()) {
 					return filterOnObject.stream()
-							.filter(type -> connection.hasStatement((Resource) subject, filterOnPredicate, type, true))
-							.findFirst()
-							.orElse(null);
+							.anyMatch(object -> connection.hasStatement((Resource) subject, filterOnPredicate, object,
+									true));
 				}
-				return null;
+				return false;
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				parentIterator.close();
 			}
 

@@ -89,7 +89,7 @@ public class UnionNode implements PlanNode {
 				final CloseableIteration<? extends ValidationTuple, SailException> iterator = nodes[0].iterator();
 
 				@Override
-				public void close() throws SailException {
+				public void localClose() throws SailException {
 					iterator.close();
 				}
 
@@ -159,7 +159,7 @@ public class UnionNode implements PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				iterators.forEach(CloseableIteration::close);
 			}
 

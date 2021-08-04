@@ -74,7 +74,7 @@ public class SparqlTargetSelect implements PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				bindingSet.close();
 			}
 

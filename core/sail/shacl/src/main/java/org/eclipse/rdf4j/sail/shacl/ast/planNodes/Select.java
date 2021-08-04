@@ -88,7 +88,7 @@ public class Select implements PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				if (bindingSet != null) {
 					bindingSet.close();
 				}
