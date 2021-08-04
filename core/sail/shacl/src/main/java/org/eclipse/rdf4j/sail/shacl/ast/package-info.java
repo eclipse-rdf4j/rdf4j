@@ -5,5 +5,3 @@
  */
 
 package org.eclipse.rdf4j.sail.shacl.ast;
-
-import org.eclipse.rdf4j.common.annotation.InternalUseOnly;

@@ -6,5 +6,3 @@
  *          one release to the next.
  */
 package org.eclipse.rdf4j.sail.memory.model;
-
-import org.eclipse.rdf4j.common.annotation.InternalUseOnly;

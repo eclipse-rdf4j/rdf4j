@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.nativerdf;
 
-import static org.junit.Assert.assertEquals;
-
 import java.io.IOException;
 
 import org.eclipse.rdf4j.IsolationLevel;
