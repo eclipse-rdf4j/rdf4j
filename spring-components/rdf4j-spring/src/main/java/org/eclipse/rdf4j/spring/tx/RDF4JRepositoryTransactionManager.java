@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.tx;
 
 import java.lang.invoke.MethodHandles;
@@ -15,13 +25,13 @@ import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
 
-public class Rdf4JRepositoryTransactionManager extends AbstractPlatformTransactionManager {
+public class RDF4JRepositoryTransactionManager extends AbstractPlatformTransactionManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
 	private final TransactionalRepositoryConnectionFactory repositoryConnectionFactory;
 
-	public Rdf4JRepositoryTransactionManager(
+	public RDF4JRepositoryTransactionManager(
 			TransactionalRepositoryConnectionFactory repositoryConnectionFactory) {
 		this.repositoryConnectionFactory = repositoryConnectionFactory;
 	}

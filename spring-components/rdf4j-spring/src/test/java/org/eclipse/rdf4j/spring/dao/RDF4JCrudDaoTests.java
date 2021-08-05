@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.dao;
 
 import java.util.Optional;
@@ -5,7 +15,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.MultiIRI;
-import org.eclipse.rdf4j.spring.Rdf4JTestBase;
+import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
 import org.eclipse.rdf4j.spring.domain.dao.ArtistDao;
 import org.eclipse.rdf4j.spring.domain.model.Artist;
 import org.eclipse.rdf4j.spring.domain.model.EX;
@@ -14,10 +24,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.annotation.DirtiesContext;
-import org.springframework.test.annotation.Rollback;
 
-public class Rdf4jCrudDaoTests extends Rdf4JTestBase {
+public class RDF4JCrudDaoTests extends RDF4JSpringTestBase {
 	@Autowired
 	private ArtistDao artistDao;
 

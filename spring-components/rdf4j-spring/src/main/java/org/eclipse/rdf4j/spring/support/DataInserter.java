@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.support;
 
 import java.lang.invoke.MethodHandles;
@@ -5,6 +15,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +41,7 @@ public class DataInserter {
 			RepositoryConnection con = connectionFactory.getConnection();
 			con.add(dataFile.getInputStream(), "", RDFFormat.TURTLE);
 		} catch (Exception e) {
-			throw new RuntimeException("Unable to load test data", e);
+			throw new RDF4JSpringException("Unable to load test data", e);
 		}
 		logger.debug("\tdone loading data");
 	}

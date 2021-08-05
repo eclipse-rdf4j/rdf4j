@@ -1,27 +1,37 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.dao;
 
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.eclipse.rdf4j.spring.dao.exception.Rdf4JDaoException;
+import org.eclipse.rdf4j.spring.dao.exception.RDF4JDaoException;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.GraphQueryEvaluationBuilder;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
-import org.eclipse.rdf4j.spring.support.Rdf4JTemplate;
+import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
 public abstract class Rdf4JDao {
-	private final Rdf4JTemplate rdf4JTemplate;
+	private final RDF4JTemplate rdf4JTemplate;
 
 	private Map<String, NamedSparqlSupplier> namedSparqlSuppliers = new ConcurrentHashMap<>();
 
-	public Rdf4JDao(Rdf4JTemplate rdf4JTemplate) {
+	public Rdf4JDao(RDF4JTemplate rdf4JTemplate) {
 		this.rdf4JTemplate = rdf4JTemplate;
 		prepareNamedSparqlSuppliers(new NamedSparqlSupplierPreparer());
 	}
 
-	protected Rdf4JTemplate getRdf4JTemplate() {
+	protected RDF4JTemplate getRdf4JTemplate() {
 		return rdf4JTemplate;
 	}
 
@@ -30,7 +40,7 @@ public abstract class Rdf4JDao {
 
 	/**
 	 * Prepares the specified SPARQL string for later use, e.g. in
-	 * {@link Rdf4JTemplate#tupleQuery(Class, NamedSparqlSupplier)}.
+	 * {@link RDF4JTemplate#tupleQuery(Class, NamedSparqlSupplier)}.
 	 */
 	private void prepareNamedSparqlSupplier(String key, String sparql) {
 		Objects.requireNonNull(key);
@@ -40,7 +50,7 @@ public abstract class Rdf4JDao {
 
 	/**
 	 * Reads the SPARQL string from the specified resource using a {@link org.springframework.core.io.ResourceLoader}
-	 * and prepares it for later use, e.g. in {@link Rdf4JTemplate#tupleQuery(Class, NamedSparqlSupplier)}.
+	 * and prepares it for later use, e.g. in {@link RDF4JTemplate#tupleQuery(Class, NamedSparqlSupplier)}.
 	 */
 	private void prepareNamedSparqlSupplierFromResource(String key, String resourceName) {
 		Objects.requireNonNull(key);
@@ -51,13 +61,13 @@ public abstract class Rdf4JDao {
 
 	/**
 	 * Obtains the {@link NamedSparqlSupplier} with the specified key for use in, e.g.,
-	 * {@link Rdf4JTemplate#tupleQuery(Class, NamedSparqlSupplier)}.
+	 * {@link RDF4JTemplate#tupleQuery(Class, NamedSparqlSupplier)}.
 	 */
 	protected NamedSparqlSupplier getNamedSparqlSupplier(String key) {
 		Objects.requireNonNull(key);
 		NamedSparqlSupplier supplier = namedSparqlSuppliers.get(key);
 		if (supplier == null) {
-			throw new Rdf4JDaoException(
+			throw new RDF4JDaoException(
 					String.format(
 							"No NamedSparqlOperation found for key %s. Prepare it using Rdf4JDao.prepareNamedSparqlSuppliers() before calling this method!",
 							key));

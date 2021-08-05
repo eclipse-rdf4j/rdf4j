@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.operationlog;
 
 import java.io.File;
@@ -19,6 +29,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
 import org.eclipse.rdf4j.spring.operationlog.log.OperationLog;
 import org.eclipse.rdf4j.spring.operationlog.log.PseudoOperation;
 import org.slf4j.Logger;
@@ -255,7 +266,7 @@ public class LoggingRepositoryConnection extends RepositoryConnectionWrapper {
 			try {
 				task.run();
 			} catch (Exception e) {
-				throw new RuntimeException(e);
+				throw new RDF4JSpringException(e);
 			}
 		};
 	}

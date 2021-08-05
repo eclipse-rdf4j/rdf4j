@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring;
 
 import java.lang.invoke.MethodHandles;
@@ -15,7 +25,7 @@ import org.eclipse.rdf4j.spring.resultcache.CachingRepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.resultcache.ResultCacheProperties;
 import org.eclipse.rdf4j.spring.support.DirectOperationInstantiator;
 import org.eclipse.rdf4j.spring.support.OperationInstantiator;
-import org.eclipse.rdf4j.spring.support.Rdf4JTemplate;
+import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 import org.eclipse.rdf4j.spring.support.connectionfactory.DirectRepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.tx.TransactionalRepositoryConnectionFactory;
@@ -29,11 +39,11 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 @Configuration
 @EnableTransactionManagement
-public class Rdf4JConfig {
+public class RDF4JConfig {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
 	@Bean
-	Rdf4JTemplate getRdf4JTemplate(
+	RDF4JTemplate getRdf4JTemplate(
 			@Autowired RepositoryConnectionFactory repositoryConnectionFactory,
 			@Autowired(required = false) OperationCacheProperties operationCacheProperties) {
 		OperationInstantiator operationInstantiator;
@@ -42,7 +52,7 @@ public class Rdf4JConfig {
 		} else {
 			operationInstantiator = new DirectOperationInstantiator();
 		}
-		return new Rdf4JTemplate(repositoryConnectionFactory, operationInstantiator);
+		return new RDF4JTemplate(repositoryConnectionFactory, operationInstantiator);
 	}
 
 	@Bean

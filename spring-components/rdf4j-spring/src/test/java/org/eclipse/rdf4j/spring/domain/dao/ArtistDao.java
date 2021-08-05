@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.domain.dao;
 
 import static org.eclipse.rdf4j.spring.domain.model.Artist.*;
@@ -5,7 +15,6 @@ import static org.eclipse.rdf4j.spring.domain.model.Artist.*;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryResultUtil;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.spring.dao.Rdf4JCRUDDao;
@@ -13,16 +22,14 @@ import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.domain.model.Artist;
 import org.eclipse.rdf4j.spring.domain.model.EX;
-import org.eclipse.rdf4j.spring.support.Rdf4JTemplate;
-import org.eclipse.rdf4j.spring.support.UUIDSource;
+import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 import org.eclipse.rdf4j.spring.util.QueryResultUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ArtistDao extends Rdf4JCRUDDao<Artist, Artist, IRI> {
 
-	public ArtistDao(Rdf4JTemplate rdf4JTemplate) {
+	public ArtistDao(RDF4JTemplate rdf4JTemplate) {
 		super(rdf4JTemplate);
 	}
 

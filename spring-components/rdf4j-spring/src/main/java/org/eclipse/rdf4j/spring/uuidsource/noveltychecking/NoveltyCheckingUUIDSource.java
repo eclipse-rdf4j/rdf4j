@@ -1,15 +1,25 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.uuidsource.noveltychecking;
 
 import java.util.UUID;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.spring.support.Rdf4JTemplate;
+import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 import org.eclipse.rdf4j.spring.support.UUIDSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
 public class NoveltyCheckingUUIDSource implements UUIDSource {
 	@Autowired
-	private Rdf4JTemplate rdf4JTemplate;
+	private RDF4JTemplate rdf4JTemplate;
 
 	@Override
 	public IRI nextUUID() {

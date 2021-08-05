@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.tx;
 
 import java.lang.invoke.MethodHandles;
@@ -32,7 +42,7 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 		}
 		RepositoryConnection con = data.getConnection();
 		if (con == null) {
-			throw new Rdf4JTransactionException(
+			throw new RDF4JTransactionException(
 					"Cannot obtain connection: transaction started but no connection found");
 		}
 		if (!con.isOpen()) {
@@ -62,7 +72,7 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 			}
 			con = data.getConnection();
 			if (con == null) {
-				throw new Rdf4JTransactionException(
+				throw new RDF4JTransactionException(
 						"Cannot close connection: transaction started but no connection found");
 			}
 			if (!con.isOpen()) {
@@ -109,7 +119,7 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 		}
 		RepositoryConnection con = data.getConnection();
 		if (con == null) {
-			throw new Rdf4JTransactionException(
+			throw new RDF4JTransactionException(
 					"Cannot obtain connection: transaction started but no connection found");
 		}
 		if (!con.isOpen()) {

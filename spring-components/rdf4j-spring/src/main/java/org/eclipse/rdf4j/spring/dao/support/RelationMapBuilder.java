@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.dao.support;
 
 import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRI;
@@ -22,7 +32,7 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.BindingsBuilder;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
-import org.eclipse.rdf4j.spring.support.Rdf4JTemplate;
+import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
 public class RelationMapBuilder {
 	public static final ExtendedVariable _relSubject = new ExtendedVariable("rel_subject");
@@ -32,12 +42,12 @@ public class RelationMapBuilder {
 	private static final IRI NOTHING = new MultiIRI("urn:java:relationDaoSupport:Nothing");
 	private RdfPredicate predicate;
 	private GraphPattern[] constraints = new GraphPattern[0];
-	private Rdf4JTemplate rdf4JTemplate;
+	private RDF4JTemplate rdf4JTemplate;
 	private boolean isRelationOptional = false;
 	private boolean isSubjectKeyed = true;
 	private BindingsBuilder bindingsBuilder = new BindingsBuilder();
 
-	public RelationMapBuilder(Rdf4JTemplate rdf4JTemplate, RdfPredicate predicate) {
+	public RelationMapBuilder(RDF4JTemplate rdf4JTemplate, RdfPredicate predicate) {
 		this.rdf4JTemplate = rdf4JTemplate;
 		this.predicate = predicate;
 	}

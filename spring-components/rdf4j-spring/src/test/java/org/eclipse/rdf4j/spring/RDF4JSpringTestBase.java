@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring;
 
 import org.eclipse.rdf4j.spring.pool.PoolConfig;
@@ -13,11 +23,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.ComponentScan;
 import org.springframework.core.io.Resource;
-import org.springframework.test.annotation.Commit;
 import org.springframework.test.annotation.DirtiesContext;
-import org.springframework.test.annotation.Rollback;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
@@ -27,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 @ContextConfiguration(
 		classes = {
-				Rdf4JConfig.class,
+				RDF4JConfig.class,
 				TestConfig.class,
 				InMemoryRepositoryConfig.class,
 				RemoteRepositoryConfig.class,
@@ -48,7 +55,7 @@ import org.springframework.transaction.annotation.Transactional;
 				"rdf4j.spring.resultcache.enabled=false"
 		})
 @DirtiesContext
-public class Rdf4JTestBase {
+public class RDF4JSpringTestBase {
 	@BeforeAll
 	public static void insertTestData(
 			@Autowired DataInserter dataInserter,

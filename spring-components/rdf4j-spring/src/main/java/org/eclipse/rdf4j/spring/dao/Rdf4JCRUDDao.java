@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.dao;
 
 import java.util.List;
@@ -14,7 +24,7 @@ import org.eclipse.rdf4j.spring.dao.support.key.CompositeKey;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
-import org.eclipse.rdf4j.spring.support.Rdf4JTemplate;
+import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
 /**
  * Base class for DAOs providing CRUD functionality. The class allows for entities to be represented with different
@@ -35,7 +45,7 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 	 * Constructor that provides the type of the ID to the base implementation. This constructor has to be used if the
 	 * ID is anything but IRI.
 	 */
-	public Rdf4JCRUDDao(Rdf4JTemplate rdf4JTemplate, Class<ID> idClass) {
+	public Rdf4JCRUDDao(RDF4JTemplate rdf4JTemplate, Class<ID> idClass) {
 		super(rdf4JTemplate);
 		this.idClass = idClass;
 	}
@@ -43,7 +53,7 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 	/**
 	 * Constructor to be used by implementations that use IRI for the ID type.
 	 */
-	public Rdf4JCRUDDao(Rdf4JTemplate rdf4JTemplate) {
+	public Rdf4JCRUDDao(RDF4JTemplate rdf4JTemplate) {
 		this(rdf4JTemplate, (Class<ID>) IRI.class);
 	}
 
@@ -83,7 +93,7 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 
 	/**
 	 * When updating an entity via {@link #save(Object)}, its triples are removed first using this method. The default
-	 * implementation used {@link Rdf4JTemplate#deleteTriplesWithSubject(IRI)}. If more complex deletion behaviour (e.g.
+	 * implementation used {@link RDF4JTemplate#deleteTriplesWithSubject(IRI)}. If more complex deletion behaviour (e.g.
 	 * cascading) is needed, this method should be overriden.
 	 * 
 	 */
@@ -105,6 +115,12 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 		return id;
 	}
 
+	/**
+	 * Converts the provided id to an IRI. The default implementation only works for DAOs that use IRI ids.
+	 * 
+	 * @param id
+	 * @return
+	 */
 	protected IRI convertIdToIri(ID id) {
 		if (id == null) {
 			return null;
@@ -116,6 +132,12 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 				"Cannot generically convert IDs to IRIs. The subclass must implement convertToIri(ID)");
 	}
 
+	/**
+	 * Generates a new id for an entity. The default implementation only works for IRI ids.
+	 * 
+	 * @param providedId
+	 * @return a new id.
+	 */
 	protected ID generateNewId(ID providedId) {
 		if (idClass.equals(IRI.class)) {
 			return (ID) getRdf4JTemplate().getNewUUID();
@@ -168,7 +190,7 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 	}
 
 	/**
-	 * Naive implementation using {@link Rdf4JTemplate#delete(IRI)}. DAOs that need more complex deletion behaviour
+	 * Naive implementation using {@link RDF4JTemplate#delete(IRI)}. DAOs that need more complex deletion behaviour
 	 * (e.g. cascading) should override this method.
 	 * 
 	 */

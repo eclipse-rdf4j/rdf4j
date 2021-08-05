@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.uuidsource.sequence;
 
 import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRI;
@@ -12,7 +22,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.spring.support.Rdf4JTemplate;
+import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 import org.eclipse.rdf4j.spring.support.UUIDSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 public class UUIDSequence implements UUIDSource {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-	private @Autowired Rdf4JTemplate rdf4JTemplate;
+	private @Autowired RDF4JTemplate rdf4JTemplate;
 	private int prefetchCount;
 	private Map<RepositoryConnection, Queue<IRI>> prefetchedUUIDs = Collections.synchronizedMap(new WeakHashMap<>());
 

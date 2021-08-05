@@ -1,3 +1,13 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.dao.support.opbuilder;
 
 import java.util.Map;
@@ -9,14 +19,14 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.BindingsBuilder;
-import org.eclipse.rdf4j.spring.support.Rdf4JTemplate;
+import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
 public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<T, SUB>> {
 	private T operation;
 	private BindingsBuilder bindingsBuilder = new BindingsBuilder();
-	private Rdf4JTemplate rdf4JTemplate;
+	private RDF4JTemplate rdf4JTemplate;
 
-	public OperationBuilder(T operation, Rdf4JTemplate template) {
+	public OperationBuilder(T operation, RDF4JTemplate template) {
 		Objects.requireNonNull(operation);
 		this.operation = operation;
 		this.rdf4JTemplate = template;
@@ -26,7 +36,7 @@ public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<
 		return operation;
 	}
 
-	protected Rdf4JTemplate getRdf4JTemplate() {
+	protected RDF4JTemplate getRdf4JTemplate() {
 		return rdf4JTemplate;
 	}
 

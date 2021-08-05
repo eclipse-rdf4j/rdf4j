@@ -8,14 +8,24 @@
  *  ******************************************************************************
  */
 
-package org.eclipse.rdf4j.spring.resultcache;
+package org.eclipse.rdf4j.spring.tx.exception;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
+import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
 
-@Configuration
-@ConditionalOnProperty("rdf4j.spring.resultcache.enabled")
-@EnableConfigurationProperties(ResultCacheProperties.class)
-public class ResultCacheConfig {
+public class RDF4JTransactionException extends RDF4JSpringException {
+	public RDF4JTransactionException() {
+	}
+
+	public RDF4JTransactionException(String message) {
+		super(message);
+	}
+
+	public RDF4JTransactionException(String message, Throwable cause) {
+		super(message, cause);
+	}
+
+	public RDF4JTransactionException(Throwable cause) {
+		super(cause);
+	}
+
 }

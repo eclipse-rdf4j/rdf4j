@@ -1,5 +1,5 @@
 org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
-org.eclipse.rdf4j.spring.Rdf4JConfig,\
+org.eclipse.rdf4j.spring.RDF4JConfig,\
 org.eclipse.rdf4j.spring.operationlog.OperationLogConfig,\
 org.eclipse.rdf4j.spring.operationlog.log.jmx.OperationLogJmxConfig,\
 org.eclipse.rdf4j.spring.operationcache.OperationCacheConfig,\

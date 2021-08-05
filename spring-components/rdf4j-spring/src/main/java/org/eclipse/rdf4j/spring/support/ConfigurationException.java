@@ -1,6 +1,18 @@
+/*
+ * ******************************************************************************
+ *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  * All rights reserved. This program and the accompanying materials
+ *  * are made available under the terms of the Eclipse Distribution License v1.0
+ *  * which accompanies this distribution, and is available at
+ *  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *  ******************************************************************************
+ */
+
 package org.eclipse.rdf4j.spring.support;
 
-public class ConfigurationException extends RuntimeException {
+import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
+
+public class ConfigurationException extends RDF4JSpringException {
 	public ConfigurationException() {
 	}
 
@@ -14,10 +26,5 @@ public class ConfigurationException extends RuntimeException {
 
 	public ConfigurationException(Throwable cause) {
 		super(cause);
-	}
-
-	public ConfigurationException(String message, Throwable cause, boolean enableSuppression,
-			boolean writableStackTrace) {
-		super(message, cause, enableSuppression, writableStackTrace);
 	}
 }
