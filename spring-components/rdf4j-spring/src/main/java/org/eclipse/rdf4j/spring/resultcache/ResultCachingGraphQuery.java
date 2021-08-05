@@ -53,7 +53,9 @@ public class ResultCachingGraphQuery extends DelegatingGraphQuery {
 	@Override
 	public GraphQueryResult evaluate() throws QueryEvaluationException {
 		BindingSet currentBindings = getDelegate().getBindings();
-		Integer cacheKey = currentBindings.hashCode() + getDelegate().hashCode();
+		// TODO: this might be pretty slow due to the toString() call. Is there a better way to get
+		// a hash for a query with minmal risk of collision ?
+		Integer cacheKey = currentBindings.hashCode() + getDelegate().toString().hashCode();
 		GraphQueryResult cachedResult;
 		logger.debug("Checking global result cache");
 		if (properties.isAssumeNoOtherRepositoryClients()) {
@@ -62,7 +64,7 @@ public class ResultCachingGraphQuery extends DelegatingGraphQuery {
 				return cachedResult;
 			}
 		}
-		logger.debug("Cehcking local result cache");
+		logger.debug("Checking local result cache");
 		ResultCache<Integer, ReusableGraphQueryResult> localResultCache = localResultCacheRef.get();
 		if (localResultCache != null) {
 			cachedResult = recreateCachedResultIfPossible(currentBindings, cacheKey, localResultCache);

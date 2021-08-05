@@ -10,6 +10,9 @@
 
 package org.eclipse.rdf4j.spring;
 
+import org.eclipse.rdf4j.spring.operationcache.OperationCacheConfig;
+import org.eclipse.rdf4j.spring.operationlog.OperationLogConfig;
+import org.eclipse.rdf4j.spring.operationlog.log.jmx.OperationLogJmxConfig;
 import org.eclipse.rdf4j.spring.pool.PoolConfig;
 import org.eclipse.rdf4j.spring.repository.inmemory.InMemoryRepositoryConfig;
 import org.eclipse.rdf4j.spring.repository.remote.RemoteRepositoryConfig;
@@ -40,6 +43,9 @@ import org.springframework.transaction.annotation.Transactional;
 				RemoteRepositoryConfig.class,
 				PoolConfig.class,
 				ResultCacheConfig.class,
+				OperationCacheConfig.class,
+				OperationLogConfig.class,
+				OperationLogJmxConfig.class,
 				TxConfig.class,
 				UUIDSequenceConfig.class,
 				NoveltyCheckingUUIDSourceConfig.class,
@@ -51,8 +57,11 @@ import org.springframework.transaction.annotation.Transactional;
 				"rdf4j.spring.repository.inmemory.enabled=true",
 				"rdf4j.spring.repository.inmemory.use-shacl-sail=true",
 				"rdf4j.spring.tx.enabled=true",
-				"rdf4j.spring.pool.enabled=false",
-				"rdf4j.spring.resultcache.enabled=false"
+				"rdf4j.spring.resultcache.enabled=false",
+				"rdf4j.spring.operationcache.enabled=false",
+				"rdf4j.spring.pool.enabled=true",
+				"rdf4j.spring.pool.max-connections=2"
+
 		})
 @DirtiesContext
 public class RDF4JSpringTestBase {

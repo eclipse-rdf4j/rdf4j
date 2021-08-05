@@ -120,6 +120,13 @@ public class RDF4JTemplate {
 	 * Uses a cached {@link Update} if one is available under the specified <code>operationName
 	 * </code> for the {@link RepositoryConnection} that is used, otherwise the query string is obtained from the
 	 * specified supplier, a new Update is instantiated and cached for future calls to this method.
+	 *
+	 * Note: this call is equivalent to {@link #update(String)} if operation caching is disabled.
+	 *
+	 * @param owner                the class of the client requesting the update, used to generate a cache key in
+	 *                             combination with the operation name
+	 * @param operationName        name of the operation that, within the scope of the client, identifies the update
+	 * @param updateStringSupplier supplies the sparql of the update if needed
 	 */
 	public UpdateExecutionBuilder update(
 			Class<?> owner, String operationName, Supplier<String> updateStringSupplier) {

@@ -32,6 +32,7 @@
  *             "rdf4j.spring.repository.inmemory.enabled=true",
  *             "rdf4j.spring.pool.enabled=true",
  *             "rdf4j.spring.operationcache.enabled=true",
+ *             "rdf4j.spring.operationlog.enabled=true",
  *             "rdf4j.spring.resultcache.enabled=true",
  *             "rdf4j.spring.tx.enabled=true",
  *         })
@@ -47,6 +48,7 @@
  *
  * <ul>
  * <li>{@link org.eclipse.rdf4j.spring.operationcache Rdf4J-Spring OperationCache}
+ * <li>{@link org.eclipse.rdf4j.spring.operationlog Rdf4J-Spring OperationLog}
  * <li>{@link org.eclipse.rdf4j.spring.pool Rdf4J-Spring Pool}
  * <li>{@link org.eclipse.rdf4j.spring.repository Rdf4J-Spring Repository}
  * <li>{@link org.eclipse.rdf4j.spring.resultcache Rdf4J-Spring ResultCache}

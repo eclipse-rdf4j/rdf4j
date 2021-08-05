@@ -51,7 +51,9 @@ public class ResultCachingTupleQuery extends DelegatingTupleQuery {
 	@Override
 	public TupleQueryResult evaluate() throws QueryEvaluationException {
 		BindingSet currentBindings = getDelegate().getBindings();
-		Integer cacheKey = currentBindings.hashCode() + getDelegate().hashCode();
+		// TODO: this might be pretty slow due to the toString() call. Is there a better way to get
+		// a hash for a query with minmal risk of collision ?
+		Integer cacheKey = currentBindings.hashCode() + getDelegate().toString().hashCode();
 		logger.debug("Checking global result cache");
 		TupleQueryResult cachedResult;
 		if (properties.isAssumeNoOtherRepositoryClients()) {

@@ -48,8 +48,10 @@ public class RDF4JConfig {
 			@Autowired(required = false) OperationCacheProperties operationCacheProperties) {
 		OperationInstantiator operationInstantiator;
 		if (operationCacheProperties != null && operationCacheProperties.isEnabled()) {
+			logger.debug("Operation caching is enabled");
 			operationInstantiator = new CachingOperationInstantiator();
 		} else {
+			logger.debug("Operation caching is not enabled");
 			operationInstantiator = new DirectOperationInstantiator();
 		}
 		return new RDF4JTemplate(repositoryConnectionFactory, operationInstantiator);
@@ -63,17 +65,30 @@ public class RDF4JConfig {
 			@Autowired(required = false) OperationLog operationLog,
 			@Autowired(required = false) TxProperties txProperties) {
 		RepositoryConnectionFactory factory = getDirectRepositoryConnectionFactory(repository);
-		if (poolProperties != null) {
+
+		if (poolProperties != null && poolProperties.isEnabled()) {
+			logger.debug("Connection pooling is enabled");
 			factory = wrapWithPooledRepositoryConnectionFactory(factory, poolProperties);
+		} else {
+			logger.debug("Connection pooling is not enabled");
 		}
-		if (resultCacheProperties != null) {
+		if (resultCacheProperties != null && resultCacheProperties.isEnabled()) {
 			factory = wrapWithCachingRepositoryConnectionFactory(factory, resultCacheProperties);
+			logger.debug("Result caching is enabled");
+		} else {
+			logger.debug("Result caching is not enabled");
 		}
 		if (operationLog != null) {
 			factory = wrapWithLoggingRepositoryConnectionFactory(factory, operationLog);
+			logger.debug("Query logging is enabled");
+		} else {
+			logger.debug("Query logging is not enabled");
 		}
 		if (txProperties != null && txProperties.isEnabled()) {
 			factory = wrapWithTxRepositoryConnectionFactory(factory);
+			logger.debug("Spring transaction integration is enabled");
+		} else {
+			logger.debug("Spring transaction integration is not enabled");
 		}
 		return factory;
 	}
