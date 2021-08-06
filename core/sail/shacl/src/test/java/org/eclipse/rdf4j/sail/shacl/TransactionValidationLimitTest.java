@@ -155,4 +155,30 @@ public class TransactionValidationLimitTest {
 
 	}
 
+	@Test
+	public void testBulkValidationForEmptySail() throws Exception {
+
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
+
+		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
+			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
+
+			connection.begin(ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled);
+
+			assertEquals(ShaclSail.TransactionSettings.ValidationApproach.Bulk,
+					shaclSailConnection.getTransactionSettings().getValidationApproach(),
+					"Empty sail should use bulk validation");
+			assertTrue(shaclSailConnection.getTransactionSettings().isCacheSelectNodes(),
+					"Bulk validation should by default disable caching select nodes, but the local transaction settings should override this.");
+			assertFalse(shaclSailConnection.getTransactionSettings().isParallelValidation(),
+					"Bulk validation should by default disable parallel validation.");
+
+			connection.commit();
+
+		} finally {
+			shaclRepository.shutDown();
+		}
+
+	}
+
 }

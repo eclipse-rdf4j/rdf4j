@@ -126,11 +126,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 		SailRepository repository = new SailRepository(shaclRepo);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);

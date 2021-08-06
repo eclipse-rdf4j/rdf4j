@@ -84,11 +84,6 @@ public class ClassBenchmarkEmpty {
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclClassBenchmark.ttl"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
@@ -103,11 +98,6 @@ public class ClassBenchmarkEmpty {
 	public void shaclBulk() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclClassBenchmark.ttl"));
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
@@ -128,10 +118,6 @@ public class ClassBenchmarkEmpty {
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
@@ -149,10 +135,6 @@ public class ClassBenchmarkEmpty {
 
 		repository.init();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
