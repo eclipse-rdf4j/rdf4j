@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.spring.support;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -21,7 +22,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
+import org.eclipse.rdf4j.sparqlbuilder.core.PropertyPaths;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
 import org.eclipse.rdf4j.spring.dao.support.UpdateWithModelBuilder;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.GraphQueryEvaluationBuilder;
@@ -34,6 +40,8 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.Assert;
+
+import javax.validation.constraints.AssertTrue;
 
 public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 
@@ -147,8 +155,8 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSet(bs -> QueryResultUtils.getIRI(bs, "artist"));
 		Assertions.assertEquals(2, artists.size());
-		Assertions.assertTrue(artists.contains(EX.of("Picasso")));
-		Assertions.assertTrue(artists.contains(EX.of("VanGogh")));
+		Assertions.assertTrue(artists.contains(EX.Picasso));
+		Assertions.assertTrue(artists.contains(EX.VanGogh));
 	}
 
 	@Test
@@ -160,8 +168,8 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSet(bs -> QueryResultUtils.getIRI(bs, "artist"));
 		Assertions.assertEquals(2, artists.size());
-		Assertions.assertTrue(artists.contains(EX.of("Picasso")));
-		Assertions.assertTrue(artists.contains(EX.of("VanGogh")));
+		Assertions.assertTrue(artists.contains(EX.Picasso));
+		Assertions.assertTrue(artists.contains(EX.VanGogh));
 	}
 
 	@Test
@@ -182,8 +190,8 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSet(bs -> QueryResultUtils.getIRI(bs, "artist"));
 		Assertions.assertEquals(2, artists.size());
-		Assertions.assertTrue(artists.contains(EX.of("Picasso")));
-		Assertions.assertTrue(artists.contains(EX.of("VanGogh")));
+		Assertions.assertTrue(artists.contains(EX.Picasso));
+		Assertions.assertTrue(artists.contains(EX.VanGogh));
 	}
 
 	@Test
@@ -192,8 +200,8 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSet(bs -> QueryResultUtils.getIRI(bs, "artist"));
 		Assertions.assertEquals(2, artists.size());
-		Assertions.assertTrue(artists.contains(EX.of("Picasso")));
-		Assertions.assertTrue(artists.contains(EX.of("VanGogh")));
+		Assertions.assertTrue(artists.contains(EX.Picasso));
+		Assertions.assertTrue(artists.contains(EX.VanGogh));
 	}
 
 	@Test
@@ -205,8 +213,8 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSet(bs -> QueryResultUtils.getIRI(bs, "artist"));
 		Assertions.assertEquals(2, artists.size());
-		Assertions.assertTrue(artists.contains(EX.of("Picasso")));
-		Assertions.assertTrue(artists.contains(EX.of("VanGogh")));
+		Assertions.assertTrue(artists.contains(EX.Picasso));
+		Assertions.assertTrue(artists.contains(EX.VanGogh));
 	}
 
 	@Test
@@ -229,24 +237,24 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 	protected void checkArtistModel(Model model) {
 		Assertions.assertTrue(
 				model.contains(
-						EX.of("Picasso"),
+						EX.Picasso,
 						FOAF.SURNAME,
 						SimpleValueFactory.getInstance().createLiteral("Picasso")));
 		Assertions.assertTrue(
 				model.contains(
-						EX.of("Picasso"),
+						EX.Picasso,
 						FOAF.FIRST_NAME,
 						SimpleValueFactory.getInstance().createLiteral("Pablo")));
 		Assertions.assertTrue(
 				model.contains(
-						EX.of("VanGogh"),
+						EX.VanGogh,
 						FOAF.FIRST_NAME,
 						SimpleValueFactory.getInstance().createLiteral("Vincent")));
 		Assertions.assertTrue(
 				model.contains(
-						EX.of("VanGogh"),
-						EX.of("creatorOf"),
-						EX.of("starryNight")));
+						EX.VanGogh,
+						EX.creatorOf,
+						EX.starryNight));
 	}
 
 	@Test
@@ -283,24 +291,185 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 		checkArtistModel(model);
 	}
 
-	/**
-	 *
-	 * STILL TODO
-	 *
-	 *
-	 * public void deleteTriplesWithSubject(IRI id) { rdf4JTemplate.deleteTriplesWithSubject(id); }
-	 * 
-	 * public void delete(IRI id) { rdf4JTemplate.delete(id); }
-	 * 
-	 * public void delete(IRI start, List<PropertyPath> propertyPaths) { rdf4JTemplate.delete(start, propertyPaths); }
-	 * 
-	 * public void associate(IRI fromResource, IRI property, Collection<IRI> toResources, boolean deleteOtherOutgoing,
-	 * boolean deleteOtherIcoming) { rdf4JTemplate.associate(fromResource, property, toResources, deleteOtherOutgoing,
-	 * deleteOtherIcoming); }
-	 * 
-	 * public Supplier<String> getStringSupplierFromResourceContent(String resourceName) { return
-	 * rdf4JTemplate.getStringSupplierFromResourceContent(resourceName); }
-	 * 
-	 * public IRI getNewUUID() { return rdf4JTemplate.getNewUUID(); }
-	 **/
+	@Test
+	public void testDeleteTriplesWithSubject() {
+		rdf4JTemplate.deleteTriplesWithSubject(EX.guernica);
+		Assertions.assertTrue(
+				rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
+						+ "SELECT distinct ?a "
+						+ "WHERE { ?a a ex:Painting . FILTER (?a = ex:guernica) }")
+						.evaluateAndConvert()
+						.toList(bs -> bs.getValue("a"))
+						.isEmpty());
+		Assertions.assertFalse(
+				rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
+						+ "SELECT distinct ?a "
+						+ "WHERE { ?a ?p ?o . FILTER (?o = ex:guernica) }")
+						.evaluateAndConvert()
+						.toList(bs -> bs.getValue("a"))
+						.isEmpty());
+	}
+
+	@Test
+	public void testDelete() {
+		rdf4JTemplate.delete(EX.guernica);
+		Assertions.assertTrue(
+				rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
+						+ "SELECT distinct ?a "
+						+ "WHERE { ?a a ex:Painting . FILTER (?a = ex:guernica) }")
+						.evaluateAndConvert()
+						.toList(bs -> bs.getValue("a"))
+						.isEmpty());
+		Assertions.assertTrue(
+				rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
+						+ "SELECT distinct ?a "
+						+ "WHERE { ?a ?p ?o . FILTER (?o = ex:guernica) }")
+						.evaluateAndConvert()
+						.toList(bs -> bs.getValue("a"))
+						.isEmpty());
+	}
+
+	@Test
+	public void testDelete2() {
+		Assertions.assertFalse(
+				rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
+						+ "SELECT distinct ?a "
+						+ "WHERE { ?a ?b ?c . "
+						+ "  FILTER (?a = ex:guernica "
+						+ "  || ?c = ex:guernica) "
+						+ "}")
+						.evaluateAndConvert()
+						.toList(bs -> bs.getValue("a"))
+						.isEmpty());
+		rdf4JTemplate.delete(EX.Picasso,
+				List.of(
+						PropertyPathBuilder
+								.of(Rdf.iri(EX.creatorOf))
+								.build()
+				));
+		Assertions.assertTrue(
+				rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
+						+ "SELECT distinct ?a "
+						+ "WHERE { ?a ?b ?c . "
+						+ "  FILTER (?a = ex:guernica "
+						+ "  || ?a = ex:Picasso"
+						+ "  || ?c = ex:guernica"
+						+ "  || ?c = ex:Picasso) "
+						+ "}")
+						.evaluateAndConvert()
+						.toList(bs -> bs.getValue("a"))
+						.isEmpty());
+		Assertions.assertFalse(rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
+				+ "SELECT distinct ?a "
+				+ "WHERE { ?a ?b ?c . "
+				+ "  FILTER (?a = ex:starryNight "
+				+ "  || ?a = ex:VanGogh"
+				+ "  || ?c = ex:starryNight"
+				+ "  || ?c = ex:VanGogh) "
+				+ "}")
+				.evaluateAndConvert()
+				.toList(bs -> bs.getValue("a"))
+				.isEmpty());
+
+	}
+
+	@Test
+	public void testAssociate_deleteIncoming() {
+		IRI me = EX.of("me");
+		rdf4JTemplate.updateWithBuilder()
+				.subject(me)
+				.add(RDF.TYPE, EX.Artist)
+				.execute();
+
+		// let's forge some data
+		rdf4JTemplate.associate(
+				me,
+				EX.creatorOf,
+				Set.of(EX.guernica, EX.starryNight, EX.potatoEaters),
+				false, true);
+		Assertions.assertTrue(
+				rdf4JTemplate.tupleQueryFromResource(getClass(),
+						"classpath:sparql/get-paintings-of-artist.rq")
+						.withBinding("artist", EX.Picasso)
+						.evaluateAndConvert()
+						.toList(b -> b)
+						.isEmpty());
+		Assertions.assertEquals(1,
+				rdf4JTemplate.tupleQueryFromResource(getClass(),
+						"classpath:sparql/get-paintings-of-artist.rq")
+						.withBinding("artist", EX.VanGogh)
+						.evaluateAndConvert()
+						.toList(b -> b)
+						.size());
+		Assertions.assertEquals(3,
+				rdf4JTemplate.tupleQueryFromResource(getClass(),
+						"classpath:sparql/get-paintings-of-artist.rq")
+						.withBinding("artist", me)
+						.evaluateAndConvert()
+						.toList(b -> b)
+						.size());
+
+	}
+
+	@Test
+	public void testAssociate_deleteOutgoing() {
+		rdf4JTemplate.associate(
+				EX.Picasso,
+				EX.creatorOf,
+				Set.of(EX.starryNight, EX.potatoEaters),
+				true, false);
+		Assertions.assertEquals(2,
+				rdf4JTemplate.tupleQueryFromResource(getClass(),
+						"classpath:sparql/get-paintings-of-artist.rq")
+						.withBinding("artist", EX.Picasso)
+						.evaluateAndConvert()
+						.toList(b -> b)
+						.size());
+		Assertions.assertEquals(3,
+				rdf4JTemplate.tupleQueryFromResource(getClass(),
+						"classpath:sparql/get-paintings-of-artist.rq")
+						.withBinding("artist", EX.VanGogh)
+						.evaluateAndConvert()
+						.toList(b -> b)
+						.size());
+
+	}
+
+	@Test
+	public void testAssociate() {
+		IRI me = EX.of("me");
+		rdf4JTemplate.updateWithBuilder()
+				.subject(me)
+				.add(RDF.TYPE, EX.Artist)
+				.execute();
+
+		// let's forge some data
+		rdf4JTemplate.associate(
+				me,
+				EX.creatorOf,
+				Set.of(EX.guernica, EX.starryNight, EX.potatoEaters),
+				false, false);
+		Assertions.assertEquals(1,
+				rdf4JTemplate.tupleQueryFromResource(getClass(),
+						"classpath:sparql/get-paintings-of-artist.rq")
+						.withBinding("artist", EX.Picasso)
+						.evaluateAndConvert()
+						.toList(b -> b)
+						.size());
+		Assertions.assertEquals(3,
+				rdf4JTemplate.tupleQueryFromResource(getClass(),
+						"classpath:sparql/get-paintings-of-artist.rq")
+						.withBinding("artist", EX.VanGogh)
+						.evaluateAndConvert()
+						.toList(b -> b)
+						.size());
+		Assertions.assertEquals(3,
+				rdf4JTemplate.tupleQueryFromResource(getClass(),
+						"classpath:sparql/get-paintings-of-artist.rq")
+						.withBinding("artist", me)
+						.evaluateAndConvert()
+						.toList(b -> b)
+						.size());
+
+	}
 }

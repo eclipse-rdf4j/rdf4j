@@ -266,6 +266,11 @@ public class RDF4JTemplate {
 				});
 	}
 
+	/**
+	 * Deletes the specified resource: all triples are deleted in which <code>id</code> is the subject or the object.
+	 * 
+	 * @param id
+	 */
 	public void delete(IRI id) {
 		consumeConnection(
 				con -> {
@@ -274,6 +279,15 @@ public class RDF4JTemplate {
 				});
 	}
 
+	/**
+	 * Deletes the specified resource and all resources <code>R</code> reached via any of the specified property paths.
+	 *
+	 * Deletion means that all triples are removed in which <code>start</code> or any resource in <code>R</code> are the
+	 * subject or the object.
+	 *
+	 * @param start         the initial resource to be deleted
+	 * @param propertyPaths paths by which to reach more resources to be deleted.
+	 */
 	public void delete(IRI start, List<PropertyPath> propertyPaths) {
 		List<Variable> targets = new ArrayList<>();
 		int i = 0;
@@ -283,7 +297,7 @@ public class RDF4JTemplate {
 		Variable ip = SparqlBuilder.var("ip");
 		ModifyQuery q = Queries.MODIFY()
 				.delete(toIri(start).has(sp, so), is.has(ip, start))
-				.where(toIri(start).has(sp, so), is.has(ip, start));
+				.where(toIri(start).has(sp, so).optional(), is.has(ip, start).optional());
 		for (PropertyPath p : propertyPaths) {
 			i++;
 			Variable target = SparqlBuilder.var("target_" + i);
@@ -292,7 +306,8 @@ public class RDF4JTemplate {
 			Variable p2 = SparqlBuilder.var("p2_" + i);
 			Variable s2 = SparqlBuilder.var("s2_" + i);
 			q.delete(target.has(p1, o1), s2.has(p2, target))
-					.where(toIri(start).has(p, target), target.has(p1, o1), s2.has(p2, target));
+					.where(toIri(start).has(p, target).optional(), target.has(p1, o1).optional(),
+							s2.has(p2, target).optional());
 		}
 		update(q.getQueryString()).execute();
 	}

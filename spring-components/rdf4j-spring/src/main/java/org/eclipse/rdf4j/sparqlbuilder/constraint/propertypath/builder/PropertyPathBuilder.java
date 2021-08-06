@@ -32,7 +32,7 @@ public class PropertyPathBuilder {
 		this.head = P(predicate);
 	}
 
-	PropertyPathBuilder of(Iri predicate) {
+	public static PropertyPathBuilder of(Iri predicate) {
 		return new PropertyPathBuilder(predicate);
 	}
 
