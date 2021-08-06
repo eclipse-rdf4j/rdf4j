@@ -233,7 +233,7 @@ public class RepositoryFederatedService implements FederatedService {
 			}
 
 			if (service.isSilent()) {
-				return new SilentIteration<>(result);
+				return new org.eclipse.rdf4j.common.iteration.SilentIteration<>(result);
 			} else {
 				return result;
 			}
@@ -337,7 +337,7 @@ public class RepositoryFederatedService implements FederatedService {
 			// fallback to simple evaluation (just a single binding)
 			if (allBindings.size() == 1) {
 				result = select(service, projectionVars, allBindings.get(0), baseUri);
-				result = service.isSilent() ? new SilentIteration(result) : result;
+				result = service.isSilent() ? new org.eclipse.rdf4j.common.iteration.SilentIteration(result) : result;
 				return result;
 			}
 
@@ -377,7 +377,7 @@ public class RepositoryFederatedService implements FederatedService {
 				result = new CloseConnectionIteration(result, conn);
 			}
 
-			result = service.isSilent() ? new SilentIteration(result) : result;
+			result = service.isSilent() ? new org.eclipse.rdf4j.common.iteration.SilentIteration(result) : result;
 			return result;
 
 		} catch (RepositoryException e) {
@@ -438,7 +438,7 @@ public class RepositoryFederatedService implements FederatedService {
 				allBindings, baseUri);
 
 		if (service.isSilent()) {
-			res = new SilentIteration(res);
+			res = new org.eclipse.rdf4j.common.iteration.SilentIteration(res);
 		}
 		return res;
 
