@@ -7,10 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;

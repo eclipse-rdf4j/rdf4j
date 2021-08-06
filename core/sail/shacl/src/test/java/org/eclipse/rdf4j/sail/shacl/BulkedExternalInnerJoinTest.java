@@ -1,21 +1,5 @@
 package org.eclipse.rdf4j.sail.shacl;
 
-import static org.junit.Assert.assertEquals;
-
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.DCAT;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
-import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
-import org.junit.Test;
-
 public class BulkedExternalInnerJoinTest {
 	/*
 	 * @Test public void gapInResultsFromQueryTest() {
