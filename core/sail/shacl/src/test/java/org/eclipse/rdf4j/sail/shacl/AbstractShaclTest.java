@@ -936,6 +936,8 @@ abstract public class AbstractShaclTest {
 					}
 				}
 
+				// testing that bulk validation always validates all the data by committing the transaction with
+				// validation disabled and then running an empty transaction with bulk validation
 				shaclSailConnection.commit();
 
 				shaclSailConnection.begin(ValidationApproach.Bulk);

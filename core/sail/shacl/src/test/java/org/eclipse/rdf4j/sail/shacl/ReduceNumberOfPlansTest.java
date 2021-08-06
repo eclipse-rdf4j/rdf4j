@@ -36,6 +36,8 @@ public class ReduceNumberOfPlansTest {
 		shaclSail.init();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.ttl");
 
+		addDummyData(shaclSail);
+
 		try (ShaclSailConnection connection = (ShaclSailConnection) shaclSail.getConnection()) {
 			connection.begin();
 
@@ -81,6 +83,8 @@ public class ReduceNumberOfPlansTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.init();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.ttl");
+
+		addDummyData(shaclSail);
 
 		try (ShaclSailConnection connection = (ShaclSailConnection) shaclSail.getConnection()) {
 
@@ -142,6 +146,14 @@ public class ReduceNumberOfPlansTest {
 			shaclSail.shutDown();
 		}
 
+	}
+
+	private void addDummyData(ShaclSail shaclSail) {
+		try (ShaclSailConnection connection = (ShaclSailConnection) shaclSail.getConnection()) {
+			connection.begin();
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+			connection.commit();
+		}
 	}
 
 	private void refreshAddedRemovedStatements(ShaclSailConnection connection) {

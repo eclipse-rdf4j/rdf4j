@@ -96,7 +96,7 @@ public class ParallelBenchmark {
 
 	@Benchmark
 	public void shaclSnapshotWithoutSerializableValidation(Blackhole blackhole) throws Exception {
-		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl", false);
+		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl");
 		((ShaclSail) repository.getSail()).setSerializableValidation(false);
 
 		runBenchmark(IsolationLevels.SNAPSHOT, repository, true, false, blackhole);
@@ -104,7 +104,7 @@ public class ParallelBenchmark {
 
 	@Benchmark
 	public void shaclSnapshotWithoutSerializableValidationMixedReadWrite(Blackhole blackhole) throws Exception {
-		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl", false);
+		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl");
 		((ShaclSail) repository.getSail()).setSerializableValidation(false);
 
 		runBenchmark(IsolationLevels.SNAPSHOT, repository, true, true, blackhole);
