@@ -16,6 +16,10 @@ import org.eclipse.rdf4j.spring.support.UUIDSource;
 import org.eclipse.rdf4j.spring.util.QueryResultUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class SimpleRepositoryUUIDSource implements UUIDSource {
 
 	@Autowired

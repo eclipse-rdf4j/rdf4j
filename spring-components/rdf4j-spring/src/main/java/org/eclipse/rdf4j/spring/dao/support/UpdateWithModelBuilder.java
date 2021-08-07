@@ -27,6 +27,10 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class UpdateWithModelBuilder {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());

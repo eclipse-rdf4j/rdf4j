@@ -13,6 +13,10 @@ package org.eclipse.rdf4j.spring.domain.model;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class Artist {
 	public static final ExtendedVariable ARTIST_ID = new ExtendedVariable("artist_id");
 	public static final ExtendedVariable ARTIST_FIRST_NAME = new ExtendedVariable("artist_firstName");

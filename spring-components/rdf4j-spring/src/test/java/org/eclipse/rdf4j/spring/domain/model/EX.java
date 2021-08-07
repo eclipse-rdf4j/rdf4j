@@ -13,6 +13,10 @@ package org.eclipse.rdf4j.spring.domain.model;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.MultiIRI;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class EX {
 	private static final String base = "http://example.org/";
 	public static final MultiIRI Artist = new MultiIRI(base, "Artist");

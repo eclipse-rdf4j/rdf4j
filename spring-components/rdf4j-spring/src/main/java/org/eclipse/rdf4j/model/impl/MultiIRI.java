@@ -15,6 +15,10 @@ import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
+/**
+ * @since 4.0.0
+ * @author Gabriel Pickl
+ */
 public class MultiIRI extends SimpleIRI implements Iri {
 
 	public MultiIRI(String baseName, String localName) {

@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.operationlog.log;
 
 import org.eclipse.rdf4j.query.Operation;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class OperationExecutionStats {
 	private int bindingsHashCode;
 	private String operation;

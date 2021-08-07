@@ -19,6 +19,10 @@ import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePathOrInversePredicatePath;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class NegatedPropertySetBuilder {
 	private List<PredicatePathOrInversePredicatePath> propertySet = new ArrayList<>();
 

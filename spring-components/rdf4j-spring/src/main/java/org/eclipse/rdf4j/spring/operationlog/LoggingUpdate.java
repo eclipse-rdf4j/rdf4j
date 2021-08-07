@@ -19,6 +19,10 @@ import org.eclipse.rdf4j.spring.support.query.DelegatingUpdate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class LoggingUpdate extends DelegatingUpdate {
 
 	private OperationLog operationLog;

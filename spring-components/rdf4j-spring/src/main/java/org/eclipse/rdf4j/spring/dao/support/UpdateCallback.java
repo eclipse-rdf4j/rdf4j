@@ -15,5 +15,9 @@ import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.Value;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public interface UpdateCallback extends Consumer<Map<String, Value>> {
 }

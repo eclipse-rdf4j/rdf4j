@@ -19,6 +19,10 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class BindingsBuilder implements MutableBindings {
 	private Map<String, Value> bindings;
 

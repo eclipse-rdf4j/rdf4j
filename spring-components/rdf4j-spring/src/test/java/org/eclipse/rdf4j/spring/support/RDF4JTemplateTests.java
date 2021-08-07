@@ -43,6 +43,10 @@ import org.springframework.util.Assert;
 
 import javax.validation.constraints.AssertTrue;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 
 	@Autowired

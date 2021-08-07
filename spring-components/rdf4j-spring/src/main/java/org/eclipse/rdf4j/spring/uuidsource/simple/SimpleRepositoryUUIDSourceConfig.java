@@ -15,6 +15,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @Configuration
 @ConditionalOnProperty(prefix = "rdf4j.spring.uuidsource.simple", name = "enabled")
 @EnableConfigurationProperties(SimpleRepositoryUUIDSourceProperties.class)

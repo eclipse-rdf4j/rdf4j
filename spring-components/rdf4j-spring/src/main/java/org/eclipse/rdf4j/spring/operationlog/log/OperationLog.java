@@ -17,6 +17,10 @@ import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.spring.operationlog.log.slf4j.DebuggingOperationExecutionStatsConsumer;
 import org.springframework.beans.factory.annotation.Autowired;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class OperationLog {
 
 	private OperationExecutionStatsConsumer statsConsumer;

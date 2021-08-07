@@ -23,5 +23,7 @@
  * {@link org.eclipse.rdf4j.spring.RDF4JConfig}, will use the
  * {@link org.eclipse.rdf4j.spring.operationcache.CachingOperationInstantiator CachingOperationInstantiator} to generate
  * new SPARQL operations instead of the default implementation.
+ * @since 4.0.0
+ * @author Florian Kleedorfer
  */
 package org.eclipse.rdf4j.spring.operationcache;

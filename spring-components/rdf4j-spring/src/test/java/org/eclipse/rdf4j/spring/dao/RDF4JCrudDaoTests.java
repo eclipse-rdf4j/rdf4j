@@ -25,6 +25,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class RDF4JCrudDaoTests extends RDF4JSpringTestBase {
 	@Autowired
 	private ArtistDao artistDao;

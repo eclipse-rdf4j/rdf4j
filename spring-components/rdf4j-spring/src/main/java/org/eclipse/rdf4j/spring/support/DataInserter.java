@@ -25,6 +25,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @Component
 public class DataInserter {
 

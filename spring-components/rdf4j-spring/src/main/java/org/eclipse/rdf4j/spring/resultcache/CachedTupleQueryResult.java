@@ -21,6 +21,10 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class CachedTupleQueryResult implements TupleQueryResult {
 	private List<BindingSet> bindingSets;
 	private Iterator<BindingSet> replayingIterator;

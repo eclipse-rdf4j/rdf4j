@@ -25,5 +25,10 @@
  *
  * <p>
  * <b>Beware:</b> suspending transactions is not supported.
+ *
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ *
  */
+
 package org.eclipse.rdf4j.spring.tx;

@@ -20,6 +20,10 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class GraphQueryResultConverter {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private GraphQueryResult graphQueryResult;

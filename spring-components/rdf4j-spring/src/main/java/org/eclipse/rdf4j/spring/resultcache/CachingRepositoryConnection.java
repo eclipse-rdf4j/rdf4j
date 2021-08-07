@@ -28,6 +28,10 @@ import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class CachingRepositoryConnection extends RepositoryConnectionWrapper implements Clearable {
 	private LRUResultCache<ReusableTupleQueryResult> localTupleQueryResultCache;
 	private LRUResultCache<ReusableGraphQueryResult> localGraphQueryResultCache;

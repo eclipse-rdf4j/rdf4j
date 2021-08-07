@@ -15,6 +15,10 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class Bind implements GraphPattern {
 	private static final String AS = " AS ";
 	private Assignable expression;

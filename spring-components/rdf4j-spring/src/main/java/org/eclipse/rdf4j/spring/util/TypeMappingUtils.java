@@ -24,6 +24,10 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class TypeMappingUtils {
 	public static Iri toIri(IRI from) {
 		return Rdf.iri(from.toString());

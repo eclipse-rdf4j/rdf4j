@@ -10,6 +10,10 @@
 
 package org.eclipse.rdf4j.spring.tx.exception;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class CommitException extends RDF4JTransactionException {
 	public CommitException() {
 	}

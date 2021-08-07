@@ -15,6 +15,10 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.*;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public abstract class DelegatingTupleQuery implements TupleQuery, Operation {
 	private TupleQuery delegate;
 

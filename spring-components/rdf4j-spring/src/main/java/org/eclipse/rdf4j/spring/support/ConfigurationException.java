@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.support;
 
 import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class ConfigurationException extends RDF4JSpringException {
 	public ConfigurationException() {
 	}

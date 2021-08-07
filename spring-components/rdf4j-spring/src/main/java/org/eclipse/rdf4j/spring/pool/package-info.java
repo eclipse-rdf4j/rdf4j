@@ -26,5 +26,8 @@
  * <p>
  * For more information on configuration of the pool, see {@link org.eclipse.rdf4j.spring.pool.PoolProperties
  * PoolProperties}.
+ *
+ * @since 4.0.0
+ * @author Florian Kleedorfer
  */
 package org.eclipse.rdf4j.spring.pool;

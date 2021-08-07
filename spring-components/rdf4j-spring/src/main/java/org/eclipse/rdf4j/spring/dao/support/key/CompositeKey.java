@@ -10,6 +10,10 @@
 
 package org.eclipse.rdf4j.spring.dao.support.key;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public interface CompositeKey {
 	/**
 	 * Returns true if the composite key is fully defined.

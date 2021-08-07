@@ -37,6 +37,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @Configuration
 @EnableTransactionManagement
 public class RDF4JConfig {

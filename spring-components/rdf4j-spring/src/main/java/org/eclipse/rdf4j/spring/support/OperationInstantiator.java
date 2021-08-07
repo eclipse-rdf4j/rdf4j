@@ -17,6 +17,10 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public interface OperationInstantiator {
 
 	TupleQuery getTupleQuery(RepositoryConnection con, String queryString);

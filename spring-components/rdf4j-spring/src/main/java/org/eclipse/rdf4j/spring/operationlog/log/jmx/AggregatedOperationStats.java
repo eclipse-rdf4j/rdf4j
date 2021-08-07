@@ -16,6 +16,10 @@ import java.util.Set;
 import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
 import org.eclipse.rdf4j.spring.operationlog.log.OperationExecutionStats;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class AggregatedOperationStats implements Cloneable {
 	private String operation = null;
 	private int count = 0;

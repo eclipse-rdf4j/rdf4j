@@ -14,6 +14,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public interface MutableBindings {
 	BindingsBuilder add(ExtendedVariable key, Value value);
 

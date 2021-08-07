@@ -18,6 +18,10 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.model.IRI;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class ObjectMapUtils {
 	public static IRI getIRI(Map<String, Object> map, String key) {
 		return toIRI((String) map.get(key));

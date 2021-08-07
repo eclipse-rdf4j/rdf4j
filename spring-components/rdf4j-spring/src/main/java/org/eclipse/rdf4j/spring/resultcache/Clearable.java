@@ -10,6 +10,10 @@
 
 package org.eclipse.rdf4j.spring.resultcache;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public interface Clearable {
 	void markDirty();
 

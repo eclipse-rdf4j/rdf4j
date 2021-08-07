@@ -21,6 +21,10 @@ import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public abstract class Rdf4JDao {
 	private final RDF4JTemplate rdf4JTemplate;
 

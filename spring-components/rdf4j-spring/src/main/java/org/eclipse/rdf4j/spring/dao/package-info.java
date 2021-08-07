@@ -34,5 +34,9 @@
  * <li>{@link org.eclipse.rdf4j.spring.dao.Rdf4JCRUDDao Rdf4JCRUDDao}: Base class for DAOs that are associated with
  * specific entity classes, providing additional support for CRUD operations on these entities.
  * </ul>
+ *
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ *
  */
 package org.eclipse.rdf4j.spring.dao;

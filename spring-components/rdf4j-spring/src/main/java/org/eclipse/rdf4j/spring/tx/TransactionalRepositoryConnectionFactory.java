@@ -18,6 +18,11 @@ import org.eclipse.rdf4j.spring.tx.exception.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @since 4.0.0
+ * @author ameingast@gmail.com
+ * @author Florian Kleedorfer
+ */
 public class TransactionalRepositoryConnectionFactory implements RepositoryConnectionFactory {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());

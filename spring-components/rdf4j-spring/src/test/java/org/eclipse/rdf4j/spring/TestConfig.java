@@ -16,6 +16,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @TestConfiguration
 @EnableTransactionManagement
 @ComponentScan(basePackages = "org.eclipse.rdf4j.spring.domain.dao")

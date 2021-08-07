@@ -14,6 +14,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @Configuration
 @ConditionalOnProperty("rdf4j.spring.resultcache.enabled")
 @EnableConfigurationProperties(ResultCacheProperties.class)

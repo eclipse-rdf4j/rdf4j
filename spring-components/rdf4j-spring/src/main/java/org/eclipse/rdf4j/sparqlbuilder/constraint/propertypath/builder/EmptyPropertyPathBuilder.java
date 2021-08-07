@@ -14,6 +14,10 @@ package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class EmptyPropertyPathBuilder {
 	private NegatedPropertySetBuilder negatedPropertySetBuilder = null;
 	private PropertyPathBuilder propertyPathBuilder = null;

@@ -17,6 +17,10 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class QueryResultUtils {
 
 	public static Optional<Value> getValueOptional(BindingSet resultRow, String varName) {

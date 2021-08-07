@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.dao.exception.mapper;
 
 import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class ExceptionMapper {
 	public static RDF4JSpringException mapException(String message, Exception e) {
 		return new RDF4JSpringException(message, e);

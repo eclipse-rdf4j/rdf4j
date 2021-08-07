@@ -15,6 +15,10 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class NegatedPropertySet implements PropertyPath {
 	private final PredicatePathOrInversePredicatePath[] properties;
 

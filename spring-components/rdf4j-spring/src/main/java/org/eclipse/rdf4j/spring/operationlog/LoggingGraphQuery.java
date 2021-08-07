@@ -18,6 +18,10 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.spring.operationlog.log.OperationLog;
 import org.eclipse.rdf4j.spring.support.query.DelegatingGraphQuery;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class LoggingGraphQuery extends DelegatingGraphQuery {
 
 	private OperationLog operationLog;

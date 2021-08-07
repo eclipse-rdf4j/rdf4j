@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.operationlog.log.jmx;
 
 import java.util.List;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public interface OperationStatsMXBean {
 	void reset();
 

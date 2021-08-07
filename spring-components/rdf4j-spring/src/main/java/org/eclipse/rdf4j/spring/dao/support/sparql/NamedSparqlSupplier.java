@@ -13,7 +13,11 @@ package org.eclipse.rdf4j.spring.dao.support.sparql;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-/** Associates a String key with a {@link Supplier<String>} that provides a SPARQL operation. */
+/**
+ * Associates a String key with a {@link Supplier<String>} that provides a SPARQL operation.
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class NamedSparqlSupplier {
 	private final String name;
 	private final Supplier<String> sparqlSupplier;

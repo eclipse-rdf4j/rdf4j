@@ -17,6 +17,10 @@ import org.eclipse.rdf4j.spring.operationlog.log.OperationExecutionStatsConsumer
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class DebuggingOperationExecutionStatsConsumer implements OperationExecutionStatsConsumer {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 

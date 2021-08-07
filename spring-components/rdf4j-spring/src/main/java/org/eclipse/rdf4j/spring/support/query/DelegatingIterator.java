@@ -13,6 +13,11 @@ package org.eclipse.rdf4j.spring.support.query;
 import java.util.Iterator;
 import java.util.function.Consumer;
 
+/**
+ * @param <T>
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class DelegatingIterator<T> implements Iterator<T> {
 	private Iterator<T> delegate;
 

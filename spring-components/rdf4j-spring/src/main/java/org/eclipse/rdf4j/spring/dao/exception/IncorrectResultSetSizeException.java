@@ -10,6 +10,10 @@
 
 package org.eclipse.rdf4j.spring.dao.exception;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class IncorrectResultSetSizeException extends RDF4JDaoException {
 	int expectedSize;
 	int actualSize;

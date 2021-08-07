@@ -21,6 +21,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Update that, upon each invocation of <code>execute()</code>, clears the result cache it is aware of.
+ * @since 4.0.0
+ * @author Florian Kleedorfer
  */
 public class ClearableAwareUpdate extends DelegatingUpdate {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());

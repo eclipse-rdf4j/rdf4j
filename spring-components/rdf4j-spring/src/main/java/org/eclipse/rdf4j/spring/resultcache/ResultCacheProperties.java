@@ -15,6 +15,10 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @ConfigurationProperties(prefix = "rdf4j.spring.resultcache")
 @Validated
 public class ResultCacheProperties {

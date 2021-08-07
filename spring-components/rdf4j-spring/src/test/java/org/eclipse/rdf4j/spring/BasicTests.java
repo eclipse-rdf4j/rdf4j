@@ -20,6 +20,10 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class BasicTests extends RDF4JSpringTestBase {
 	@Autowired
 	RDF4JTemplate rdf4JTemplate;

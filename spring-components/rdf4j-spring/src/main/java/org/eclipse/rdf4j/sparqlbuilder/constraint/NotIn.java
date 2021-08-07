@@ -15,6 +15,10 @@ import java.util.List;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfValue;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class NotIn extends Expression<NotIn> {
 	private List<RdfValue> options;
 	private Variable var;

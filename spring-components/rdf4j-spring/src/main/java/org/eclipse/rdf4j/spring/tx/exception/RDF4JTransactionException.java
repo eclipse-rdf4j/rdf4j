@@ -12,6 +12,11 @@ package org.eclipse.rdf4j.spring.tx.exception;
 
 import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
 
+/**
+ * @since 4.0.0
+ * @author ameingast@gmail.com
+ * @author Florian Kleedorfer
+ */
 public class RDF4JTransactionException extends RDF4JSpringException {
 	public RDF4JTransactionException() {
 	}

@@ -21,6 +21,10 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class CachedGraphQueryResult implements GraphQueryResult {
 	private List<Statement> statements;
 	private Iterator<Statement> replayingIterator;

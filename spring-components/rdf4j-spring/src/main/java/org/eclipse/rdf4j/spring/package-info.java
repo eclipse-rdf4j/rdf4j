@@ -54,5 +54,8 @@
  * <li>{@link org.eclipse.rdf4j.spring.resultcache Rdf4J-Spring ResultCache}
  * <li>{@link org.eclipse.rdf4j.spring.tx Rdf4J-Spring Tx}
  * </ul>
+ *
+ * @since 4.0.0
+ * @author Florian Kleedorfer
  */
 package org.eclipse.rdf4j.spring;

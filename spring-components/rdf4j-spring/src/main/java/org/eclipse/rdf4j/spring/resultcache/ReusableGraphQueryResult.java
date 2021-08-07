@@ -44,6 +44,9 @@ import org.eclipse.rdf4j.spring.support.query.DelegatingIterator;
  * cached.close();
  *
  * </pre>
+ *
+ * @since 4.0.0
+ * @author Florian Kleedorfer
  */
 public class ReusableGraphQueryResult implements GraphQueryResult, ThrowableRecorder {
 	private GraphQueryResult originalResult;

@@ -10,6 +10,10 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class ExtendedVariable extends Variable {
 	private final String varName;
 

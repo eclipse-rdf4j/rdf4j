@@ -25,6 +25,10 @@ import org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class OperationUtils {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 

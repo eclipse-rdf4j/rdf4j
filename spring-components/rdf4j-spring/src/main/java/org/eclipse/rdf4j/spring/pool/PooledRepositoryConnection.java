@@ -20,6 +20,10 @@ import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class PooledRepositoryConnection extends RepositoryConnectionWrapper {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());

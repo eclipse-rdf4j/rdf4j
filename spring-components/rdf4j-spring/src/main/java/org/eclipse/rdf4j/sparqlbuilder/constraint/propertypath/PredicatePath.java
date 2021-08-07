@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath;
 
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class PredicatePath implements PredicatePathOrInversePredicatePath {
 	private final Iri predicate;
 

@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.support.connectionfactory;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public abstract class DelegatingRepositoryConnectionFactory implements RepositoryConnectionFactory {
 	private RepositoryConnectionFactory delegate;
 

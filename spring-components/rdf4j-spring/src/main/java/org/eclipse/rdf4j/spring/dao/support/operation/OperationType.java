@@ -10,6 +10,10 @@
 
 package org.eclipse.rdf4j.spring.dao.support.operation;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public enum OperationType {
 	TUPLEQUERY,
 	GRAPHQUERY,

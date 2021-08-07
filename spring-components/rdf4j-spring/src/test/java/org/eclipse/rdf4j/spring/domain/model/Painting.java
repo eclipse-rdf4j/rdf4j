@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.domain.model;
 
 import org.eclipse.rdf4j.model.IRI;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class Painting {
 	private IRI id;
 	private String title;

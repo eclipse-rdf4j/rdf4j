@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.operationcache;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @ConfigurationProperties(prefix = "rdf4j.spring.operationcache")
 public class OperationCacheProperties {
 	private boolean enabled = false;

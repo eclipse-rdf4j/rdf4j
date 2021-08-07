@@ -25,6 +25,11 @@ import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
 
+/**
+ * @since 4.0.0
+ * @author ameingast@gmail.com
+ * @author Florian Kleedorfer
+ */
 public class RDF4JRepositoryTransactionManager extends AbstractPlatformTransactionManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());

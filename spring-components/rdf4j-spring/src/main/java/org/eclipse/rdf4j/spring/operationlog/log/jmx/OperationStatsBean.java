@@ -20,6 +20,10 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.spring.operationlog.log.OperationExecutionStats;
 import org.eclipse.rdf4j.spring.operationlog.log.OperationExecutionStatsConsumer;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class OperationStatsBean implements OperationStatsMXBean, OperationExecutionStatsConsumer {
 
 	private Map<String, AggregatedOperationStats> stats = new HashMap<>();

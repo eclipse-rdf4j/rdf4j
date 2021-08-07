@@ -16,6 +16,11 @@ import javax.validation.constraints.Pattern;
 import org.hibernate.validator.constraints.Length;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * @since 4.0.0
+ * @author Gabriel Pickl
+ * @author Florian Kleedorfer
+ */
 @ConfigurationProperties(prefix = "rdf4j.spring.repository.remote")
 public class RemoteRepositoryProperties {
 	/** URL of the SPARQL endpoint */

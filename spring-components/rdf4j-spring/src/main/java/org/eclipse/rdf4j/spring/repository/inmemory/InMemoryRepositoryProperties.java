@@ -12,6 +12,11 @@ package org.eclipse.rdf4j.spring.repository.inmemory;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * @since 4.0.0
+ * @author Gabriel Pickl
+ * @author Florian Kleedorfer
+ */
 @ConfigurationProperties(prefix = "rdf4j.spring.repository.inmemory")
 public class InMemoryRepositoryProperties {
 	private boolean enabled = true;

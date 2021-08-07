@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.support;
 
 import org.springframework.test.context.TestPropertySource;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @TestPropertySource(
 		properties = {
 				"rdf4j.spring.operationlog.enabled=true",

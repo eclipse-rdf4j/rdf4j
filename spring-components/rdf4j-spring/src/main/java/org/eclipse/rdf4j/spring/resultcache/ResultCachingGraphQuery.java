@@ -21,6 +21,10 @@ import org.eclipse.rdf4j.spring.support.query.DelegatingGraphQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class ResultCachingGraphQuery extends DelegatingGraphQuery {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private WeakReference<ResultCache<Integer, ReusableGraphQueryResult>> localResultCacheRef;

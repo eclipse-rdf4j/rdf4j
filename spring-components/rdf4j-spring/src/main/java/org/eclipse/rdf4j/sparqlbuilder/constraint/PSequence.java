@@ -17,6 +17,10 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class PSequence implements RdfPredicate {
 	private IRI[] property;
 

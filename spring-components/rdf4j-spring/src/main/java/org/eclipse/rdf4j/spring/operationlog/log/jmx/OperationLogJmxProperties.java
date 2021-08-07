@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.operationlog.log.jmx;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @ConfigurationProperties(prefix = "rdf4j.spring.operationlog.jmx")
 public class OperationLogJmxProperties {
 	boolean enabled = false;

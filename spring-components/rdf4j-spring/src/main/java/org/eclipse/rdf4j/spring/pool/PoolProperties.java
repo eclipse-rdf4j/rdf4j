@@ -14,6 +14,10 @@ import java.time.Duration;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @ConfigurationProperties(prefix = "rdf4j.spring.pool")
 public class PoolProperties {
 	private boolean enabled = false;

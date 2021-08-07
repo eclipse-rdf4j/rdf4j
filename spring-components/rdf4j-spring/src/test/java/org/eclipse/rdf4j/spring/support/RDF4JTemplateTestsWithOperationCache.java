@@ -29,6 +29,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.function.Supplier;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @TestPropertySource(
 		properties = {
 				"rdf4j.spring.operationcache.enabled=true"

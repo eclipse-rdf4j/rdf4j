@@ -30,5 +30,8 @@
  * {@link org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory RepositoryConnectionFactory}
  * used by the application. This is done using spring-autoconfiguration by {@link org.eclipse.rdf4j.spring.RDF4JConfig
  * Rdf4JConfig}.
+ *
+ * @since 4.0.0
+ * @author Florian Kleedorfer
  */
 package org.eclipse.rdf4j.spring.operationlog;

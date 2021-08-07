@@ -15,6 +15,10 @@ import org.eclipse.rdf4j.spring.support.connectionfactory.DelegatingRepositoryCo
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class CachingRepositoryConnectionFactory extends DelegatingRepositoryConnectionFactory {
 	public CachingRepositoryConnectionFactory(
 			RepositoryConnectionFactory delegate, ResultCacheProperties properties) {

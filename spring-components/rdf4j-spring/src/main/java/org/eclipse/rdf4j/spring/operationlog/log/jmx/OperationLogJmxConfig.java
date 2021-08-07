@@ -21,6 +21,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jmx.export.MBeanExporter;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @Configuration
 @ConditionalOnBean(OperationLog.class)
 @ConditionalOnProperty(value = "rdf4j.spring.operationlog.jmx.enabled")

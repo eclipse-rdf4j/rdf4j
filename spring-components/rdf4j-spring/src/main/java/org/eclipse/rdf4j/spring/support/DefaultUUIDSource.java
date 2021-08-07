@@ -14,6 +14,10 @@ import java.util.UUID;
 
 import org.eclipse.rdf4j.model.IRI;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class DefaultUUIDSource implements UUIDSource {
 	@Override
 	public IRI nextUUID() {

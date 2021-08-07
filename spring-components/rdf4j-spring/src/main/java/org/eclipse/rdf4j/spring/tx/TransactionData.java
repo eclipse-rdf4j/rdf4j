@@ -16,6 +16,11 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 
+/**
+ * @since 4.0.0
+ * @author ameingast@gmail.com
+ * @author Florian Kleedorfer
+ */
 public class TransactionData {
 
 	private RepositoryConnection connection;

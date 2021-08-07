@@ -24,6 +24,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * @since 4.0.0
+ * @author Gabriel Pickl
+ * @author Florian Kleedorfer
+ */
 @Configuration
 @EnableConfigurationProperties(RemoteRepositoryProperties.class)
 @ConditionalOnProperty("rdf4j.spring.repository.remote.manager-url")

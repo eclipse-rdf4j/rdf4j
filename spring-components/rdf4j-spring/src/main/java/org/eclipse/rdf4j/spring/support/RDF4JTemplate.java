@@ -56,6 +56,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ResourceLoader;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ * @author Gabriel Pickl
+ */
 public class RDF4JTemplate {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private RepositoryConnectionFactory repositoryConnectionFactory;

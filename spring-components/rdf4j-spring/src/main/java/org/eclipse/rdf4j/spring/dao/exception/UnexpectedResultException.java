@@ -10,6 +10,11 @@
 
 package org.eclipse.rdf4j.spring.dao.exception;
 
+
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class UnexpectedResultException extends RDF4JDaoException {
 	public UnexpectedResultException() {
 	}

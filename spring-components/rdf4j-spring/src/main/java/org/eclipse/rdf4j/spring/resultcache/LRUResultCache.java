@@ -23,6 +23,11 @@ import org.apache.commons.collections4.map.LRUMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @param <T>
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class LRUResultCache<T> implements ResultCache<Integer, T> {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private Map<Integer, Entry<T>> cache;

@@ -17,6 +17,10 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 import org.eclipse.rdf4j.spring.support.UUIDSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class NoveltyCheckingUUIDSource implements UUIDSource {
 	@Autowired
 	private RDF4JTemplate rdf4JTemplate;

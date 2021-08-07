@@ -34,5 +34,9 @@
  *
  * <p>
  * <b>Note: Exactly one repository has to be configured.</b>
+ *
+ * @since 4.0.0
+ * @author Gabriel Pickl
+ * @author Florian Kleedorfer
  */
 package org.eclipse.rdf4j.spring.repository;

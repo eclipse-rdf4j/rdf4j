@@ -34,6 +34,10 @@ import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.BindingsBuilder;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class RelationMapBuilder {
 	public static final ExtendedVariable _relSubject = new ExtendedVariable("rel_subject");
 	public static final ExtendedVariable _relObject = new ExtendedVariable("rel_object");

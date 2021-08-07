@@ -14,6 +14,10 @@ import org.eclipse.rdf4j.query.*;
 import org.eclipse.rdf4j.spring.operationlog.log.OperationLog;
 import org.eclipse.rdf4j.spring.support.query.DelegatingTupleQuery;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class LoggingTupleQuery extends DelegatingTupleQuery {
 
 	private OperationLog operationLog;

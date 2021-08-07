@@ -34,6 +34,10 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
  * @param <ENTITY>
  * @param <INPUT>
  * @param <ID>
+ *
+ *
+ * @since 4.0.0
+ * @author Florian Kleedorfer
  */
 public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 	private static final String KEY_READ_QUERY = "readQuery";

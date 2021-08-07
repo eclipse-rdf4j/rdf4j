@@ -19,6 +19,10 @@ import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.spring.dao.support.UpdateCallback;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class UpdateExecutionBuilder extends OperationBuilder<Update, UpdateExecutionBuilder> {
 
 	public UpdateExecutionBuilder(Update update, RDF4JTemplate template) {

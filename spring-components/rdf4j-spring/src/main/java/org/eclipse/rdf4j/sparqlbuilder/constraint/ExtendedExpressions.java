@@ -22,6 +22,10 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfValue;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class ExtendedExpressions {
 
 	public static Bind BIND(Assignable exp, Variable var) {

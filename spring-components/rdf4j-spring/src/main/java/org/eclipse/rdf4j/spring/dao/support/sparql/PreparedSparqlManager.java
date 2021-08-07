@@ -19,6 +19,10 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class PreparedSparqlManager {
 
 	private final LRUMap<String, Object> preparedSparqlMap = new LRUMap<>(500, 100);

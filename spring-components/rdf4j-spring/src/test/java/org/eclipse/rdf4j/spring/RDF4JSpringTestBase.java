@@ -33,6 +33,10 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @ExtendWith(SpringExtension.class)
 @Transactional
 @ContextConfiguration(

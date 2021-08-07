@@ -16,6 +16,10 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public abstract class DelegatingUpdate implements Update {
 	private Update delegate;
 

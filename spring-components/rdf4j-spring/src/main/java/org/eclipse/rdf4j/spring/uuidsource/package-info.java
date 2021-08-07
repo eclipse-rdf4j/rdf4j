@@ -28,5 +28,8 @@
  * </ol>
  *
  * Only one of these approaches can be activated.
+ *
+ * @since 4.0.0
+ * @author Florian Kleedorfer
  */
 package org.eclipse.rdf4j.spring.uuidsource;

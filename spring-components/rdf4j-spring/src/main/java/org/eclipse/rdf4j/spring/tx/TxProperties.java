@@ -12,6 +12,10 @@ package org.eclipse.rdf4j.spring.tx;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @ConfigurationProperties(prefix = "rdf4j.spring.tx")
 public class TxProperties {
 	private boolean enabled = false;

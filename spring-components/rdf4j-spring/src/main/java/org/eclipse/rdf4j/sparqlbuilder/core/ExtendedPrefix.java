@@ -14,6 +14,10 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.MultiIRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class ExtendedPrefix extends org.eclipse.rdf4j.sparqlbuilder.core.Prefix {
 	private final String namespace;
 

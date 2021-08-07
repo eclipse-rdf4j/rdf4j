@@ -17,6 +17,10 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class ExtendedExpressionsTest {
 	@Test
 	public void test_BIND_fromOtherVariable() {

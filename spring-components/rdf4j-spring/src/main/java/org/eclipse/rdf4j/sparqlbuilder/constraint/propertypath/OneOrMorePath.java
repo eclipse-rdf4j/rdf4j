@@ -10,6 +10,10 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath;
 
+/**
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class OneOrMorePath implements PropertyPath {
 	private final PropertyPath path;
 
