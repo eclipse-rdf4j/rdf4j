@@ -7,7 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ndjsonld;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.List;
@@ -15,7 +20,10 @@ import java.util.List;
 import org.apache.commons.io.input.BOMInputStream;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.rio.*;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.jsonld.JSONLDParser;
 
 import com.fasterxml.jackson.core.JsonFactory;

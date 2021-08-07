@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server;
 
-import static org.junit.Assert.fail;
-
 import java.io.StringReader;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;

@@ -9,7 +9,12 @@ package org.eclipse.rdf4j.rio.ndjsonld;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.rio.*;
+import org.eclipse.rdf4j.rio.ParserConfig;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.RDFWriterTest;
+import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
