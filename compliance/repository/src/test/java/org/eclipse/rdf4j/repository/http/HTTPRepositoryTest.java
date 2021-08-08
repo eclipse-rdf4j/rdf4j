@@ -10,18 +10,15 @@ package org.eclipse.rdf4j.repository.http;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
