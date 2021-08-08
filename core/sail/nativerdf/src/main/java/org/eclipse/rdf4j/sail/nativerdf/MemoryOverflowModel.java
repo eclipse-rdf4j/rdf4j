@@ -25,9 +25,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.AbstractModel;
-import org.eclipse.rdf4j.model.impl.ContextStatementImpl;
 import org.eclipse.rdf4j.model.impl.FilteredModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.slf4j.Logger;
@@ -65,6 +65,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	private long baseline = 0;
 
 	private long maxBlockSize = 0;
+
+	SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	public MemoryOverflowModel() {
 		memory = new LinkedHashModel(LARGE_BLOCK);
@@ -209,7 +211,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			IRI pred = st.getPredicate();
 			Value obj = st.getObject();
 			Resource ctx = st.getContext();
-			s.writeObject(new ContextStatementImpl(subj, pred, obj, ctx));
+			s.writeObject(vf.createStatement(subj, pred, obj, ctx));
 		}
 	}
 

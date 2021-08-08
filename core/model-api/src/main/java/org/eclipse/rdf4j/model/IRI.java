@@ -8,8 +8,7 @@
 package org.eclipse.rdf4j.model;
 
 /**
- * An Internationalized Resource Identifier (IRI). IRIs are an extension of the existing {@link URI}: while URIs are
- * limited to a subset of the ASCII character set, IRIs may contain characters from the Universal Character Set
+ * An Internationalized Resource Identifier (IRI). IRIs may contain characters from the Universal Character Set
  * (Unicode/ISO 10646), including Chinese or Japanese kanji, Korean, Cyrillic characters, and so forth. It is defined by
  * RFC 3987.
  * <p>
@@ -30,8 +29,7 @@ package org.eclipse.rdf4j.model;
  *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
  *           specs.
  */
-@SuppressWarnings("deprecation")
-public interface IRI extends URI, Resource {
+public interface IRI extends Resource {
 
 	@Override
 	default boolean isIRI() {
@@ -45,7 +43,6 @@ public interface IRI extends URI, Resource {
 	 *
 	 * @return the namespace of this IRI
 	 */
-	@Override
 	String getNamespace();
 
 	/**
@@ -55,7 +52,6 @@ public interface IRI extends URI, Resource {
 	 *
 	 * @return the local name of this IRI
 	 */
-	@Override
 	String getLocalName();
 
 	/**

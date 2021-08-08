@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.impl.AbstractValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -360,18 +360,6 @@ public class MemValueFactory extends AbstractValueFactory {
 	@Override
 	public synchronized Literal createLiteral(boolean value) {
 		MemLiteral newLiteral = new BooleanMemLiteral(this, value);
-		return getSharedLiteral(newLiteral);
-	}
-
-	@Override
-	protected synchronized Literal createIntegerLiteral(Number n, IRI datatype) {
-		MemLiteral newLiteral = new IntegerMemLiteral(this, BigInteger.valueOf(n.longValue()), datatype);
-		return getSharedLiteral(newLiteral);
-	}
-
-	@Override
-	protected synchronized Literal createFPLiteral(Number n, IRI datatype) {
-		MemLiteral newLiteral = new NumericMemLiteral(this, n, datatype);
 		return getSharedLiteral(newLiteral);
 	}
 

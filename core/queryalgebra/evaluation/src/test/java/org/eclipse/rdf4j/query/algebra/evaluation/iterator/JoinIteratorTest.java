@@ -15,7 +15,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -31,7 +31,7 @@ import org.junit.Test;
  */
 public class JoinIteratorTest {
 
-	private final ValueFactory vf = ValueFactoryImpl.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
 

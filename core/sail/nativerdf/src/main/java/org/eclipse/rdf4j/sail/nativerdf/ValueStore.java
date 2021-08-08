@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.AbstractValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -45,7 +45,7 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
  */
 @InternalUseOnly
 @Deprecated
-public class ValueStore extends AbstractValueFactory {
+public class ValueStore extends SimpleValueFactory {
 
 	/*-----------*
 	 * Constants *

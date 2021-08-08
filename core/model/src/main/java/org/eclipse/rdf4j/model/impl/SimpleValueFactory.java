@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -31,13 +32,8 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * Default implementation of the {@link ValueFactory} interface.
  *
  * @author Arjohn Kampman
- * 
- * @implNote the implementation duplicates code from {@link AbstractValueFactory} - this is done to avoid deprecation
- *           warnings in end-user calling code - see https://github.com/eclipse/rdf4j/issues/2655. We can not
- *           remove/replace the abstract superclass without breaking binary compatibility so this will be handled in a
- *           followup, as part of a major release. See https://github.com/eclipse/rdf4j/issues/2663.
+ *
  */
-@SuppressWarnings("deprecation")
 public class SimpleValueFactory extends AbstractValueFactory {
 
 	/* Constants */
@@ -67,14 +63,14 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	/**
 	 * @category variables
-	 * 
+	 *
 	 *           The ID for the next bnode that is created.
 	 */
 	private int nextBNodeID;
 
 	/**
 	 * @category variables
-	 * 
+	 *
 	 *           The prefix for any new bnode IDs.
 	 */
 	private String bnodePrefix;

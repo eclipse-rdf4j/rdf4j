@@ -67,7 +67,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 	private Set<ExtensibleStatement> addStatementBuffer = new HashSet<>();
 	private Set<ElasticsearchId> deleteStatementBuffer = new HashSet<>();
 
-	private final static ElasticsearchValueFactory vf = ElasticsearchValueFactory.getInstance();
+	private final static ElasticsearchValueFactory vf = (ElasticsearchValueFactory) ElasticsearchValueFactory
+			.getInstance();
 
 	static {
 		try {
