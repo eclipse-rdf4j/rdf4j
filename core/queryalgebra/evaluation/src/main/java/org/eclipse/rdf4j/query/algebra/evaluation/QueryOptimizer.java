@@ -20,6 +20,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 public interface QueryOptimizer {
 
-	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings);
+	void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings);
 
 }

@@ -10,139 +10,139 @@ package org.eclipse.rdf4j.query.parser.serql.ast;
 
 public interface SyntaxTreeBuilderTreeConstants {
 
-	public int JJTQUERYCONTAINER = 0;
+	int JJTQUERYCONTAINER = 0;
 
-	public int JJTVOID = 1;
+	int JJTVOID = 1;
 
-	public int JJTNAMESPACEDECL = 2;
+	int JJTNAMESPACEDECL = 2;
 
-	public int JJTTUPLEUNION = 3;
+	int JJTTUPLEUNION = 3;
 
-	public int JJTTUPLEMINUS = 4;
+	int JJTTUPLEMINUS = 4;
 
-	public int JJTTUPLEINTERSECT = 5;
+	int JJTTUPLEINTERSECT = 5;
 
-	public int JJTGRAPHUNION = 6;
+	int JJTGRAPHUNION = 6;
 
-	public int JJTGRAPHMINUS = 7;
+	int JJTGRAPHMINUS = 7;
 
-	public int JJTGRAPHINTERSECT = 8;
+	int JJTGRAPHINTERSECT = 8;
 
-	public int JJTSELECTQUERY = 9;
+	int JJTSELECTQUERY = 9;
 
-	public int JJTSELECT = 10;
+	int JJTSELECT = 10;
 
-	public int JJTPROJECTIONELEM = 11;
+	int JJTPROJECTIONELEM = 11;
 
-	public int JJTCONSTRUCTQUERY = 12;
+	int JJTCONSTRUCTQUERY = 12;
 
-	public int JJTCONSTRUCT = 13;
+	int JJTCONSTRUCT = 13;
 
-	public int JJTQUERYBODY = 14;
+	int JJTQUERYBODY = 14;
 
-	public int JJTFROM = 15;
+	int JJTFROM = 15;
 
-	public int JJTWHERE = 16;
+	int JJTWHERE = 16;
 
-	public int JJTORDERBY = 17;
+	int JJTORDERBY = 17;
 
-	public int JJTLIMIT = 18;
+	int JJTLIMIT = 18;
 
-	public int JJTOFFSET = 19;
+	int JJTOFFSET = 19;
 
-	public int JJTPATHEXPRLIST = 20;
+	int JJTPATHEXPRLIST = 20;
 
-	public int JJTPATHEXPRUNION = 21;
+	int JJTPATHEXPRUNION = 21;
 
-	public int JJTBASICPATHEXPR = 22;
+	int JJTBASICPATHEXPR = 22;
 
-	public int JJTOPTPATHEXPR = 23;
+	int JJTOPTPATHEXPR = 23;
 
-	public int JJTBASICPATHEXPRTAIL = 24;
+	int JJTBASICPATHEXPRTAIL = 24;
 
-	public int JJTOPTPATHEXPRTAIL = 25;
+	int JJTOPTPATHEXPRTAIL = 25;
 
-	public int JJTEDGE = 26;
+	int JJTEDGE = 26;
 
-	public int JJTNODE = 27;
+	int JJTNODE = 27;
 
-	public int JJTNODEELEM = 28;
+	int JJTNODEELEM = 28;
 
-	public int JJTREIFIEDSTAT = 29;
+	int JJTREIFIEDSTAT = 29;
 
-	public int JJTORDEREXPR = 30;
+	int JJTORDEREXPR = 30;
 
-	public int JJTOR = 31;
+	int JJTOR = 31;
 
-	public int JJTAND = 32;
+	int JJTAND = 32;
 
-	public int JJTBOOLEANCONSTANT = 33;
+	int JJTBOOLEANCONSTANT = 33;
 
-	public int JJTNOT = 34;
+	int JJTNOT = 34;
 
-	public int JJTBOUND = 35;
+	int JJTBOUND = 35;
 
-	public int JJTSAMETERM = 36;
+	int JJTSAMETERM = 36;
 
-	public int JJTISRESOURCE = 37;
+	int JJTISRESOURCE = 37;
 
-	public int JJTISLITERAL = 38;
+	int JJTISLITERAL = 38;
 
-	public int JJTISURI = 39;
+	int JJTISURI = 39;
 
-	public int JJTISBNODE = 40;
+	int JJTISBNODE = 40;
 
-	public int JJTLANGMATCHES = 41;
+	int JJTLANGMATCHES = 41;
 
-	public int JJTREGEX = 42;
+	int JJTREGEX = 42;
 
-	public int JJTEXISTS = 43;
+	int JJTEXISTS = 43;
 
-	public int JJTCOMPARE = 44;
+	int JJTCOMPARE = 44;
 
-	public int JJTCOMPAREANY = 45;
+	int JJTCOMPAREANY = 45;
 
-	public int JJTCOMPAREALL = 46;
+	int JJTCOMPAREALL = 46;
 
-	public int JJTLIKE = 47;
+	int JJTLIKE = 47;
 
-	public int JJTIN = 48;
+	int JJTIN = 48;
 
-	public int JJTINLIST = 49;
+	int JJTINLIST = 49;
 
-	public int JJTCOMPOPERATOR = 50;
+	int JJTCOMPOPERATOR = 50;
 
-	public int JJTVAR = 51;
+	int JJTVAR = 51;
 
-	public int JJTDATATYPE = 52;
+	int JJTDATATYPE = 52;
 
-	public int JJTLANG = 53;
+	int JJTLANG = 53;
 
-	public int JJTLABEL = 54;
+	int JJTLABEL = 54;
 
-	public int JJTNAMESPACE = 55;
+	int JJTNAMESPACE = 55;
 
-	public int JJTLOCALNAME = 56;
+	int JJTLOCALNAME = 56;
 
-	public int JJTSTR = 57;
+	int JJTSTR = 57;
 
-	public int JJTFUNCTIONCALL = 58;
+	int JJTFUNCTIONCALL = 58;
 
-	public int JJTARGLIST = 59;
+	int JJTARGLIST = 59;
 
-	public int JJTURI = 60;
+	int JJTURI = 60;
 
-	public int JJTQNAME = 61;
+	int JJTQNAME = 61;
 
-	public int JJTBNODE = 62;
+	int JJTBNODE = 62;
 
-	public int JJTLITERAL = 63;
+	int JJTLITERAL = 63;
 
-	public int JJTSTRING = 64;
+	int JJTSTRING = 64;
 
-	public int JJTNULL = 65;
+	int JJTNULL = 65;
 
-	public String[] jjtNodeName = { "QueryContainer", "void", "NamespaceDecl", "TupleUnion", "TupleMinus",
+	String[] jjtNodeName = { "QueryContainer", "void", "NamespaceDecl", "TupleUnion", "TupleMinus",
 			"TupleIntersect", "GraphUnion", "GraphMinus", "GraphIntersect", "SelectQuery", "Select", "ProjectionElem",
 			"ConstructQuery", "Construct", "QueryBody", "From", "Where", "OrderBy", "Limit", "Offset", "PathExprList",
 			"PathExprUnion", "BasicPathExpr", "OptPathExpr", "BasicPathExprTail", "OptPathExprTail", "Edge", "Node",

@@ -18,11 +18,11 @@ public interface InterceptingRepositoryConnection extends RepositoryConnection {
 	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that are
 	 * performed on this connection.
 	 */
-	public void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
+	void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
 
 	/**
 	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this connection.
 	 */
-	public void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
+	void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
 
 }

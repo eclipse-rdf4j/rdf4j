@@ -31,5 +31,5 @@ public interface WriteStrategyFactory {
 	 * @param federationContext the federation context
 	 * @return the {@link WriteStrategy}
 	 */
-	public WriteStrategy create(List<Endpoint> members, FederationContext federationContext);
+	WriteStrategy create(List<Endpoint> members, FederationContext federationContext);
 }

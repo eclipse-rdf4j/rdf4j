@@ -24,7 +24,7 @@ public interface SupportsGroups<T> {
 	 * @param theGroup the group to add
 	 * @return this builder
 	 */
-	public T addGroup(Group theGroup);
+	T addGroup(Group theGroup);
 
 	/**
 	 * Remove this group from the query
@@ -32,5 +32,5 @@ public interface SupportsGroups<T> {
 	 * @param theGroup the group to remove
 	 * @return this builder
 	 */
-	public T removeGroup(Group theGroup);
+	T removeGroup(Group theGroup);
 }

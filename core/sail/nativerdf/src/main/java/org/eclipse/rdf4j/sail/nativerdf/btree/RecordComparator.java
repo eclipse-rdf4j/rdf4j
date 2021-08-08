@@ -23,5 +23,5 @@ public interface RecordComparator {
 	 * @return A negative integer when the key is smaller than the value, a positive integer when the key is larger than
 	 *         the value, or <tt>0</tt> when the key is equal to the value.
 	 */
-	public int compareBTreeValues(byte[] key, byte[] data, int offset, int length);
+	int compareBTreeValues(byte[] key, byte[] data, int offset, int length);
 }

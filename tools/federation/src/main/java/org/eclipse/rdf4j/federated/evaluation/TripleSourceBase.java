@@ -279,8 +279,8 @@ public abstract class TripleSourceBase implements TripleSource {
 	 * @param <T>
 	 * @see TripleSourceBase#withConnection(ConnectionOperation)
 	 */
-	protected static interface ConnectionOperation<T> {
-		public void perform(RepositoryConnection conn, ResultHolder<T> resultHolder);
+	protected interface ConnectionOperation<T> {
+		void perform(RepositoryConnection conn, ResultHolder<T> resultHolder);
 	}
 
 	/**

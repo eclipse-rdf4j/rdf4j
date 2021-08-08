@@ -14,16 +14,16 @@ import java.io.IOException;
  */
 public interface Configuration {
 
-	public static final String DIR = "conf";
-	public static final String RESOURCES_LOCATION = "/org/eclipse/rdf4j/common/app/config/";
-	public static final String DEFAULT_RESOURCES_LOCATION = RESOURCES_LOCATION + "defaults/";
+	String DIR = "conf";
+	String RESOURCES_LOCATION = "/org/eclipse/rdf4j/common/app/config/";
+	String DEFAULT_RESOURCES_LOCATION = RESOURCES_LOCATION + "defaults/";
 
 	/**
 	 * Initialize the configuration settings.
 	 *
 	 * @throws IOException if the configuration settings could not be initialized because of an I/O problem.
 	 */
-	public void init() throws IOException;
+	void init() throws IOException;
 
 	/**
 	 * Load the configuration settings. Settings will be loaded from a user and application specific location first. If
@@ -32,14 +32,14 @@ public interface Configuration {
 	 *
 	 * @throws IOException if the configuration settings could not be loaded due to an I/O problem.
 	 */
-	public void load() throws IOException;
+	void load() throws IOException;
 
 	/**
 	 * Store configuration settings. Settings will be stored in a user and application specific location.
 	 *
 	 * @throws IOException if the configuration settings could not be saved due to an I/O problem.
 	 */
-	public void save() throws IOException;
+	void save() throws IOException;
 
 	/**
 	 * Clean up configuration resources.
@@ -47,5 +47,5 @@ public interface Configuration {
 	 * @throws IOException if one or more resources could not be cleaned up. Implementations should attempt to clean up
 	 *                     as many resources as possible before returning or throwing an exception.
 	 */
-	public void destroy() throws IOException;
+	void destroy() throws IOException;
 }

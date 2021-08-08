@@ -24,69 +24,69 @@ public interface ConsoleState {
 	 *
 	 * @return application name
 	 */
-	public String getApplicationName();
+	String getApplicationName();
 
 	/**
 	 * Get repository data directory
 	 *
 	 * @return directory
 	 */
-	public File getDataDirectory();
+	File getDataDirectory();
 
 	/**
 	 * Get repository manager ID
 	 *
 	 * @return repository manager ID
 	 */
-	public String getManagerID();
+	String getManagerID();
 
 	/**
 	 * Get repository ID
 	 *
 	 * @return repository ID
 	 */
-	public String getRepositoryID();
+	String getRepositoryID();
 
 	/**
 	 * Get repository manager
 	 *
 	 * @return repository manager
 	 */
-	public RepositoryManager getManager();
+	RepositoryManager getManager();
 
 	/**
 	 * Set repository manager
 	 *
 	 * @param manager repository manager
 	 */
-	public void setManager(RepositoryManager manager);
+	void setManager(RepositoryManager manager);
 
 	/**
 	 * Set repository manager
 	 *
 	 * @param managerID repository manager ID
 	 */
-	public void setManagerID(String managerID);
+	void setManagerID(String managerID);
 
 	/**
 	 * Get repository
 	 *
 	 * @return repository
 	 */
-	public Repository getRepository();
+	Repository getRepository();
 
 	/**
 	 * Set repository ID
 	 *
 	 * @param repositoryID repository ID
 	 */
-	public void setRepositoryID(String repositoryID);
+	void setRepositoryID(String repositoryID);
 
 	/**
 	 * Set repository
 	 *
 	 * @param repository repository
 	 */
-	public void setRepository(Repository repository);
+	void setRepository(Repository repository);
 
 }

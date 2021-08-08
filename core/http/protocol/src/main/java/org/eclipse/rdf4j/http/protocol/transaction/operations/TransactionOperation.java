@@ -24,5 +24,5 @@ public interface TransactionOperation {
 	 * @param con The connection the operation should be performed on.
 	 * @throws RepositoryException If such an exception is thrown by the connection while executing the operation.
 	 */
-	public abstract void execute(RepositoryConnection con) throws RepositoryException;
+	void execute(RepositoryConnection con) throws RepositoryException;
 }

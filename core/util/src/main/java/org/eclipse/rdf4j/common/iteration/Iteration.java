@@ -32,7 +32,7 @@ public interface Iteration<E, X extends Exception> {
 	 * @return <tt>true</tt> if the iteration has more elements.
 	 * @throws X
 	 */
-	public boolean hasNext() throws X;
+	boolean hasNext() throws X;
 
 	/**
 	 * Returns the next element in the iteration.
@@ -40,7 +40,7 @@ public interface Iteration<E, X extends Exception> {
 	 * @return the next element in the iteration.
 	 * @throws NoSuchElementException if the iteration has no more elements or if it has been closed.
 	 */
-	public E next() throws X;
+	E next() throws X;
 
 	/**
 	 * Removes from the underlying collection the last element returned by the iteration (optional operation). This
@@ -51,7 +51,7 @@ public interface Iteration<E, X extends Exception> {
 	 *                                       called, or <tt>remove()</tt> has already been called after the last call to
 	 *                                       <tt>next()</tt>.
 	 */
-	public void remove() throws X;
+	void remove() throws X;
 
 	/**
 	 *

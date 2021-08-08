@@ -18,7 +18,7 @@ interface NodeListener {
 	 * @param index The index where the value was inserted.
 	 * @return Indicates whether the node listener should be deregistered as a result of this event.
 	 */
-	public boolean valueAdded(Node node, int index);
+	boolean valueAdded(Node node, int index);
 
 	/**
 	 * Signals to registered node listeners that a value has been removed from a node.
@@ -27,11 +27,11 @@ interface NodeListener {
 	 * @param index The index where the value was removed.
 	 * @return Indicates whether the node listener should be deregistered as a result of this event.
 	 */
-	public boolean valueRemoved(Node node, int index);
+	boolean valueRemoved(Node node, int index);
 
-	public boolean rotatedLeft(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
+	boolean rotatedLeft(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
 
-	public boolean rotatedRight(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
+	boolean rotatedRight(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
 
 	/**
 	 * Signals to registered node listeners that a node has been split.
@@ -42,7 +42,7 @@ interface NodeListener {
 	 *                  parent.
 	 * @return Indicates whether the node listener should be deregistered as a result of this event.
 	 */
-	public boolean nodeSplit(Node node, Node newNode, int medianIdx) throws IOException;
+	boolean nodeSplit(Node node, Node newNode, int medianIdx) throws IOException;
 
 	/**
 	 * Signals to registered node listeners that two nodes have been merged. All values from the source node have been
@@ -54,5 +54,5 @@ interface NodeListener {
 	 * @return Indicates whether the node listener should be deregistered with the <em>source node</em> as a result of
 	 *         this event.
 	 */
-	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx) throws IOException;
+	boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx) throws IOException;
 }

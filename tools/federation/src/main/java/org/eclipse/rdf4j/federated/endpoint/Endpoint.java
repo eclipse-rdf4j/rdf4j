@@ -40,7 +40,7 @@ public interface Endpoint {
 	 *
 	 * @return the initialized {@link Repository}
 	 */
-	public Repository getRepository();
+	Repository getRepository();
 
 	/**
 	 * Return a {@link RepositoryConnection} for the {@link Repository} represented by this endpoint.
@@ -67,44 +67,44 @@ public interface Endpoint {
 	 *
 	 * @throws RepositoryException if the repository is not initialized
 	 */
-	public RepositoryConnection getConnection();
+	RepositoryConnection getConnection();
 
 	/**
 	 *
 	 * @return the {@link TripleSource}
 	 */
-	public TripleSource getTripleSource();
+	TripleSource getTripleSource();
 
 	/**
 	 *
 	 * @return the {@link EndpointClassification}
 	 */
-	public EndpointClassification getEndpointClassification();
+	EndpointClassification getEndpointClassification();
 
 	/**
 	 *
 	 * @return whether this endpoint is writable
 	 */
-	public boolean isWritable();
+	boolean isWritable();
 
 	/**
 	 *
 	 * @return the identifier of the federation member
 	 */
-	public String getId();
+	String getId();
 
 	/**
 	 *
 	 * @return the name of the federation member
 	 */
-	public String getName();
+	String getName();
 
 	/**
 	 * Get the endpoint location, e.g. for SPARQL endpoints the url
 	 *
 	 * @return the endpoint location
 	 */
-	public String getEndpoint();
+	String getEndpoint();
 
 	/**
 	 * Returns the size of the given repository, i.e. the number of triples.
@@ -112,7 +112,7 @@ public interface Endpoint {
 	 * @return the size of the endpoint
 	 * @throws RepositoryException
 	 */
-	public long size() throws RepositoryException;
+	long size() throws RepositoryException;
 
 	/**
 	 * Initialize this {@link Endpoint}
@@ -120,25 +120,25 @@ public interface Endpoint {
 	 * @param federationContext
 	 * @throws RepositoryException
 	 */
-	public void init(FederationContext federationContext) throws RepositoryException;
+	void init(FederationContext federationContext) throws RepositoryException;
 
 	/**
 	 * Shutdown this {@link Endpoint}
 	 *
 	 * @throws RepositoryException
 	 */
-	public void shutDown() throws RepositoryException;
+	void shutDown() throws RepositoryException;
 
 	/**
 	 *
 	 * @return whether this Endpoint is initialized
 	 */
-	public boolean isInitialized();
+	boolean isInitialized();
 
 	/**
 	 * Additional endpoint specific configuration.
 	 *
 	 * @return the endpointConfiguration
 	 */
-	public EndpointConfiguration getEndpointConfiguration();
+	EndpointConfiguration getEndpointConfiguration();
 }

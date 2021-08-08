@@ -18,9 +18,9 @@ package org.eclipse.rdf4j.queryrender.builder;
 @Deprecated
 public interface Group extends SupportsExpr {
 
-	public boolean isOptional();
+	boolean isOptional();
 
-	public void addChild(Group theGroup);
+	void addChild(Group theGroup);
 
-	public int size();
+	int size();
 }
