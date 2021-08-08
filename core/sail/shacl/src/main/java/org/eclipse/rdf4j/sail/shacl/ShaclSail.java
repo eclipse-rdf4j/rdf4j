@@ -30,12 +30,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -366,24 +366,24 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	@InternalUseOnly
 	public List<Shape> getShapes(RepositoryConnection shapesRepoConnection) throws SailException {
-		SailRepository shapesRepoCache = new SailRepository(
+		SailRepository shapesRepoWithReasoning = new SailRepository(
 				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
 
-		shapesRepoCache.init();
+		shapesRepoWithReasoning.init();
 		List<Shape> shapes;
 
-		try (SailRepositoryConnection shapesRepoCacheConnection = shapesRepoCache.getConnection()) {
-			shapesRepoCacheConnection.begin(IsolationLevels.NONE);
+		try (SailRepositoryConnection shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
+			shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
 			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null,
 					false)) {
-				shapesRepoCacheConnection.add(statements);
+				shapesRepoWithReasoningConnection.add(statements);
 			}
-			enrichShapes(shapesRepoCacheConnection);
-			shapesRepoCacheConnection.commit();
-			shapes = Shape.Factory.getShapes(shapesRepoCacheConnection, this);
+			enrichShapes(shapesRepoWithReasoningConnection);
+			shapesRepoWithReasoningConnection.commit();
+			shapes = Shape.Factory.getShapes(shapesRepoWithReasoningConnection, this);
 		}
 
-		shapesRepoCache.shutDown();
+		shapesRepoWithReasoning.shutDown();
 		return shapes;
 	}
 
@@ -959,6 +959,17 @@ public class ShaclSail extends NotifyingSailWrapper {
 		return super.getDefaultIsolationLevel();
 	}
 
+	boolean hasShapes() {
+		try (SailRepositoryConnection connection = shapesRepo.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			try {
+				return !connection.isEmpty();
+			} finally {
+				connection.commit();
+			}
+		}
+	}
+
 	public static class TransactionSettings {
 
 		@Experimental
@@ -989,7 +1000,7 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 			@Override
 			public String getName() {
-				return ValidationApproach.class.getCanonicalName();
+				return PerformanceHint.class.getCanonicalName();
 			}
 
 			@Override
@@ -1004,25 +1015,29 @@ public class ShaclSail extends NotifyingSailWrapper {
 			/**
 			 * Do not run any validation. This could potentially lead to your database becoming invalid.
 			 */
-			Disabled("Disabled"),
-
-			/**
-			 * Let the SHACL engine decide on the best approach for validating. This typically means that it will use
-			 * transactional validation except when changing the SHACL Shape.
-			 */
-			Auto("Auto"),
+			Disabled("Disabled", 0),
 
 			/**
 			 * Use a validation approach that is optimized for bulk operations such as adding or removing large amounts
 			 * of data. This will automatically disable parallel validation and turn off caching. Add performance hints
 			 * to enable parallel validation or caching if you have enough resources (RAM).
 			 */
-			Bulk("Bulk");
+			Bulk("Bulk", 1),
+
+			/**
+			 * Let the SHACL engine decide on the best approach for validating. This typically means that it will use
+			 * transactional validation except when changing the SHACL Shape.
+			 */
+			Auto("Auto", 2);
 
 			private final String value;
 
-			ValidationApproach(String value) {
+			// lowest priority wins
+			private final int priority;
+
+			ValidationApproach(String value, int priority) {
 				this.value = value;
+				this.priority = priority;
 			}
 
 			@Override
@@ -1033,6 +1048,22 @@ public class ShaclSail extends NotifyingSailWrapper {
 			@Override
 			public String getValue() {
 				return value;
+			}
+
+			public static ValidationApproach getHighestPriority(ValidationApproach v1, ValidationApproach v2) {
+				assert v1 != null || v2 != null;
+				if (v1 == null) {
+					return v2;
+				}
+				if (v2 == null) {
+					return v1;
+				}
+
+				if (v1.priority < v2.priority) {
+					return v1;
+				}
+
+				return v2;
 			}
 
 		}

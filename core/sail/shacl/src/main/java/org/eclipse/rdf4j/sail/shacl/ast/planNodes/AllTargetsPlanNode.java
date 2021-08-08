@@ -55,7 +55,7 @@ public class AllTargetsPlanNode implements PlanNode {
 			final CloseableIteration<? extends ValidationTuple, SailException> iterator = select.iterator();
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				iterator.close();
 			}
 

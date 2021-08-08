@@ -1,14 +1,16 @@
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -121,8 +123,9 @@ public class TargetChainRetriever implements PlanNode {
 						currentStatementMatcher = statementPatternIterator.next();
 						connection = connectionsGroup.getAddedStatements();
 					} else {
-						if (!connectionsGroup.getStats().hasRemoved())
+						if (!connectionsGroup.getStats().hasRemoved()) {
 							break;
+						}
 						currentStatementMatcher = removedStatementIterator.next();
 						connection = connectionsGroup.getRemovedStatements();
 					}
@@ -201,20 +204,23 @@ public class TargetChainRetriever implements PlanNode {
 				if (results.hasNext()) {
 					BindingSet nextBinding = results.next();
 
-					List<Value> collect = nextBinding.getBindingNames()
-							.stream()
-							.sorted()
-							.map(nextBinding::getValue)
-							.collect(Collectors.toList());
+					if (nextBinding.size() == 1) {
+						next = new ValidationTuple(nextBinding.iterator().next().getValue(), scope, false);
+					} else {
+						Value[] values = StreamSupport.stream(nextBinding.spliterator(), false)
+								.sorted(Comparator.comparing(Binding::getName))
+								.map(Binding::getValue)
+								.toArray(Value[]::new);
+						next = new ValidationTuple(values, scope, false);
 
-					next = new ValidationTuple(collect, scope, false);
+					}
 
 				}
 
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 
 				try {
 					if (statements != null) {

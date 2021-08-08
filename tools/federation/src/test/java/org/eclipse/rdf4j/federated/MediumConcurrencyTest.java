@@ -18,6 +18,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -107,7 +111,38 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 		return executor.submit(() -> {
 			log.info("Executing query " + queryId + ": " + query);
 			execute("/tests/medium/" + query + ".rq", "/tests/medium/" + query + ".srx", false);
+			// uncomment to simulate canceling case
+			// executeReadPartial("/tests/medium/" + query + ".rq");
+
 			return "Ok";
 		});
+	}
+
+	/**
+	 * Execute a testcase, both queryFile and expectedResultFile must be files
+	 *
+	 * @param queryFile
+	 * @param expectedResultFile
+	 * @param checkOrder
+	 * @throws Exception
+	 */
+	protected void executeReadPartial(String queryFile)
+			throws Exception {
+
+		String queryString = readQueryString(queryFile);
+
+		Query query = queryManager().prepareQuery(queryString);
+
+		if (query instanceof TupleQuery) {
+			try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+				try (TupleQueryResult queryResult = ((TupleQuery) query).evaluate()) {
+					// explicitly consume only 1 binding set before closing
+					queryResult.next();
+				}
+			}
+
+		} else {
+			throw new IllegalStateException();
+		}
 	}
 }

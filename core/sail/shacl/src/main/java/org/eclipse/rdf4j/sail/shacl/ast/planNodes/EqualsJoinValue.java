@@ -102,7 +102,7 @@ public class EqualsJoinValue implements PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				leftIterator.close();
 				rightIterator.close();
 			}

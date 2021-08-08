@@ -39,7 +39,7 @@ public class ParallelCheckJoinTask extends ParallelTaskBase<BindingSet> {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> performTask() throws Exception {
+	protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
 		return strategy.evaluateGroupedCheck(expr, bindings);
 	}
 

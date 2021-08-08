@@ -159,7 +159,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					PlanNode allTargets = effectiveTarget.getAllTargets(connectionsGroup, scope);
 					allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);
 
-					return new Unique(allTargets, true);
+					return Unique.getInstance(allTargets, true);
 				} else {
 					return effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup, scope,
 							EffectiveTarget.Extend.right,
@@ -184,7 +184,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 					allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);
 
-					return new Unique(allTargets, true);
+					return Unique.getInstance(allTargets, true);
 
 				} else {
 
@@ -218,7 +218,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
 				invalidValuesDirectOnPath);
 
-		if (connectionsGroup.getStats().isBaseSailEmpty()) {
+		if (connectionsGroup.getStats().wasEmptyBeforeTransaction()) {
 			return innerJoin.getJoined(UnBufferedPlanNode.class);
 
 		} else {
@@ -232,7 +232,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			typeFilterPlan = effectiveTarget.extend(typeFilterPlan, connectionsGroup, scope,
 					EffectiveTarget.Extend.left, true, null);
 
-			top = new UnionNode(top, typeFilterPlan);
+			top = UnionNode.getInstance(top, typeFilterPlan);
 
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
 					effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
@@ -245,7 +245,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					connectionsGroup.getPreviousStateConnection(),
 					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
-			top = new UnionNode(top, bulkedExternalInnerJoin);
+			top = UnionNode.getInstance(top, bulkedExternalInnerJoin);
 
 			return getFilterAttacherWithNegation(negatePlan, top);
 
@@ -297,7 +297,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
-			return new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
+			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
 		return EmptyNode.getInstance();
 	}

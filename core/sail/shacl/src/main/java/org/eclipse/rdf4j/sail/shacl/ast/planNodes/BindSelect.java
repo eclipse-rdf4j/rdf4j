@@ -219,8 +219,10 @@ public class BindSelect implements PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				try {
+					bulk = null;
+					parsedQuery = null;
 					assert !iterator.hasNext();
 					iterator.close();
 				} finally {

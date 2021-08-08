@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 
 /**
  * A RuntimeException indicating that a specific Rio parser/writer configuration setting is not supported. A typical

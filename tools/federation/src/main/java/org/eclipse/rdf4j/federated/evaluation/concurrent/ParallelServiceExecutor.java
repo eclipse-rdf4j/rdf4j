@@ -155,8 +155,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 	private class ParallelServiceTask extends ParallelTaskBase<BindingSet> {
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> performTask()
-				throws Exception {
+		protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
 
 			// Note: in order two avoid deadlocks we consume the SERVICE result.
 			// This is basically required to avoid processing background tuple

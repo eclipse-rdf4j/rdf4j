@@ -22,11 +22,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.OpenRDFUtil;
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
@@ -487,7 +487,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	public void add(Statement st, Resource... contexts) throws RepositoryException {
 		if (!isActive()) {
 			// operation is not part of a transaction - just send directly
-			OpenRDFUtil.verifyContextNotNull(contexts);
+			Objects.requireNonNull(contexts,
+					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 			final Model m = new LinkedHashModel();
 
@@ -510,7 +511,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			logger.debug("adding statement directly: {} {} {} {}",
 					new Object[] { subject, predicate, object, contexts });
 			// operation is not part of a transaction - just send directly
-			OpenRDFUtil.verifyContextNotNull(contexts);
+			Objects.requireNonNull(contexts,
+					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 			final Model m = new LinkedHashModel();
 			m.add(subject, predicate, object, contexts);
 			addModel(m);

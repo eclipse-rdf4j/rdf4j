@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -39,7 +38,7 @@ public class ValuesBackedNode implements PlanNode {
 	public ValuesBackedNode(SortedSet<Value> values, ConstraintComponent.Scope scope) {
 
 		this.tuples = values.stream()
-				.map(c -> new ValidationTuple(Collections.singletonList(c), scope, false))
+				.map(c -> new ValidationTuple(c, scope, false))
 				.collect(Collectors.toList());
 
 		this.values = values;
@@ -53,7 +52,7 @@ public class ValuesBackedNode implements PlanNode {
 			final Iterator<ValidationTuple> iterator = tuples.iterator();
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 			}
 
 			@Override

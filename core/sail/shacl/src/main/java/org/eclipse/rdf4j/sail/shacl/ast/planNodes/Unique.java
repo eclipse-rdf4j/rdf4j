@@ -37,7 +37,7 @@ public class Unique implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public Unique(PlanNode parent, boolean compress) {
+	private Unique(PlanNode parent, boolean compress) {
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
@@ -53,6 +53,12 @@ public class Unique implements PlanNode {
 
 		this.parent = parent;
 		this.compress = compress;
+	}
+
+	public static PlanNode getInstance(PlanNode parent, boolean compress) {
+		if (parent == EmptyNode.getInstance())
+			return parent;
+		return new Unique(parent, compress);
 	}
 
 	@Override
@@ -111,6 +117,8 @@ public class Unique implements PlanNode {
 
 						if (tuples.isEmpty()) {
 							next = temp;
+						} else if (tuples.size() == 1 && tuples.contains(temp)) {
+							next = temp;
 						} else {
 							tuples.add(temp);
 							next = new ValidationTuple(temp, tuples);
@@ -155,9 +163,11 @@ public class Unique implements PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				targetAndValueDedupeSet = null;
 				parentIterator.close();
+				next = null;
+				previous = null;
 			}
 
 			@Override

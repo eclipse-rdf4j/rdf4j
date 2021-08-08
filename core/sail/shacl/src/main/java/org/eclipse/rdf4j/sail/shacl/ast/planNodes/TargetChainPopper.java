@@ -59,8 +59,9 @@ public class TargetChainPopper implements PlanNode {
 			}
 
 			@Override
-			public void close() throws SailException {
+			public void localClose() throws SailException {
 				parentIterator.close();
+				iterator = Collections.emptyIterator();
 			}
 
 			@Override

@@ -117,7 +117,7 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 				.reduce((a, b) -> new EqualsJoinValue(a, b, false))
 				.orElse(EmptyNode.getInstance());
 
-		PlanNode invalid = new Unique(orPlanNodes, false);
+		PlanNode invalid = Unique.getInstance(orPlanNodes, false);
 
 		return invalid;
 	}
@@ -131,7 +131,7 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
 					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
 
-			allTargets = new Unique(new ShiftToPropertyShape(allTargetsPlan), true);
+			allTargets = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		} else {
 			allTargets = getTargetChain()
 					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
@@ -142,11 +142,10 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 		PlanNode planNode = or.stream()
 				.map(or -> or.getAllTargetsPlan(connectionsGroup, scope))
 				.distinct()
-				.reduce(UnionNode::new)
+				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
 
-		Unique unique = new Unique(new UnionNode(allTargets, planNode), false);
-		return unique;
+		return Unique.getInstance(UnionNode.getInstanceDedupe(allTargets, planNode), false);
 	}
 
 	@Override

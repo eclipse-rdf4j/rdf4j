@@ -96,19 +96,13 @@ public class StatementMatcher {
 		}
 
 		if (objectIsWildcard()) {
-			if (s.objectName != null) {
-				return false;
-			}
+			return s.objectName == null;
 		} else {
 			if (!Objects.equals(objectName, s.objectName)) {
 				return false;
 			}
-			if (!Objects.equals(objectValue, s.objectValue)) {
-				return false;
-			}
+			return Objects.equals(objectValue, s.objectValue);
 		}
-
-		return true;
 
 	}
 
@@ -179,7 +173,12 @@ public class StatementMatcher {
 		private int counter = 0;
 
 		public Variable next() {
-			return new Variable(BASE + counter++);
+			counter++;
+			return current();
+		}
+
+		public Variable current() {
+			return new Variable(BASE + counter);
 		}
 
 	}
@@ -214,9 +213,10 @@ public class StatementMatcher {
 		}
 
 		public String asSparqlVariable() {
-			if (value != null)
+			if (value != null) {
 				throw new IllegalStateException(
 						"Can not produce SPARQL variable for variables that have fixed values!");
+			}
 			return "?" + name.replace("-", "__");
 		}
 

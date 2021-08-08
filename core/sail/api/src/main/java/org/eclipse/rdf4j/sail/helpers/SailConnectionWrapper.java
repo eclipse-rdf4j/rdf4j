@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.Optional;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -109,6 +109,12 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
 		return wrappedCon.getStatements(subj, pred, obj, includeInferred, contexts);
+	}
+
+	@Override
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+			throws SailException {
+		return wrappedCon.hasStatement(subj, pred, obj, includeInferred, contexts);
 	}
 
 	@Override

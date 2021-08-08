@@ -86,13 +86,19 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 			runnable = taskWrapper.wrap(runnable);
 		}
 
+		try {
+			task.getQueryInfo().registerScheduledTask(task);
+		} catch (Throwable e) {
+			task.cancel();
+			throw e;
+		}
+
 		Future<?> future = executor.submit(runnable);
 
 		// register the future to the task
 		if (task instanceof ParallelTaskBase<?>) {
 			((ParallelTaskBase<?>) task).setScheduledFuture(future);
 		}
-		task.getQueryInfo().registerScheduledTask(task);
 
 		// TODO rejected execution exception?
 
@@ -193,7 +199,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 		private final ParallelTask<T> task;
 
-		private boolean aborted = false;
+		private volatile boolean aborted = false;
 
 		public WorkerRunnable(ParallelTask<T> task) {
 			super();
@@ -208,21 +214,30 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 			ParallelExecutor<T> taskControl = task.getControl();
 
+			CloseableIteration<T, QueryEvaluationException> res = null;
 			try {
 				if (log.isTraceEnabled()) {
 					log.trace("Performing task " + task.toString() + " in " + Thread.currentThread().getName());
 				}
-				CloseableIteration<T, QueryEvaluationException> res = task.performTask();
+				res = task.performTask();
 				taskControl.addResult(res);
-
-				taskControl.done(); // in most cases this is a no-op
-			} catch (Throwable t) {
 				if (aborted) {
-					return;
+					res.close();
 				}
+
+				taskControl.done();
+			} catch (Throwable t) {
+
 				log.debug("Exception encountered while evaluating task (" + t.getClass().getSimpleName() + "): "
 						+ t.getMessage());
 				taskControl.toss(ExceptionUtil.toException(t));
+
+				// e.g. interrupted
+				if (res != null) {
+					res.close();
+				}
+				task.cancel();
+
 			}
 
 		}

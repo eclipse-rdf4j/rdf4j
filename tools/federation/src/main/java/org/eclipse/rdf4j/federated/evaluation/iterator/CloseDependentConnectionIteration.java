@@ -38,20 +38,30 @@ public class CloseDependentConnectionIteration<T>
 
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
-		boolean res = inner.hasNext();
-		if (!res) {
-			try {
-				dependentConn.close();
-			} catch (Throwable ignore) {
-				log.trace("Failed to close dependent connection:", ignore);
+		try {
+			boolean res = inner.hasNext();
+			if (!res) {
+				try {
+					dependentConn.close();
+				} catch (Throwable ignore) {
+					log.trace("Failed to close dependent connection:", ignore);
+				}
 			}
+			return res;
+		} catch (Throwable t) {
+			dependentConn.close();
+			throw t;
 		}
-		return res;
 	}
 
 	@Override
 	public T next() throws QueryEvaluationException {
-		return inner.next();
+		try {
+			return inner.next();
+		} catch (Throwable t) {
+			dependentConn.close();
+			throw t;
+		}
 	}
 
 	@Override
