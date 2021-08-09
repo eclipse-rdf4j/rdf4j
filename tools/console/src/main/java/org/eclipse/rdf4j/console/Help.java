@@ -18,19 +18,19 @@ public interface Help {
 	 *
 	 * @return string
 	 */
-	public String getName();
+	String getName();
 
 	/**
 	 * Get short description, small enough to fit on one console row
 	 *
 	 * @return string
 	 */
-	public String getHelpShort();
+	String getHelpShort();
 
 	/**
 	 * Get long description
 	 *
 	 * @return string, can be multiple lines
 	 */
-	public String getHelpLong();
+	String getHelpLong();
 }

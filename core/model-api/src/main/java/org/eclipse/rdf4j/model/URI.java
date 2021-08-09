@@ -24,7 +24,7 @@ public interface URI extends Resource {
 	 * @return The String-representation of this URI.
 	 */
 	@Override
-	public String toString();
+	String toString();
 
 	/**
 	 * Gets the namespace part of this URI. The namespace is defined as per the algorithm described in the class
@@ -32,7 +32,7 @@ public interface URI extends Resource {
 	 *
 	 * @return The URI's namespace.
 	 */
-	public String getNamespace();
+	String getNamespace();
 
 	/**
 	 * Gets the local name part of this URI. The local name is defined as per the algorithm described in the class
@@ -40,7 +40,7 @@ public interface URI extends Resource {
 	 *
 	 * @return The URI's local name.
 	 */
-	public String getLocalName();
+	String getLocalName();
 
 	/**
 	 * Compares a URI object to another object.
@@ -50,7 +50,7 @@ public interface URI extends Resource {
 	 *         equal, <tt>false</tt> otherwise.
 	 */
 	@Override
-	public boolean equals(Object o);
+	boolean equals(Object o);
 
 	/**
 	 * The hash code of an URI is defined as the hash code of its String-representation: <tt>toString().hashCode</tt>.
@@ -58,6 +58,6 @@ public interface URI extends Resource {
 	 * @return A hash code for the URI.
 	 */
 	@Override
-	public int hashCode();
+	int hashCode();
 
 }

@@ -18,19 +18,19 @@ public interface RepositorySettings {
 	/**
 	 * @param nOperations fail after nOperations, -1 to deactivate
 	 */
-	public void setFailAfter(int nOperations);
+	void setFailAfter(int nOperations);
 
 	/**
 	 *
 	 * @param flag
 	 */
-	public void setWritable(boolean flag);
+	void setWritable(boolean flag);
 
-	public void resetOperationsCounter();
+	void resetOperationsCounter();
 
 	/**
 	 *
 	 * @param runnable a runnable that can be used to simulate latency, e.g. by letting the thread sleep
 	 */
-	public void setLatencySimulator(Runnable runnable);
+	void setLatencySimulator(Runnable runnable);
 }

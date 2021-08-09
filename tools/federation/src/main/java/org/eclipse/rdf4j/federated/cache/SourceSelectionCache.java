@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.federated.structures.SubQuery;
  */
 public interface SourceSelectionCache {
 
-	public static enum StatementSourceAssurance {
+	enum StatementSourceAssurance {
 		/**
 		 * The endpoint does <b>not</b> provide any information
 		 */
@@ -49,7 +49,7 @@ public interface SourceSelectionCache {
 	 * @param endpoint
 	 * @return the {@link StatementSourceAssurance}
 	 */
-	public StatementSourceAssurance getAssurance(SubQuery subQuery, Endpoint endpoint);
+	StatementSourceAssurance getAssurance(SubQuery subQuery, Endpoint endpoint);
 
 	/**
 	 * Update the information for a given {@link SubQuery} and {@link Endpoint}.
@@ -62,5 +62,5 @@ public interface SourceSelectionCache {
 	 * @param endpoint
 	 * @param hasStatements
 	 */
-	public void updateInformation(SubQuery subQuery, Endpoint endpoint, boolean hasStatements);
+	void updateInformation(SubQuery subQuery, Endpoint endpoint, boolean hasStatements);
 }

@@ -26,5 +26,5 @@ public interface FedXCostModel {
 	 * @param joinVars
 	 * @return the cost associated to the tupleExpr
 	 */
-	public double estimateCost(TupleExpr tupleExpr, Set<String> joinVars);
+	double estimateCost(TupleExpr tupleExpr, Set<String> joinVars);
 }

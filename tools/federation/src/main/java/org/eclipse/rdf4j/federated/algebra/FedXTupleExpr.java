@@ -21,7 +21,7 @@ public interface FedXTupleExpr extends TupleExpr, VariableExpr, QueryRef {
 	/**
 	 * @return the number of free (i.e. unbound) variables in this expression
 	 */
-	public default int getFreeVarCount() {
+	default int getFreeVarCount() {
 		return getFreeVars().size();
 	}
 }

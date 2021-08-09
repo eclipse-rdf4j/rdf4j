@@ -20,11 +20,11 @@ public interface VariableScopeChange {
 	 * @return true iff the node represents a variable scope change.
 	 *
 	 */
-	public boolean isVariableScopeChange();
+	boolean isVariableScopeChange();
 
 	/**
 	 * Set the value of {@link #isVariableScopeChange()} to true or false.
 	 */
-	public void setVariableScopeChange(boolean isVariableScopeChange);
+	void setVariableScopeChange(boolean isVariableScopeChange);
 
 }

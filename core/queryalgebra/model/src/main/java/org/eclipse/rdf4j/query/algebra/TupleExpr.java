@@ -19,7 +19,7 @@ public interface TupleExpr extends QueryModelNode {
 	 *
 	 * @return A set of binding names.
 	 */
-	public Set<String> getBindingNames();
+	Set<String> getBindingNames();
 
 	/**
 	 * Gets the names of the bindings that are guaranteed to be present in the results produced by this tuple
@@ -27,8 +27,8 @@ public interface TupleExpr extends QueryModelNode {
 	 *
 	 * @return A set of binding names.
 	 */
-	public Set<String> getAssuredBindingNames();
+	Set<String> getAssuredBindingNames();
 
 	@Override
-	public TupleExpr clone();
+	TupleExpr clone();
 }

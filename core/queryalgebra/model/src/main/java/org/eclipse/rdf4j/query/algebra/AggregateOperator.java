@@ -14,11 +14,11 @@ package org.eclipse.rdf4j.query.algebra;
  */
 public interface AggregateOperator extends ValueExpr {
 
-	public boolean isDistinct();
+	boolean isDistinct();
 
-	public void setDistinct(boolean distinct);
+	void setDistinct(boolean distinct);
 
 	@Override
-	public AggregateOperator clone();
+	AggregateOperator clone();
 
 }

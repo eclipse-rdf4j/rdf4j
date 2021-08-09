@@ -27,28 +27,28 @@ public interface Statement extends Serializable {
 	 *
 	 * @return The statement's subject.
 	 */
-	public Resource getSubject();
+	Resource getSubject();
 
 	/**
 	 * Gets the predicate of this statement.
 	 *
 	 * @return The statement's predicate.
 	 */
-	public IRI getPredicate();
+	IRI getPredicate();
 
 	/**
 	 * Gets the object of this statement.
 	 *
 	 * @return The statement's object.
 	 */
-	public Value getObject();
+	Value getObject();
 
 	/**
 	 * Gets the context of this statement.
 	 *
 	 * @return The statement's context, or <tt>null</tt> in case of the null context or if not applicable.
 	 */
-	public Resource getContext();
+	Resource getContext();
 
 	/**
 	 * Compares this statement to another object.
@@ -60,7 +60,7 @@ public interface Statement extends Serializable {
 	 *         objects} and {@linkplain #getContext() contexts} are equal; {@code false} otherwise
 	 */
 	@Override
-	public boolean equals(Object other);
+	boolean equals(Object other);
 
 	/**
 	 * Computes the hash code of this statement.
@@ -69,6 +69,6 @@ public interface Statement extends Serializable {
 	 *         {@link #getSubject()}, {@link #getPredicate()}, {@link #getObject()}, {@link #getContext()})
 	 */
 	@Override
-	public int hashCode();
+	int hashCode();
 
 }

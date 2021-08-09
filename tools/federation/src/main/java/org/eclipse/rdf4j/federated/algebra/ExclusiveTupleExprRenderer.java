@@ -36,7 +36,7 @@ public interface ExclusiveTupleExprRenderer extends ExclusiveTupleExpr {
 	 * @param bindings the optional input bindings
 	 * @return the query string part
 	 */
-	public String toQueryString(Set<String> varNames, BindingSet bindings);
+	String toQueryString(Set<String> varNames, BindingSet bindings);
 
 	/**
 	 * Returns a SPARQL algebra representation of this expression that can be inserted into a SELECT {@link TupleExpr}
@@ -49,5 +49,5 @@ public interface ExclusiveTupleExprRenderer extends ExclusiveTupleExpr {
 	 * @param bindings the input bindings that need to be inserted
 	 * @return the algebra expression
 	 */
-	public TupleExpr toQueryAlgebra(Set<String> varNames, BindingSet bindings);
+	TupleExpr toQueryAlgebra(Set<String> varNames, BindingSet bindings);
 }

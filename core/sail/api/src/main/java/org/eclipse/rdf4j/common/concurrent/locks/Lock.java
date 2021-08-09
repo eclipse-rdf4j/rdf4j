@@ -16,10 +16,10 @@ public interface Lock {
 	/**
 	 * Checks whether the lock is still active.
 	 */
-	public boolean isActive();
+	boolean isActive();
 
 	/**
 	 * Release the lock, making it inactive.
 	 */
-	public void release();
+	void release();
 }

@@ -21,7 +21,7 @@ public interface Assignable extends QueryElement {
 	 * @param var the variable to bind the expression value to
 	 * @return an Assignment object
 	 */
-	default public Assignment as(Variable var) {
+	default Assignment as(Variable var) {
 		return SparqlBuilder.as(this, var);
 	}
 }

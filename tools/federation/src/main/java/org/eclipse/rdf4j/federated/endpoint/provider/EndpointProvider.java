@@ -18,6 +18,6 @@ import org.eclipse.rdf4j.federated.exception.FedXException;
  */
 public interface EndpointProvider<T extends RepositoryInformation> {
 
-	public Endpoint loadEndpoint(T repoInfo) throws FedXException;
+	Endpoint loadEndpoint(T repoInfo) throws FedXException;
 
 }

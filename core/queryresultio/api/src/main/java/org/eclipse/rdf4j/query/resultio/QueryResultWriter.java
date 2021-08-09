@@ -79,18 +79,18 @@ public interface QueryResultWriter extends QueryResultHandler {
 	 *
 	 * @param config a writer configuration object.
 	 */
-	public void setWriterConfig(WriterConfig config);
+	void setWriterConfig(WriterConfig config);
 
 	/**
 	 * Retrieves the current writer configuration as a single object.
 	 *
 	 * @return a writer configuration object representing the current configuration of the writer.
 	 */
-	public WriterConfig getWriterConfig();
+	WriterConfig getWriterConfig();
 
 	/**
 	 * @return A collection of {@link RioSetting}s that are supported by this {@link QueryResultWriter}.
 	 */
-	public Collection<RioSetting<?>> getSupportedSettings();
+	Collection<RioSetting<?>> getSupportedSettings();
 
 }

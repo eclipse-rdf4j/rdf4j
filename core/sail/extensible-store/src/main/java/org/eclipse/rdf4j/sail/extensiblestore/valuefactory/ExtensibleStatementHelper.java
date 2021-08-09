@@ -19,7 +19,7 @@ public interface ExtensibleStatementHelper {
 
 	ExtensibleStatement fromStatement(Statement statement, boolean inferred);
 
-	static class DefaultExtensibleStatementHelper implements ExtensibleStatementHelper {
+	class DefaultExtensibleStatementHelper implements ExtensibleStatementHelper {
 
 		@Override
 		public ExtensibleStatement fromStatement(Statement statement, boolean inferred) {

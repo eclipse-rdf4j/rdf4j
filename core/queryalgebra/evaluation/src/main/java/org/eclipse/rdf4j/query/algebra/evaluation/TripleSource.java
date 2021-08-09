@@ -34,7 +34,7 @@ public interface TripleSource {
 	 * @return An iterator over the relevant statements.
 	 * @throws QueryEvaluationException If the triple source failed to get the statements.
 	 */
-	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+	CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException;
 
 	/**
@@ -42,5 +42,5 @@ public interface TripleSource {
 	 *
 	 * @return a ValueFactory object for this TripleSource.
 	 */
-	public ValueFactory getValueFactory();
+	ValueFactory getValueFactory();
 }

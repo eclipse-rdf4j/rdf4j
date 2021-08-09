@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
  */
 public interface RepositoryConnectionListener {
 
-	public abstract void close(RepositoryConnection conn);
+	void close(RepositoryConnection conn);
 
 	/**
 	 * @deprecated since 2.0. Use {@link #begin(RepositoryConnection)} instead.
@@ -29,28 +29,28 @@ public interface RepositoryConnectionListener {
 	 * @param autoCommit
 	 */
 	@Deprecated
-	public abstract void setAutoCommit(RepositoryConnection conn, boolean autoCommit);
+	void setAutoCommit(RepositoryConnection conn, boolean autoCommit);
 
-	public abstract void begin(RepositoryConnection conn);
+	void begin(RepositoryConnection conn);
 
-	public abstract void commit(RepositoryConnection conn);
+	void commit(RepositoryConnection conn);
 
-	public abstract void rollback(RepositoryConnection conn);
+	void rollback(RepositoryConnection conn);
 
-	public abstract void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
+	void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
 			Resource... contexts);
 
-	public abstract void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
+	void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
 			Resource... contexts);
 
-	public abstract void clear(RepositoryConnection conn, Resource... contexts);
+	void clear(RepositoryConnection conn, Resource... contexts);
 
-	public abstract void setNamespace(RepositoryConnection conn, String prefix, String name);
+	void setNamespace(RepositoryConnection conn, String prefix, String name);
 
-	public abstract void removeNamespace(RepositoryConnection conn, String prefix);
+	void removeNamespace(RepositoryConnection conn, String prefix);
 
-	public abstract void clearNamespaces(RepositoryConnection conn);
+	void clearNamespaces(RepositoryConnection conn);
 
-	public abstract void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
+	void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
 			Update operation);
 }

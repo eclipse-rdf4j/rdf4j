@@ -78,42 +78,42 @@ public interface BinaryQueryResultConstants {
 	/**
 	 * Magic number for Binary RDF Table Result files.
 	 */
-	public static final byte[] MAGIC_NUMBER = new byte[] { 'B', 'R', 'T', 'R' };
+	byte[] MAGIC_NUMBER = new byte[] { 'B', 'R', 'T', 'R' };
 
 	/**
 	 * The version number of the current format.
 	 */
-	public static final int FORMAT_VERSION = 4;
+	int FORMAT_VERSION = 4;
 
 	/* RECORD TYPES */
-	public static final int NULL_RECORD_MARKER = 0;
+	int NULL_RECORD_MARKER = 0;
 
-	public static final int REPEAT_RECORD_MARKER = 1;
+	int REPEAT_RECORD_MARKER = 1;
 
-	public static final int NAMESPACE_RECORD_MARKER = 2;
+	int NAMESPACE_RECORD_MARKER = 2;
 
-	public static final int QNAME_RECORD_MARKER = 3;
+	int QNAME_RECORD_MARKER = 3;
 
-	public static final int URI_RECORD_MARKER = 4;
+	int URI_RECORD_MARKER = 4;
 
-	public static final int BNODE_RECORD_MARKER = 5;
+	int BNODE_RECORD_MARKER = 5;
 
-	public static final int PLAIN_LITERAL_RECORD_MARKER = 6;
+	int PLAIN_LITERAL_RECORD_MARKER = 6;
 
-	public static final int LANG_LITERAL_RECORD_MARKER = 7;
+	int LANG_LITERAL_RECORD_MARKER = 7;
 
-	public static final int DATATYPE_LITERAL_RECORD_MARKER = 8;
+	int DATATYPE_LITERAL_RECORD_MARKER = 8;
 
-	public static final int EMPTY_ROW_RECORD_MARKER = 9;
+	int EMPTY_ROW_RECORD_MARKER = 9;
 
-	public static final int TRIPLE_RECORD_MARKER = 10;
+	int TRIPLE_RECORD_MARKER = 10;
 
-	public static final int ERROR_RECORD_MARKER = 126;
+	int ERROR_RECORD_MARKER = 126;
 
-	public static final int TABLE_END_RECORD_MARKER = 127;
+	int TABLE_END_RECORD_MARKER = 127;
 
 	/* ERROR TYPES */
-	public static final int MALFORMED_QUERY_ERROR = 1;
+	int MALFORMED_QUERY_ERROR = 1;
 
-	public static final int QUERY_EVALUATION_ERROR = 2;
+	int QUERY_EVALUATION_ERROR = 2;
 }

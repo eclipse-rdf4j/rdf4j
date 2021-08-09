@@ -25,18 +25,18 @@ public interface LanguageHandler {
 	/**
 	 * Identifier for the language tag format defined by RFC3066, which is referenced by the RDF-1.0 specification.
 	 */
-	public static final String RFC3066 = "org.eclipse.rdf4j.rio.languages.RFC3066";
+	String RFC3066 = "org.eclipse.rdf4j.rio.languages.RFC3066";
 
 	/**
 	 * Identifier for the language tag format defined by RFC4646, which obsoletes RFC3066, but which is not referenced
 	 * by the RDF specification.
 	 */
-	public static final String RFC4646 = "org.eclipse.rdf4j.rio.languages.RFC4646";
+	String RFC4646 = "org.eclipse.rdf4j.rio.languages.RFC4646";
 
 	/**
 	 * Identifier for the language tag format defined by BCP47, which is referenced by the RDF-1.1 specification.
 	 */
-	public static final String BCP47 = "org.eclipse.rdf4j.rio.languages.BCP47";
+	String BCP47 = "org.eclipse.rdf4j.rio.languages.BCP47";
 
 	/**
 	 * Checks if the given language tag is recognized by this language handler, including cases where the language tag
@@ -46,7 +46,7 @@ public interface LanguageHandler {
 	 * @return True if the language tag is syntactically valid and could be used with
 	 *         {@link #verifyLanguage(String, String)} and {@link #normalizeLanguage(String, String, ValueFactory)}.
 	 */
-	public boolean isRecognizedLanguage(String languageTag);
+	boolean isRecognizedLanguage(String languageTag);
 
 	/**
 	 * Verifies that the language tag is valid, optionally including an automated check on the literal value.
@@ -60,7 +60,7 @@ public interface LanguageHandler {
 	 *         valid.
 	 * @throws LiteralUtilException If the language tag was not recognized.
 	 */
-	public boolean verifyLanguage(String literalValue, String languageTag) throws LiteralUtilException;
+	boolean verifyLanguage(String literalValue, String languageTag) throws LiteralUtilException;
 
 	/**
 	 * Normalize both the language tag and the language if appropriate, and use the given value factory to generate a
@@ -79,7 +79,7 @@ public interface LanguageHandler {
 	 * @throws LiteralUtilException If the language tag was not recognized or verified, or the literal value could not
 	 *                              be normalized due to an error.
 	 */
-	public Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
+	Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
 			throws LiteralUtilException;
 
 	/**
@@ -87,6 +87,6 @@ public interface LanguageHandler {
 	 *
 	 * @return A unique string key.
 	 */
-	public String getKey();
+	String getKey();
 
 }

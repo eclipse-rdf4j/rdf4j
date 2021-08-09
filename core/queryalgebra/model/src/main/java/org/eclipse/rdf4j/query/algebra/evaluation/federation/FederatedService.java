@@ -39,7 +39,7 @@ public interface FederatedService {
 	 * @return <code>true</code> if at least one result exists
 	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
-	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException;
+	boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException;
 
 	/**
 	 * <p>
@@ -60,7 +60,7 @@ public interface FederatedService {
 	 * @return an iteration over the results of the query
 	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service, Set<String> projectionVars,
+	CloseableIteration<BindingSet, QueryEvaluationException> select(Service service, Set<String> projectionVars,
 			BindingSet bindings, String baseUri) throws QueryEvaluationException;
 
 	/**
@@ -83,26 +83,26 @@ public interface FederatedService {
 	 *         inserted into the results!
 	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
+	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
 			throws QueryEvaluationException;
 
 	/**
 	 * Method to check if {@link #initialize()} had been called.
 	 */
-	public boolean isInitialized();
+	boolean isInitialized();
 
 	/**
 	 * Method to perform any initializations, invoked after construction.
 	 *
 	 * @throws QueryEvaluationException If there was an exception generated while initializing the service.
 	 */
-	public void initialize() throws QueryEvaluationException;
+	void initialize() throws QueryEvaluationException;
 
 	/**
 	 * Method to perform any shutDown code, invoked at unregistering.
 	 *
 	 * @throws QueryEvaluationException If there was an exception generated while shutting down the service.
 	 */
-	public void shutdown() throws QueryEvaluationException;
+	void shutdown() throws QueryEvaluationException;
 }

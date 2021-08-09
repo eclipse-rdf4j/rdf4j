@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
 /**
  * Classes implementing this interface can accept a custom {@link TaskWrapper}.
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -17,10 +17,10 @@ public interface TaskWrapperAware {
 
 	/**
 	 * Set the {@link TaskWrapper} to the respective instance
-	 * 
+	 *
 	 * @param taskWrapper
 	 * @return
 	 */
-	public void setTaskWrapper(TaskWrapper taskWrapper);
+	void setTaskWrapper(TaskWrapper taskWrapper);
 
 }

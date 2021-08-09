@@ -31,7 +31,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *
 	 * @return an unmodifiable view of the specified set.
 	 */
-	public Model unmodifiable();
+	Model unmodifiable();
 
 	/**
 	 * Sets the prefix for a namespace. This will replace any existing namespace associated to the prefix.
@@ -40,7 +40,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * @param name   The namespace name that the prefix maps to.
 	 * @return The {@link Namespace} object for the given namespace.
 	 */
-	public default Namespace setNamespace(String prefix, String name) {
+	default Namespace setNamespace(String prefix, String name) {
 		Optional<? extends Namespace> result = getNamespace(prefix);
 		if (!result.isPresent() || !result.get().getName().equals(name)) {
 			result = Optional.of(new ModelNamespace(prefix, name));
@@ -54,7 +54,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *
 	 * @param namespace A {@link Namespace} object to use in this Model.
 	 */
-	public void setNamespace(Namespace namespace);
+	void setNamespace(Namespace namespace);
 
 	/**
 	 * Removes a namespace declaration by removing the association between a prefix and a namespace name.
@@ -62,7 +62,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * @param prefix The namespace prefix of which the assocation with a namespace name is to be removed.
 	 * @return the previous namespace bound to the prefix or {@link Optional#empty()}
 	 */
-	public Optional<Namespace> removeNamespace(String prefix);
+	Optional<Namespace> removeNamespace(String prefix);
 
 	/**
 	 * Determines if statements with the specified subject, predicate, object and (optionally) context exist in this
@@ -88,13 +88,13 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *                 matching one of these will match.
 	 * @return <code>true</code> if statements match the specified pattern.
 	 */
-	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts);
+	boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts);
 
 	/**
 	 * @deprecated since 2.0. Use {@link #contains(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
-	public default boolean contains(Resource subj, URI pred, Value obj, Resource... contexts) {
+	default boolean contains(Resource subj, URI pred, Value obj, Resource... contexts) {
 		return contains(subj, (IRI) pred, obj, contexts);
 	}
 
@@ -113,13 +113,13 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * @throws UnsupportedOperationException If this Model cannot accept any statements, because it is filtered to the
 	 *                                       empty set.
 	 */
-	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts);
+	boolean add(Resource subj, IRI pred, Value obj, Resource... contexts);
 
 	/**
 	 * @deprecated since 2.0. Use {@link #add(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
-	public default boolean add(Resource subj, URI pred, Value obj, Resource... contexts) {
+	default boolean add(Resource subj, URI pred, Value obj, Resource... contexts) {
 		return add(subj, (IRI) pred, obj, contexts);
 	}
 
@@ -129,7 +129,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * @param context The context of the statements to remove.
 	 * @return <code>true</code> if one or more statements have been removed.
 	 */
-	public boolean clear(Resource... context);
+	boolean clear(Resource... context);
 
 	/**
 	 * Removes statements with the specified subject, predicate, object and (optionally) context exist in this model.
@@ -154,13 +154,13 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *                 context matching one of these will be removed.
 	 * @return <code>true</code> if one or more statements have been removed.
 	 */
-	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts);
+	boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts);
 
 	/**
 	 * @deprecated since 2.0. Use {@link #remove(Resource, IRI, Value, Resource...)} instead.
 	 */
 	@Deprecated
-	public default boolean remove(Resource subj, URI pred, Value obj, Resource... contexts) {
+	default boolean remove(Resource subj, URI pred, Value obj, Resource... contexts) {
 		return remove(subj, (IRI) pred, obj, contexts);
 	}
 
@@ -192,7 +192,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *
 	 * @see #filter(Resource, IRI, Value, Resource...)
 	 */
-	public default Iterable<Statement> getStatements(Resource subject, IRI predicate, Value object,
+	default Iterable<Statement> getStatements(Resource subject, IRI predicate, Value object,
 			Resource... contexts) {
 		return () -> filter(subject, predicate, object, contexts).iterator();
 	}
@@ -229,10 +229,10 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *
 	 * @see #getStatements(Resource, IRI, Value, Resource...)
 	 */
-	public Model filter(Resource subj, IRI pred, Value obj, Resource... contexts);
+	Model filter(Resource subj, IRI pred, Value obj, Resource... contexts);
 
 	@Deprecated
-	public default Model filter(Resource subj, URI pred, Value obj, Resource... contexts) {
+	default Model filter(Resource subj, URI pred, Value obj, Resource... contexts) {
 		return filter(subj, (IRI) pred, obj, contexts);
 	}
 
@@ -247,7 +247,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *
 	 * @return a set view of the subjects contained in this model
 	 */
-	public Set<Resource> subjects();
+	Set<Resource> subjects();
 
 	/**
 	 * Returns a {@link Set} view of the predicates contained in this model. The set is backed by the model, so changes
@@ -260,7 +260,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *
 	 * @return a set view of the predicates contained in this model
 	 */
-	public Set<IRI> predicates();
+	Set<IRI> predicates();
 
 	/**
 	 * Returns a {@link Set} view of the objects contained in this model. The set is backed by the model, so changes to
@@ -273,7 +273,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *
 	 * @return a set view of the objects contained in this model
 	 */
-	public Set<Value> objects();
+	Set<Value> objects();
 
 	/**
 	 * Returns a {@link Set} view of the contexts contained in this model. The set is backed by the model, so changes to
@@ -286,7 +286,7 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *
 	 * @return a set view of the contexts contained in this model
 	 */
-	public default Set<Resource> contexts() {
+	default Set<Resource> contexts() {
 		Set<Resource> subjects = stream().map(st -> st.getContext()).collect(Collectors.toSet());
 		return subjects;
 	}

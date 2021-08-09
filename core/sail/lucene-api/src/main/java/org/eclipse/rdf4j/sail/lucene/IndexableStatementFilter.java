@@ -17,6 +17,6 @@ import org.eclipse.rdf4j.model.Statement;
  */
 public interface IndexableStatementFilter {
 
-	public boolean accept(Statement statement);
+	boolean accept(Statement statement);
 
 }

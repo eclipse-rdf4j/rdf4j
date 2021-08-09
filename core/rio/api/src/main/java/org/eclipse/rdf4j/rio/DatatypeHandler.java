@@ -23,33 +23,33 @@ public interface DatatypeHandler {
 	/**
 	 * Identifier for datatypes defined in the {@link XSD} vocabulary.
 	 */
-	public static final String XMLSCHEMA = "org.eclipse.rdf4j.rio.datatypes.xmlschema";
+	String XMLSCHEMA = "org.eclipse.rdf4j.rio.datatypes.xmlschema";
 
 	/**
 	 * Identifier for datatypes defined in the {@link org.eclipse.rdf4j.model.vocabulary.RDF} vocabulary.
 	 */
-	public static final String RDFDATATYPES = "org.eclipse.rdf4j.rio.datatypes.rdf";
+	String RDFDATATYPES = "org.eclipse.rdf4j.rio.datatypes.rdf";
 
 	/**
 	 * Identifier for datatypes defined by DBPedia.
 	 *
 	 * @see <a href="http://mappings.dbpedia.org/index.php/DBpedia_Datatypes">DBPedia Datatypes</a>
 	 */
-	public static final String DBPEDIA = "org.eclipse.rdf4j.rio.datatypes.dbpedia";
+	String DBPEDIA = "org.eclipse.rdf4j.rio.datatypes.dbpedia";
 
 	/**
 	 * Identifier for datatypes defined in the Virtuoso Geometry vocabulary.
 	 *
 	 * @see <a href="http://docs.openlinksw.com/virtuoso/rdfsparqlgeospat.html">Virtuoso Geospatial</a>
 	 */
-	public static final String VIRTUOSOGEOMETRY = "org.eclipse.rdf4j.rio.datatypes.virtuosogeometry";
+	String VIRTUOSOGEOMETRY = "org.eclipse.rdf4j.rio.datatypes.virtuosogeometry";
 
 	/**
 	 * Identifier for datatypes defined in the GeoSPARQL vocabulary.
 	 *
 	 * @see <a href="http://www.opengeospatial.org/standards/geosparql">GeoSPARQL</a>
 	 */
-	public static final String GEOSPARQL = "org.eclipse.rdf4j.rio.datatypes.geosparql";
+	String GEOSPARQL = "org.eclipse.rdf4j.rio.datatypes.geosparql";
 
 	/**
 	 * Checks if the given datatype URI is recognized by this datatype handler.
@@ -58,7 +58,7 @@ public interface DatatypeHandler {
 	 * @return True if the datatype is syntactically valid and could be used with {@link #verifyDatatype(String, IRI)}
 	 *         and {@link #normalizeDatatype(String, IRI, ValueFactory)}.
 	 */
-	public boolean isRecognizedDatatype(IRI datatypeUri);
+	boolean isRecognizedDatatype(IRI datatypeUri);
 
 	/**
 	 * Verifies that the datatype URI is valid, including a check on the structure of the literal value.
@@ -72,7 +72,7 @@ public interface DatatypeHandler {
 	 *         valid.
 	 * @throws LiteralUtilException If the datatype was not recognized.
 	 */
-	public boolean verifyDatatype(String literalValue, IRI datatypeUri) throws LiteralUtilException;
+	boolean verifyDatatype(String literalValue, IRI datatypeUri) throws LiteralUtilException;
 
 	/**
 	 * Normalize both the datatype URI and the literal value if appropriate, and use the given value factory to generate
@@ -91,7 +91,7 @@ public interface DatatypeHandler {
 	 * @throws LiteralUtilException If the datatype URI was not recognized or verified, or the literal value could not
 	 *                              be normalized due to an error.
 	 */
-	public Literal normalizeDatatype(String literalValue, IRI datatypeUri, ValueFactory valueFactory)
+	Literal normalizeDatatype(String literalValue, IRI datatypeUri, ValueFactory valueFactory)
 			throws LiteralUtilException;
 
 	/**
@@ -99,6 +99,6 @@ public interface DatatypeHandler {
 	 *
 	 * @return A unique string key.
 	 */
-	public String getKey();
+	String getKey();
 
 }

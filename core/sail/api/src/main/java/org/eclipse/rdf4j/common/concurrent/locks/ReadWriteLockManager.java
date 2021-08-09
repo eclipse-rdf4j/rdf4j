@@ -21,25 +21,25 @@ public interface ReadWriteLockManager {
 	 * Gets a read lock, if available. This method will return <tt>null</tt> if the read lock is not immediately
 	 * available.
 	 */
-	public Lock tryReadLock();
+	Lock tryReadLock();
 
 	/**
 	 * Gets a read lock. This method blocks until the read lock is available.
 	 *
 	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
 	 */
-	public Lock getReadLock() throws InterruptedException;
+	Lock getReadLock() throws InterruptedException;
 
 	/**
 	 * Gets an exclusive write lock, if available. This method will return <tt>null</tt> if the write lock is not
 	 * immediately available.
 	 */
-	public Lock tryWriteLock();
+	Lock tryWriteLock();
 
 	/**
 	 * Gets an exclusive write lock. This method blocks until the write lock is available.
 	 *
 	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
 	 */
-	public Lock getWriteLock() throws InterruptedException;
+	Lock getWriteLock() throws InterruptedException;
 }

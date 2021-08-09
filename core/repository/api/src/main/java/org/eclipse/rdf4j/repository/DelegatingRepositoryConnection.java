@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.repository;
 
 public interface DelegatingRepositoryConnection extends RepositoryConnection {
 
-	public RepositoryConnection getDelegate() throws RepositoryException;
+	RepositoryConnection getDelegate() throws RepositoryException;
 
-	public void setDelegate(RepositoryConnection delegate);
+	void setDelegate(RepositoryConnection delegate);
 }
