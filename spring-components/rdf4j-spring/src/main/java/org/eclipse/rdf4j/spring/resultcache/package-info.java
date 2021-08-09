@@ -45,6 +45,7 @@
  * <p>
  * For More information on configuration, see {@link org.eclipse.rdf4j.spring.resultcache.ResultCacheProperties
  * ResultCacheProperties}
+ * 
  * @since 4.0.0
  * @author Florian Kleedorfer
  */

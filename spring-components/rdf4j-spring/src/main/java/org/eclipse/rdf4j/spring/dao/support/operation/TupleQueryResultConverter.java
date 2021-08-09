@@ -105,7 +105,7 @@ public class TupleQueryResultConverter {
 	 */
 	public <T, O> Stream<O> toStream(
 			BindingSetMapper<T> mapper, MappingPostProcessor<T, O> postProcessor) {
-		return toStreamInternal(mapper.andThen(postProcessor));
+		return toStreamInternal(andThenOrElseNull(mapper, postProcessor));
 	}
 
 	/** Maps the whole {@link TupleQueryResult} to one object, which may be null. */
@@ -129,7 +129,8 @@ public class TupleQueryResultConverter {
 	}
 
 	/**
-	 * Maps the first {@link BindingSet} in the result if one exists, throwing an exception if there are more.
+	 * Maps the first {@link BindingSet} in the result if one exists, throwing an exception if there are more. Returns
+	 * null if there are no results or if there is one result that is mapped to null by the specified mapper.
 	 *
 	 * @throws org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException
 	 */
@@ -137,6 +138,11 @@ public class TupleQueryResultConverter {
 		return mapAndCollect(mapper, OperationUtils.toSingletonMaybe());
 	}
 
+	/**
+	 * Maps the first {@link BindingSet} in the result, throwing an exception if there are more than one. Returns an
+	 * Optional, which is empty if there are no results or if there is one result that is mapped to null by the
+	 * specified mapper.
+	 */
 	public <T> Optional<T> toSingletonOptional(BindingSetMapper<T> mapper) {
 		return Optional.ofNullable(toSingletonMaybe(mapper));
 	}
@@ -157,7 +163,7 @@ public class TupleQueryResultConverter {
 	 */
 	public <T, O> O toSingletonMaybe(
 			BindingSetMapper<T> mapper, MappingPostProcessor<T, O> postProcessor) {
-		return mapAndCollect(mapper.andThen(postProcessor), OperationUtils.toSingletonMaybe());
+		return mapAndCollect(andThenOrElseNull(mapper, postProcessor), OperationUtils.toSingletonMaybe());
 	}
 
 	public <T, O> Optional<O> toSingletonOptional(
@@ -191,7 +197,7 @@ public class TupleQueryResultConverter {
 	/** Maps the query result to a {@link List}. */
 	public <T, O> List<O> toList(
 			BindingSetMapper<T> mapper, MappingPostProcessor<T, O> postProcessor) {
-		return mapAndCollect(mapper.andThen(postProcessor), Collectors.toList());
+		return mapAndCollect(andThenOrElseNull(mapper, postProcessor), Collectors.toList());
 	}
 
 	/** Maps the query result to a {@link Set}. */
@@ -202,7 +208,7 @@ public class TupleQueryResultConverter {
 	/** Maps the query result to a {@link Set}. */
 	public <T, O> Set<O> toSet(
 			BindingSetMapper<T> mapper, MappingPostProcessor<T, O> postProcessor) {
-		return mapAndCollect(mapper.andThen(postProcessor), Collectors.toSet());
+		return mapAndCollect(andThenOrElseNull(mapper, postProcessor), Collectors.toSet());
 	}
 
 	/**
@@ -279,4 +285,16 @@ public class TupleQueryResultConverter {
 		}
 		return Stream.concat(Stream.of(first), result.stream());
 	}
+
+	/**
+	 * Executes <code>mapper.andThen(postProcessor)</code> unless the result of <code>mapper</code> is null, in which
+	 * case the result is <code>null</code>.
+	 */
+	private <T, O> Function<BindingSet, O> andThenOrElseNull(
+			BindingSetMapper<T> mapper, MappingPostProcessor<T, O> postProcessor) {
+		return bindingSet -> Optional.ofNullable(mapper.apply(bindingSet))
+				.map(postProcessor)
+				.orElse(null);
+	}
+
 }

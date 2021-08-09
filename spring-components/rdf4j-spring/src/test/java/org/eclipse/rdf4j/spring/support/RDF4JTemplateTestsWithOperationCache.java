@@ -10,6 +10,10 @@
 
 package org.eclipse.rdf4j.spring.support;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Supplier;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
@@ -24,10 +28,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.TestPropertySource;
-
-import java.util.Collection;
-import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * @since 4.0.0

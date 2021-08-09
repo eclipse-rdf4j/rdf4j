@@ -15,6 +15,7 @@ import java.util.function.Supplier;
 
 /**
  * Associates a String key with a {@link Supplier<String>} that provides a SPARQL operation.
+ * 
  * @since 4.0.0
  * @author Florian Kleedorfer
  */

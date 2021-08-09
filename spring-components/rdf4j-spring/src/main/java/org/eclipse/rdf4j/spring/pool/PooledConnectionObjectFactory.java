@@ -24,9 +24,10 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Obtains connections from the delegate factory and manages them in the object pool.
+ * 
  * @since 4.0.0
  * @author Florian Kleedorfer
- * */
+ */
 class PooledConnectionObjectFactory extends BasePooledObjectFactory<RepositoryConnection> {
 	private final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private ObjectPool<RepositoryConnection> pool;

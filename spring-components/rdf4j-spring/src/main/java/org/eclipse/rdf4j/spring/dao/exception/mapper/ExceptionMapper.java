@@ -10,14 +10,21 @@
 
 package org.eclipse.rdf4j.spring.dao.exception.mapper;
 
+import org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException;
+import org.eclipse.rdf4j.spring.dao.exception.RDF4JDaoException;
 import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
+import org.eclipse.rdf4j.spring.dao.exception.UnexpectedResultException;
 
 /**
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
 public class ExceptionMapper {
+
 	public static RDF4JSpringException mapException(String message, Exception e) {
+		if (e instanceof RDF4JSpringException) {
+			return (RDF4JSpringException) e;
+		}
 		return new RDF4JSpringException(message, e);
 	}
 }

@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.impl.MultiIRI;
  *
  * <p>
  * For more information, see {@link org.eclipse.rdf4j.spring.uuidsource}.
+ * 
  * @since 4.0.0
  * @author Florian Kleedorfer
  *
