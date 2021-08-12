@@ -43,7 +43,7 @@ public class RDF4JRepositoryTransactionManager extends AbstractPlatformTransacti
 
 	@Override
 	protected Object doGetTransaction() throws TransactionException {
-		TransactionData transactionData = this.repositoryConnectionFactory.getTransactionData();
+		TransactionObject transactionData = this.repositoryConnectionFactory.getTransactionData();
 		logger.debug("obtaining transaction data");
 		if (transactionData == null) {
 			logger.debug("creating new transaction");
@@ -58,14 +58,14 @@ public class RDF4JRepositoryTransactionManager extends AbstractPlatformTransacti
 
 	@Override
 	protected boolean isExistingTransaction(Object transaction) throws TransactionException {
-		return ((TransactionData) transaction).isExisting();
+		return ((TransactionObject) transaction).isExisting();
 	}
 
 	@Override
 	protected void doBegin(Object o, TransactionDefinition transactionDefinition)
 			throws TransactionException {
 		logger.debug("beginning transaction");
-		TransactionData data = (TransactionData) o;
+		TransactionObject data = (TransactionObject) o;
 		data.setTimeout(transactionDefinition.getTimeout());
 		data.setIsolationLevel(transactionDefinition.getIsolationLevel());
 		data.setPropagationBehavior(transactionDefinition.getPropagationBehavior());
@@ -75,7 +75,7 @@ public class RDF4JRepositoryTransactionManager extends AbstractPlatformTransacti
 	}
 
 	private void setIsolationLevel(
-			TransactionData transactionData, TransactionDefinition transactionDefinition) {
+			TransactionObject transactionData, TransactionDefinition transactionDefinition) {
 		RepositoryConnection repositoryConnection = transactionData.getConnection();
 		Repository repository = repositoryConnection.getRepository();
 
@@ -91,7 +91,7 @@ public class RDF4JRepositoryTransactionManager extends AbstractPlatformTransacti
 	protected void doCommit(DefaultTransactionStatus defaultTransactionStatus)
 			throws TransactionException {
 		logger.debug("committting transaction");
-		TransactionData data = (TransactionData) defaultTransactionStatus.getTransaction();
+		TransactionObject data = (TransactionObject) defaultTransactionStatus.getTransaction();
 		try {
 			this.repositoryConnectionFactory.endTransaction(data.isRollbackOnly());
 		} catch (Exception e) {
@@ -103,7 +103,7 @@ public class RDF4JRepositoryTransactionManager extends AbstractPlatformTransacti
 	protected void doRollback(DefaultTransactionStatus defaultTransactionStatus)
 			throws TransactionException {
 		logger.debug("rolling back transaction");
-		TransactionData data = (TransactionData) defaultTransactionStatus.getTransaction();
+		TransactionObject data = (TransactionObject) defaultTransactionStatus.getTransaction();
 		try {
 			this.repositoryConnectionFactory.endTransaction(true);
 		} catch (Exception e) {
@@ -114,7 +114,7 @@ public class RDF4JRepositoryTransactionManager extends AbstractPlatformTransacti
 	@Override
 	protected void doSetRollbackOnly(DefaultTransactionStatus status) throws TransactionException {
 		logger.debug("marking transaction for rollback");
-		TransactionData data = (TransactionData) status.getTransaction();
+		TransactionObject data = (TransactionObject) status.getTransaction();
 		data.setRollbackOnly(true);
 	}
 

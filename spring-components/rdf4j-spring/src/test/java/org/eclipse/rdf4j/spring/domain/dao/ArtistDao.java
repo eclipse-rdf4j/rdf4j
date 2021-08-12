@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
-import org.eclipse.rdf4j.spring.dao.Rdf4JCRUDDao;
+import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.domain.model.Artist;
@@ -31,7 +31,7 @@ import org.springframework.stereotype.Component;
  * @author Florian Kleedorfer
  */
 @Component
-public class ArtistDao extends Rdf4JCRUDDao<Artist, Artist, IRI> {
+public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {
 
 	public ArtistDao(RDF4JTemplate rdf4JTemplate) {
 		super(rdf4JTemplate);
@@ -51,11 +51,7 @@ public class ArtistDao extends Rdf4JCRUDDao<Artist, Artist, IRI> {
 
 	@Override
 	protected NamedSparqlSupplierPreparer prepareNamedSparqlSuppliers(NamedSparqlSupplierPreparer preparer) {
-		return preparer.forKey("insert")
-				.supplySparql(Queries.INSERT(ARTIST_ID.isA(EX.Artist)
-						.andHas(Rdf.iri(FOAF.FIRST_NAME), ARTIST_FIRST_NAME)
-						.andHas(Rdf.iri(FOAF.SURNAME), ARTIST_LAST_NAME))
-						.getQueryString());
+		return null;
 	}
 
 	@Override
@@ -80,7 +76,10 @@ public class ArtistDao extends Rdf4JCRUDDao<Artist, Artist, IRI> {
 
 	@Override
 	protected NamedSparqlSupplier getInsertSparql(Artist artist) {
-		return getNamedSparqlSupplier("insert");
+		return NamedSparqlSupplier.of("insert", () -> Queries.INSERT(ARTIST_ID.isA(EX.Artist)
+				.andHas(Rdf.iri(FOAF.FIRST_NAME), ARTIST_FIRST_NAME)
+				.andHas(Rdf.iri(FOAF.SURNAME), ARTIST_LAST_NAME))
+				.getQueryString());
 	}
 
 	@Override

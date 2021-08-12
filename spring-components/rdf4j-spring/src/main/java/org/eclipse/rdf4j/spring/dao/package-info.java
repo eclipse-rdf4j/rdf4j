@@ -29,9 +29,9 @@
  * There are two variants of DAOs:
  *
  * <ul>
- * <li>{@link org.eclipse.rdf4j.spring.dao.Rdf4JDao Rdf4JDao}: Base class for DAOs with support for named operations and
+ * <li>{@link org.eclipse.rdf4j.spring.dao.RDF4JDao Rdf4JDao}: Base class for DAOs with support for named operations and
  * access
- * <li>{@link org.eclipse.rdf4j.spring.dao.Rdf4JCRUDDao Rdf4JCRUDDao}: Base class for DAOs that are associated with
+ * <li>{@link org.eclipse.rdf4j.spring.dao.RDF4JCRUDDao Rdf4JCRUDDao}: Base class for DAOs that are associated with
  * specific entity classes, providing additional support for CRUD operations on these entities.
  * </ul>
  *

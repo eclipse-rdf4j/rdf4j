@@ -11,15 +11,22 @@
 package org.eclipse.rdf4j.spring.domain.model;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 
 /**
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
 public class Painting {
+	public static final ExtendedVariable PAINTING_ID = new ExtendedVariable("painting_id");
+	public static final ExtendedVariable PAINTING_ARTIST_ID = new ExtendedVariable("painting_artist_id");
+	public static final ExtendedVariable PAINTING_TECHNIQUE = new ExtendedVariable("painting_technique");
+	public static final ExtendedVariable PAINTING_LABEL = new ExtendedVariable("painting_label");
+
 	private IRI id;
 	private String title;
 	private String technique;
+	private IRI artistId;
 
 	public IRI getId() {
 		return id;
@@ -43,5 +50,13 @@ public class Painting {
 
 	public void setTechnique(String technique) {
 		this.technique = technique;
+	}
+
+	public IRI getArtistId() {
+		return artistId;
+	}
+
+	public void setArtistId(IRI artistId) {
+		this.artistId = artistId;
 	}
 }

@@ -29,19 +29,19 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 
 	private RepositoryConnectionFactory delegateFactory;
 
-	private final ThreadLocal<TransactionData> transactionData = new ThreadLocal<>();
+	private final ThreadLocal<TransactionObject> transactionData = new ThreadLocal<>();
 
 	public TransactionalRepositoryConnectionFactory(RepositoryConnectionFactory delegateFactory) {
 		this.delegateFactory = delegateFactory;
 	}
 
-	public TransactionData getTransactionData() {
+	public TransactionObject getTransactionData() {
 		return transactionData.get();
 	}
 
 	public RepositoryConnection getConnection() {
 		logger.debug("Trying to obtain connection");
-		TransactionData data = getTransactionData();
+		TransactionObject data = getTransactionData();
 		if (data == null) {
 			throw new NoTransactionException("Cannot obtain connection: no transaction");
 		}
@@ -71,7 +71,7 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 		logger.debug("Trying to close connection");
 		RepositoryConnection con = null;
 		try {
-			TransactionData data = getTransactionData();
+			TransactionObject data = getTransactionData();
 			if (data == null) {
 				throw new NoTransactionException("Cannot close connection: no transaction");
 			}
@@ -107,10 +107,10 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 		}
 	}
 
-	public TransactionData createTransaction() {
+	public TransactionObject createTransaction() {
 		logger.debug("Trying to create new transaction");
 		RepositoryConnection con = delegateFactory.getConnection();
-		TransactionData data = new TransactionData(con);
+		TransactionObject data = new TransactionObject(con);
 		transactionData.set(data);
 		logger.debug("Transaction created");
 		return data;
@@ -118,7 +118,7 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 
 	public void endTransaction(boolean rollback) {
 		logger.debug("Trying to end transaction");
-		TransactionData data = getTransactionData();
+		TransactionObject data = getTransactionData();
 		if (data == null) {
 			throw new NoTransactionException("Cannot obtain connection: no transaction");
 		}

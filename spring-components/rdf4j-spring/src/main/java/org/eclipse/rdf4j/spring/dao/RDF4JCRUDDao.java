@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
-public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
+public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 	private static final String KEY_READ_QUERY = "readQuery";
 	public static final String KEY_PREFIX_INSERT = "insert";
 	public static final String KEY_PREFIX_UPDATE = "update";
@@ -49,7 +49,7 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 	 * Constructor that provides the type of the ID to the base implementation. This constructor has to be used if the
 	 * ID is anything but IRI.
 	 */
-	public Rdf4JCRUDDao(RDF4JTemplate rdf4JTemplate, Class<ID> idClass) {
+	public RDF4JCRUDDao(RDF4JTemplate rdf4JTemplate, Class<ID> idClass) {
 		super(rdf4JTemplate);
 		this.idClass = idClass;
 	}
@@ -57,7 +57,7 @@ public abstract class Rdf4JCRUDDao<ENTITY, INPUT, ID> extends Rdf4JDao {
 	/**
 	 * Constructor to be used by implementations that use IRI for the ID type.
 	 */
-	public Rdf4JCRUDDao(RDF4JTemplate rdf4JTemplate) {
+	public RDF4JCRUDDao(RDF4JTemplate rdf4JTemplate) {
 		this(rdf4JTemplate, (Class<ID>) IRI.class);
 	}
 

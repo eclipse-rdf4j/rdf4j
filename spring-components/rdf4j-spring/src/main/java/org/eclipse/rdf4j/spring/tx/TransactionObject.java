@@ -15,13 +15,14 @@ import static org.springframework.transaction.TransactionDefinition.*;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.springframework.transaction.support.SmartTransactionObject;
 
 /**
  * @since 4.0.0
  * @author ameingast@gmail.com
  * @author Florian Kleedorfer
  */
-public class TransactionData {
+public class TransactionObject implements SmartTransactionObject {
 
 	private RepositoryConnection connection;
 
@@ -39,7 +40,7 @@ public class TransactionData {
 
 	private boolean readOnly = false;
 
-	public TransactionData(RepositoryConnection connection) {
+	public TransactionObject(RepositoryConnection connection) {
 		this.connection = connection;
 	}
 
@@ -105,6 +106,11 @@ public class TransactionData {
 
 	public void setReadOnly(boolean readOnly) {
 		this.readOnly = readOnly;
+	}
+
+	@Override
+	public void flush() {
+		throw new UnsupportedOperationException("flush() is not supported");
 	}
 
 	@Override

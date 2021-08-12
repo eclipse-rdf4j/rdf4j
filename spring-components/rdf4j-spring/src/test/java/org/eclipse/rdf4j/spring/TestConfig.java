@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
  */
 @TestConfiguration
 @EnableTransactionManagement
-@ComponentScan(basePackages = "org.eclipse.rdf4j.spring.domain.dao")
+@ComponentScan(basePackages = "org.eclipse.rdf4j.spring.domain")
 public class TestConfig {
 	@Bean
 	DataInserter getDataInserter() {

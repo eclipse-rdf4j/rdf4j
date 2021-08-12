@@ -15,7 +15,7 @@
  *
  * Configures beans for Rdf4J access. Uses Spring's autoconfiguration mechanism at startup to determine which subsystems
  * to use. The following example shows a spring configuration class enabling all features and using an in-memory
- * repository. The DAO classes (subclasses of {@link org.eclipse.rdf4j.spring.dao.Rdf4JDao Rdf4JDao}), assumed to be
+ * repository. The DAO classes (subclasses of {@link org.eclipse.rdf4j.spring.dao.RDF4JDao Rdf4JDao}), assumed to be
  * under <code>com.example.your.app
  * </code>, are autodetected.
  *

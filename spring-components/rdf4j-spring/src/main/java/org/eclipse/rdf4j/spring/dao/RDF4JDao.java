@@ -25,12 +25,12 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
-public abstract class Rdf4JDao {
+public abstract class RDF4JDao {
 	private final RDF4JTemplate rdf4JTemplate;
 
 	private Map<String, NamedSparqlSupplier> namedSparqlSuppliers = new ConcurrentHashMap<>();
 
-	public Rdf4JDao(RDF4JTemplate rdf4JTemplate) {
+	public RDF4JDao(RDF4JTemplate rdf4JTemplate) {
 		this.rdf4JTemplate = rdf4JTemplate;
 		prepareNamedSparqlSuppliers(new NamedSparqlSupplierPreparer());
 	}
