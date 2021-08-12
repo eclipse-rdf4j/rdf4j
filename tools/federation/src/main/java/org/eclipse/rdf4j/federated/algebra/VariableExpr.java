@@ -22,5 +22,5 @@ public interface VariableExpr {
 	/**
 	 * @return a list of free (i.e. unbound) variables in this expression
 	 */
-	public List<String> getFreeVars();
+	List<String> getFreeVars();
 }

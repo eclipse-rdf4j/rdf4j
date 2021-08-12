@@ -32,7 +32,7 @@ public interface ValueFactory {
 	 * @return An object representing the IRI.
 	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) IRI.
 	 */
-	public IRI createIRI(String iri);
+	IRI createIRI(String iri);
 
 	/**
 	 * Creates a new IRI from the supplied namespace and local name. Calling this method is funtionally equivalent to
@@ -45,14 +45,14 @@ public interface ValueFactory {
 	 * @throws IllegalArgumentException If the supplied namespace and localname do not resolve to a legal (absolute)
 	 *                                  IRI.
 	 */
-	public IRI createIRI(String namespace, String localName);
+	IRI createIRI(String namespace, String localName);
 
 	/**
 	 * Creates a new bNode.
 	 *
 	 * @return An object representing the bNode.
 	 */
-	public BNode createBNode();
+	BNode createBNode();
 
 	/**
 	 * Creates a new blank node with the given node identifier.
@@ -60,7 +60,7 @@ public interface ValueFactory {
 	 * @param nodeID The blank node identifier.
 	 * @return An object representing the blank node.
 	 */
-	public BNode createBNode(String nodeID);
+	BNode createBNode(String nodeID);
 
 	/**
 	 * Creates a new literal with the supplied label. The return value of {@link Literal#getDatatype()} for the returned
@@ -68,7 +68,7 @@ public interface ValueFactory {
 	 *
 	 * @param label The literal's label, must not be <tt>null</tt>.
 	 */
-	public Literal createLiteral(String label);
+	Literal createLiteral(String label);
 
 	/**
 	 * Creates a new literal with the supplied label and language attribute. The return value of
@@ -78,7 +78,7 @@ public interface ValueFactory {
 	 * @param label    The literal's label, must not be <tt>null</tt>.
 	 * @param language The literal's language attribute, must not be <tt>null</tt>.
 	 */
-	public Literal createLiteral(String label, String language);
+	Literal createLiteral(String label, String language);
 
 	/**
 	 * Creates a new literal with the supplied label and datatype.
@@ -88,7 +88,7 @@ public interface ValueFactory {
 	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to this
 	 *                 literal.
 	 */
-	public Literal createLiteral(String label, IRI datatype);
+	Literal createLiteral(String label, IRI datatype);
 
 	/**
 	 * Creates a new <tt>xsd:boolean</tt>-typed literal representing the specified value.
@@ -96,7 +96,7 @@ public interface ValueFactory {
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:boolean</tt>-typed literal for the specified value.
 	 */
-	public Literal createLiteral(boolean value);
+	Literal createLiteral(boolean value);
 
 	/**
 	 * Creates a new <tt>xsd:byte</tt>-typed literal representing the specified value.
@@ -104,7 +104,7 @@ public interface ValueFactory {
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:byte</tt>-typed literal for the specified value.
 	 */
-	public Literal createLiteral(byte value);
+	Literal createLiteral(byte value);
 
 	/**
 	 * Creates a new <tt>xsd:short</tt>-typed literal representing the specified value.
@@ -112,7 +112,7 @@ public interface ValueFactory {
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:short</tt>-typed literal for the specified value.
 	 */
-	public Literal createLiteral(short value);
+	Literal createLiteral(short value);
 
 	/**
 	 * Creates a new <tt>xsd:int</tt>-typed literal representing the specified value.
@@ -120,7 +120,7 @@ public interface ValueFactory {
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:int</tt>-typed literal for the specified value.
 	 */
-	public Literal createLiteral(int value);
+	Literal createLiteral(int value);
 
 	/**
 	 * Creates a new <tt>xsd:long</tt>-typed literal representing the specified value.
@@ -128,7 +128,7 @@ public interface ValueFactory {
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:long</tt>-typed literal for the specified value.
 	 */
-	public Literal createLiteral(long value);
+	Literal createLiteral(long value);
 
 	/**
 	 * Creates a new <tt>xsd:float</tt>-typed literal representing the specified value.
@@ -136,7 +136,7 @@ public interface ValueFactory {
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:float</tt>-typed literal for the specified value.
 	 */
-	public Literal createLiteral(float value);
+	Literal createLiteral(float value);
 
 	/**
 	 * Creates a new <tt>xsd:double</tt>-typed literal representing the specified value.
@@ -144,17 +144,17 @@ public interface ValueFactory {
 	 * @param value The value for the literal.
 	 * @return An <tt>xsd:double</tt>-typed literal for the specified value.
 	 */
-	public Literal createLiteral(double value);
+	Literal createLiteral(double value);
 
 	/**
 	 * Creates a new literal representing the specified bigDecimal that is typed as an <tt>xsd:Decimal</tt>.
 	 */
-	public Literal createLiteral(BigDecimal bigDecimal);
+	Literal createLiteral(BigDecimal bigDecimal);
 
 	/**
 	 * Creates a new literal representing the specified bigInteger that is typed as an <tt>xsd:Integer</tt>.
 	 */
-	public Literal createLiteral(BigInteger bigInteger);
+	Literal createLiteral(BigInteger bigInteger);
 
 	/**
 	 * Creates a new literal representing a temporal accessor value.
@@ -176,7 +176,7 @@ public interface ValueFactory {
 	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
 	 *           expected to override it.
 	 */
-	public default Literal createLiteral(TemporalAccessor value) {
+	default Literal createLiteral(TemporalAccessor value) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -200,7 +200,7 @@ public interface ValueFactory {
 	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
 	 *           expected to override it.
 	 */
-	public default Literal createLiteral(TemporalAmount value) {
+	default Literal createLiteral(TemporalAmount value) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -211,13 +211,13 @@ public interface ValueFactory {
 	 * @param calendar The value for the literal.
 	 * @return A typed literal for the specified calendar.
 	 */
-	public Literal createLiteral(XMLGregorianCalendar calendar);
+	Literal createLiteral(XMLGregorianCalendar calendar);
 
 	/**
 	 * Creates a new literal representing the specified date that is typed using the appropriate XML Schema date/time
 	 * datatype.
 	 */
-	public Literal createLiteral(Date date);
+	Literal createLiteral(Date date);
 
 	/**
 	 * Creates a new statement with the supplied subject, predicate and object.
@@ -227,7 +227,7 @@ public interface ValueFactory {
 	 * @param object    The statement's object.
 	 * @return The created statement.
 	 */
-	public Statement createStatement(Resource subject, IRI predicate, Value object);
+	Statement createStatement(Resource subject, IRI predicate, Value object);
 
 	/**
 	 * Creates a new statement with the supplied subject, predicate and object and associated context.
@@ -238,7 +238,7 @@ public interface ValueFactory {
 	 * @param context   The statement's context.
 	 * @return The created statement.
 	 */
-	public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context);
+	Statement createStatement(Resource subject, IRI predicate, Value object, Resource context);
 
 	/**
 	 * Creates a new RDF-star triple with the supplied subject, predicate and object.

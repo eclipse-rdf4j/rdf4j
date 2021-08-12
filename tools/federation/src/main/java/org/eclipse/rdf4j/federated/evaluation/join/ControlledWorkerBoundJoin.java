@@ -174,7 +174,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 	}
 
 	protected interface TaskCreator {
-		public ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings);
+		ParallelTask<BindingSet> getTask(ParallelExecutor<BindingSet> control, List<BindingSet> bindings);
 	}
 
 	protected class BoundJoinTaskCreator implements TaskCreator {

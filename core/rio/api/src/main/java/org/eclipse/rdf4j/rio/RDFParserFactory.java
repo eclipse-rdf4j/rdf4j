@@ -17,10 +17,10 @@ public interface RDFParserFactory {
 	/**
 	 * Returns the RDF format for this factory.
 	 */
-	public RDFFormat getRDFFormat();
+	RDFFormat getRDFFormat();
 
 	/**
 	 * Returns a RDFParser instance.
 	 */
-	public RDFParser getParser();
+	RDFParser getParser();
 }

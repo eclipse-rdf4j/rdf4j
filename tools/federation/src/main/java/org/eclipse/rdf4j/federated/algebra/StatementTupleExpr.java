@@ -27,12 +27,12 @@ public interface StatementTupleExpr extends FedXTupleExpr, QueryRef {
 	/**
 	 * @return the id of this expr
 	 */
-	public String getId();
+	String getId();
 
 	/**
 	 * @return a list of sources that are relevant for evaluation of this expression
 	 */
-	public List<StatementSource> getStatementSources();
+	List<StatementSource> getStatementSources();
 
 	/**
 	 * returns true iff this statement has free variables in the presence of the specified binding set
@@ -40,7 +40,7 @@ public interface StatementTupleExpr extends FedXTupleExpr, QueryRef {
 	 * @param binding
 	 * @return whether the statement has free vars
 	 */
-	public boolean hasFreeVarsFor(BindingSet binding);
+	boolean hasFreeVarsFor(BindingSet binding);
 
 	/**
 	 * Evaluate this expression using the provided bindings
@@ -50,7 +50,7 @@ public interface StatementTupleExpr extends FedXTupleExpr, QueryRef {
 	 *
 	 * @throws QueryEvaluationException
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
+	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings)
 			throws QueryEvaluationException;
 
 }

@@ -73,7 +73,7 @@ public interface SailSink extends SailClosable {
 	 *                 <tt>null</tt> value can be used to match context-less statements.
 	 * @throws SailException If the statements could not be removed.
 	 */
-	public void clear(Resource... contexts) throws SailException;
+	void clear(Resource... contexts) throws SailException;
 
 	/**
 	 * Called to indicate matching statements have been observed and must not change their state until after this
@@ -87,7 +87,7 @@ public interface SailSink extends SailClosable {
 	 *                 optional. If no contexts are supplied the method operates on all contexts.
 	 * @throws SailException If the triple source failed to observe these statements.
 	 */
-	public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
+	void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
 
 	/**
 	 * Adds a statement to the store.

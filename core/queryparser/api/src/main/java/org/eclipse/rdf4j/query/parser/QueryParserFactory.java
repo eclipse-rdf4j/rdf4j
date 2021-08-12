@@ -19,10 +19,10 @@ public interface QueryParserFactory {
 	/**
 	 * Returns the query language for this factory.
 	 */
-	public QueryLanguage getQueryLanguage();
+	QueryLanguage getQueryLanguage();
 
 	/**
 	 * Returns a QueryParser instance.
 	 */
-	public QueryParser getParser();
+	QueryParser getParser();
 }

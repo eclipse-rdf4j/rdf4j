@@ -13,10 +13,10 @@ package org.eclipse.rdf4j.query.algebra;
 public interface UpdateExpr extends QueryModelNode {
 
 	@Override
-	public UpdateExpr clone();
+	UpdateExpr clone();
 
 	/**
 	 * @return Returns the silent.
 	 */
-	public boolean isSilent();
+	boolean isSilent();
 }

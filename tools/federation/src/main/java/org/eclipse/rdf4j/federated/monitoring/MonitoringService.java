@@ -14,8 +14,8 @@ import org.eclipse.rdf4j.federated.monitoring.MonitoringImpl.MonitoringInformati
 
 public interface MonitoringService extends Monitoring {
 
-	public MonitoringInformation getMonitoringInformation(Endpoint e);
+	MonitoringInformation getMonitoringInformation(Endpoint e);
 
-	public List<MonitoringInformation> getAllMonitoringInformation();
+	List<MonitoringInformation> getAllMonitoringInformation();
 
 }

@@ -19,28 +19,28 @@ public interface MemResource extends MemValue, Resource {
 	 *
 	 * @return a MemStatementList containing the statements.
 	 */
-	public MemStatementList getSubjectStatementList();
+	MemStatementList getSubjectStatementList();
 
 	/**
 	 * Gets the number of statements for which this MemResource is the subject.
 	 *
 	 * @return An integer larger than or equal to 0.
 	 */
-	public int getSubjectStatementCount();
+	int getSubjectStatementCount();
 
 	/**
 	 * Adds a statement to this MemResource's list of statements for which it is the subject.
 	 *
 	 * @param st
 	 */
-	public void addSubjectStatement(MemStatement st);
+	void addSubjectStatement(MemStatement st);
 
 	/**
 	 * Removes a statement from this MemResource's list of statements for which it is the subject.
 	 *
 	 * @param st
 	 */
-	public void removeSubjectStatement(MemStatement st);
+	void removeSubjectStatement(MemStatement st);
 
 	/**
 	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
@@ -48,35 +48,35 @@ public interface MemResource extends MemValue, Resource {
 	 *
 	 * @param currentSnapshot The current snapshot version.
 	 */
-	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot);
+	void cleanSnapshotsFromSubjectStatements(int currentSnapshot);
 
 	/**
 	 * Gets the list of statements for which this MemResource represents the context.
 	 *
 	 * @return a MemStatementList containing the statements.
 	 */
-	public MemStatementList getContextStatementList();
+	MemStatementList getContextStatementList();
 
 	/**
 	 * Gets the number of statements for which this MemResource represents the context.
 	 *
 	 * @return An integer larger than or equal to 0.
 	 */
-	public int getContextStatementCount();
+	int getContextStatementCount();
 
 	/**
 	 * Adds a statement to this MemResource's list of statements for which it represents the context.
 	 *
 	 * @param st
 	 */
-	public void addContextStatement(MemStatement st);
+	void addContextStatement(MemStatement st);
 
 	/**
 	 * Removes a statement from this MemResource's list of statements for which it represents the context.
 	 *
 	 * @param st
 	 */
-	public void removeContextStatement(MemStatement st);
+	void removeContextStatement(MemStatement st);
 
 	/**
 	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
@@ -84,5 +84,5 @@ public interface MemResource extends MemValue, Resource {
 	 *
 	 * @param currentSnapshot The current snapshot version.
 	 */
-	public void cleanSnapshotsFromContextStatements(int currentSnapshot);
+	void cleanSnapshotsFromContextStatements(int currentSnapshot);
 }

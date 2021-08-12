@@ -21,14 +21,14 @@ public interface RDFWriterFactory {
 	/**
 	 * Returns the RDF format for this factory.
 	 */
-	public RDFFormat getRDFFormat();
+	RDFFormat getRDFFormat();
 
 	/**
 	 * Returns an RDFWriter instance that will write to the supplied output stream.
 	 *
 	 * @param out The OutputStream to write the RDF to.
 	 */
-	public RDFWriter getWriter(OutputStream out);
+	RDFWriter getWriter(OutputStream out);
 
 	/**
 	 * Returns an RDFWriter instance that will write to the supplied output stream. Using the supplied baseURI to
@@ -38,7 +38,7 @@ public interface RDFWriterFactory {
 	 * @param baseURI The URI associated with the data in the InputStream.
 	 * @throws URISyntaxException
 	 */
-	public RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException;
+	RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException;
 
 	/**
 	 * Returns an RDFWriter instance that will write to the supplied writer. (Optional operation)
@@ -47,7 +47,7 @@ public interface RDFWriterFactory {
 	 * @throws UnsupportedOperationException if the RDFWriter the specific format does not support writing to a
 	 *                                       {@link java.io.Writer}
 	 */
-	public RDFWriter getWriter(Writer writer);
+	RDFWriter getWriter(Writer writer);
 
 	/**
 	 * Returns an RDFWriter instance that will write to the supplied writer. Using the supplied baseURI to relativize
@@ -59,5 +59,5 @@ public interface RDFWriterFactory {
 	 * @throws UnsupportedOperationException if the RDFWriter the specific format does not support writing to a
 	 *                                       {@link java.io.Writer}
 	 */
-	public RDFWriter getWriter(Writer writer, String baseURI) throws URISyntaxException;
+	RDFWriter getWriter(Writer writer, String baseURI) throws URISyntaxException;
 }

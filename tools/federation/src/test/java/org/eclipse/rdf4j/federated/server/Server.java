@@ -20,11 +20,11 @@ import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepository;
  */
 public interface Server {
 
-	public void initialize(int nRepositories) throws Exception;
+	void initialize(int nRepositories) throws Exception;
 
-	public void shutdown() throws Exception;
+	void shutdown() throws Exception;
 
-	public Endpoint loadEndpoint(int i) throws Exception;
+	Endpoint loadEndpoint(int i) throws Exception;
 
 	/**
 	 * Returns the actual {@link ConfigurableSailRepository} instance for the endpoint
@@ -32,5 +32,5 @@ public interface Server {
 	 * @param i the endpoint index starting with 1
 	 * @return
 	 */
-	public ConfigurableSailRepository getRepository(int i);
+	ConfigurableSailRepository getRepository(int i);
 }

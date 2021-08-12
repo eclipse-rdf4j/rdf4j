@@ -24,7 +24,7 @@ public interface QueryRenderer {
 	 *
 	 * @return the query language
 	 */
-	public QueryLanguage getLanguage();
+	QueryLanguage getLanguage();
 
 	/**
 	 * Render the query object to a string in the language supported by this renderer
@@ -33,5 +33,5 @@ public interface QueryRenderer {
 	 * @return the rendered query
 	 * @throws Exception if there is an error while rendering
 	 */
-	public String render(ParsedQuery theQuery) throws Exception;
+	String render(ParsedQuery theQuery) throws Exception;
 }

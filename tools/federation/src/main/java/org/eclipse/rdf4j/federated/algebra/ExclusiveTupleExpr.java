@@ -22,6 +22,6 @@ public interface ExclusiveTupleExpr extends FedXTupleExpr {
 	 *
 	 * @return the owner for this expression
 	 */
-	public StatementSource getOwner();
+	StatementSource getOwner();
 
 }

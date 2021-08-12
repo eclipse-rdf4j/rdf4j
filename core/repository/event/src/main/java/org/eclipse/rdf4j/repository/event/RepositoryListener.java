@@ -17,12 +17,12 @@ import java.util.EventListener;
  */
 public interface RepositoryListener extends EventListener {
 
-	public abstract void getConnection(NotifyingRepository repo, NotifyingRepositoryConnection conn);
+	void getConnection(NotifyingRepository repo, NotifyingRepositoryConnection conn);
 
-	public abstract void initialize(NotifyingRepository repo);
+	void initialize(NotifyingRepository repo);
 
-	public abstract void setDataDir(NotifyingRepository repo, File dataDir);
+	void setDataDir(NotifyingRepository repo, File dataDir);
 
-	public abstract void shutDown(NotifyingRepository repo);
+	void shutDown(NotifyingRepository repo);
 
 }

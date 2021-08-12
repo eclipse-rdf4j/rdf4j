@@ -23,5 +23,5 @@ public interface QueryRef {
 	 *
 	 * @return the {@link QueryInfo}
 	 */
-	public QueryInfo getQueryInfo();
+	QueryInfo getQueryInfo();
 }

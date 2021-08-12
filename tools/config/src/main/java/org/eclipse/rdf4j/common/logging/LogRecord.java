@@ -16,40 +16,40 @@ import java.util.List;
  */
 public interface LogRecord {
 
-	public static final SimpleDateFormat ISO8601_TIMESTAMP_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
+	SimpleDateFormat ISO8601_TIMESTAMP_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
 
 	/**
 	 * Get log level
 	 *
 	 * @return log level enumeration
 	 */
-	public LogLevel getLevel();
+	LogLevel getLevel();
 
 	/**
 	 * Get date time
 	 *
 	 * @return date
 	 */
-	public Date getTime();
+	Date getTime();
 
 	/**
 	 * Get thread name
 	 *
 	 * @return thread name
 	 */
-	public String getThreadName();
+	String getThreadName();
 
 	/**
 	 * Get message
 	 *
 	 * @return text
 	 */
-	public String getMessage();
+	String getMessage();
 
 	/**
 	 * Get stack trace as list of strings
 	 *
 	 * @return list of strings
 	 */
-	public List<String> getStackTrace();
+	List<String> getStackTrace();
 }

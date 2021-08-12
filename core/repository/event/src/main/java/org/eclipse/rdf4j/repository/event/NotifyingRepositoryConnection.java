@@ -18,11 +18,11 @@ public interface NotifyingRepositoryConnection extends RepositoryConnection {
 	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that are
 	 * performed on this connection.
 	 */
-	public void addRepositoryConnectionListener(RepositoryConnectionListener listener);
+	void addRepositoryConnectionListener(RepositoryConnectionListener listener);
 
 	/**
 	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this connection.
 	 */
-	public void removeRepositoryConnectionListener(RepositoryConnectionListener listener);
+	void removeRepositoryConnectionListener(RepositoryConnectionListener listener);
 
 }

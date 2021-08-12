@@ -13,11 +13,11 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 public interface Monitoring {
 
-	public void monitorRemoteRequest(Endpoint e);
+	void monitorRemoteRequest(Endpoint e);
 
-	public void resetMonitoringInformation();
+	void resetMonitoringInformation();
 
-	public void monitorQuery(QueryInfo query);
+	void monitorQuery(QueryInfo query);
 
-	public void logQueryPlan(TupleExpr tupleExpr);
+	void logQueryPlan(TupleExpr tupleExpr);
 }

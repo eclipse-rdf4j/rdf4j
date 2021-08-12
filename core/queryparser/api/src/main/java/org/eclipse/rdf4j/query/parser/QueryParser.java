@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
  */
 public interface QueryParser {
 
-	public ParsedUpdate parseUpdate(String updateStr, String baseURI) throws MalformedQueryException;
+	ParsedUpdate parseUpdate(String updateStr, String baseURI) throws MalformedQueryException;
 
-	public ParsedQuery parseQuery(String queryStr, String baseURI) throws MalformedQueryException;
+	ParsedQuery parseQuery(String queryStr, String baseURI) throws MalformedQueryException;
 }

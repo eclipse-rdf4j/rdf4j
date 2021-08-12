@@ -62,7 +62,7 @@ public interface Triple extends Resource {
 	 *         objects} are equal; {@code false} otherwise
 	 */
 	@Override
-	public boolean equals(Object other);
+	boolean equals(Object other);
 
 	/**
 	 * Computes the hash code of this triple.
@@ -71,6 +71,6 @@ public interface Triple extends Resource {
 	 *         {@link #getSubject()}, {@link #getPredicate()}, {@link #getObject()})
 	 */
 	@Override
-	public int hashCode();
+	int hashCode();
 
 }

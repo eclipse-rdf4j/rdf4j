@@ -20,8 +20,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public interface TupleFunction {
 
-	public String getURI();
+	String getURI();
 
-	public CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
+	CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> evaluate(
 			ValueFactory valueFactory, Value... args) throws QueryEvaluationException;
 }
