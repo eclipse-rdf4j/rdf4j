@@ -43,22 +43,10 @@ public interface Sail {
 	 * method is called. Please consult the specific Sail implementation for information about the relevant parameters.
 	 *
 	 * @throws SailException If the Sail could not be initialized.
-	 * @deprecated Use {{@link #init()} instead.
-	 */
-	@Deprecated
-	void initialize() throws SailException;
-
-	/**
-	 * Initializes the Sail. Care should be taken that required initialization parameters have been set before this
-	 * method is called. Please consult the specific Sail implementation for information about the relevant parameters.
-	 *
-	 * @throws SailException If the Sail could not be initialized.
 	 *
 	 * @since 2.5
 	 */
-	default void init() throws SailException {
-		initialize();
-	}
+	void init();
 
 	/**
 	 * Shuts down the Sail, giving it the opportunity to synchronize any stale data. Care should be taken that all

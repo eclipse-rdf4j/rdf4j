@@ -247,12 +247,8 @@ public interface ValueFactory {
 	 * @param predicate The statement's predicate.
 	 * @param object    The statement's object.
 	 * @return The created triple.
-	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility, but throws an
-	 *           {@link UnsupportedOperationException}. Concrete implementations are expected to override.
 	 * @since 3.2.0
 	 */
-	default Triple createTriple(Resource subject, IRI predicate, Value object) {
-		throw new UnsupportedOperationException();
-	}
+	Triple createTriple(Resource subject, IRI predicate, Value object);
 
 }

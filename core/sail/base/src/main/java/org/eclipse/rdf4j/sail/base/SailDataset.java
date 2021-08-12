@@ -86,9 +86,7 @@ public interface SailDataset extends SailClosable {
 	 * @return An iterator over the relevant triples.
 	 * @throws SailException If the triple source failed to get the RDF-star triples.
 	 */
-	default CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
-			throws SailException {
-		throw new SailException("RDF-star triple retrieval not supported by this store");
-	}
+	CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
+			throws SailException;
 
 }

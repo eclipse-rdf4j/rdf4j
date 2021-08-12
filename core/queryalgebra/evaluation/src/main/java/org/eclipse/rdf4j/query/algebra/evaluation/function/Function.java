@@ -25,20 +25,6 @@ public interface Function {
 	String getURI();
 
 	/**
-	 * Evaluate the function over the supplied input arguments, using the supplied {@link ValueFactory} to produce the
-	 * result.
-	 *
-	 * @param valueFactory a {@link ValueFactory} to use for producing the function result.
-	 * @param args         the function input arguments.
-	 * @return the function result value.
-	 * @throws ValueExprEvaluationException
-	 * @deprecated since 3.3.0. Use {@link #evaluate(TripleSource, Value...)} instead. A reference to a ValueFactory can
-	 *             be retrieved using {@link TripleSource#getValueFactory()} if needed.
-	 */
-	@Deprecated
-	Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException;
-
-	/**
 	 * Evaluate the function over the supplied input arguments.
 	 *
 	 * @param tripleSource the {@link TripleSource} used in the query evaluation. This can be used to access the current
@@ -48,7 +34,5 @@ public interface Function {
 	 * @throws ValueExprEvaluationException
 	 * @since 3.3.0
 	 */
-	default Value evaluate(TripleSource tripleSource, Value... args) throws ValueExprEvaluationException {
-		return evaluate(tripleSource.getValueFactory(), args);
-	}
+	Value evaluate(TripleSource tripleSource, Value... args) throws ValueExprEvaluationException;
 }

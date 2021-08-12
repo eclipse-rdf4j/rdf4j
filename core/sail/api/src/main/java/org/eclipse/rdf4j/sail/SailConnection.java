@@ -190,9 +190,7 @@ public interface SailConnection extends AutoCloseable {
 	 *                 isolation level.
 	 * @since 3.3.0
 	 */
-	default void setTransactionSettings(TransactionSetting... settings) {
-
-	}
+	void setTransactionSettings(TransactionSetting... settings);
 
 	/**
 	 * Flushes any pending updates and notify changes to listeners as appropriate. This is an optional call; calling or
