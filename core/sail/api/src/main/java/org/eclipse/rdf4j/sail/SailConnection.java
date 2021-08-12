@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -116,15 +115,6 @@ public interface SailConnection extends AutoCloseable {
 	 */
 	CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException;
-
-	/**
-	 * @deprecated since 4.0. Use {@link #getStatements(Resource, IRI, Value, boolean, Resource...)} instead.
-	 */
-	@Deprecated
-	default CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, URI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws SailException {
-		return getStatements(subj, (IRI) pred, obj, includeInferred, contexts);
-	}
 
 	/**
 	 * Determines if the store contains any statements from the specified contexts that have a specific subject,
@@ -285,14 +275,6 @@ public interface SailConnection extends AutoCloseable {
 	void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
 
 	/**
-	 * @deprecated since 4.0. Use {@link #addStatement(Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void addStatement(Resource subj, URI pred, Value obj, Resource... contexts) throws SailException {
-		addStatement(subj, (IRI) pred, obj, contexts);
-	}
-
-	/**
 	 * Removes all statements matching the specified subject, predicate and object from the repository. All three
 	 * parameters may be null to indicate wildcards.
 	 *
@@ -307,14 +289,6 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
-
-	/**
-	 * @deprecated since 4.0. Use {@link #removeStatements(Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void removeStatements(Resource subj, URI pred, Value obj, Resource... contexts) throws SailException {
-		removeStatements(subj, (IRI) pred, obj, contexts);
-	}
 
 	/**
 	 * Signals the start of an update operation. The given <code>op</code> maybe passed to subsequent
@@ -342,15 +316,6 @@ public interface SailConnection extends AutoCloseable {
 			throws SailException;
 
 	/**
-	 * @deprecated since 4.0. Use {@link #addStatement(UpdateContext, Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void addStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
-			throws SailException {
-		addStatement(op, subj, (IRI) pred, obj, contexts);
-	}
-
-	/**
 	 * Removes all statements matching the specified subject, predicate and object from the repository. All three
 	 * parameters may be null to indicate wildcards. Called when removing statements through a {@link UpdateExpr}
 	 * operation.
@@ -368,15 +333,6 @@ public interface SailConnection extends AutoCloseable {
 	 */
 	void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
-
-	/**
-	 * @deprecated since 4.0. USe {@link #removeStatement(UpdateContext, Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void removeStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
-			throws SailException {
-		removeStatement(op, subj, (IRI) pred, obj, contexts);
-	}
 
 	/**
 	 * Indicates that the given <code>op</code> will not be used in any call again. Implementations should use this to

@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -99,7 +98,7 @@ public class CustomFederationConnectionTest {
 		}
 	}
 
-	private static void assertHasStatement(String message, Resource subject, URI predicate, Value object,
+	private static void assertHasStatement(String message, Resource subject, IRI predicate, Value object,
 			SailConnection connection) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
 				(IRI) predicate, object, true)) {

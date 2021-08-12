@@ -69,7 +69,7 @@ public class SplSailTest {
 	public void runTests() throws Exception {
 		ValueFactory vf = conn.getValueFactory();
 		loadRDF("/schema/owl.ttl");
-		conn.add(vf.createStatement(vf.createURI("test:run"), RDF.TYPE, vf.createURI(SPL.NAMESPACE, "RunTestCases")));
+		conn.add(vf.createStatement(vf.createIRI("test:run"), RDF.TYPE, vf.createIRI(SPL.NAMESPACE, "RunTestCases")));
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, "prefix spin: <http://spinrdf.org/spin#> "
 				+ "prefix spl: <http://spinrdf.org/spl#> "
 				+ "select ?testCase ?expected ?actual where {(<test:run>) spin:select (?testCase ?expected ?actual)}");

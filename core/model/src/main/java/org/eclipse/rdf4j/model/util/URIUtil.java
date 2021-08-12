@@ -13,8 +13,6 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import org.eclipse.rdf4j.model.URI;
-
 /**
  * Utility functions for working with {@link URI URIs}.
  *

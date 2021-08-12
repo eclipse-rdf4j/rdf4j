@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -401,28 +400,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * optionally restricted to the specified set of named contexts.
 	 *
 	 * @param subj            A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred            A URI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj             A Value specifying the object, or <tt>null</tt> for a wildcard.
-	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
-	 *                        optional. If no contexts are supplied the method operates on the entire repository.
-	 * @param includeInferred if false, no inferred statements are returned; if true, inferred statements are returned
-	 *                        if available. The default is true.
-	 * @return The statements matching the specified pattern. The result object is a {@link RepositoryResult} object, a
-	 *         lazy Iterator-like object containing {@link Statement}s and optionally throwing a
-	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
-	 * @deprecated since 2.0. Use {@link #getStatements(Resource, IRI, Value, boolean, Resource...)} instead.
-	 */
-	@Deprecated
-	default RepositoryResult<Statement> getStatements(Resource subj, URI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws RepositoryException {
-		return getStatements(subj, (IRI) pred, obj, includeInferred, contexts);
-	}
-
-	/**
-	 * Gets all statements with a specific subject, predicate and/or object from the repository. The result is
-	 * optionally restricted to the specified set of named contexts.
-	 *
-	 * @param subj            A Resource specifying the subject, or <tt>null</tt> for a wildcard.
 	 * @param pred            An IRI specifying the predicate, or <tt>null</tt> for a wildcard.
 	 * @param obj             A Value specifying the object, or <tt>null</tt> for a wildcard.
 	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
@@ -451,26 +428,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws RepositoryException;
-
-	/**
-	 * Checks whether the repository contains statements with a specific subject, predicate and/or object, optionally in
-	 * the specified contexts.
-	 *
-	 * @param subj            A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred            A URI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj             A Value specifying the object, or <tt>null</tt> for a wildcard.
-	 * @param contexts        The context(s) the need to be searched. Note that this parameter is a vararg and as such
-	 *                        is optional. If no contexts are supplied the method operates on the entire repository.
-	 * @param includeInferred if false, no inferred statements are considered; if true, inferred statements are
-	 *                        considered if available
-	 * @return true If a matching statement is in the repository in the specified context, false otherwise.
-	 * @deprecated since 2.0. Use {@link #hasStatement(Resource, IRI, Value, boolean, Resource...)} instead.
-	 */
-	@Deprecated
-	default boolean hasStatement(Resource subj, URI pred, Value obj, boolean includeInferred,
-			Resource... contexts) throws RepositoryException {
-		return hasStatement(subj, (IRI) pred, obj, includeInferred, contexts);
-	}
 
 	/**
 	 * Checks whether the repository contains the specified statement, optionally in the specified contexts.
@@ -676,10 +633,10 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException              If there is an active transaction and it cannot be committed.
 	 * @throws IllegalStateException            If the connection has been closed or prepare was already called by
 	 *                                          another thread.
-	 * 
+	 *
 	 * @implNote this default method throws an {@link UnsupportedOperationException} and is a temporary measure to
 	 *           ensure backward compatibility only. Implementing classes should override.
-	 * 
+	 *
 	 * @since 3.5.0
 	 * @see #commit()
 	 * @see #begin()
@@ -752,7 +709,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                   contextual information in the actual data. If no contexts are supplied the contextual
 	 *                   information in the input stream is used, if no context information is available the data is
 	 *                   added without any context.
-	 * 
+	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
@@ -772,13 +729,13 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param dataFormat The serialization format of the data.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
 	 *                   these contexts, ignoring any context information in the data itself.
-	 * 
+	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the reader.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 * 
+	 *
 	 * @since 3.5.0
 	 */
 	default void add(Reader reader, RDFFormat dataFormat, Resource... contexts)
@@ -818,13 +775,13 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param url      The URL of the RDF data.
 	 * @param contexts The contexts to add the data to. If one or more contexts are specified the data is added to these
 	 *                 contexts, ignoring any context information in the data itself.
-	 * 
+	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the URL.
 	 * @throws UnsupportedRDFormatException If the RDF format could not be recognized.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 * 
+	 *
 	 * @since 3.5.0
 	 */
 	default void add(URL url, Resource... contexts)
@@ -842,14 +799,14 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                   file name extension of the supplied URL.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
 	 *                   these contexts, ignoring any context information in the data itself.
-	 * 
+	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the URL.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format, or the RDF format
 	 *                                      could not be automatically determined.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 * 
+	 *
 	 * @since 3.5.0
 	 */
 	default void add(URL url, RDFFormat dataFormat, Resource... contexts)
@@ -893,13 +850,13 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                 if the data contains no context, it is added without context. If one or more contexts are
 	 *                 specified the data is added to these contexts, ignoring any context information in the data
 	 *                 itself.
-	 * 
+	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the file.
 	 * @throws UnsupportedRDFormatException If the RDF format of the supplied file could not be recognized.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 * 
+	 *
 	 * @since 3.5.0
 	 */
 	default void add(File file, Resource... contexts)
@@ -918,13 +875,13 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                   file, or if the data contains no context, it is added without context. If one or more contexts
 	 *                   are specified the data is added to these contexts, ignoring any context information in the data
 	 *                   itself.
-	 * 
+	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the file.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 * 
+	 *
 	 * @since 3.5.0
 	 */
 	default void add(File file, RDFFormat dataFormat, Resource... contexts)
@@ -974,28 +931,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                             is not writable.
 	 */
 	void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException;
-
-	/**
-	 * Adds a statement with the specified subject, predicate and object to this repository, optionally to one or more
-	 * named contexts.
-	 *
-	 * @param subject   The statement's subject.
-	 * @param predicate The statement's predicate.
-	 * @param object    The statement's object.
-	 * @param contexts  The contexts to add the data to. Note that this parameter is a vararg and as such is optional.
-	 *                  If no contexts are specified, the data is added to any context specified in the actual data
-	 *                  file, or if the data contains no context, it is added without context. If one or more contexts
-	 *                  are specified the data is added to these contexts, ignoring any context information in the data
-	 *                  itself.
-	 * @throws RepositoryException If the data could not be added to the repository, for example because the repository
-	 *                             is not writable.
-	 * @deprecated since 2.0. Use {@link #add(Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void add(Resource subject, URI predicate, Value object, Resource... contexts)
-			throws RepositoryException {
-		this.add(subject, (IRI) predicate, object, contexts);
-	}
 
 	/**
 	 * Adds the supplied statement to this repository, optionally to one or more named contexts.
@@ -1072,25 +1007,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                             repository is not writable.
 	 */
 	void remove(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException;
-
-	/**
-	 * Removes the statement(s) with the specified subject, predicate and object from the repository, optionally
-	 * restricted to the specified contexts.
-	 *
-	 * @param subject   The statement's subject, or <tt>null</tt> for a wildcard.
-	 * @param predicate The statement's predicate, or <tt>null</tt> for a wildcard.
-	 * @param object    The statement's object, or <tt>null</tt> for a wildcard.
-	 * @param contexts  The context(s) to remove the data from. Note that this parameter is a vararg and as such is
-	 *                  optional. If no contexts are supplied the method operates on the entire repository.
-	 * @throws RepositoryException If the statement(s) could not be removed from the repository, for example because the
-	 *                             repository is not writable.
-	 * @deprecated since 2.0. Use {@link #remove(Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void remove(Resource subject, URI predicate, Value object, Resource... contexts)
-			throws RepositoryException {
-		this.remove(subject, (IRI) predicate, object, contexts);
-	}
 
 	/**
 	 * Removes the supplied statement from the specified contexts in the repository.
