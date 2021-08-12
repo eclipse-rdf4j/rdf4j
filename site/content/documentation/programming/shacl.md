@@ -281,8 +281,6 @@ validated, and for each of those shapes only the least amount of data is retriev
 
 Parallel validation further increases performance and is enabled by default. This can be disabled with `setParallelValidation(false)`.
 
-The initial commit to an empty ShaclSail is further optimized if the underlying sail is a MemoryStore.
-
 Some workloads will not fit in memory and need to be validated while stored on disk. This can be achieved by using a
 NativeStore and using the new transaction settings introduced in 3.3.0.
 
@@ -340,6 +338,18 @@ try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
 sailRepository.shutDown();
 ```
+
+### Automatic bulk validation
+Large transactions will take up significant amounts of memory because the transactional validation needs to analyze the transactional 
+changes in order to decide what needs to be validated. Very large transactions could exceed the amount of memory available and cause the 
+JVM to crash.
+
+As of 4.0.0 transactions can automatically be switched to bulk validation if they exceed a set limit. 
+
+- `setTransactionalValidationLimit(1000)` will make transactions switch to bulk validation if the transaction size is more than 1000 statements. Default is 500 000.
+   - `<http://rdf4j.org/config/sail/shacl#transactionalValidationLimit>`
+
+Automatic bulk validation is not compatible with serializable validation.
 
 ## Reasoning
 By default the ShaclSail supports the simple rdfs:subClassOf reasoning required by the W3C recommendation. There is no

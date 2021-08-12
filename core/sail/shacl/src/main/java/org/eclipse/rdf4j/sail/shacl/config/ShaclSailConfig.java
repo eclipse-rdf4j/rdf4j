@@ -53,6 +53,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	public static final boolean DASH_DATA_SHAPES_DEFAULT = false;
 	public final static long VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT = 1_000_000;
 	public final static long VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT = 1_000;
+	public final static long TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT = 500_000;
 
 	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;
 	private boolean undefinedTargetValidatesAllSubjects = UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
@@ -69,6 +70,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	private boolean dashDataShapes = DASH_DATA_SHAPES_DEFAULT;
 	private long validationResultsLimitTotal = VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT;
 	private long validationResultsLimitPerConstraint = VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT;
+	private long transactionalValidationLimit = TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT;
 
 	public ShaclSailConfig() {
 		super(ShaclSailFactory.SAIL_TYPE);
@@ -206,6 +208,14 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;
 	}
 
+	public long getTransactionalValidationLimit() {
+		return transactionalValidationLimit;
+	}
+
+	public void setTransactionalValidationLimit(long transactionalValidationLimit) {
+		this.transactionalValidationLimit = transactionalValidationLimit;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -231,6 +241,9 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 				literal(getValidationResultsLimitTotal()));
 		m.add(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT,
 				literal(getValidationResultsLimitPerConstraint()));
+
+		m.add(implNode, ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT,
+				literal(getTransactionalValidationLimit()));
 		return implNode;
 	}
 
@@ -284,6 +297,10 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 			Models.objectLiteral(
 					m.getStatements(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, null))
 					.ifPresent(l -> setValidationResultsLimitPerConstraint(l.longValue()));
+
+			Models.objectLiteral(
+					m.getStatements(implNode, ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT, null))
+					.ifPresent(l -> setTransactionalValidationLimit(l.longValue()));
 
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);
