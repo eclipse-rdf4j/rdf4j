@@ -9,31 +9,20 @@
 package org.eclipse.rdf4j.benchmark.rio.util;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Objects;
 import java.util.Random;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.assertj.core.util.Strings;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.binary.BinaryRDFWriter;
+import org.eclipse.rdf4j.rio.RDFHandler;
 
 /**
  * Synthetic dataset generator.
@@ -69,128 +58,53 @@ public class DataSetGenerator {
 		generatePredicateList();
 	}
 
-	public File generateStatementsFile(RDFFormat format, int percentBNodes, int percentLiterals,
-			int textMinLength, int textMaxLength, int totalStatements, boolean isTextOnly,
-			boolean withContext) throws IOException {
+	public void generateStatements(RDFHandler handler, int percentBNodes, int percentLiterals, int textMinLength,
+			int textMaxLength, int totalStatements, boolean isTextOnly, boolean withContext) {
 		if (!(percentBNodes + percentLiterals <= 100 && totalStatements > 0 && textMaxLength > 0
 				&& textMinLength < textMaxLength)) {
 			throw new IllegalArgumentException("Invalid data set variables");
 		}
-		File file = createFile(format);
-		if (format.equals(RDFFormat.BINARY)) {
-			FileOutputStream out = new FileOutputStream(file);
-			if (withContext) {
-				generateContextList(totalStatements);
-				writeBinaryStatementsWithContext(out, percentBNodes, percentLiterals, textMinLength, textMaxLength,
-						totalStatements, isTextOnly);
-				maxCurrentContextCount.set(0);
-				contextCount.set(0);
-				currentContext = null;
-			} else {
-				writeBinaryStatementsWithoutContext(out, percentBNodes, percentLiterals, textMinLength,
-						textMaxLength,
-						totalStatements, isTextOnly);
-			}
+
+		if (withContext) {
+			generateContextList(totalStatements);
+			writeBinaryStatementsWithContext(handler, percentBNodes, percentLiterals, textMinLength, textMaxLength,
+					totalStatements, isTextOnly);
+			maxCurrentContextCount.set(0);
+			contextCount.set(0);
+			currentContext = null;
 		} else {
-			BufferedWriter out = new BufferedWriter(
-					new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8));
-			if (withContext) {
-				generateContextList(totalStatements);
-				writeStatementsWithContext(out, format, percentBNodes, percentLiterals, textMinLength, textMaxLength,
-						totalStatements, isTextOnly);
-				maxCurrentContextCount.set(0);
-				contextCount.set(0);
-				currentContext = null;
-			} else {
-				writeStatementsWithoutContext(out, format, percentBNodes, percentLiterals, textMinLength,
-						textMaxLength,
-						totalStatements, isTextOnly);
-			}
+			writeBinaryStatementsWithoutContext(handler, percentBNodes, percentLiterals, textMinLength,
+					textMaxLength,
+					totalStatements, isTextOnly);
 		}
+
 		prevBNode = null;
 		randomResource = new Random(64);
 		randomProbability = new Random(64);
-		return file;
 	}
 
-	private File createFile(RDFFormat format) throws IOException {
-		File file = new File(
-				Strings.append(File.separator).to(System.getProperty("java.io.tmpdir")) + UUID.randomUUID() + "."
-						+ format.getDefaultFileExtension());
-		file.createNewFile();
-		return file;
-	}
+	private void writeBinaryStatementsWithContext(RDFHandler handler, int percentBNodes, int percentLiterals,
+			int textMinLength, int textMaxLength, int totalStatements, boolean isTextOnly) {
+		handler.startRDF();
+		for (int i = 0; i < totalStatements; i++) {
+			handler.handleStatement(
+					fetchStatementWithContext(isTextOnly, textMinLength, textMaxLength, percentBNodes,
+							percentLiterals));
 
-	private void writeBinaryStatementsWithContext(OutputStream out, int percentBNodes, int percentLiterals,
-			int textMinLength, int textMaxLength, int totalStatements,
-			boolean isTextOnly) throws IOException {
-		try {
-			RDFWriter writer = new BinaryRDFWriter(out);
-			writer.startRDF();
-			for (int i = 0; i < totalStatements; i++) {
-				writer.handleStatement(
-						fetchStatementWithContext(isTextOnly, textMinLength, textMaxLength, percentBNodes,
-								percentLiterals));
-
-			}
-			writer.endRDF();
-		} finally {
-			out.close();
 		}
+		handler.endRDF();
 	}
 
-	private void writeBinaryStatementsWithoutContext(OutputStream out, int percentBNodes, int percentLiterals,
-			int textMinLength, int textMaxLength, int totalStatements,
-			boolean isTextOnly) throws IOException {
-		try {
-			RDFWriter writer = new BinaryRDFWriter(out);
-			writer.startRDF();
-			for (int i = 0; i < totalStatements; i++) {
-				writer.handleStatement(
-						fetchStatementWithoutContext(isTextOnly, textMinLength, textMaxLength, percentBNodes,
-								percentLiterals));
+	private void writeBinaryStatementsWithoutContext(RDFHandler handler, int percentBNodes, int percentLiterals,
+			int textMinLength, int textMaxLength, int totalStatements, boolean isTextOnly) {
+		handler.startRDF();
+		for (int i = 0; i < totalStatements; i++) {
+			handler.handleStatement(
+					fetchStatementWithoutContext(isTextOnly, textMinLength, textMaxLength, percentBNodes,
+							percentLiterals));
 
-			}
-			writer.endRDF();
-		} finally {
-			out.close();
 		}
-	}
-
-	private void writeStatementsWithContext(BufferedWriter out, RDFFormat format, int percentBNodes,
-			int percentLiterals, int textMinLength, int textMaxLength, int totalStatements,
-			boolean isTextOnly) throws IOException {
-		try {
-			RDFWriter writer = Rio.createWriter(format, out);
-			writer.startRDF();
-			for (int i = 0; i < totalStatements; i++) {
-				writer.handleStatement(
-						fetchStatementWithContext(isTextOnly, textMinLength, textMaxLength, percentBNodes,
-								percentLiterals));
-
-			}
-			writer.endRDF();
-		} finally {
-			out.close();
-		}
-	}
-
-	private void writeStatementsWithoutContext(BufferedWriter out, RDFFormat format, int percentBNodes,
-			int percentLiterals, int textMinLength, int textMaxLength, int totalStatements,
-			boolean isTextOnly) throws IOException {
-		try {
-			RDFWriter writer = Rio.createWriter(format, out);
-			writer.startRDF();
-			for (int i = 0; i < totalStatements; i++) {
-				writer.handleStatement(
-						fetchStatementWithoutContext(isTextOnly, textMinLength, textMaxLength, percentBNodes,
-								percentLiterals));
-
-			}
-			writer.endRDF();
-		} finally {
-			out.close();
-		}
+		handler.endRDF();
 	}
 
 	private Statement fetchStatementWithContext(boolean isTextOnly, int textMinLength, int textMaxLength,

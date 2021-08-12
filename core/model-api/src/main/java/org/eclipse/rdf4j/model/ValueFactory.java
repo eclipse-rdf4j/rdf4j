@@ -35,19 +35,6 @@ public interface ValueFactory {
 	IRI createIRI(String iri);
 
 	/**
-	 * Creates a new URI from the supplied string-representation.
-	 *
-	 * @param uri A string-representation of a URI.
-	 * @return An object representing the URI.
-	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
-	 * @deprecated Use {{@link #createIRI(String)} instead.
-	 */
-	@Deprecated
-	default URI createURI(String uri) {
-		return createIRI(uri);
-	}
-
-	/**
 	 * Creates a new IRI from the supplied namespace and local name. Calling this method is funtionally equivalent to
 	 * calling {@link #createIRI(String) createIRI(namespace+localName)}, but allows the ValueFactory to reuse supplied
 	 * namespace and local name strings whenever possible. Note that the values returned by {@link IRI#getNamespace()}
@@ -59,20 +46,6 @@ public interface ValueFactory {
 	 *                                  IRI.
 	 */
 	IRI createIRI(String namespace, String localName);
-
-	/**
-	 * Creates a new URI from the supplied namespace and local name.
-	 *
-	 * @param namespace The IRI's namespace.
-	 * @param localName The IRI's local name.
-	 * @return An object representing the URI.
-	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
-	 * @deprecated Use {@link #createIRI(String, String)} instead.
-	 */
-	@Deprecated
-	default URI createURI(String namespace, String localName) {
-		return createIRI(namespace, localName);
-	}
 
 	/**
 	 * Creates a new bNode.
@@ -116,20 +89,6 @@ public interface ValueFactory {
 	 *                 literal.
 	 */
 	Literal createLiteral(String label, IRI datatype);
-
-	/**
-	 * Creates a new literal with the supplied label and datatype.
-	 *
-	 * @param label    The literal's label.
-	 * @param datatype The literal's datatype. If it is null, the datatype
-	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to this
-	 *                 literal.
-	 * @deprecated Use {@link #createLiteral(String, IRI)} instead.
-	 */
-	@Deprecated
-	default Literal createLiteral(String label, URI datatype) {
-		return createLiteral(label, (IRI) datatype);
-	}
 
 	/**
 	 * Creates a new <tt>xsd:boolean</tt>-typed literal representing the specified value.
@@ -271,20 +230,6 @@ public interface ValueFactory {
 	Statement createStatement(Resource subject, IRI predicate, Value object);
 
 	/**
-	 * Creates a new statement with the supplied subject, predicate and object.
-	 *
-	 * @param subject   The statement's subject.
-	 * @param predicate The statement's predicate.
-	 * @param object    The statement's object.
-	 * @return The created statement.
-	 * @deprecated Use {@link #createStatement(Resource, IRI, Value)} instead.
-	 */
-	@Deprecated
-	default Statement createStatement(Resource subject, URI predicate, Value object) {
-		return createStatement(subject, (IRI) predicate, object);
-	}
-
-	/**
 	 * Creates a new statement with the supplied subject, predicate and object and associated context.
 	 *
 	 * @param subject   The statement's subject.
@@ -294,20 +239,6 @@ public interface ValueFactory {
 	 * @return The created statement.
 	 */
 	Statement createStatement(Resource subject, IRI predicate, Value object, Resource context);
-
-	/**
-	 * Creates a new statement with the supplied subject, predicate and object and associated context.
-	 *
-	 * @param subject   The statement's subject.
-	 * @param predicate The statement's predicate.
-	 * @param object    The statement's object.
-	 * @return The created statement.
-	 * @deprecated Use {@link #createStatement(Resource, IRI, Value, Resource)} instead.
-	 */
-	@Deprecated
-	default Statement createStatement(Resource subject, URI predicate, Value object, Resource context) {
-		return createStatement(subject, (IRI) predicate, object, context);
-	}
 
 	/**
 	 * Creates a new RDF-star triple with the supplied subject, predicate and object.

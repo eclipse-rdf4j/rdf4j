@@ -290,37 +290,35 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		suite.setName(getManifestName(manifestRep, con, manifestFileURL));
 
 		// Extract test case information from the manifest file. Note that we
-		// only
-		// select those test cases that are mentioned in the list.
+		// only select those test cases that are mentioned in the list.
 		StringBuilder query = new StringBuilder(512);
+		query.append("PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n ");
+		query.append("PREFIX dawgt = <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#>\n");
+		query.append("PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>\n");
+		query.append("PREFIX ut: <http://www.w3.org/2009/sparql/tests/test-update#>\n");
+		query.append("PREFIX sd: <http://www.w3.org/ns/sparql-service-description#>\n");
+		query.append("PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
 		query.append(
-				" SELECT DISTINCT testURI, testName, result, action, requestFile, defaultGraph, resultDefaultGraph ");
-		query.append(" FROM {} rdf:first {testURI} rdf:type {mf:UpdateEvaluationTest}; ");
+				" SELECT DISTINCT ?testURI ?testName ?result ?action ?requestFile ?defaultGraph ?resultDefaultGraph \n");
+		query.append(" WHERE { [] rdf:first ?testURI. ?testURI a mf:UpdateEvaluationTest; ");
 		if (approvedOnly) {
-			query.append("                          dawgt:approval {dawgt:Approved}; ");
+			query.append("                          dawgt:approval dawgt:Approved; ");
 		}
-		query.append("                             mf:name {testName}; ");
-		query.append("                             mf:action {action} ut:request {requestFile}; ");
-		query.append("                                                [ ut:data {defaultGraph} ],  ");
-		query.append("                   {testURI} mf:result {result} [ut:data {resultDefaultGraph}] ");
-		query.append(" USING NAMESPACE ");
-		query.append("  mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, ");
-		query.append("  dawgt = <http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#>, ");
-		query.append("  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>, ");
-		query.append("  ut = <http://www.w3.org/2009/sparql/tests/test-update#>, ");
-		query.append("  sd = <http://www.w3.org/ns/sparql-service-description#>, ");
-		query.append("  ent = <http://www.w3.org/ns/entailment/> ");
+		query.append("                             mf:name ?testName; ");
+		query.append("                             mf:action ?action. ?action ut:request ?requestFile. ");
+		query.append("  OPTIONAL {?action ut:data ?defaultGraph .} ");
+		query.append("    ?testURI mf:result ?result . \n");
+		query.append("  OPTIONAL { ?result ut:data ?resultDefaultGraph }} ");
 
-		TupleQuery testCaseQuery = con.prepareTupleQuery(QueryLanguage.SERQL, query.toString());
+		TupleQuery testCaseQuery = con.prepareTupleQuery(query.toString());
 
 		query.setLength(0);
-		query.append(" SELECT DISTINCT namedGraphData, namedGraphLabel ");
-		query.append(" FROM {graphDef} ut:graphData {} ut:graph {namedGraphData} ; ");
-		query.append("                               rdfs:label {namedGraphLabel} ");
-		query.append(" USING NAMESPACE ");
-		query.append("  ut = <http://www.w3.org/2009/sparql/tests/test-update#> ");
+		query.append("PREFIX ut: <http://www.w3.org/2009/sparql/tests/test-update#> \n");
+		query.append(" SELECT DISTINCT ?namedGraphData ?namedGraphLabel ");
+		query.append(" WHERE { ?graphDef ut:graphData [ ut:graph ?namedGraphData ; ");
+		query.append("                                  rdfs:label ?namedGraphLabel].} ");
 
-		TupleQuery namedGraphsQuery = con.prepareTupleQuery(QueryLanguage.SERQL, query.toString());
+		TupleQuery namedGraphsQuery = con.prepareTupleQuery(query.toString());
 
 		logger.debug("evaluating query..");
 		TupleQueryResult testCases = testCaseQuery.evaluate();
@@ -389,8 +387,8 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	protected static String getManifestName(Repository manifestRep, RepositoryConnection con, String manifestFileURL)
 			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		// Try to extract suite name from manifest file
-		TupleQuery manifestNameQuery = con.prepareTupleQuery(QueryLanguage.SERQL,
-				"SELECT ManifestName FROM {ManifestURL} rdfs:label {ManifestName}");
+		TupleQuery manifestNameQuery = con.prepareTupleQuery(
+				"SELECT ?ManifestName WHERE { ?ManifestURL rdfs:label ?ManifestName .}");
 		manifestNameQuery.setBinding("ManifestURL", manifestRep.getValueFactory().createIRI(manifestFileURL));
 		TupleQueryResult manifestNames = manifestNameQuery.evaluate();
 		try {

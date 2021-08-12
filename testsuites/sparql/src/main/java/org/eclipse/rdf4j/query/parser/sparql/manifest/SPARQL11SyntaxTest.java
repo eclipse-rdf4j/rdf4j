@@ -17,6 +17,7 @@ import java.io.OutputStream;
 import java.net.JarURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
@@ -193,7 +194,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 			URL url = SPARQL11SyntaxTest.class.getResource("/testcases-sparql-1.1-w3c/");
 			if ("jar".equals(url.getProtocol())) {
 				try {
-					tmpDir = FileUtil.createTempDir("sparql-syntax");
+					tmpDir = Files.createTempDirectory("sparql-syntax").toFile();
 					JarURLConnection con = (JarURLConnection) url.openConnection();
 					JarFile jar = con.getJarFile();
 					Enumeration<JarEntry> entries = jar.entries();

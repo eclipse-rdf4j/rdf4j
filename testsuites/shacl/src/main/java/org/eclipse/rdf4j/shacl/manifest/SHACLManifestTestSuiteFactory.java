@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.net.JarURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -154,7 +155,7 @@ public class SHACLManifestTestSuiteFactory {
 		if ("jar".equals(url.getProtocol())) {
 			// Extract manifest files to a temporary directory
 			try {
-				tmpDir = FileUtil.createTempDir("data-shapes-test-evaluation");
+				tmpDir = Files.createTempDirectory("data-shapes-test-evaluation").toFile();
 
 				JarURLConnection con = (JarURLConnection) url.openConnection();
 				JarFile jar = con.getJarFile();

@@ -31,6 +31,7 @@ import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.document.LatLonPoint;
 import org.apache.lucene.document.LatLonShape;
+import org.apache.lucene.document.ShapeField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
@@ -147,6 +148,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 *
 	 * @param directory
 	 * @param analyzer
+	 * @throws IOException
 	 */
 	public LuceneIndex(Directory directory, Analyzer analyzer) throws IOException {
 		this(directory, analyzer, new ClassicSimilarity());
@@ -199,25 +201,23 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	protected Analyzer createAnalyzer(Properties parameters) throws Exception {
-		Analyzer analyzer;
+		Analyzer a;
 		if (parameters.containsKey(LuceneSail.ANALYZER_CLASS_KEY)) {
-			analyzer = (Analyzer) Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();
+			a = (Analyzer) Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();
 		} else {
-			analyzer = new StandardAnalyzer();
+			a = new StandardAnalyzer();
 		}
-		return analyzer;
+		return a;
 	}
 
 	protected Similarity createSimilarity(Properties parameters) throws Exception {
-		Similarity similarity;
+		Similarity s;
 		if (parameters.containsKey(LuceneSail.SIMILARITY_CLASS_KEY)) {
-			similarity = (Similarity) Class.forName(parameters.getProperty(LuceneSail.SIMILARITY_CLASS_KEY))
-					.newInstance();
+			s = (Similarity) Class.forName(parameters.getProperty(LuceneSail.SIMILARITY_CLASS_KEY)).newInstance();
 		} else {
-			similarity = new ClassicSimilarity();
+			s = new ClassicSimilarity();
 		}
-
-		return similarity;
+		return s;
 	}
 
 	private void postInit() throws IOException {
@@ -237,14 +237,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 		SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);
 		final SpatialPrefixTree spt = SpatialPrefixTreeFactory.makeSPT(parameters, classLoader, geoContext);
-		return new Function<String, SpatialStrategy>() {
-
-			@Override
-			public SpatialStrategy apply(String field) {
-				return new RecursivePrefixTreeStrategy(spt, GEO_FIELD_PREFIX + field);
-			}
-
-		};
+		return (String field) -> new RecursivePrefixTreeStrategy(spt, GEO_FIELD_PREFIX + field);
 	}
 
 	@Override
@@ -374,13 +367,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	@Override
 	protected synchronized Iterable<? extends SearchDocument> getDocuments(String resourceId) throws IOException {
 		List<Document> docs = getDocuments(new Term(SearchFields.URI_FIELD_NAME, resourceId));
-		return Iterables.transform(docs, new Function<Document, SearchDocument>() {
-
-			@Override
-			public SearchDocument apply(Document doc) {
-				return new LuceneDocument(doc, geoStrategyMapper);
-			}
-		});
+		return Iterables.transform(docs, (Document doc) -> new LuceneDocument(doc, geoStrategyMapper));
 	}
 
 	@Override
@@ -694,7 +681,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 *
 	 * @param query string
 	 * @return the parsed query
-	 * @throws ParseException when the parsing brakes
+	 * @throws MalformedQueryException when the parsing brakes
 	 */
 	@Override
 	@Deprecated
@@ -711,9 +698,12 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	/**
 	 * Parse the passed query.
 	 *
-	 * @param query string
+	 * @param subject
+	 * @param query     string
+	 * @param highlight
 	 * @return the parsed query
-	 * @throws ParseException when the parsing brakes
+	 * @throws MalformedQueryException when the parsing brakes
+	 * @throws IOException
 	 */
 	@Override
 	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
@@ -740,13 +730,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		} else {
 			docs = search(q);
 		}
-		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentScore>() {
-
-			@Override
-			public DocumentScore apply(ScoreDoc doc) {
-				return new LuceneDocumentScore(doc, highlighter, LuceneIndex.this);
-			}
-		});
+		return Iterables.transform(Arrays.asList(docs.scoreDocs),
+				(ScoreDoc doc) -> new LuceneDocumentScore(doc, highlighter, LuceneIndex.this));
 	}
 
 	@Override
@@ -766,14 +751,10 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 		TopDocs docs = search(q);
 		final boolean requireContext = (contextVar != null && !contextVar.hasValue());
-		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentDistance>() {
-
-			@Override
-			public DocumentDistance apply(ScoreDoc doc) {
-				return new LuceneDocumentDistance(doc, geoField, units, boundingCircle.getCenter(), requireContext,
-						LuceneIndex.this);
-			}
-		});
+		return Iterables.transform(Arrays.asList(docs.scoreDocs),
+				(ScoreDoc doc) -> new LuceneDocumentDistance(doc, geoField, units, boundingCircle.getCenter(),
+						requireContext,
+						LuceneIndex.this));
 	}
 
 	private Query addContextTerm(Query q, Resource ctx) {
@@ -812,30 +793,26 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		if (contextVar != null && !contextVar.hasValue()) {
 			fields.add(SearchFields.CONTEXT_FIELD_NAME);
 		}
-		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentResult>() {
-
-			@Override
-			public DocumentResult apply(ScoreDoc doc) {
-				return new LuceneDocumentResult(doc, LuceneIndex.this, fields);
-			}
-		});
+		return Iterables.transform(Arrays.asList(docs.scoreDocs),
+				(ScoreDoc doc) -> new LuceneDocumentResult(doc, LuceneIndex.this, fields));
 	}
 
-	private LatLonShape.QueryRelation getRelation(SpatialOperation op) {
-		if (op.toString().equals("Contains")) {
-			return LatLonShape.QueryRelation.INTERSECTS;
-		} else if (op.toString().equals("Within")) {
-			return LatLonShape.QueryRelation.WITHIN;
-		} else if (op.toString().equals("Disjoint")) {
-			return LatLonShape.QueryRelation.DISJOINT;
-		} else {
-			throw new IllegalArgumentException("The geo function [" + op.toString() + " is not supported");
+	private ShapeField.QueryRelation getRelation(SpatialOperation op) {
+		switch (op.toString()) {
+		case "Contains":
+			return ShapeField.QueryRelation.INTERSECTS;
+		case "Within":
+			return ShapeField.QueryRelation.WITHIN;
+		case "Disjoint":
+			return ShapeField.QueryRelation.DISJOINT;
+		default:
+			throw new IllegalArgumentException("The geo function [" + op.toString() + "] is not supported");
 		}
 	}
 
 	private Query makeQuery(SpatialOperation op, String geoField, Object shape) {
 		Query q = null;
-		LatLonShape.QueryRelation relation = getRelation(op);
+		ShapeField.QueryRelation relation = getRelation(op);
 		if (shape instanceof double[]) {
 			double[] point = (double[]) shape;
 			q = LatLonShape.newBoxQuery(geoField, relation, point[1], point[1], point[0], point[0]);

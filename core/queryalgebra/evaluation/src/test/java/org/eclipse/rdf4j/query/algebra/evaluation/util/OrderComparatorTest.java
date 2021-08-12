@@ -14,7 +14,7 @@ import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -173,8 +173,8 @@ public class OrderComparatorTest {
 		OrderComparator sud = new OrderComparator(strategy, order, cmp);
 		QueryBindingSet a = new QueryBindingSet();
 		QueryBindingSet b = new QueryBindingSet();
-		a.addBinding("a", ValueFactoryImpl.getInstance().createLiteral("a"));
-		b.addBinding("b", ValueFactoryImpl.getInstance().createLiteral("b"));
+		a.addBinding("a", SimpleValueFactory.getInstance().createLiteral("a"));
+		b.addBinding("b", SimpleValueFactory.getInstance().createLiteral("b"));
 		assertTrue(sud.compare(a, b) != 0);
 		assertTrue(sud.compare(a, b) != sud.compare(b, a));
 	}
@@ -184,10 +184,10 @@ public class OrderComparatorTest {
 		OrderComparator sud = new OrderComparator(strategy, order, new ValueComparator());
 		QueryBindingSet a = new QueryBindingSet();
 		QueryBindingSet b = new QueryBindingSet();
-		a.addBinding("a", ValueFactoryImpl.getInstance().createLiteral("ab"));
-		a.addBinding("b", ValueFactoryImpl.getInstance().createLiteral("b"));
-		b.addBinding("b", ValueFactoryImpl.getInstance().createLiteral("b"));
-		b.addBinding("a", ValueFactoryImpl.getInstance().createLiteral("ac"));
+		a.addBinding("a", SimpleValueFactory.getInstance().createLiteral("ab"));
+		a.addBinding("b", SimpleValueFactory.getInstance().createLiteral("b"));
+		b.addBinding("b", SimpleValueFactory.getInstance().createLiteral("b"));
+		b.addBinding("a", SimpleValueFactory.getInstance().createLiteral("ac"));
 		assertTrue(sud.compare(a, b) < 0);
 		assertTrue(sud.compare(a, b) != sud.compare(b, a));
 	}

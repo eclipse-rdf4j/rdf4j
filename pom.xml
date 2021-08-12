@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>3.7.3-SNAPSHOT</version>
+	<version>4.0.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -41,6 +41,7 @@
 		<module>assembly-descriptors</module>
 		<module>core</module>
 		<module>tools</module>
+		<module>spring-components</module>
 		<module>testsuites</module>
 		<module>compliance</module>
 		<module>examples</module>
@@ -95,7 +96,7 @@
 							</execution>
 						</executions>
 						<configuration>
-							<source>8</source>
+							<source>11</source>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -158,44 +159,33 @@
 									<goal>aggregate</goal>
 								</goals>
 								<configuration>
-									<doctitle>Eclipse RDF4J ${project.version} API</doctitle>
-									<windowtitle>Eclipse RDF4J ${project.version} API</windowtitle>
+									<overview>src/main/javadoc/overview.html</overview>
+									<windowtitle>Eclipse RDF4J ${project.version}</windowtitle>
+									<doctitle>Eclipse RDF4J version ${project.version} API specification</doctitle>
 									<groups>
 										<group>
 											<title>RDF Model API</title>
 											<packages>org.eclipse.rdf4j.model*</packages>
 										</group>
 										<group>
-											<title>Repository API: database and SPARQL endpoint access</title>
+											<title>Repository API</title>
 											<packages>org.eclipse.rdf4j.repository*</packages>
 										</group>
 										<group>
-											<title>Rio: RDF Parsers and Writers</title>
+											<title>Rio: RDF Parsers/Writers</title>
 											<packages>org.eclipse.rdf4j.rio*</packages>
-										</group>
-										<group>
-											<title>Query API and query parsers</title>
-											<packages>org.eclipse.rdf4j.query:org.eclipse.rdf4j.query.impl:org.eclipse.rdf4j.query.algebra*:org.eclipse.rdf4j.query.parser*</packages>
 										</group>
 										<group>
 											<title>Query Result Parsers and Writers</title>
 											<packages>org.eclipse.rdf4j.query.resultio*</packages>
 										</group>
 										<group>
-											<title>SPARQLBuilder</title>
-											<packages>org.eclipse.rdf4j.sparqlbuilder*</packages>
-										</group>
-										<group>
-											<title>Storage And Inference Layer (SAIL) SPI</title>
+											<title>SAIL API</title>
 											<packages>org.eclipse.rdf4j.sail*</packages>
-										</group>
-										<group>
-											<title>RDF4J REST Client and Protocol</title>
-											<packages>org.eclipse.rdf4j.http*</packages>
 										</group>
 									</groups>
 									<links>
-										<link>http://docs.oracle.com/javase/8/docs/api/</link>
+										<link>http://docs.oracle.com/javase/11/docs/api/</link>
 									</links>
 									<excludePackageNames>*.ast:*.AST:*.benchmark</excludePackageNames>
 								</configuration>
@@ -203,7 +193,7 @@
 						</executions>
 						<configuration>
 							<encoding>utf8</encoding>
-							<source>8</source>
+							<source>11</source>
 							<additionalparam>${javadoc.opts}</additionalparam>
 						</configuration>
 					</plugin>
@@ -239,30 +229,19 @@
 			</build>
 		</profile>
 		<profile>
-			<id>doclint-java8-disable</id>
+			<id>doclint-disable</id>
 			<activation>
-				<jdk>1.8</jdk>
-			</activation>
-			<properties>
-				<javadoc.opts>-Xdoclint:none</javadoc.opts>
-				<additional.j.option/>
-			</properties>
-		</profile>
-		<profile>
-			<id>doclint-java9-disable</id>
-			<activation>
-				<jdk>[9,)</jdk>
+				<jdk>[11,)</jdk>
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
-				<additional.j.option>--no-module-directories</additional.j.option>
 			</properties>
 		</profile>
 		<profile>
 			<id>use-sonatype-snapshots</id>
 			<activation>
-				<!-- active on all Java 8 and higher builds by default -->
-				<jdk>[1.8,)</jdk>
+				<!-- active on all Java 11 and higher builds by default -->
+				<jdk>[11,)</jdk>
 			</activation>
 			<repositories>
 				<repository>
@@ -280,8 +259,8 @@
 		<profile>
 			<id>formatting</id>
 			<activation>
-				<!-- active on all Java 8 and higher builds by default -->
-				<jdk>[1.8,)</jdk>
+				<!-- active on all Java 11 and higher builds by default -->
+				<jdk>[11,)</jdk>
 			</activation>
 			<build>
 				<plugins>
@@ -373,11 +352,11 @@
 		<httpcore.version>4.4.14</httpcore.version>
 		<jackson.version>2.11.4</jackson.version>
 		<jsonldjava.version>0.13.3</jsonldjava.version>
-		<last.japicmp.compare.version>3.1.4</last.japicmp.compare.version>
+		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.1</jaxb.version>
-		<lucene.version>7.7.2</lucene.version>
-		<solr.version>7.7.2</solr.version>
-		<elasticsearch.version>6.8.8</elasticsearch.version>
+		<lucene.version>8.5.1</lucene.version>
+		<solr.version>8.4.1</solr.version>
+		<elasticsearch.version>7.8.1</elasticsearch.version>
 		<jetty.version>9.4.42.v20210604</jetty.version>
 		<spring.version>5.3.5</spring.version>
 		<guava.version>30.1.1-jre</guava.version>
@@ -405,7 +384,7 @@
 			<dependency>
 				<groupId>com.opencsv</groupId>
 				<artifactId>opencsv</artifactId>
-				<version>4.6</version>
+				<version>5.3</version>
 			</dependency>
 			<!-- Apache Commons -->
 			<dependency>
@@ -421,12 +400,12 @@
 			<dependency>
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
-				<version>2.8.0</version>
+				<version>2.9.0</version>
 			</dependency>
 			<dependency>
 				<groupId>commons-codec</groupId>
 				<artifactId>commons-codec</artifactId>
-				<version>1.13</version>
+				<version>1.15</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.commons</groupId>
@@ -526,7 +505,7 @@
 			<dependency>
 				<groupId>org.locationtech.jts</groupId>
 				<artifactId>jts-core</artifactId>
-				<version>1.17.1</version>
+				<version>1.18.1</version>
 			</dependency>
 			<dependency>
 				<groupId>com.google.guava</groupId>
@@ -681,11 +660,10 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-compiler-plugin</artifactId>
-					<version>3.7.0</version>
+					<version>3.8.1</version>
 					<configuration>
 						<fork>true</fork>
-						<source>1.8</source>
-						<target>1.8</target>
+						<release>11</release>
 						<encoding>utf8</encoding>
 					</configuration>
 				</plugin>
@@ -826,7 +804,7 @@
 					<version>3.0.0-M5</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
-						<argLine>-Xmx1G</argLine>
+						<argLine>-Xmx2048M</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -920,20 +898,14 @@
 						</newVersion>
 						<parameter>
 							<onlyModified>true</onlyModified>
-							<breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
-							<breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+							<breakBuildOnBinaryIncompatibleModifications>false</breakBuildOnBinaryIncompatibleModifications>
+							<breakBuildOnSourceIncompatibleModifications>false</breakBuildOnSourceIncompatibleModifications>
 							<ignoreMissingOldVersion>true</ignoreMissingOldVersion>
 							<excludes>
 								<exclude>@org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>@org.eclipse.rdf4j.common.annotation.Experimental</exclude>
 								<exclude>org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>org.eclipse.rdf4j.common.annotation.Experimental</exclude>
-								<!-- GH-2538 bug fix, not considered backward incompatible -->
-								<exclude>org.eclipse.rdf4j.model.Namespace#equals(java.lang.Object)</exclude>
-								<exclude>org.eclipse.rdf4j.model.Namespace#hashCode()</exclude>
-								<!-- GH-2350 introduced with defaults, so false positive -->
-								<exclude>org.eclipse.rdf4j.IsolationLevel#getValue()</exclude>
-								<exclude>org.eclipse.rdf4j.IsolationLevel#getName()</exclude>
 							</excludes>
 							<overrideCompatibilityChangeParameters>
 								<overrideCompatibilityChangeParameter>
@@ -949,6 +921,7 @@
 							</overrideCompatibilityChangeParameters>
 						</parameter>
 					</configuration>
+					<!-- API compatibility checks disabled for major release. Should be re-enabled after 4.0.0 is final
 					<executions>
 						<execution>
 							<phase>verify</phase>
@@ -957,6 +930,7 @@
 							</goals>
 						</execution>
 					</executions>
+					-->
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
@@ -966,26 +940,6 @@
 			</plugins>
 		</pluginManagement>
 		<plugins>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>animal-sniffer-maven-plugin</artifactId>
-				<version>1.20</version>
-				<executions>
-					<execution>
-						<phase>test</phase>
-						<goals>
-							<goal>check</goal>
-						</goals>
-					</execution>
-				</executions>
-				<configuration>
-					<signature>
-						<groupId>org.codehaus.mojo.signature</groupId>
-						<artifactId>java18</artifactId>
-						<version>1.0</version>
-					</signature>
-				</configuration>
-			</plugin>
 			<plugin>
 				<groupId>net.revelc.code.formatter</groupId>
 				<artifactId>formatter-maven-plugin</artifactId>

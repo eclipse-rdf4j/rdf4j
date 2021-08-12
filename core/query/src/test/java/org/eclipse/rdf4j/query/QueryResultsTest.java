@@ -145,7 +145,7 @@ public class QueryResultsTest {
 		assertTrue(QueryResults.equals(gqr, toCompare));
 		gqr = new StubGraphQueryResult();
 		toCompare = new StubGraphQueryResult();
-		toCompare.statements.add(VF.createStatement(VF.createURI("urn:test-gqr-equals"), RDF.TYPE, RDF.PROPERTY));
+		toCompare.statements.add(VF.createStatement(VF.createIRI("urn:test-gqr-equals"), RDF.TYPE, RDF.PROPERTY));
 
 		assertFalse(QueryResults.equals(gqr, toCompare));
 	}

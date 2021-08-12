@@ -15,9 +15,9 @@ import static org.junit.Assert.assertTrue;
 import java.lang.reflect.Field;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -129,12 +129,6 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 	@Ignore("relies on pending updates being visible in own connection")
 	public void testEmptyCommit() throws Exception {
 		System.err.println("temporarily disabled testEmptyCommit() for SPARQLRepository");
-	}
-
-	@Override
-	@Ignore("SeRQL language not supported on SPARQL endpoints")
-	public void testPrepareSeRQLQuery() throws Exception {
-		System.err.println("disabled testPrepareSeRQLQuery() for SPARQLRepository");
 	}
 
 	@Override

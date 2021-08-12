@@ -345,9 +345,9 @@ By using the “Results per page” setting and the “Previous …” and “Ne
 
 ### Querying a Repository
 
-Clicking on “Query” on the sidebar menu brings you to Workbench’s querying interface. Here, you may enter queries in the SPARQL or SeRQL query languages, save them for future access, and execute them against your repository.
+Clicking on “Query” on the sidebar menu brings you to Workbench’s querying interface. Here, you may enter queries in the SPARQL language, save them for future access, and execute them against your repository.
 
-If you have executed queries previously, the query text area will show the most recently executed query. If not, it will be pre-populated with a prefix header (SPARQL) or footer (SeRQL) containing all the defined namespaces for the repository. The “Clear” button below the text area gives you the option to restore this pre-populated state for the currently selected query language.
+If you have executed queries previously, the query text area will show the most recently executed query. If not, it will be pre-populated with a prefix header containing all the defined namespaces for the repository. The “Clear” button below the text area gives you the option to restore this pre-populated state for the currently selected query language.
 
 The two other action buttons are “Save Query” and “Execute”:
 
@@ -369,7 +369,7 @@ The query name is displayed as a clickable link that will execute the query, fol
 
 The query metadata fields, aside from query name and user, are:
 
-- Query Language: either SPARQL or SeRQL
+- Query Language: SPARQL
 - Include Inferred Statements: whether to use any inferencing defined on the repository to expand the result set
 - Rows per page: How many results to display per page at first
 - Shared: whether this query is visible to users other than the one that saved it, restricted to always be true for the “anonymous” user

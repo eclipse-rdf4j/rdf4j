@@ -1766,14 +1766,14 @@ public abstract class SPARQLUpdateTest {
 	 * @Test public void testLoad() throws Exception { String update =
 	 * "LOAD <http://www.daml.org/2001/01/gedcom/royal92.daml>"; String ns =
 	 * "http://www.daml.org/2001/01/gedcom/gedcom#"; Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);
-	 * operation.execute(); assertTrue(con.hasStatement(null, RDF.TYPE, f.createURI(ns, "Family"), true)); }
+	 * operation.execute(); assertTrue(con.hasStatement(null, RDF.TYPE, f.createIRI(ns, "Family"), true)); }
 	 *
 	 * @Test public void testLoadIntoGraph() throws Exception { String ns =
 	 * "http://www.daml.org/2001/01/gedcom/gedcom#"; String update =
 	 * "LOAD <http://www.daml.org/2001/01/gedcom/royal92.daml> INTO GRAPH <" + ns + "> "; Update operation =
 	 * con.prepareUpdate(QueryLanguage.SPARQL, update); operation.execute();
-	 * assertFalse(con.hasStatement((Resource)null, RDF.TYPE, f.createURI(ns, "Family"), true, (Resource)null));
-	 * assertTrue(con.hasStatement((Resource)null, RDF.TYPE, f.createURI(ns, "Family"), true, f.createURI(ns))); }
+	 * assertFalse(con.hasStatement((Resource)null, RDF.TYPE, f.createIRI(ns, "Family"), true, (Resource)null));
+	 * assertTrue(con.hasStatement((Resource)null, RDF.TYPE, f.createIRI(ns, "Family"), true, f.createIRI(ns))); }
 	 */
 
 	/* protected methods */

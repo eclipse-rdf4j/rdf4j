@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.config;
 
-import org.eclipse.rdf4j.RDF4JConfigException;
+import org.eclipse.rdf4j.common.exception.RDF4JConfigException;
 
 /**
  * Exception indicating a repository configuration problem.

@@ -119,12 +119,13 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 				.prepareSearch(index)
 				.addSort(FieldSortBuilder.DOC_FIELD_NAME, SortOrder.ASC)
 				.setQuery(QueryBuilders.constantScoreQuery(matchAllQuery()))
+				.setTrackTotalHits(true)
 				.setSize(10000)
 				.get();
 
 		SearchHits hits = searchResponse.getHits();
-		if (hits.totalHits > 10000) {
-			throw new SailException("Namespace store only supports 10 000 items, found " + hits.totalHits);
+		if (hits.getTotalHits().value > 10000) {
+			throw new SailException("Namespace store only supports 10 000 items, found " + hits.getTotalHits().value);
 		}
 
 		return StreamSupport.stream(hits.spliterator(), false)

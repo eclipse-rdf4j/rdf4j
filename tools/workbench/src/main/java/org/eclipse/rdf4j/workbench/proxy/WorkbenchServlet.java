@@ -24,7 +24,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.exceptions.ValidationException;
+import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;

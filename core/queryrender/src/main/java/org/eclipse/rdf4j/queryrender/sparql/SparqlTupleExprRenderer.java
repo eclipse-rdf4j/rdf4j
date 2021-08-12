@@ -105,7 +105,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		if (aContext != null) {
 			mJoinBuffer.append(indent()).append("GRAPH ");
 			if (aContext.hasValue()) {
-				mJoinBuffer.append(RenderUtils.getSPARQLQueryString(aContext.getValue()));
+				mJoinBuffer.append(RenderUtils.toSPARQL(aContext.getValue()));
 			} else {
 				mJoinBuffer.append("?").append(aContext.getName());
 			}

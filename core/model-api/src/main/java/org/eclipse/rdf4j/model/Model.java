@@ -91,14 +91,6 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts);
 
 	/**
-	 * @deprecated since 2.0. Use {@link #contains(Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default boolean contains(Resource subj, URI pred, Value obj, Resource... contexts) {
-		return contains(subj, (IRI) pred, obj, contexts);
-	}
-
-	/**
 	 * Adds one or more statements to the model. This method creates a statement for each specified context and adds
 	 * those to the model. If no contexts are specified, a single statement with no associated context is added. If this
 	 * Model is a filtered Model then null (if context empty) values are permitted and will use the corresponding
@@ -114,14 +106,6 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *                                       empty set.
 	 */
 	boolean add(Resource subj, IRI pred, Value obj, Resource... contexts);
-
-	/**
-	 * @deprecated since 2.0. Use {@link #add(Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default boolean add(Resource subj, URI pred, Value obj, Resource... contexts) {
-		return add(subj, (IRI) pred, obj, contexts);
-	}
 
 	/**
 	 * Removes statements with the specified context exist in this model.
@@ -155,14 +139,6 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * @return <code>true</code> if one or more statements have been removed.
 	 */
 	boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts);
-
-	/**
-	 * @deprecated since 2.0. Use {@link #remove(Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default boolean remove(Resource subj, URI pred, Value obj, Resource... contexts) {
-		return remove(subj, (IRI) pred, obj, contexts);
-	}
 
 	/**
 	 * Returns an {@link Iterable} over all {@link Statement}s in this Model that match the supplied criteria.
@@ -230,11 +206,6 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 * @see #getStatements(Resource, IRI, Value, Resource...)
 	 */
 	Model filter(Resource subj, IRI pred, Value obj, Resource... contexts);
-
-	@Deprecated
-	default Model filter(Resource subj, URI pred, Value obj, Resource... contexts) {
-		return filter(subj, (IRI) pred, obj, contexts);
-	}
 
 	/**
 	 * Returns a {@link Set} view of the subjects contained in this model. The set is backed by the model, so changes to

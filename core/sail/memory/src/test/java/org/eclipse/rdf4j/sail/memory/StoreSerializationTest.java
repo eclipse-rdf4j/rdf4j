@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import java.io.File;
+import java.nio.file.Files;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -43,7 +44,7 @@ public class StoreSerializationTest extends TestCase {
 	@Override
 	protected void setUp() throws Exception {
 		super.setUp();
-		dataDir = FileUtil.createTempDir("memorystore");
+		dataDir = Files.createTempDirectory("memorystore").toFile();
 	}
 
 	@Override
@@ -101,7 +102,8 @@ public class StoreSerializationTest extends TestCase {
 		con.addStatement(foo, RDF.TYPE, bar);
 		con.commit();
 
-		ParsedTupleQuery query = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL, "SELECT X, P, Y FROM {X} P {Y}",
+		ParsedTupleQuery query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?X ?P ?Y WHERE { ?X ?P ?Y }",
 				null);
 		TupleExpr tupleExpr = query.getTupleExpr();
 

@@ -196,12 +196,12 @@ Limiting the size of the report can be useful to speed up validation and to redu
 
 Limitations can either be configured directly in the ShaclSail or through the configuration files.
 
- - `setValidationResultsLimitTotal(1000)` limits the total number of validation results per report to 1000.
+ - `setValidationResultsLimitTotal(1000)` limits the total number of validation results per report to 1000. (1 000 000 by default)
      - `<http://rdf4j.org/config/sail/shacl#validationResultsLimitTotal>`
- - `setValidationResultsLimitPerConstraint(10)` limits the number of validation results per constraint component to 10
+ - `setValidationResultsLimitPerConstraint(10)` limits the number of validation results per constraint component to 10. (1000 by default)
      - `<http://rdf4j.org/config/sail/shacl#validationResultsLimitPerConstraint>`
 
- Use -1 to remove a limit and 0 to validate but return an empty validation report. -1 is the default.
+ Use -1 to remove a limit and 0 to validate but return an empty validation report. 
 
  A truncated validation report will have `isTruncated()` return true and the model will have `rdf4j:truncated true`.
 

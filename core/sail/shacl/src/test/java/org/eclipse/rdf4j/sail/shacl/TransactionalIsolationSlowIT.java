@@ -13,7 +13,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.util.concurrent.CountDownLatch;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.sail.SailRepository;

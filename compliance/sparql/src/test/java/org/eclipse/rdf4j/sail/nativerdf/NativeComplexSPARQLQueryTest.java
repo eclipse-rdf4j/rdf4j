@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
+import java.nio.file.Files;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.query.parser.sparql.ComplexSPARQLQueryTest;
@@ -23,7 +24,7 @@ public class NativeComplexSPARQLQueryTest extends ComplexSPARQLQueryTest {
 
 	@Override
 	protected Repository newRepository() throws Exception {
-		dataDir = FileUtil.createTempDir("nativestore");
+		dataDir = Files.createTempDirectory("nativestore").toFile();
 		return new SailRepository(new NativeStore(dataDir, "spoc"));
 
 	}

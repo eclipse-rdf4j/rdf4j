@@ -1,9 +1,0 @@
-# Input file for SeRQL CfwQuery test
-# description: test query for reification
-<http://www.foo.com/subject1> <http://www.foo.com/predicate1> <http://www.foo.com/object1> .
-<http://www.foo.com/stat1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement> .
-<http://www.foo.com/stat1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <http://www.foo.com/subject1> .
-<http://www.foo.com/stat1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <http://www.foo.com/predicate1> .
-<http://www.foo.com/stat1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <http://www.foo.com/object1> .
-<http://www.foo.com/stat1> <http://www.foo.com/predicate2> <http://www.foo.com/object2> .
-
