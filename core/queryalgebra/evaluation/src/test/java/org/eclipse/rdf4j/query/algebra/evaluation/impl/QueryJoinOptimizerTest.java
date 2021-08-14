@@ -122,6 +122,29 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				.isInstanceOf(Extension.class);
 	}
 
+	@Test
+	public void testValues() throws RDF4JException {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"	values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}",
+				"	?b a ?x. ",
+				"}"
+		);
+
+		String expectedQuery = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"	values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}",
+				"	{",
+				"		?b a ?x. ",
+				"	}",
+				"}"
+		);
+
+		testOptimizer(expectedQuery, query);
+	}
+
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
 		return new QueryJoinOptimizer();
@@ -137,7 +160,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 	}
 
-	private void testOptimizer(String expectedQuery, String actualQuery)
+	void testOptimizer(String expectedQuery, String actualQuery)
 			throws MalformedQueryException, UnsupportedQueryLanguageException {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
 		QueryJoinOptimizer opt = getOptimizer();
