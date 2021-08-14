@@ -172,64 +172,76 @@ public class Verify extends ConsoleCommand {
 	 * @param reportFile file to write validation report to
 	 */
 	private void shacl(String dataPath, String shaclPath, String reportFile) {
-		ShaclSail sail = new ShaclSail(new MemoryStore());
-		SailRepository repo = new SailRepository(sail);
+		SailRepository repo = new SailRepository(new ShaclSail(new MemoryStore()));
 		repo.init();
 
-		sail.disableValidation();
-
-		// load shapes first from a file or URL, defaults to turtle, so one can use .shacl as file extension
-		boolean loaded = false;
 		try {
-			writeln("Loading shapes from " + shaclPath);
 
-			URL shaclURL = new URL(shaclPath);
-			RDFFormat format = Rio.getParserFormatForFileName(reportFile).orElse(RDFFormat.TURTLE);
+			// load shapes first from a file or URL, defaults to turtle, so one can use .shacl as file extension
+			boolean loaded = false;
+			try {
+				writeln("Loading shapes from " + shaclPath);
 
-			try (SailRepositoryConnection conn = repo.getConnection()) {
-				conn.begin(IsolationLevels.NONE);
-				conn.add(shaclURL, "", format, RDF4J.SHACL_SHAPE_GRAPH);
-				conn.commit();
+				URL shaclURL = new URL(shaclPath);
+				RDFFormat format = Rio.getParserFormatForFileName(reportFile).orElse(RDFFormat.TURTLE);
+
+				try (SailRepositoryConnection conn = repo.getConnection()) {
+					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					conn.add(shaclURL, "", format, RDF4J.SHACL_SHAPE_GRAPH);
+					conn.commit();
+				}
+				loaded = true;
+			} catch (MalformedURLException e) {
+				writeError("Malformed URL: " + shaclPath, e);
+			} catch (IOException e) {
+				writeError("Failed to load shacl shapes", e);
 			}
-			loaded = true;
-		} catch (MalformedURLException e) {
-			writeError("Malformed URL: " + shaclPath, e);
-		} catch (IOException e) {
-			writeError("Failed to load shacl shapes", e);
-		}
 
-		if (!loaded) {
-			writeError("No shapes found");
+			if (!loaded) {
+				writeError("No shapes found");
+				return;
+			}
+
+			try {
+				URL dataURL = new URL(dataPath);
+				RDFFormat format = Rio.getParserFormatForFileName(dataPath)
+						.orElseThrow(Rio.unsupportedFormat(dataPath));
+
+				try (SailRepositoryConnection conn = repo.getConnection()) {
+					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					conn.add(dataURL, "", format);
+					conn.commit();
+				}
+
+			} catch (MalformedURLException e) {
+				writeError("Malformed URL: " + dataPath);
+			} catch (IOException e) {
+				writeError("Failed to load data", e);
+			} catch (RepositoryException e) {
+				Throwable cause = e.getCause();
+			}
+
+			try {
+
+				try (SailRepositoryConnection conn = repo.getConnection()) {
+					// Bulk validation forces a full revalidation!
+					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+					conn.commit();
+				}
+
+				writeln("SHACL validation OK");
+			} catch (RepositoryException e) {
+				Throwable cause = e.getCause();
+				if (cause instanceof ValidationException) {
+					writeError("SHACL validation failed, writing report to " + reportFile);
+					ValidationException sv = (ValidationException) cause;
+					writeReport(sv.validationReportAsModel(), reportFile);
+				}
+			}
+		} finally {
 			repo.shutDown();
-			return;
 		}
 
-		sail.enableValidation();
-
-		try {
-			URL dataURL = new URL(dataPath);
-			RDFFormat format = Rio.getParserFormatForFileName(dataPath).orElseThrow(Rio.unsupportedFormat(dataPath));
-
-			try (SailRepositoryConnection conn = repo.getConnection()) {
-				conn.begin(IsolationLevels.NONE);
-				conn.add(dataURL, "", format);
-				conn.commit();
-			}
-
-			writeln("SHACL validation OK");
-		} catch (MalformedURLException e) {
-			writeError("Malformed URL: " + dataPath);
-		} catch (IOException e) {
-			writeError("Failed to load data", e);
-		} catch (RepositoryException e) {
-			Throwable cause = e.getCause();
-			if (cause instanceof ValidationException) {
-				writeError("SHACL validation failed, writing report to " + reportFile);
-				ValidationException sv = (ValidationException) cause;
-				writeReport(sv.validationReportAsModel(), reportFile);
-			}
-		}
-		repo.shutDown();
 	}
 
 	/**
@@ -245,7 +257,7 @@ public class Verify extends ConsoleCommand {
 			// dataPath is a URI
 		} catch (MalformedURLException e) {
 			// File path specified, convert to URL
-			path = "file:" + Util.getNormalizedPath(getWorkDir(), str).toString();
+			path = "file:" + Util.getNormalizedPath(getWorkDir(), str);
 		}
 		return path;
 	}
