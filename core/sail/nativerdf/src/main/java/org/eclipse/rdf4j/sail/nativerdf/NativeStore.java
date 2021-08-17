@@ -9,12 +9,13 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Comparator;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.io.MavenUtil;
@@ -275,10 +276,13 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		logger.debug("Data dir is " + dataDir);
 
 		try {
-			File versionFile = new File(dataDir, "nativerdf.ver");
-			String version = versionFile.exists() ? FileUtils.readFileToString(versionFile) : null;
+			Path versionPath = new File(dataDir, "nativerdf.ver").toPath();
+			String version = versionPath.toFile().exists() ? Files.readString(versionPath, StandardCharsets.UTF_8)
+					: null;
 			if (!VERSION.equals(version) && upgradeStore(dataDir, version)) {
-				FileUtils.writeStringToFile(versionFile, VERSION);
+				logger.debug("Data store upgraded to version " + VERSION);
+				Files.writeString(versionPath, VERSION, StandardCharsets.UTF_8,
+						StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
 			}
 			final NativeSailStore mainStore = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
 					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
