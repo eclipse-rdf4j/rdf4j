@@ -220,7 +220,7 @@ public class ParserConfigTest {
 
 		assertTrue(testConfig.stopAtFirstError());
 
-		testConfig.addNonFatalError(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+		testConfig.addNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 
 		assertFalse(testConfig.stopAtFirstError());
 	}
@@ -237,20 +237,6 @@ public class ParserConfigTest {
 		testConfig.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 
 		assertTrue(testConfig.isPreserveBNodeIDs());
-	}
-
-	/**
-	 * Test method for {@link org.eclipse.rdf4j.rio.ParserConfig#datatypeHandling()}.
-	 */
-	@Test
-	public final void testDatatypeHandling() {
-		ParserConfig testConfig = new ParserConfig();
-
-		try {
-			testConfig.datatypeHandling();
-			fail("Did not receive expected exception");
-		} catch (Exception e) {
-		}
 	}
 
 	/**
