@@ -81,7 +81,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 		String data = "invalid nt";
 
 		RDFParser ntriplesParser = createRDFParser();
-		ntriplesParser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES, Boolean.TRUE);
+		ntriplesParser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_INVALID_LINES, Boolean.TRUE);
 
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
@@ -99,7 +99,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 		String data = "invalid nt";
 
 		RDFParser ntriplesParser = createRDFParser();
-		ntriplesParser.getParserConfig().addNonFatalError(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+		ntriplesParser.getParserConfig().addNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
@@ -117,7 +117,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 		String data = "invalid nt";
 
 		RDFParser ntriplesParser = createRDFParser();
-		ntriplesParser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES, false);
+		ntriplesParser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_INVALID_LINES, false);
 
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));

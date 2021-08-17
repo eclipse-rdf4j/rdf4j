@@ -544,7 +544,7 @@ public abstract class AbstractNQuadsParserUnitTest {
 						// error.
 						"<http://s1> <http://p1> <http://o1> <http://g1> .\n").getBytes());
 
-		parser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES, false);
+		parser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_INVALID_LINES, false);
 
 		try {
 			parser.parse(bais, "http://test.base.uri");
@@ -566,8 +566,8 @@ public abstract class AbstractNQuadsParserUnitTest {
 		final TestRDFHandler rdfHandler = new TestRDFHandler();
 		parser.setRDFHandler(rdfHandler);
 
-		parser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES, false);
-		parser.getParserConfig().addNonFatalError(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+		parser.getParserConfig().set(NTriplesParserSettings.FAIL_ON_INVALID_LINES, false);
+		parser.getParserConfig().addNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 
 		parser.parse(bais, "http://base-uri");
 		rdfHandler.assertHandler(2);

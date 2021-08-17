@@ -250,14 +250,14 @@ public abstract class AbstractRDFParser implements RDFParser {
 	@Deprecated
 	@Override
 	public void setStopAtFirstError(boolean stopAtFirstError) {
-		getParserConfig().set(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES, stopAtFirstError);
+		getParserConfig().set(NTriplesParserSettings.FAIL_ON_INVALID_LINES, stopAtFirstError);
 		if (!stopAtFirstError) {
-			getParserConfig().addNonFatalError(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+			getParserConfig().addNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 		} else {
 			// TODO: Add a ParserConfig.removeNonFatalError function to avoid
 			// this
 			Set<RioSetting<?>> set = new HashSet<>(getParserConfig().getNonFatalErrors());
-			set.remove(NTriplesParserSettings.FAIL_ON_NTRIPLES_INVALID_LINES);
+			set.remove(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 			getParserConfig().setNonFatalErrors(set);
 		}
 	}
@@ -291,16 +291,6 @@ public abstract class AbstractRDFParser implements RDFParser {
 				this.parserConfig.set(BasicParserSettings.NORMALIZE_DATATYPE_VALUES, false);
 			}
 		}
-	}
-
-	/**
-	 * @deprecated Use {@link BasicParserSettings#VERIFY_DATATYPE_VALUES} and
-	 *             {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES} and
-	 *             {@link BasicParserSettings#NORMALIZE_DATATYPE_VALUES} instead.
-	 */
-	@Deprecated
-	public DatatypeHandling datatypeHandling() {
-		return this.parserConfig.datatypeHandling();
 	}
 
 	/**
