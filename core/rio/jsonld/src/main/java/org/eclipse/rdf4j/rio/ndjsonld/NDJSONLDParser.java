@@ -68,7 +68,8 @@ public class NDJSONLDParser extends JSONLDParser implements RDFParser {
 			String line;
 			while ((line = bufferedReader.readLine()) != null) {
 				if (!line.isEmpty()) {
-					JsonParser nextParser = factory.createParser(new ByteArrayInputStream(line.getBytes()));
+					JsonParser nextParser = factory
+							.createParser(new ByteArrayInputStream(line.getBytes(StandardCharsets.UTF_8)));
 					Object singleJSONLD = JsonUtils.fromJsonParser(nextParser);
 					if (singleJSONLD instanceof List) {
 						arrayOfJSONLD.addAll((List) singleJSONLD);
