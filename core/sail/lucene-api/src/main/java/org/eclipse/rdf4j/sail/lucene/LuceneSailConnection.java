@@ -26,9 +26,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.MultiProjection;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -61,8 +58,6 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.collect.Sets;
-
 /**
  * <h2><a name="whySailConnectionListener">Sail Connection Listener instead of implementing add/remove</a></h2> Using
  * SailConnectionListener, see <a href="#whySailConnectionListener">above</a> The LuceneIndex is adapted based on events
@@ -86,10 +81,6 @@ import com.google.common.collect.Sets;
  * @author christian.huetter
  */
 public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
-
-	@SuppressWarnings("unchecked")
-	private static final Set<Class<? extends QueryModelNode>> PROJECTION_TYPES = Sets.newHashSet(Projection.class,
-			MultiProjection.class);
 
 	private final Logger logger = LoggerFactory.getLogger(LuceneSailConnection.class);
 
