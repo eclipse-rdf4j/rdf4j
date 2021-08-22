@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.manifest;
 
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -58,7 +59,16 @@ public abstract class SPARQL12QueryComplianceTest extends SPARQLQueryComplianceT
 	}
 
 	protected static URL getManifestURL() {
-		return SPARQL12QueryComplianceTest.class.getClassLoader().getResource("testcases-sparql-1.2/manifest-all.ttl");
+		try {
+			return new URL(
+					"https://raw.githubusercontent.com/kasei/sparql-12/xsd_datetime_duration/tests/xsd_functions/manifest.ttl");
+		} catch (MalformedURLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			return null;
+		}
+		// return
+		// SPARQL12QueryComplianceTest.class.getClassLoader().getResource("testcases-sparql-1.2/manifest-all.ttl");
 	}
 
 	public SPARQL12QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
