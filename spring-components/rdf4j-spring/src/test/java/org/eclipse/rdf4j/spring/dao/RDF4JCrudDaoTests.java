@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.MultiIRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
 import org.eclipse.rdf4j.spring.domain.dao.ArtistDao;
 import org.eclipse.rdf4j.spring.domain.model.Artist;
@@ -45,11 +45,11 @@ public class RDF4JCrudDaoTests extends RDF4JSpringTestBase {
 		Artist picasso = new Artist();
 		picasso.setFirstName("Pablo");
 		picasso.setLastName("Picasso");
-		picasso.setId(new MultiIRI("http://example.org/Picasso"));
+		picasso.setId(SimpleValueFactory.getInstance().createIRI("http://example.org/Picasso"));
 		Artist vanGogh = new Artist();
 		vanGogh.setFirstName("Vincent");
 		vanGogh.setLastName("van Gogh");
-		vanGogh.setId(new MultiIRI("http://example.org/VanGogh"));
+		vanGogh.setId(SimpleValueFactory.getInstance().createIRI("http://example.org/VanGogh"));
 		return Stream.of(picasso, vanGogh);
 	}
 

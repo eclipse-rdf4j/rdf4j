@@ -10,6 +10,7 @@
 
 package org.eclipse.rdf4j.spring.domain.dao;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import static org.eclipse.rdf4j.spring.domain.model.Artist.*;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -76,9 +77,9 @@ public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {
 
 	@Override
 	protected NamedSparqlSupplier getInsertSparql(Artist artist) {
-		return NamedSparqlSupplier.of("insert", () -> Queries.INSERT(ARTIST_ID.isA(EX.Artist)
-				.andHas(Rdf.iri(FOAF.FIRST_NAME), ARTIST_FIRST_NAME)
-				.andHas(Rdf.iri(FOAF.SURNAME), ARTIST_LAST_NAME))
+		return NamedSparqlSupplier.of("insert", () -> Queries.INSERT(ARTIST_ID.isA(iri(EX.Artist))
+				.andHas(iri(FOAF.FIRST_NAME), ARTIST_FIRST_NAME)
+				.andHas(iri(FOAF.SURNAME), ARTIST_LAST_NAME))
 				.getQueryString());
 	}
 

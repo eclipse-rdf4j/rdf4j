@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.spring.support;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.MultiIRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * Interface for making different approaches of obtaining new UUIDs pluggable into the {@link RDF4JTemplate
@@ -28,6 +28,6 @@ public interface UUIDSource {
 	IRI nextUUID();
 
 	default IRI toURNUUID(String uuid) {
-		return new MultiIRI("urn:uuid:", uuid);
+		return SimpleValueFactory.getInstance().createIRI("urn:uuid:", uuid);
 	}
 }

@@ -10,6 +10,8 @@
 
 package org.eclipse.rdf4j.spring.dao.support;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
 import org.eclipse.rdf4j.spring.domain.model.Artist;
 import org.eclipse.rdf4j.spring.domain.model.Painting;
@@ -21,8 +23,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author Florian Kleedorfer

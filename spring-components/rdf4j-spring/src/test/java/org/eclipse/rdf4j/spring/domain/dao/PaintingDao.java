@@ -10,14 +10,13 @@
 
 package org.eclipse.rdf4j.spring.domain.dao;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import static org.eclipse.rdf4j.spring.domain.model.Painting.*;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.ExtendedExpressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
@@ -62,21 +61,20 @@ public class PaintingDao extends SimpleRDF4JCRUDDao<Painting, IRI> {
 	protected String getReadQuery() {
 		return Queries.SELECT(PAINTING_ID, PAINTING_LABEL, PAINTING_TECHNIQUE, PAINTING_ARTIST_ID)
 				.where(
-						PAINTING_ID.isA(EX.Painting)
-								.andHas(EX.technique, PAINTING_TECHNIQUE)
-								.andHas(Rdf.iri(RDFS.LABEL), PAINTING_LABEL),
-						PAINTING_ARTIST_ID.has(Rdf.iri(EX.creatorOf), PAINTING_ID))
-				// .andHas(ExtendedExpressions.INV(Rdf.iri(EX.creatorOf)), PAINTING_ARTIST_ID))
+						PAINTING_ID.isA(iri(EX.Painting))
+								.andHas(iri(EX.technique), PAINTING_TECHNIQUE)
+								.andHas(iri(RDFS.LABEL), PAINTING_LABEL),
+						PAINTING_ARTIST_ID.has(iri(EX.creatorOf), PAINTING_ID))
 				.getQueryString();
 	}
 
 	@Override
 	protected NamedSparqlSupplier getInsertSparql(Painting painting) {
 		return NamedSparqlSupplier.of("insert", () -> Queries.INSERT(
-				PAINTING_ID.isA(EX.Painting)
-						.andHas(EX.technique, PAINTING_TECHNIQUE)
-						.andHas(Rdf.iri(RDFS.LABEL), PAINTING_LABEL),
-				PAINTING_ARTIST_ID.has(Rdf.iri(EX.creatorOf), PAINTING_ID))
+				PAINTING_ID.isA(iri(EX.Painting))
+						.andHas(iri(EX.technique), PAINTING_TECHNIQUE)
+						.andHas(iri(RDFS.LABEL), PAINTING_LABEL),
+				PAINTING_ARTIST_ID.has(iri(EX.creatorOf), PAINTING_ID))
 				.getQueryString());
 	}
 

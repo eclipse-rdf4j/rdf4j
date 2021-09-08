@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.MultiIRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Projectable;
@@ -43,7 +43,8 @@ public class RelationMapBuilder {
 	public static final ExtendedVariable _relObject = new ExtendedVariable("rel_object");
 	private static final ExtendedVariable _relKey = new ExtendedVariable("rel_key");
 	private static final ExtendedVariable _relValue = new ExtendedVariable("rel_value");
-	private static final IRI NOTHING = new MultiIRI("urn:java:relationDaoSupport:Nothing");
+	private static final IRI NOTHING = SimpleValueFactory.getInstance()
+			.createIRI("urn:java:relationDaoSupport:Nothing");
 	private RdfPredicate predicate;
 	private GraphPattern[] constraints = new GraphPattern[0];
 	private RDF4JTemplate rdf4JTemplate;
@@ -97,7 +98,7 @@ public class RelationMapBuilder {
 	public Map<IRI, IRI> buildOneToOne() {
 		return makeTupleQueryBuilder()
 				.evaluateAndConvert()
-				.toMap(b -> getIRI(b, _relKey), b -> getRelationValueOrNothing(b));
+				.toMap(b -> getIRI(b, _relKey), this::getRelationValueOrNothing);
 	}
 
 	/**
@@ -113,7 +114,7 @@ public class RelationMapBuilder {
 								b -> getIRI(b, _relKey),
 								b -> getIRIOptional(b, _relValue)
 										.map(Set::of)
-										.orElseGet(() -> Set.of()),
+										.orElseGet(Set::of),
 								RelationMapBuilder::mergeSets));
 	}
 

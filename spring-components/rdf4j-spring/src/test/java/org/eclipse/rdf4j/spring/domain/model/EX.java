@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.spring.domain.model;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.MultiIRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
  * @since 4.0.0
@@ -19,22 +19,22 @@ import org.eclipse.rdf4j.model.impl.MultiIRI;
  */
 public class EX {
 	private static final String base = "http://example.org/";
-	public static final MultiIRI Artist = new MultiIRI(base, "Artist");
-	public static final MultiIRI Gallery = new MultiIRI(base, "Gallery");
-	public static final MultiIRI Painting = new MultiIRI(base, "Painting");
-	public static final MultiIRI Picasso = new MultiIRI(base, "Picasso");
-	public static final MultiIRI VanGogh = new MultiIRI(base, "VanGogh");
-	public static final MultiIRI street = new MultiIRI(base, "street");
-	public static final MultiIRI city = new MultiIRI(base, "city");
-	public static final MultiIRI country = new MultiIRI(base, "country");
-	public static final MultiIRI creatorOf = new MultiIRI(base, "creatorOf");
-	public static final MultiIRI technique = new MultiIRI(base, "technique");
-	public static final MultiIRI starryNight = new MultiIRI(base, "starryNight");
-	public static final MultiIRI sunflowers = new MultiIRI(base, "sunflowers");
-	public static final MultiIRI potatoEaters = new MultiIRI(base, "potatoEaters");
-	public static final MultiIRI guernica = new MultiIRI(base, "guernica");
+	public static final IRI Artist = SimpleValueFactory.getInstance().createIRI(base, "Artist");
+	public static final IRI Gallery = SimpleValueFactory.getInstance().createIRI(base, "Gallery");
+	public static final IRI Painting = SimpleValueFactory.getInstance().createIRI(base, "Painting");
+	public static final IRI Picasso = SimpleValueFactory.getInstance().createIRI(base, "Picasso");
+	public static final IRI VanGogh = SimpleValueFactory.getInstance().createIRI(base, "VanGogh");
+	public static final IRI street = SimpleValueFactory.getInstance().createIRI(base, "street");
+	public static final IRI city = SimpleValueFactory.getInstance().createIRI(base, "city");
+	public static final IRI country = SimpleValueFactory.getInstance().createIRI(base, "country");
+	public static final IRI creatorOf = SimpleValueFactory.getInstance().createIRI(base, "creatorOf");
+	public static final IRI technique = SimpleValueFactory.getInstance().createIRI(base, "technique");
+	public static final IRI starryNight = SimpleValueFactory.getInstance().createIRI(base, "starryNight");
+	public static final IRI sunflowers = SimpleValueFactory.getInstance().createIRI(base, "sunflowers");
+	public static final IRI potatoEaters = SimpleValueFactory.getInstance().createIRI(base, "potatoEaters");
+	public static final IRI guernica = SimpleValueFactory.getInstance().createIRI(base, "guernica");
 
 	public static IRI of(String localName) {
-		return new MultiIRI(base, localName);
+		return SimpleValueFactory.getInstance().createIRI(base, localName);
 	}
 }
