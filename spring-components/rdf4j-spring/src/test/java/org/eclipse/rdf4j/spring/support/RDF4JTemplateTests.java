@@ -10,13 +10,8 @@
 
 package org.eclipse.rdf4j.spring.support;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Function;
-import java.util.function.Supplier;
-
-import javax.validation.constraints.AssertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -24,16 +19,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
-import org.eclipse.rdf4j.sparqlbuilder.core.PropertyPaths;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
-import org.eclipse.rdf4j.spring.dao.support.UpdateWithModelBuilder;
-import org.eclipse.rdf4j.spring.dao.support.opbuilder.GraphQueryEvaluationBuilder;
-import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.domain.model.EX;
@@ -41,7 +29,6 @@ import org.eclipse.rdf4j.spring.util.QueryResultUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.Assert;
 
 /**
  * @since 4.0.0
@@ -63,7 +50,7 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSingleton(bs -> bs.getBinding("type").getValue());
 		Assertions.assertTrue(type.isIRI());
-		Assertions.assertTrue(type.toString().equals(EX.Artist.toString()));
+		Assertions.assertEquals(EX.Artist.toString(), type.toString());
 	}
 
 	@Test
@@ -86,7 +73,7 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSingleton(bs -> bs.getBinding("type").getValue());
 		Assertions.assertTrue(type.isIRI());
-		Assertions.assertTrue(type.toString().equals(EX.Artist.toString()));
+		Assertions.assertEquals(EX.Artist.toString(), type.toString());
 	}
 
 	@Test
@@ -100,7 +87,7 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSingleton(bs -> bs.getBinding("type").getValue());
 		Assertions.assertTrue(type.isIRI());
-		Assertions.assertTrue(type.toString().equals(EX.Artist.toString()));
+		Assertions.assertEquals(EX.Artist.toString(), type.toString());
 	}
 
 	@Test
@@ -116,7 +103,7 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSingleton(bs -> bs.getBinding("type").getValue());
 		Assertions.assertTrue(type.isIRI());
-		Assertions.assertTrue(type.toString().equals(EX.Artist.toString()));
+		Assertions.assertEquals(EX.Artist.toString(), type.toString());
 
 	}
 
@@ -133,7 +120,7 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSingleton(bs -> bs.getBinding("type").getValue());
 		Assertions.assertTrue(type.isIRI());
-		Assertions.assertTrue(type.toString().equals(EX.Artist.toString()));
+		Assertions.assertEquals(EX.Artist.toString(), type.toString());
 	}
 
 	@Test
@@ -148,12 +135,12 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 				.evaluateAndConvert()
 				.toSingleton(bs -> bs.getBinding("type").getValue());
 		Assertions.assertTrue(type.isIRI());
-		Assertions.assertTrue(type.toString().equals(EX.Artist.toString()));
+		Assertions.assertEquals(EX.Artist.toString(), type.toString());
 	}
 
 	@Test
 	public void testTupleQuery() {
-		Set artists = rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
+		Set<IRI> artists = rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
 				+ "SELECT distinct ?artist "
 				+ "WHERE { ?artist a ex:Artist }")
 				.evaluateAndConvert()
@@ -165,7 +152,7 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 
 	@Test
 	public void testTupleQueryParametrized() {
-		Set artists = rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
+		Set<IRI> artists = rdf4JTemplate.tupleQuery("PREFIX ex: <http://example.org/>"
 				+ "SELECT distinct ?artist "
 				+ "WHERE { ?artist a ?type }")
 				.withBinding("type", EX.Artist)
@@ -187,7 +174,7 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 
 	@Test
 	public void tupleQuery3() {
-		Set artists = rdf4JTemplate.tupleQuery(getClass(), "readArtists",
+		Set<IRI> artists = rdf4JTemplate.tupleQuery(getClass(), "readArtists",
 				() -> "PREFIX ex: <http://example.org/>"
 						+ "SELECT distinct ?artist "
 						+ "WHERE { ?artist a ex:Artist }")
@@ -200,7 +187,7 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 
 	@Test
 	public void testTupleQueryFromResource() {
-		Set artists = rdf4JTemplate.tupleQueryFromResource(getClass(), "classpath:sparql/get-artists.rq")
+		Set<IRI> artists = rdf4JTemplate.tupleQueryFromResource(getClass(), "classpath:sparql/get-artists.rq")
 				.evaluateAndConvert()
 				.toSet(bs -> QueryResultUtils.getIRI(bs, "artist"));
 		Assertions.assertEquals(2, artists.size());
@@ -210,7 +197,7 @@ public class RDF4JTemplateTests extends RDF4JSpringTestBase {
 
 	@Test
 	public void testTupleQuery2() {
-		Set artists = rdf4JTemplate.tupleQuery(getClass(),
+		Set<IRI> artists = rdf4JTemplate.tupleQuery(getClass(),
 				NamedSparqlSupplier.of("getArtists", () -> "PREFIX ex: <http://example.org/>"
 						+ "SELECT distinct ?artist "
 						+ "WHERE { ?artist a ex:Artist }"))

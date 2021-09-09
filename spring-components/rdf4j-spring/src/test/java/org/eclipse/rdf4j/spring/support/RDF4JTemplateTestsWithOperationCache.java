@@ -10,23 +10,6 @@
 
 package org.eclipse.rdf4j.spring.support;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.function.Supplier;
-
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
-import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
-import org.eclipse.rdf4j.spring.dao.support.UpdateWithModelBuilder;
-import org.eclipse.rdf4j.spring.dao.support.opbuilder.GraphQueryEvaluationBuilder;
-import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
-import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
-import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
-import org.eclipse.rdf4j.spring.domain.model.EX;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.TestPropertySource;
 
 /**
