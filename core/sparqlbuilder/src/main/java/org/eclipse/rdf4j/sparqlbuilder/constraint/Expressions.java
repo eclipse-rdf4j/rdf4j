@@ -16,10 +16,13 @@ import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.COALESCE
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.*;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
+import org.eclipse.rdf4j.sparqlbuilder.core.Assignable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.*;
 
 /**
  * A class with static methods to create SPARQL expressions. Obviously there's some more flushing out TODO still
@@ -576,5 +579,89 @@ public class Expressions {
 
 	public static Aggregate sum(Operand operand) {
 		return new Aggregate(SparqlAggregate.SUM).addOperand(operand);
+	}
+
+	public static Bind bind(Assignable exp, Variable var) {
+		return new Bind(exp, var);
+	}
+
+	public static Expression<?> notIn(Variable var, RdfValue... options) {
+		return new NotIn(var, options);
+	}
+
+	public static Expression<?> in(Variable var, RdfValue... options) {
+		return new In(var, options);
+	}
+
+	public static Expression<?> strdt(Operand lexicalForm, Operand datatype) {
+		return function(SparqlFunction.STRDT, lexicalForm, datatype);
+	}
+
+	public static Expression<?> isBlank(Variable var) {
+		return function(SparqlFunction.IS_BLANK, var);
+	}
+
+	public static Expression<?> datatype(Variable var) {
+		return function(SparqlFunction.DATATYPE, var);
+	}
+
+	public static Expression<?> iff(Operand testExp, Operand thenExp, Operand elseExp) {
+		return function(SparqlFunction.IF, testExp, thenExp, elseExp);
+	}
+
+	public static RdfPredicate pathZeroOrMoreAlt(IRI... properties) {
+		return new PZeroOrMore(properties);
+	}
+
+	public static RdfPredicate pathSequence(IRI... properties) {
+		return new PSequence(properties);
+	}
+
+	public static SequencePath pSeq(PropertyPath left, PropertyPath right) {
+		return new SequencePath(left, right);
+	}
+
+	public static PredicatePath p(Iri predicate) {
+		return new PredicatePath(predicate);
+	}
+
+	public static InversePredicatePath pInv(Iri predicate) {
+		return new InversePredicatePath(predicate);
+	}
+
+	public static InversePath pInv(PropertyPath path) {
+		return new InversePath(path);
+	}
+
+	public static AlternativePath pAlt(PropertyPath left, PropertyPath right) {
+		return new AlternativePath(left, right);
+	}
+
+	public static ZeroOrMorePath pZeroOrMore(PropertyPath path) {
+		return new ZeroOrMorePath(path);
+	}
+
+	public static OneOrMorePath pOneOrMore(PropertyPath path) {
+		return new OneOrMorePath(path);
+	}
+
+	public static ZeroOrOnePath pZeroOrOne(PropertyPath path) {
+		return new ZeroOrOnePath(path);
+	}
+
+	public static GroupedPath pGroup(PropertyPath path) {
+		return new GroupedPath(path);
+	}
+
+	public static NegatedPropertySet pNeg(PredicatePathOrInversePredicatePath... predicates) {
+		return new NegatedPropertySet(predicates);
+	}
+
+	public static PropertyPathBuilder path(Iri property) {
+		return new EmptyPropertyPathBuilder().pred(property);
+	}
+
+	public static EmptyPropertyPathBuilder path() {
+		return new EmptyPropertyPathBuilder();
 	}
 }

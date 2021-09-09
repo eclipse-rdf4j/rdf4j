@@ -10,23 +10,17 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
-import java.util.List;
-
-import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfValue;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 /**
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
-public class In extends Expression<In> {
-	private List<RdfValue> options;
-	private Variable var;
+public class ExtendedExpressionsTest {
 
-	In(Variable var, RdfValue... options) {
-		super(null, ", ");
-		setOperatorName(var.getQueryString() + " IN");
-		parenthesize(true);
-		addOperand(options);
-	}
 }

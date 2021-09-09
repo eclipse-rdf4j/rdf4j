@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.ExtendedExpressions;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
 import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
@@ -338,7 +338,7 @@ public class RDF4JTemplate {
 					.where(
 							from.has(property, to)
 									.filter(
-											ExtendedExpressions.IN(
+											Expressions.in(
 													to,
 													toResources.stream()
 															.map(TypeMappingUtils::toIri)

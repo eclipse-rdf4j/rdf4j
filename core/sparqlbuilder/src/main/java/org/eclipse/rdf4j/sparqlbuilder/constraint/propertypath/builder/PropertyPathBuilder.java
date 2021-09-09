@@ -10,12 +10,13 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder;
 
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.ExtendedExpressions.*;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.*;
 
 import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
@@ -33,7 +34,7 @@ public class PropertyPathBuilder {
 	}
 
 	PropertyPathBuilder(Iri predicate) {
-		this.head = P(predicate);
+		this.head = p(predicate);
 	}
 
 	public static PropertyPathBuilder of(Iri predicate) {
@@ -58,17 +59,17 @@ public class PropertyPathBuilder {
 	}
 
 	public PropertyPathBuilder then(Iri predicate) {
-		return then(P(predicate));
+		return then(p(predicate));
 	}
 
 	public PropertyPathBuilder then(PropertyPath path) {
 		Objects.requireNonNull(head);
-		head = SEQ(head, path);
+		head = pSeq(head, path);
 		return this;
 	}
 
 	public PropertyPathBuilder then(Consumer<EmptyPropertyPathBuilder> subtreeBuilder) {
-		return withSubtree(subtreeBuilder, (left, right) -> SEQ(left, right));
+		return withSubtree(subtreeBuilder, Expressions::pSeq);
 	}
 
 	private PropertyPathBuilder withSubtree(
@@ -82,40 +83,40 @@ public class PropertyPathBuilder {
 	}
 
 	public PropertyPathBuilder or(Iri predicate) {
-		return or(P(predicate));
+		return or(p(predicate));
 	}
 
 	public PropertyPathBuilder or(PropertyPath path) {
 		Objects.requireNonNull(head);
-		head = ALT(head, path);
+		head = pAlt(head, path);
 		return this;
 	}
 
 	public PropertyPathBuilder or(Consumer<EmptyPropertyPathBuilder> subtreeBuilder) {
-		return withSubtree(subtreeBuilder, (left, right) -> ALT(left, right));
+		return withSubtree(subtreeBuilder, Expressions::pAlt);
 	}
 
 	public PropertyPathBuilder zeroOrMore() {
 		Objects.requireNonNull(head);
-		head = ZOM(head);
+		head = pZeroOrMore(head);
 		return this;
 	}
 
 	public PropertyPathBuilder oneOrMore() {
 		Objects.requireNonNull(head);
-		head = OOM(head);
+		head = pOneOrMore(head);
 		return this;
 	}
 
 	public PropertyPathBuilder zeroOrOne() {
 		Objects.requireNonNull(head);
-		head = ZOO(head);
+		head = pZeroOrOne(head);
 		return this;
 	}
 
 	public PropertyPathBuilder group() {
 		Objects.requireNonNull(head);
-		head = GROUP(head);
+		head = pGroup(head);
 		return this;
 	}
 }
