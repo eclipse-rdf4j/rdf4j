@@ -34,7 +34,7 @@ public class NegatedPropertySet implements PropertyPath {
 			return Arrays
 					.stream(properties)
 					.map(QueryElement::getQueryString)
-					.collect(Collectors.joining("|", "! ( ", " )"));
+					.collect(Collectors.joining(" | ", "! ( ", " )"));
 		}
 	}
 }

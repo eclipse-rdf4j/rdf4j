@@ -1,4 +1,4 @@
-/*
+ /*
  * ******************************************************************************
  *  * Copyright (c) 2021 Eclipse RDF4J contributors.
  *  * All rights reserved. This program and the accompanying materials
