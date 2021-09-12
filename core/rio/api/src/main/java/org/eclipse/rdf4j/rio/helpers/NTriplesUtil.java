@@ -43,7 +43,7 @@ public class NTriplesUtil {
 	private static String IRI = "<(?:[^\u0000-\u0020<>\"{}|^`\\\\]|" + UCHAR + ")*>";
 
 	private static String ECHAR = "\\\\[tbnrf\"'\\\\]";
-	private static String STRING_LITERAL_QUOTE = "\"(?:[^\"\\\\\n\r]|" + ECHAR + "|" + UCHAR + ")*\"";
+	private static String STRING_LITERAL_QUOTE = "\"(?:[^\"\\\\\n\r]|" + ECHAR + "|" + UCHAR + ")*+\"";
 	private static String LANGTAG = "@[a-zA-Z]+(?:-[a-zA-Z0-9]+)*";
 	private static String LITERAL = STRING_LITERAL_QUOTE + "(?:\\^\\^" + IRI + "|" + LANGTAG + ")?";
 
