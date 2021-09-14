@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -58,6 +59,19 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 	private static class UnionArgChecker extends AbstractQueryModelVisitor<RuntimeException> {
 
 		boolean containsBindOrValues = false;
+
+		@Override
+		public void meet(Union union) {
+			if (!union.isVariableScopeChange()) {
+				super.meet(union);
+			}
+		}
+
+		@Override
+		public void meet(Projection subselect) {
+			// do not check deeper in the tree
+			return;
+		}
 
 		@Override
 		public void meet(Extension node) throws RuntimeException {
