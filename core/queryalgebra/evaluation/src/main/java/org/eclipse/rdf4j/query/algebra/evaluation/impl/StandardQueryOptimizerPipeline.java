@@ -53,6 +53,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new ConjunctiveConstraintSplitter(),
 				new DisjunctiveConstraintOptimizer(),
 				new SameTermFilterOptimizer(),
+				new UnionScopeChangeOptimizer(),
 				new QueryModelNormalizer(),
 				new QueryJoinOptimizer(evaluationStatistics),
 				new IterativeEvaluationOptimizer(),
