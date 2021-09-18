@@ -532,6 +532,8 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		}
 	}
 
+	// This is currently disabled because the implementation of removeData in RDF4JProtocolSession
+	// relies on an active transaction. See https://github.com/eclipse/rdf4j/issues/3336
 	/*
 	 * @Override public void remove(Resource subject, URI predicate, Value object, Resource... contexts) throws
 	 * RepositoryException { if (!isActive()) { // operation is not part of a transaction - just send directly
