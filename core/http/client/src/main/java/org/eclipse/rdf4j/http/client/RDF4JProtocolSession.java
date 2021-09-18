@@ -213,6 +213,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				ping.cancel(false);
 				ping = null;
 			}
+			pingScheduler.shutdownNow();
 		}
 	}
 
