@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.AFN;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SP;
@@ -137,7 +137,7 @@ public class SpinRenderer {
 
 	public SpinRenderer(Output output) {
 		this(output, SpinWellKnownVars.INSTANCE::getURI, SpinWellKnownFunctions.INSTANCE::getURI,
-				ValueFactoryImpl.getInstance());
+				SimpleValueFactory.getInstance());
 	}
 
 	public SpinRenderer(Output output, Function<String, IRI> wellKnownVarMapper,

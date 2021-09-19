@@ -44,7 +44,7 @@ import org.elasticsearch.action.update.UpdateResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.cluster.health.ClusterIndexHealth;
-import org.elasticsearch.cluster.metadata.MappingMetaData;
+import org.elasticsearch.cluster.metadata.MappingMetadata;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.geo.GeoPoint;
@@ -62,6 +62,7 @@ import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.QueryStringQueryBuilder;
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
 import org.elasticsearch.index.reindex.DeleteByQueryAction;
+import org.elasticsearch.index.reindex.DeleteByQueryRequestBuilder;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
@@ -286,15 +287,15 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	}
 
 	public Map<String, Object> getMappings() throws IOException {
-		ImmutableOpenMap<String, ImmutableOpenMap<String, MappingMetaData>> indexMappings = client.admin()
+		ImmutableOpenMap<String, ImmutableOpenMap<String, MappingMetadata>> indexMappings = client.admin()
 				.indices()
 				.prepareGetMappings(indexName)
 				.setTypes(documentType)
 				.execute()
 				.actionGet()
 				.getMappings();
-		ImmutableOpenMap<String, MappingMetaData> typeMappings = indexMappings.get(indexName);
-		MappingMetaData mappings = typeMappings.get(documentType);
+		ImmutableOpenMap<String, MappingMetadata> typeMappings = indexMappings.get(indexName);
+		MappingMetadata mappings = typeMappings.get(documentType);
 		return mappings.sourceAsMap();
 	}
 
@@ -387,7 +388,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		GetResponse response = client.prepareGet(indexName, documentType, id).execute().actionGet();
 		if (response.isExists()) {
 			return new ElasticsearchDocument(response.getId(), response.getType(), response.getIndex(),
-					response.getVersion(), response.getSource(), geoContextMapper);
+					response.getSeqNo(), response.getPrimaryTerm(),
+					response.getSource(), geoContextMapper);
 		}
 		// no such Document
 		return null;
@@ -415,8 +417,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		Map<String, Object> source = esDoc.getSource();
 		Map<String, Object> newDocument = new HashMap<>(source);
-		return new ElasticsearchDocument(esDoc.getId(), esDoc.getType(), esDoc.getIndex(), esDoc.getVersion(),
-				newDocument, geoContextMapper);
+		return new ElasticsearchDocument(esDoc.getId(), esDoc.getType(), esDoc.getIndex(), esDoc.getSeqNo(),
+				esDoc.getPrimaryTerm(), newDocument, geoContextMapper);
 	}
 
 	@Override
@@ -430,7 +432,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	protected void updateDocument(SearchDocument doc) throws IOException {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		doUpdateRequest(client.prepareUpdate(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
-				.setVersion(esDoc.getVersion())
+				.setIfSeqNo(esDoc.getSeqNo())
+				.setIfPrimaryTerm(esDoc.getPrimaryTerm())
 				.setDoc(esDoc.getSource()));
 	}
 
@@ -438,7 +441,8 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	protected void deleteDocument(SearchDocument doc) throws IOException {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
-				.setVersion(esDoc.getVersion())
+				.setIfSeqNo(esDoc.getSeqNo())
+				.setIfPrimaryTerm(esDoc.getPrimaryTerm())
 				.execute()
 				.actionGet();
 	}
@@ -739,12 +743,13 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 					.setSource(new SearchSourceBuilder().size(0).query(query))
 					.get()
 					.getHits()
-					.getTotalHits();
+					.getTotalHits().value;
 			nDocs = Math.max((int) Math.min(docCount, Integer.MAX_VALUE), 1);
 		}
 		SearchResponse response = request.setIndices(indexName)
 				.setTypes(types)
-				.setVersion(true)
+				.setVersion(false)
+				.seqNoAndPrimaryTerm(true)
 				.setQuery(query)
 				.setSize(nDocs)
 				.execute()
@@ -831,7 +836,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 			// }
 
 			// now delete all documents from the deleted context
-			DeleteByQueryAction.INSTANCE.newRequestBuilder(client)
+			new DeleteByQueryRequestBuilder(client, DeleteByQueryAction.INSTANCE)
 					.source(indexName)
 					.filter(QueryBuilders.termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString))
 					.get();
@@ -891,7 +896,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		return s.replace('^', '.');
 	}
 
-	private static void doAcknowledgedRequest(ActionRequestBuilder<?, ? extends AcknowledgedResponse, ?> request)
+	private static void doAcknowledgedRequest(ActionRequestBuilder<?, ? extends AcknowledgedResponse> request)
 			throws IOException {
 		boolean ok = request.execute().actionGet().isAcknowledged();
 		if (!ok) {
@@ -899,22 +904,20 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		}
 	}
 
-	private static long doIndexRequest(ActionRequestBuilder<?, ? extends IndexResponse, ?> request) throws IOException {
+	private static void doIndexRequest(ActionRequestBuilder<?, ? extends IndexResponse> request) throws IOException {
 		IndexResponse response = request.execute().actionGet();
 		boolean ok = response.status().equals(RestStatus.CREATED);
 		if (!ok) {
 			throw new IOException("Document not created: " + request.get().getClass().getName());
 		}
-		return response.getVersion();
 	}
 
-	private static long doUpdateRequest(ActionRequestBuilder<?, ? extends UpdateResponse, ?> request)
+	private static void doUpdateRequest(ActionRequestBuilder<?, ? extends UpdateResponse> request)
 			throws IOException {
 		UpdateResponse response = request.execute().actionGet();
 		boolean isUpsert = response.status().equals(RestStatus.CREATED);
 		if (isUpsert) {
 			throw new IOException("Unexpected upsert: " + request.get().getClass().getName());
 		}
-		return response.getVersion();
 	}
 }

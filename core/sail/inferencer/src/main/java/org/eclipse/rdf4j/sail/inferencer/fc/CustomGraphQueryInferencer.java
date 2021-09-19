@@ -40,7 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A forward-chaining inferencer that infers new statements using a SPARQL or SeRQL graph query.
+ * A forward-chaining inferencer that infers new statements using a SPARQL graph query.
  *
  * @author Dale Visser
  */

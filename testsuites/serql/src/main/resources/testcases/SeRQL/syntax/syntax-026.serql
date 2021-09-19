@@ -1,4 +1,0 @@
-SELECT
-   S, P, O, <http://example.org/foo/>
-FROM
-  {S} P {O}

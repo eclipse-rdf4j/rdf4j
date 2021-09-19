@@ -11,14 +11,18 @@ package org.eclipse.rdf4j.benchmark.rio;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.rio.util.BlackHoleRDFHandler;
 import org.eclipse.rdf4j.benchmark.rio.util.DataSetGenerator;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.Rio;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -33,8 +37,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
 /**
- * Parser Benchmark implementation that consumer a file created through {@link DataSetGenerator} with
- * {@link BlackHoleRDFHandler}.
+ * Benchmark for parsing a file created through {@link DataSetGenerator} with {@link BlackHoleRDFHandler}.
  *
  * @author Tomas Kovachev t.kovachev1996@gmail.com
  */
@@ -60,13 +63,20 @@ public abstract class ParserBenchmark {
 		parser = getParser();
 		RDFFormat format = parser.getRDFFormat();
 		rdfHandler = new BlackHoleRDFHandler();
-		DataSetGenerator generator = new DataSetGenerator();
+
 		if (toReadFrom == null) {
 			// If format supports graphs, they will be included in the dataset
-			toReadFrom = generator.generateStatementsFile(format, PERCENT_BNODE, PERCENT_LITERALS,
-					MIN_STRING_LENGTH, MAX_STRING_LENGTH, TOTAL_STATEMENTS, TEXT_ONLY, true);
+			DataSetGenerator generator = new DataSetGenerator();
+			toReadFrom = Files.createTempFile(
+					"rdf4j-parser-benchmark", "." + format.getDefaultFileExtension()).toFile();
+			toReadFrom.deleteOnExit();
+
+			try (FileOutputStream out = new FileOutputStream(toReadFrom)) {
+				RDFWriter writer = Rio.createWriter(format, out);
+				generator.generateStatements(writer, PERCENT_BNODE, PERCENT_LITERALS,
+						MIN_STRING_LENGTH, MAX_STRING_LENGTH, TOTAL_STATEMENTS, TEXT_ONLY, true);
+			}
 		}
-		toReadFrom.deleteOnExit();
 	}
 
 	@Benchmark

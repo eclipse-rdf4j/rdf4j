@@ -15,7 +15,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -80,9 +80,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 			if (this.iter == null) {
 				// join with a sequence so we iterate over every entry twice
 				QueryBindingSet bs1 = new QueryBindingSet(1);
-				bs1.addBinding(ANON_SEQUENCE_VAR, ValueFactoryImpl.getInstance().createLiteral("subject"));
+				bs1.addBinding(ANON_SEQUENCE_VAR, SimpleValueFactory.getInstance().createLiteral("subject"));
 				QueryBindingSet bs2 = new QueryBindingSet(1);
-				bs2.addBinding(ANON_SEQUENCE_VAR, ValueFactoryImpl.getInstance().createLiteral("object"));
+				bs2.addBinding(ANON_SEQUENCE_VAR, SimpleValueFactory.getInstance().createLiteral("object"));
 				List<BindingSet> seqList = Arrays.<BindingSet>asList(bs1, bs2);
 				iter = new CrossProductIteration(createIteration(), seqList);
 			}

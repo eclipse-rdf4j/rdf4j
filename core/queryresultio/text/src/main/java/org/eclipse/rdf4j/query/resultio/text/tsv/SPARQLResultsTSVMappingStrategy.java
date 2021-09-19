@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.resultio.text.SPARQLResultsXSVMappingStrategy;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 import com.opencsv.CSVReader;
+import com.opencsv.exceptions.CsvValidationException;
 
 /**
  * Implements a {@link com.opencsv.bean.MappingStrategy} to allow opencsv to work in parallel. This is where the input
@@ -39,10 +40,14 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 
 	@Override
 	public void captureHeader(CSVReader reader) throws IOException {
-		// header is mandatory in SPARQL TSV
-		bindingNames = Stream.of(reader.readNext())
-				.map(s -> StringUtils.removeStart(s, "?"))
-				.collect(Collectors.toList());
+		try {
+			// header is mandatory in SPARQL TSV
+			bindingNames = Stream.of(reader.readNext())
+					.map(s -> StringUtils.removeStart(s, "?"))
+					.collect(Collectors.toList());
+		} catch (CsvValidationException ex) {
+			throw new IOException(ex);
+		}
 	}
 
 	@Override
@@ -160,31 +165,37 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 
 			char c = s.charAt(backSlashIdx + 1);
 
-			if (c == 't') {
+			switch (c) {
+			case 't':
 				sb.append('\t');
 				startIdx = backSlashIdx + 2;
-			} else if (c == 'r') {
+				break;
+			case 'r':
 				sb.append('\r');
 				startIdx = backSlashIdx + 2;
-			} else if (c == 'n') {
+				break;
+			case 'n':
 				sb.append('\n');
 				startIdx = backSlashIdx + 2;
-			} else if (c == '"') {
+				break;
+			case '"':
 				sb.append('"');
 				startIdx = backSlashIdx + 2;
-			} else if (c == '>') {
+				break;
+			case '>':
 				sb.append('>');
 				startIdx = backSlashIdx + 2;
-			} else if (c == '\\') {
+				break;
+			case '\\':
 				sb.append('\\');
 				startIdx = backSlashIdx + 2;
-			} else if (c == 'u') {
+				break;
+			case 'u': {
 				// \\uxxxx
 				if (backSlashIdx + 5 >= sLength) {
 					throw new IllegalArgumentException("Incomplete Unicode escape sequence in: " + s);
 				}
 				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 6);
-
 				try {
 					c = (char) Integer.parseInt(xx, 16);
 					sb.append(c);
@@ -193,13 +204,14 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 				} catch (NumberFormatException e) {
 					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\u" + xx + "' in: " + s);
 				}
-			} else if (c == 'U') {
+				break;
+			}
+			case 'U': {
 				// \\Uxxxxxxxx
 				if (backSlashIdx + 9 >= sLength) {
 					throw new IllegalArgumentException("Incomplete Unicode escape sequence in: " + s);
 				}
 				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 10);
-
 				try {
 					c = (char) Integer.parseInt(xx, 16);
 					sb.append(c);
@@ -208,7 +220,9 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 				} catch (NumberFormatException e) {
 					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\U" + xx + "' in: " + s);
 				}
-			} else {
+				break;
+			}
+			default:
 				throw new IllegalArgumentException("Unescaped backslash in: " + s);
 			}
 

@@ -1,4 +1,0 @@
-CONSTRUCT
-  *
-FROM 
-  {S} rdfs:subClassOf {<http://example.org/C>}

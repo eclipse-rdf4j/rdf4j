@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * An operation (e.g. a query or an update) on a repository that can be formulated in one of the supported query
- * languages (for example SeRQL or SPARQL). It allows one to predefine bindings in the operation to be able to reuse the
- * same operation with different bindings.
+ * languages (for example SPARQL). It allows one to predefine bindings in the operation to be able to reuse the same
+ * operation with different bindings.
  *
  * @author Jeen
  */

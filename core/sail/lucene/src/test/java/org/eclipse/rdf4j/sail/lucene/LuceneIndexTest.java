@@ -23,7 +23,7 @@ import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.index.MultiFields;
+import org.apache.lucene.index.MultiTerms;
 import org.apache.lucene.index.PostingsEnum;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queryparser.classic.ParseException;
@@ -215,7 +215,7 @@ public class LuceneIndexTest {
 	 * @throws IOException
 	 */
 	private static PostingsEnum termDocs(IndexReader reader, Term term) throws IOException {
-		return MultiFields.getTermDocsEnum(reader, term.field(), term.bytes());
+		return MultiTerms.getTermPostingsEnum(reader, term.field(), term.bytes());
 	}
 
 	private static boolean next(PostingsEnum docs) throws IOException {

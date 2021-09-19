@@ -30,12 +30,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -205,8 +205,10 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private boolean eclipseRdf4jShaclExtensions = ShaclSailConfig.ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;
 	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;
 
-	private long validationResultsLimitTotal = -1;
-	private long validationResultsLimitPerConstraint = -1;
+	private long validationResultsLimitTotal = ShaclSailConfig.VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT;
+	private long validationResultsLimitPerConstraint = ShaclSailConfig.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT;
+
+	private long transactionalValidationLimit = ShaclSailConfig.TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT;
 
 	// SHACL Vocabulary from W3C - https://www.w3.org/ns/shacl.ttl
 	private final static SchemaCachingRDFSInferencer shaclVocabulary;
@@ -957,6 +959,14 @@ public class ShaclSail extends NotifyingSailWrapper {
 	@Override
 	public IsolationLevel getDefaultIsolationLevel() {
 		return super.getDefaultIsolationLevel();
+	}
+
+	public long getTransactionalValidationLimit() {
+		return transactionalValidationLimit;
+	}
+
+	public void setTransactionalValidationLimit(long transactionalValidationLimit) {
+		this.transactionalValidationLimit = transactionalValidationLimit;
 	}
 
 	boolean hasShapes() {

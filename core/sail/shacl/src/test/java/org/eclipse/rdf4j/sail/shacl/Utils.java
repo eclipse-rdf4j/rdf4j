@@ -13,8 +13,8 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.UUID;
 
-import org.eclipse.rdf4j.IsolationLevels;
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -76,11 +76,8 @@ public class Utils {
 		}
 	}
 
-	public static SailRepository getInitializedShaclRepository(String shapeData,
-			boolean undefinedTargetClassValidatesAllSubjects) throws IOException {
-		ShaclSail sail = new ShaclSail(new MemoryStore());
-		sail.setUndefinedTargetValidatesAllSubjects(undefinedTargetClassValidatesAllSubjects);
-		SailRepository repo = new SailRepository(sail);
+	public static SailRepository getInitializedShaclRepository(String shapeData) throws IOException {
+		SailRepository repo = new SailRepository(new ShaclSail(new MemoryStore()));
 		Utils.loadShapeData(repo, shapeData);
 		return repo;
 	}

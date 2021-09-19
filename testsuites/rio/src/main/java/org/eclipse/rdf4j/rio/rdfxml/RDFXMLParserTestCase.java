@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -78,11 +77,15 @@ public abstract class RDFXMLParserTestCase {
 		TestSuite suite = new TestSuite(RDFXMLParserTestCase.class.getName());
 
 		// Add all positive parser tests
-		String query = "select TESTCASE, INPUT, OUTPUT " + "from {TESTCASE} rdf:type {test:PositiveParserTest}; "
-				+ "                test:inputDocument {INPUT}; " + "                test:outputDocument {OUTPUT}; "
-				+ "                test:status {\"APPROVED\"} "
-				+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
-		TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
+		String query = ""
+				+ "PREFIX test: <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>"
+				+ " SELECT ?TESTCASE ?INPUT ?OUTPUT "
+				+ " WHERE { ?TESTCASE a test:PositiveParserTest; "
+				+ "                test:inputDocument ?INPUT; "
+				+ "                test:outputDocument ?OUTPUT; "
+				+ "                test:status \"APPROVED\" .} ";
+
+		TupleQueryResult queryResult = con.prepareTupleQuery(query).evaluate();
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			String caseURI = bindingSet.getValue("TESTCASE").toString();
@@ -94,10 +97,14 @@ public abstract class RDFXMLParserTestCase {
 		queryResult.close();
 
 		// Add all negative parser tests
-		query = "select TESTCASE, INPUT " + "from {TESTCASE} rdf:type {test:NegativeParserTest}; "
-				+ "                test:inputDocument {INPUT}; " + "                test:status {\"APPROVED\"} "
-				+ "using namespace test = <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>";
-		queryResult = con.prepareTupleQuery(QueryLanguage.SERQL, query).evaluate();
+		query = ""
+				+ "PREFIX test: <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>"
+				+ " SELECT ?TESTCASE ?INPUT ?OUTPUT "
+				+ " WHERE { ?TESTCASE a test:NegativeParserTest; "
+				+ "                test:inputDocument ?INPUT; "
+				+ "                test:outputDocument ?OUTPUT; "
+				+ "                test:status \"APPROVED\" .} ";
+		queryResult = con.prepareTupleQuery(query).evaluate();
 		while (queryResult.hasNext()) {
 			BindingSet bindingSet = queryResult.next();
 			String caseURI = bindingSet.getValue("TESTCASE").toString();

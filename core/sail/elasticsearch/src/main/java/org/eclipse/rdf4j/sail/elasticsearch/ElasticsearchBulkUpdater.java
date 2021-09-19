@@ -37,7 +37,8 @@ public class ElasticsearchBulkUpdater implements BulkUpdater {
 	public void update(SearchDocument doc) throws IOException {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		bulkRequest.add(client.prepareUpdate(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
-				.setVersion(esDoc.getVersion())
+				.setIfSeqNo(esDoc.getSeqNo())
+				.setIfPrimaryTerm(esDoc.getPrimaryTerm())
 				.setDoc(esDoc.getSource()));
 	}
 
@@ -45,7 +46,9 @@ public class ElasticsearchBulkUpdater implements BulkUpdater {
 	public void delete(SearchDocument doc) throws IOException {
 		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;
 		bulkRequest.add(
-				client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId()).setVersion(esDoc.getVersion()));
+				client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId())
+						.setIfSeqNo(esDoc.getSeqNo())
+						.setIfPrimaryTerm(esDoc.getPrimaryTerm()));
 	}
 
 	@Override

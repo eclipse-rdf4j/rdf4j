@@ -261,6 +261,6 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 
 	@Override
 	public ExtensibleStatementHelper getExtensibleStatementHelper() {
-		return ElasticsearchValueFactory.getInstance();
+		return (ExtensibleStatementHelper) ElasticsearchValueFactory.getInstance();
 	}
 }

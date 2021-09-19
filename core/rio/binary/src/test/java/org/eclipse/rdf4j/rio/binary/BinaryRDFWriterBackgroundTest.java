@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
 
 /**
  * @author Arjohn Kampman
@@ -35,7 +36,12 @@ public class BinaryRDFWriterBackgroundTest extends RDFWriterTest {
 
 	@Override
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
-		return new RioSetting[] {};
+		return new RioSetting[] {
+				BinaryRDFWriterSettings.VERSION,
+				BinaryRDFWriterSettings.BUFFER_SIZE,
+				BinaryRDFWriterSettings.CHARSET,
+				BinaryRDFWriterSettings.RECYCLE_IDS
+		};
 	}
 
 }

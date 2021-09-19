@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -22,24 +22,13 @@ import org.eclipse.rdf4j.sail.SailConnectionListener;
  */
 public abstract class NotifyingSailConnectionBase extends AbstractSailConnection implements NotifyingSailConnection {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
-	private List<SailConnectionListener> listeners;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	// Use of a CopyOnWriteArrayList allows us to remove a listener from within a call to `listener.statementAdded(st)`
+	// or `listener.statementRemoved(st)`
+	private final List<SailConnectionListener> listeners = new CopyOnWriteArrayList<>();
 
 	public NotifyingSailConnectionBase(AbstractSail sailBase) {
 		super(sailBase);
-		listeners = new ArrayList<>(0);
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	@Override
 	public void addConnectionListener(SailConnectionListener listener) {

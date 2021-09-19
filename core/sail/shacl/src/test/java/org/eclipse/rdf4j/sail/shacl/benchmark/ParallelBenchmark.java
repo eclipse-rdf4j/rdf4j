@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -96,7 +96,7 @@ public class ParallelBenchmark {
 
 	@Benchmark
 	public void shaclSnapshotWithoutSerializableValidation(Blackhole blackhole) throws Exception {
-		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl", false);
+		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl");
 		((ShaclSail) repository.getSail()).setSerializableValidation(false);
 
 		runBenchmark(IsolationLevels.SNAPSHOT, repository, true, false, blackhole);
@@ -104,7 +104,7 @@ public class ParallelBenchmark {
 
 	@Benchmark
 	public void shaclSnapshotWithoutSerializableValidationMixedReadWrite(Blackhole blackhole) throws Exception {
-		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl", false);
+		SailRepository repository = Utils.getInitializedShaclRepository("shaclDatatype.ttl");
 		((ShaclSail) repository.getSail()).setSerializableValidation(false);
 
 		runBenchmark(IsolationLevels.SNAPSHOT, repository, true, true, blackhole);
