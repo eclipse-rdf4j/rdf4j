@@ -39,11 +39,11 @@ public abstract class SailConcurrencyTest {
 	 * Constants *
 	 *-----------*/
 
-	private static final int MAX_STATEMENTS = 200000;
+	private static final int MAX_STATEMENTS = 150_000;
 
-	private static final int MAX_STATEMENT_IDX = 1000;
+	private static final int MAX_STATEMENT_IDX = 1_000;
 
-	private static final long MAX_TEST_TIME = 30 * 1000;
+	private static final long MAX_TEST_TIME = 30 * 1_000;
 
 	/*-----------*
 	 * Variables *
