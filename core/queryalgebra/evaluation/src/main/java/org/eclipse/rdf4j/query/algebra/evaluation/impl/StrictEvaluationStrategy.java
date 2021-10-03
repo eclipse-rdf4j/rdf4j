@@ -491,8 +491,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		Resource[] contexts = extractContextsFromDatasets(statementPattern, contextValue);
-		if (contexts == null)
+		if (contexts == null) {
 			return new EmptyIteration<>();
+		}
 
 		boolean allGood = false;
 		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = null;
@@ -563,8 +564,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	/**
 	 * Generate a predicate that tests for Named contexts are matched by retrieving all statements from the store and
-	 * filtering out the statements that do not have a context. Or. The same variable might have been used multiple
-	 * times in this StatementPattern, verify value equality in those cases.
+	 * filtering out the statements that do not have a context. Or the same variable might have been used multiple times
+	 * in this StatementPattern, verify value equality in those cases.
 	 */
 	protected Predicate<Statement> filterOnStatements(StatementPattern statementPattern, final Var subjVar,
 			final Var predVar,
@@ -630,8 +631,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	private Predicate<Statement> andThen(Predicate<Statement> pred, Predicate<Statement> and) {
-		if (pred == null)
+		if (pred == null) {
 			return and;
+		}
 		return pred.and(and);
 	}
 
