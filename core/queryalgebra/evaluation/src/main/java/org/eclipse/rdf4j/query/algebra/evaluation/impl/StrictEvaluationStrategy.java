@@ -496,19 +496,28 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		if (contexts == null) {
 			return new EmptyIteration<>();
 		}
+		// Check that the subject is a Resource and the predicate can be an IRI
+		// if not we can't return any value.
+		Resource subjResouce;
+		IRI predIri;
+		try {
+			subjResouce = (Resource) subjValue;
+			predIri = (IRI) predValue;
+		} catch (ClassCastException e) {
+			// Invalid value type for subject, predicate and/or context
+			return new EmptyIteration<>();
+		}
 
 		boolean allGood = false;
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = null;
-		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator = null;
-		try {
-			try {
-				stIter1 = tripleSource.getStatements((Resource) subjValue, (IRI) predValue, objValue, contexts);
 
-			} catch (ClassCastException e) {
-				// Invalid value type for subject, predicate and/or context
-				return new EmptyIteration<>();
-			}
-			Predicate<Statement> filter = filterOnStatements(statementPattern, subjVar, predVar, objVar, conVar,
+		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator = null;
+		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = null;
+
+		try {
+
+			stIter1 = tripleSource.getStatements(subjResouce, predIri, objValue, contexts);
+			Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subjVar, predVar, objVar,
+					conVar,
 					subjValue,
 					predValue, objValue, contexts);
 			if (filter != null) {
@@ -569,7 +578,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * filtering out the statements that do not have a context. Or the same variable might have been used multiple times
 	 * in this StatementPattern, verify value equality in those cases.
 	 */
-	protected Predicate<Statement> filterOnStatements(StatementPattern statementPattern, final Var subjVar,
+	protected Predicate<Statement> filterContextOrEqualVariables(StatementPattern statementPattern, final Var subjVar,
 			final Var predVar,
 			final Var objVar, final Var conVar, final Value subjValue, final Value predValue, final Value objValue,
 			Resource[] contexts) {
@@ -577,8 +586,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
 			filter = (st) -> st.getContext() != null;
 		}
-		filter = filterSameVariable(subjVar, predVar, objVar, conVar, subjValue, predValue, objValue, filter);
-		return filter;
+		return filterSameVariable(subjVar, predVar, objVar, conVar, subjValue, predValue, objValue, filter);
 	}
 
 	protected Predicate<Statement> filterSameVariable(final Var subjVar, final Var predVar, final Var objVar,
