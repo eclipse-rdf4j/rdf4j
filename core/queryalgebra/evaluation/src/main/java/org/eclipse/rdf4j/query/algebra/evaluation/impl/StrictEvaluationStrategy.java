@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -472,48 +473,114 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return new DescribeIteration(iter, this, operator.getBindingNames(), bindings);
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern statementPattern,
-			final BindingSet bindings) throws QueryEvaluationException {
-		final Var subjVar = statementPattern.getSubjectVar();
-		final Var predVar = statementPattern.getPredicateVar();
-		final Var objVar = statementPattern.getObjectVar();
-		final Var conVar = statementPattern.getContextVar();
+	public static class StatementPatternEvaluator {
+		private static final class ConvertStatmentToBindingSetIterator
+				extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
+			private final Var subjVar;
+			private final Var predVar;
+			private final Var conVar;
+			private final Var objVar;
+			private final Supplier<QueryBindingSet> bindings;
+			private final boolean convertSubjectVar;
+			private final boolean convertPredVar;
+			private final boolean convertObjVar;
+			private final boolean convertConVar;
 
-		final Value subjValue = getVarValue(subjVar, bindings);
-		final Value predValue = getVarValue(predVar, bindings);
-		final Value objValue = getVarValue(objVar, bindings);
-		final Value contextValue = getVarValue(conVar, bindings);
+			private ConvertStatmentToBindingSetIterator(
+					Iteration<? extends Statement, ? extends QueryEvaluationException> iter, Var subjVar, Var predVar,
+					Var conVar, Var objVar, BindingSet bindings) {
+				super(iter);
+				this.subjVar = subjVar;
+				this.predVar = predVar;
+				this.conVar = conVar;
+				this.objVar = objVar;
+				if (bindings.size() == 0)
+					this.bindings = QueryBindingSet::new;
+				else
+					this.bindings = () -> new QueryBindingSet(bindings);
+				convertSubjectVar = subjVar != null && !subjVar.isConstant() && !bindings.hasBinding(subjVar.getName());
+				convertPredVar = predVar != null && !predVar.isConstant() && !bindings.hasBinding(predVar.getName())
+						&& !predVar.equals(subjVar);
+				convertObjVar = objVar != null && !objVar.isConstant() && !bindings.hasBinding(objVar.getName())
+						&& !objVar.equals(subjVar) && !objVar.equals(predVar);
+				convertConVar = conVar != null && !conVar.isConstant() && !bindings.hasBinding(conVar.getName())
+						&& !conVar.equals(subjVar) && !conVar.equals(predVar) && !conVar.equals(objVar);
+			}
 
-		if (isUnbound(subjVar, bindings) || isUnbound(predVar, bindings) || isUnbound(objVar, bindings)
-				|| isUnbound(conVar, bindings)) {
-			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
-			return new EmptyIteration<>();
+			@Override
+			protected BindingSet convert(Statement st) {
+				QueryBindingSet result = bindings.get();
+
+				if (convertSubjectVar) {
+					result.addBinding(subjVar.getName(), st.getSubject());
+				}
+
+				if (convertPredVar) {
+					result.addBinding(predVar.getName(), st.getPredicate());
+				}
+
+				if (convertObjVar) {
+					result.addBinding(objVar.getName(), st.getObject());
+				}
+
+				if (convertConVar && st.getContext() != null) {
+					result.addBinding(conVar.getName(), st.getContext());
+				}
+
+				return result;
+			}
 		}
 
-		Resource[] contexts = extractContextsFromDatasets(statementPattern, contextValue);
-		if (contexts == null) {
-			return new EmptyIteration<>();
-		}
-		// Check that the subject is a Resource and the predicate can be an IRI
-		// if not we can't return any value.
-		Resource subjResouce;
-		IRI predIri;
-		try {
-			subjResouce = (Resource) subjValue;
-			predIri = (IRI) predValue;
-		} catch (ClassCastException e) {
-			// Invalid value type for subject, predicate and/or context
-			return new EmptyIteration<>();
+		private final StatementPattern statementPattern;
+		private final BindingSet bindings;
+		private final Dataset dataset;
+		private final TripleSource tripleSource;
+
+		public StatementPatternEvaluator(StatementPattern statementPattern, BindingSet bindings, Dataset dataset,
+				TripleSource tripleSource) {
+			super();
+			this.statementPattern = statementPattern;
+			this.bindings = bindings;
+			this.dataset = dataset;
+			this.tripleSource = tripleSource;
 		}
 
-		boolean allGood = false;
+		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate() {
+			final Var subjVar = statementPattern.getSubjectVar();
+			final Var predVar = statementPattern.getPredicateVar();
+			final Var objVar = statementPattern.getObjectVar();
+			final Var conVar = statementPattern.getContextVar();
 
-		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator = null;
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = null;
+			final Value subjValue = getVarValue(subjVar, bindings);
+			final Value predValue = getVarValue(predVar, bindings);
+			final Value objValue = getVarValue(objVar, bindings);
+			final Value contextValue = getVarValue(conVar, bindings);
 
-		try {
+			if (isUnbound(subjVar, bindings) || isUnbound(predVar, bindings) || isUnbound(objVar, bindings)
+					|| isUnbound(conVar, bindings)) {
+				// the variable must remain unbound for this solution see
+				// https://www.w3.org/TR/sparql11-query/#assignment
+				return new EmptyIteration<>();
+			}
 
-			stIter1 = tripleSource.getStatements(subjResouce, predIri, objValue, contexts);
+			Resource[] contexts = extractContextsFromDatasets(statementPattern, contextValue);
+			if (contexts == null) {
+				return new EmptyIteration<>();
+			}
+			// Check that the subject is a Resource and the predicate can be an IRI
+			// if not we can't return any value.
+			Resource subjResouce;
+			IRI predIri;
+			try {
+				subjResouce = (Resource) subjValue;
+				predIri = (IRI) predValue;
+			} catch (ClassCastException e) {
+				// Invalid value type for subject, predicate and/or context
+				return new EmptyIteration<>();
+			}
+
+			CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = tripleSource
+					.getStatements(subjResouce, predIri, objValue, contexts);
 			Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subjVar, predVar, objVar,
 					conVar,
 					subjValue,
@@ -529,194 +596,163 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			}
 
 			// Return an iterator that converts the statements to var bindings
-			resultingIterator = new ConvertingIteration<Statement, BindingSet, QueryEvaluationException>(stIter1) {
+			return new ConvertStatmentToBindingSetIterator(stIter1, subjVar, predVar, conVar, objVar,
+					bindings);
+		}
 
-				@Override
-				protected BindingSet convert(Statement st) {
-					QueryBindingSet result = new QueryBindingSet(bindings);
-
-					if (subjVar != null && !subjVar.isConstant() && !result.hasBinding(subjVar.getName())) {
-						result.addBinding(subjVar.getName(), st.getSubject());
-					}
-					if (predVar != null && !predVar.isConstant() && !result.hasBinding(predVar.getName())) {
-						result.addBinding(predVar.getName(), st.getPredicate());
-					}
-					if (objVar != null && !objVar.isConstant() && !result.hasBinding(objVar.getName())) {
-						result.addBinding(objVar.getName(), st.getObject());
-					}
-					if (conVar != null && !conVar.isConstant() && !result.hasBinding(conVar.getName())
-							&& st.getContext() != null) {
-						result.addBinding(conVar.getName(), st.getContext());
-					}
-
-					return result;
-				}
-			};
-			allGood = true;
-
-			return resultingIterator;
-
-		} finally {
-			if (!allGood) {
-				try {
-					if (resultingIterator != null) {
-						resultingIterator.close();
-					}
-				} finally {
-					if (stIter1 != null) {
-						stIter1.close();
-					}
-				}
+		/**
+		 * Generate a predicate that tests for Named contexts are matched by retrieving all statements from the store
+		 * and filtering out the statements that do not have a context. Or the same variable might have been used
+		 * multiple times in this StatementPattern, verify value equality in those cases.
+		 */
+		protected Predicate<Statement> filterContextOrEqualVariables(StatementPattern statementPattern,
+				final Var subjVar,
+				final Var predVar,
+				final Var objVar, final Var conVar, final Value subjValue, final Value predValue, final Value objValue,
+				Resource[] contexts) {
+			Predicate<Statement> filter = null;
+			if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
+				filter = (st) -> st.getContext() != null;
 			}
+			return filterSameVariable(subjVar, predVar, objVar, conVar, subjValue, predValue, objValue, filter);
 		}
-	}
 
-	/**
-	 * Generate a predicate that tests for Named contexts are matched by retrieving all statements from the store and
-	 * filtering out the statements that do not have a context. Or the same variable might have been used multiple times
-	 * in this StatementPattern, verify value equality in those cases.
-	 */
-	protected Predicate<Statement> filterContextOrEqualVariables(StatementPattern statementPattern, final Var subjVar,
-			final Var predVar,
-			final Var objVar, final Var conVar, final Value subjValue, final Value predValue, final Value objValue,
-			Resource[] contexts) {
-		Predicate<Statement> filter = null;
-		if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
-			filter = (st) -> st.getContext() != null;
-		}
-		return filterSameVariable(subjVar, predVar, objVar, conVar, subjValue, predValue, objValue, filter);
-	}
+		protected Predicate<Statement> filterSameVariable(final Var subjVar, final Var predVar, final Var objVar,
+				final Var conVar, final Value subjValue, final Value predValue, final Value objValue,
+				Predicate<Statement> filter) {
+			if (subjVar != null && (subjVar.equals(predVar) || subjVar.equals(objVar) || subjVar.equals(conVar))
+					&& subjValue == null) {
+				filter = andThen(filter, (st) -> {
+					Resource subj = st.getSubject();
+					IRI pred = st.getPredicate();
+					Value obj = st.getObject();
+					Resource context = st.getContext();
 
-	protected Predicate<Statement> filterSameVariable(final Var subjVar, final Var predVar, final Var objVar,
-			final Var conVar, final Value subjValue, final Value predValue, final Value objValue,
-			Predicate<Statement> filter) {
-		if (subjVar != null && (subjVar.equals(predVar) || subjVar.equals(objVar) || subjVar.equals(conVar))
-				&& subjValue == null) {
-			filter = andThen(filter, (st) -> {
-				Resource subj = st.getSubject();
-				IRI pred = st.getPredicate();
-				Value obj = st.getObject();
-				Resource context = st.getContext();
-
-				if (subjVar.equals(predVar) && !subj.equals(pred)) {
-					return false;
-				}
-				if (subjVar.equals(objVar) && !subj.equals(obj)) {
-					return false;
-				}
-				if (subjVar.equals(conVar) && !subj.equals(context)) {
-					return false;
-				}
-				return true;
-			});
-		}
-		if (predVar != null && (predVar.equals(objVar) || predVar.equals(conVar)) && predValue == null) {
-			filter = andThen(filter, (st) -> {
-				IRI pred = st.getPredicate();
-				Value obj = st.getObject();
-				Resource context = st.getContext();
-
-				if (predVar.equals(objVar) && !pred.equals(obj)) {
-					return false;
-				}
-				if (predVar.equals(conVar) && !pred.equals(context)) {
-					return false;
-				}
-				return true;
-			});
-		}
-		if (objVar != null && (objVar.equals(conVar)) && objValue == null) {
-			filter = andThen(filter, (st) -> {
-				Value obj = st.getObject();
-				Resource context = st.getContext();
-				if (objVar.equals(conVar) && !obj.equals(context)) {
-					return false;
-				}
-				return true;
-			});
-		}
-		return filter;
-	}
-
-	private Predicate<Statement> andThen(Predicate<Statement> pred, Predicate<Statement> and) {
-		if (pred == null) {
-			return and;
-		}
-		return pred.and(and);
-	}
-
-	/**
-	 * @param statementPattern
-	 * @param contextValue
-	 * @return the contexts that are valid for this statement pattern or null
-	 */
-	protected Resource[] extractContextsFromDatasets(StatementPattern statementPattern, final Value contextValue) {
-		Resource[] contexts;
-
-		boolean emptyGraph = false;
-
-		Set<IRI> graphs = null;
-		if (dataset != null) {
-			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
-				graphs = dataset.getDefaultGraphs();
-				emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
-			} else {
-				graphs = dataset.getNamedGraphs();
-				emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
+					if (subjVar.equals(predVar) && !subj.equals(pred)) {
+						return false;
+					}
+					if (subjVar.equals(objVar) && !subj.equals(obj)) {
+						return false;
+					}
+					if (subjVar.equals(conVar) && !subj.equals(context)) {
+						return false;
+					}
+					return true;
+				});
 			}
+			if (predVar != null && (predVar.equals(objVar) || predVar.equals(conVar)) && predValue == null) {
+				filter = andThen(filter, (st) -> {
+					IRI pred = st.getPredicate();
+					Value obj = st.getObject();
+					Resource context = st.getContext();
+
+					if (predVar.equals(objVar) && !pred.equals(obj)) {
+						return false;
+					}
+					if (predVar.equals(conVar) && !pred.equals(context)) {
+						return false;
+					}
+					return true;
+				});
+			}
+			if (objVar != null && (objVar.equals(conVar)) && objValue == null) {
+				filter = andThen(filter, (st) -> {
+					Value obj = st.getObject();
+					Resource context = st.getContext();
+					if (objVar.equals(conVar) && !obj.equals(context)) {
+						return false;
+					}
+					return true;
+				});
+			}
+			return filter;
 		}
 
-		if (emptyGraph) {
-			// Search zero contexts
-			return null;
-		} else if (graphs == null || graphs.isEmpty()) {
-			// store default behaviour
-			if (contextValue != null) {
-				if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
-					contexts = new Resource[] { (Resource) null };
+		private Predicate<Statement> andThen(Predicate<Statement> pred, Predicate<Statement> and) {
+			if (pred == null) {
+				return and;
+			}
+			return pred.and(and);
+		}
+
+		/**
+		 * @param statementPattern
+		 * @param contextValue
+		 * @return the contexts that are valid for this statement pattern or null
+		 */
+		protected Resource[] extractContextsFromDatasets(StatementPattern statementPattern, final Value contextValue) {
+			Resource[] contexts;
+
+			boolean emptyGraph = false;
+
+			Set<IRI> graphs = null;
+			if (dataset != null) {
+				if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
+					graphs = dataset.getDefaultGraphs();
+					emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
 				} else {
-					contexts = new Resource[] { (Resource) contextValue };
+					graphs = dataset.getNamedGraphs();
+					emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
 				}
 			}
-			/*
-			 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default graph in
-			 * SPARQL querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new
-			 * Resource[] { (Resource)null }; }
-			 */
-			else {
-				contexts = new Resource[0];
-			}
-		} else if (contextValue != null) {
-			if (graphs.contains(contextValue)) {
-				contexts = new Resource[] { (Resource) contextValue };
-			} else {
-				// Statement pattern specifies a context that is not part of
-				// the dataset
+
+			if (emptyGraph) {
+				// Search zero contexts
 				return null;
-			}
-		} else {
-			contexts = new Resource[graphs.size()];
-			int i = 0;
-			for (IRI graph : graphs) {
-				IRI context = null;
-				if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {
-					context = graph;
+			} else if (graphs == null || graphs.isEmpty()) {
+				// store default behaviour
+				if (contextValue != null) {
+					if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
+						contexts = new Resource[] { (Resource) null };
+					} else {
+						contexts = new Resource[] { (Resource) contextValue };
+					}
 				}
-				contexts[i++] = context;
+				/*
+				 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default graph
+				 * in SPARQL querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new
+				 * Resource[] { (Resource)null }; }
+				 */
+				else {
+					contexts = new Resource[0];
+				}
+			} else if (contextValue != null) {
+				if (graphs.contains(contextValue)) {
+					contexts = new Resource[] { (Resource) contextValue };
+				} else {
+					// Statement pattern specifies a context that is not part of
+					// the dataset
+					return null;
+				}
+			} else {
+				contexts = new Resource[graphs.size()];
+				int i = 0;
+				for (IRI graph : graphs) {
+					IRI context = null;
+					if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {
+						context = graph;
+					}
+					contexts[i++] = context;
+				}
+			}
+			return contexts;
+		}
+
+		protected boolean isUnbound(Var var, BindingSet bindings) {
+			if (var == null) {
+				return false;
+			} else {
+				return bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null;
 			}
 		}
-		return contexts;
 	}
 
-	protected boolean isUnbound(Var var, BindingSet bindings) {
-		if (var == null) {
-			return false;
-		} else {
-			return bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null;
-		}
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern statementPattern,
+			final BindingSet bindings) throws QueryEvaluationException {
+		return new StatementPatternEvaluator(statementPattern, bindings, dataset, tripleSource).evaluate();
 	}
 
-	protected Value getVarValue(Var var, BindingSet bindings) {
+	protected static Value getVarValue(Var var, BindingSet bindings) {
 		if (var == null) {
 			return null;
 		} else if (var.hasValue()) {
