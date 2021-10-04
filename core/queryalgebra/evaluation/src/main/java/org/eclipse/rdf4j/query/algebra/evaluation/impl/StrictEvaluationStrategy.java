@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -473,60 +474,64 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return new DescribeIteration(iter, this, operator.getBindingNames(), bindings);
 	}
 
-	public static class StatementPatternEvaluator {
+	public static class StatementPatternIteration {
 		private static final class ConvertStatmentToBindingSetIterator
 				extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
-			private final Var subjVar;
-			private final Var predVar;
-			private final Var conVar;
-			private final Var objVar;
 			private final Supplier<QueryBindingSet> bindings;
-			private final boolean convertSubjectVar;
-			private final boolean convertPredVar;
-			private final boolean convertObjVar;
-			private final boolean convertConVar;
+			private final BiConsumer<QueryBindingSet, Statement> converter;
 
 			private ConvertStatmentToBindingSetIterator(
 					Iteration<? extends Statement, ? extends QueryEvaluationException> iter, Var subjVar, Var predVar,
-					Var conVar, Var objVar, BindingSet bindings) {
+					Var objVar, Var conVar, BindingSet bindings) {
 				super(iter);
-				this.subjVar = subjVar;
-				this.predVar = predVar;
-				this.conVar = conVar;
-				this.objVar = objVar;
-				if (bindings.size() == 0)
+				if (bindings.size() == 0) {
 					this.bindings = QueryBindingSet::new;
-				else
+				} else {
 					this.bindings = () -> new QueryBindingSet(bindings);
-				convertSubjectVar = subjVar != null && !subjVar.isConstant() && !bindings.hasBinding(subjVar.getName());
-				convertPredVar = predVar != null && !predVar.isConstant() && !bindings.hasBinding(predVar.getName())
-						&& !predVar.equals(subjVar);
-				convertObjVar = objVar != null && !objVar.isConstant() && !bindings.hasBinding(objVar.getName())
-						&& !objVar.equals(subjVar) && !objVar.equals(predVar);
-				convertConVar = conVar != null && !conVar.isConstant() && !bindings.hasBinding(conVar.getName())
-						&& !conVar.equals(subjVar) && !conVar.equals(predVar) && !conVar.equals(objVar);
+				}
+
+				// We are going to chain biconsumer functions allowing us to avoid a lot of hasBindings etc. code
+				// once the query is getting executed.
+				BiConsumer<QueryBindingSet, Statement> co = null;
+
+				if (subjVar != null && !subjVar.isConstant() && !bindings.hasBinding(subjVar.getName())) {
+					co = andThen(co, (result, st) -> result.addBinding(subjVar.getName(), st.getSubject()));
+				}
+				// We should not overwrite previous set values so if pred == subj we don't need to call this again.
+				if (predVar != null && !predVar.isConstant() && !bindings.hasBinding(predVar.getName())
+						&& !predVar.equals(subjVar)) {
+					co = andThen(co, (result, st) -> result.addBinding(predVar.getName(), st.getPredicate()));
+				}
+				if (objVar != null && !objVar.isConstant() && !bindings.hasBinding(objVar.getName())
+						&& !objVar.equals(subjVar) && !objVar.equals(predVar)) {
+					co = andThen(co, (result, st) -> result.addBinding(objVar.getName(), st.getObject()));
+				}
+				if (conVar != null && !conVar.isConstant() && !bindings.hasBinding(conVar.getName())
+						&& !conVar.equals(subjVar) && !conVar.equals(predVar) && !conVar.equals(objVar)) {
+					co = andThen(co, (result, st) -> {
+						if (st.getContext() != null) {
+							result.addBinding(conVar.getName(), st.getContext());
+						}
+					});
+				}
+				if (co == null) {
+					co = (result, statement) -> {
+					};
+				}
+				converter = co;
+			}
+
+			private BiConsumer<QueryBindingSet, Statement> andThen(BiConsumer<QueryBindingSet, Statement> co,
+					BiConsumer<QueryBindingSet, Statement> and) {
+				if (co == null)
+					return and;
+				return co.andThen(and);
 			}
 
 			@Override
 			protected BindingSet convert(Statement st) {
 				QueryBindingSet result = bindings.get();
-
-				if (convertSubjectVar) {
-					result.addBinding(subjVar.getName(), st.getSubject());
-				}
-
-				if (convertPredVar) {
-					result.addBinding(predVar.getName(), st.getPredicate());
-				}
-
-				if (convertObjVar) {
-					result.addBinding(objVar.getName(), st.getObject());
-				}
-
-				if (convertConVar && st.getContext() != null) {
-					result.addBinding(conVar.getName(), st.getContext());
-				}
-
+				converter.accept(result, st);
 				return result;
 			}
 		}
@@ -536,7 +541,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		private final Dataset dataset;
 		private final TripleSource tripleSource;
 
-		public StatementPatternEvaluator(StatementPattern statementPattern, BindingSet bindings, Dataset dataset,
+		public StatementPatternIteration(StatementPattern statementPattern, BindingSet bindings, Dataset dataset,
 				TripleSource tripleSource) {
 			super();
 			this.statementPattern = statementPattern;
@@ -551,11 +556,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			final Var objVar = statementPattern.getObjectVar();
 			final Var conVar = statementPattern.getContextVar();
 
-			final Value subjValue = getVarValue(subjVar, bindings);
-			final Value predValue = getVarValue(predVar, bindings);
-			final Value objValue = getVarValue(objVar, bindings);
-			final Value contextValue = getVarValue(conVar, bindings);
-
 			if (isUnbound(subjVar, bindings) || isUnbound(predVar, bindings) || isUnbound(objVar, bindings)
 					|| isUnbound(conVar, bindings)) {
 				// the variable must remain unbound for this solution see
@@ -563,10 +563,15 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				return new EmptyIteration<>();
 			}
 
-			Resource[] contexts = extractContextsFromDatasets(statementPattern, contextValue);
+			final Value contextValue = getVarValue(conVar, bindings);
+			Resource[] contexts = extractContextsFromDatasets(statementPattern, contextValue, dataset);
 			if (contexts == null) {
 				return new EmptyIteration<>();
 			}
+
+			final Value subjValue = getVarValue(subjVar, bindings);
+			final Value predValue = getVarValue(predVar, bindings);
+			final Value objValue = getVarValue(objVar, bindings);
 			// Check that the subject is a Resource and the predicate can be an IRI
 			// if not we can't return any value.
 			Resource subjResouce;
@@ -596,7 +601,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			}
 
 			// Return an iterator that converts the statements to var bindings
-			return new ConvertStatmentToBindingSetIterator(stIter1, subjVar, predVar, conVar, objVar,
+			return new ConvertStatmentToBindingSetIterator(stIter1, subjVar, predVar, objVar, conVar,
 					bindings);
 		}
 
@@ -680,7 +685,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		 * @param contextValue
 		 * @return the contexts that are valid for this statement pattern or null
 		 */
-		protected Resource[] extractContextsFromDatasets(StatementPattern statementPattern, final Value contextValue) {
+		protected static Resource[] extractContextsFromDatasets(StatementPattern statementPattern,
+				final Value contextValue, Dataset dataset) {
 			Resource[] contexts;
 
 			boolean emptyGraph = false;
@@ -745,11 +751,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				return bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null;
 			}
 		}
+
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern statementPattern,
 			final BindingSet bindings) throws QueryEvaluationException {
-		return new StatementPatternEvaluator(statementPattern, bindings, dataset, tripleSource).evaluate();
+		return new StatementPatternIteration(statementPattern, bindings, dataset, tripleSource).evaluate();
 	}
 
 	protected static Value getVarValue(Var var, BindingSet bindings) {
