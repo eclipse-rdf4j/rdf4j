@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -40,6 +41,8 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
 
+	private final QueryEvaluationStep prepareRightArg;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -55,6 +58,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		// Initialize with empty iteration so that var is never null
 		rightIter = new EmptyIteration<>();
 
+		prepareRightArg = strategy.prepare(join.getRightArg());
 		join.setAlgorithm(this);
 	}
 
@@ -74,7 +78,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 					leftBindings = leftIter.next();
 
 					nextRightIter.close();
-					nextRightIter = rightIter = strategy.evaluate(join.getRightArg(), leftBindings);
+					nextRightIter = rightIter = prepareRightArg.evaluate(leftBindings);
 				}
 
 				while (nextRightIter.hasNext()) {

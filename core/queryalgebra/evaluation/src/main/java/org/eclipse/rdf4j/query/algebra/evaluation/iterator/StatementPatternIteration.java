@@ -1,10 +1,16 @@
+/*******************************************************************************
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -24,23 +30,28 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
-public class StatementPatternIteration {
+/**
+ * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
+ * possible.
+ */
+public class StatementPatternIteration implements QueryEvaluationStep {
 
 	private final StatementPattern statementPattern;
-	private final BindingSet bindings;
 	private final TripleSource tripleSource;
 	private final boolean emptyGraph;
-
 	private final Function<Value, Resource[]> contextSup;
+	private final BiConsumer<QueryBindingSet, Statement> converter;
 
-	public StatementPatternIteration(StatementPattern statementPattern, BindingSet bindings, Dataset dataset,
+	// We try to do as much work as possible in the constructor.
+	// With the aim of making the evaluate method as cheap as possible.
+	public StatementPatternIteration(StatementPattern statementPattern, Dataset dataset,
 			TripleSource tripleSource) {
 		super();
 		this.statementPattern = statementPattern;
-		this.bindings = bindings;
 		this.tripleSource = tripleSource;
 		Set<IRI> graphs = null;
 		if (dataset != null) {
@@ -61,12 +72,13 @@ public class StatementPatternIteration {
 			}
 		} else {
 			emptyGraph = false;
-			graphs = null;
 		}
 		contextSup = extractContextsFromDatasets(statementPattern.getContextVar(), emptyGraph, graphs);
+		converter = makeConverter();
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate() {
+	@Override
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
 			return new EmptyIteration<>();
 		}
@@ -121,8 +133,7 @@ public class StatementPatternIteration {
 		}
 
 		// Return an iterator that converts the statements to var bindings
-		return new ConvertStatmentToBindingSetIterator(stIter1, subjVar, predVar, objVar, conVar,
-				bindings);
+		return new ConvertStatmentToBindingSetIterator(stIter1, converter, bindings);
 	}
 
 	/**
@@ -218,7 +229,7 @@ public class StatementPatternIteration {
 			return (contextValue) -> contextsGivenContextVal(contextValue);
 		} else {
 			Resource[] filled = fillContextsFromDatasSetGraphs(graphs);
-			//if contextVar is null contextValue must always be null;
+			// if contextVar is null contextValue must always be null;
 			if (contextVar == null) {
 				return (contextValue) -> filled;
 			} else {
@@ -287,80 +298,84 @@ public class StatementPatternIteration {
 	 */
 	private static final class ConvertStatmentToBindingSetIterator
 			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
-		private final Function<Statement, QueryBindingSet> action;
+		private final BiConsumer<QueryBindingSet, Statement> action;
+		private final BindingSet bindings;
 
 		private ConvertStatmentToBindingSetIterator(
-				Iteration<? extends Statement, ? extends QueryEvaluationException> iter, Var subjVar, Var predVar,
-				Var objVar, Var conVar, BindingSet bindings) {
+				Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
+				BiConsumer<QueryBindingSet, Statement> action, BindingSet bindings) {
 			super(iter);
-			Supplier<QueryBindingSet> bindingMaker = makeBindingSetSupplier(bindings);
-			BiConsumer<QueryBindingSet, Statement> co = makeConverter(subjVar, predVar, objVar, conVar, bindings);
-			if (co == null) {
-				action = (st) -> bindingMaker.get();
-			} else {
-				action = (st) -> {
-					QueryBindingSet result = bindingMaker.get();
-					co.accept(result, st);
-					return result;
-				};
-			}
-		}
-
-		private Supplier<QueryBindingSet> makeBindingSetSupplier(BindingSet bindings) {
-			Supplier<QueryBindingSet> bindingMaker;
-			if (bindings.size() == 0) {
-				bindingMaker = QueryBindingSet::new;
-			} else {
-				bindingMaker = () -> new QueryBindingSet(bindings);
-			}
-			return bindingMaker;
-		}
-
-		/**
-		 * We are going to chain biconsumer functions allowing us to avoid a lot of hasBindings etc. code
-		 * 
-		 * @return a converter from statement into QueryBindingSet or a null
-		 */
-		private BiConsumer<QueryBindingSet, Statement> makeConverter(Var subjVar, Var predVar, Var objVar, Var conVar,
-				BindingSet bindings) {
-			BiConsumer<QueryBindingSet, Statement> co = null;
-
-			if (subjVar != null && !subjVar.isConstant() && !bindings.hasBinding(subjVar.getName())) {
-				String subVarName = subjVar.getName();
-				co = andThen(co, (result, st) -> addValueToBinding(result, subVarName, st.getSubject()));
-			}
-			// We should not overwrite previous set values so if pred == subj we don't need to call this again.
-			// etc.
-			if (predVar != null && !predVar.isConstant()
-					&& !predVar.equals(subjVar)) {
-				String predVarName = predVar.getName();
-				co = andThen(co, (result, st) -> addValueToBinding(result, predVarName, st.getPredicate()));
-			}
-			if (objVar != null && !objVar.isConstant() && !objVar.equals(subjVar) && !objVar.equals(predVar)) {
-				String objVarName = objVar.getName();
-				co = andThen(co, (result, st) -> addValueToBinding(result, objVarName, st.getObject()));
-			}
-			if (conVar != null && !conVar.isConstant() && !conVar.equals(subjVar) && !conVar.equals(predVar)
-					&& !conVar.equals(objVar)) {
-				String conVarName = conVar.getName();
-				co = andThen(co, (result, st) -> {
-					if (st.getContext() != null) {
-						addValueToBinding(result, conVarName, st.getContext());
-					}
-				});
-			}
-			return co;
-		}
-
-		private void addValueToBinding(QueryBindingSet result, String predVarName, Value value) {
-			if (!result.hasBinding(predVarName)) {
-				result.addBinding(predVarName, value);
-			}
+			this.action = action;
+			this.bindings = bindings;
 		}
 
 		@Override
 		protected BindingSet convert(Statement st) {
-			return action.apply(st);
+			QueryBindingSet bindings = makeBindingSet(this.bindings);
+			action.accept(bindings, st);
+			return bindings;
+		}
+
+		private QueryBindingSet makeBindingSet(BindingSet bindings) {
+
+			if (bindings.size() == 0) {
+				return new QueryBindingSet();
+			} else {
+				return new QueryBindingSet(bindings);
+			}
+		}
+
+	}
+
+	/**
+	 * We are going to chain biconsumer functions allowing us to avoid a lot of equals etc. code
+	 * 
+	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
+	 * evaluate(bs).
+	 * 
+	 * @return a converter from statement into QueryBindingSet
+	 */
+	private BiConsumer<QueryBindingSet, Statement> makeConverter() {
+		final Var subjVar = statementPattern.getSubjectVar();
+		final Var predVar = statementPattern.getPredicateVar();
+		final Var objVar = statementPattern.getObjectVar();
+		final Var conVar = statementPattern.getContextVar();
+		BiConsumer<QueryBindingSet, Statement> co = null;
+
+		if (subjVar != null && !subjVar.isConstant()) {
+			String subVarName = subjVar.getName();
+			co = andThen(co, (result, st) -> addValueToBinding(result, subVarName, st.getSubject()));
+		}
+		// We should not overwrite previous set values so if pred == subj we don't need to call this again.
+		// etc.
+		if (predVar != null && !predVar.isConstant()
+				&& !predVar.equals(subjVar)) {
+			String predVarName = predVar.getName();
+			co = andThen(co, (result, st) -> addValueToBinding(result, predVarName, st.getPredicate()));
+		}
+		if (objVar != null && !objVar.isConstant() && !objVar.equals(subjVar) && !objVar.equals(predVar)) {
+			String objVarName = objVar.getName();
+			co = andThen(co, (result, st) -> addValueToBinding(result, objVarName, st.getObject()));
+		}
+		if (conVar != null && !conVar.isConstant() && !conVar.equals(subjVar) && !conVar.equals(predVar)
+				&& !conVar.equals(objVar)) {
+			String conVarName = conVar.getName();
+			co = andThen(co, (result, st) -> {
+				if (st.getContext() != null) {
+					addValueToBinding(result, conVarName, st.getContext());
+				}
+			});
+		}
+		if (co == null) {
+			return (result, st) -> {
+			};
+		}
+		return co;
+	}
+
+	private void addValueToBinding(QueryBindingSet result, String predVarName, Value value) {
+		if (!result.hasBinding(predVarName)) {
+			result.addBinding(predVarName, value);
 		}
 	}
 

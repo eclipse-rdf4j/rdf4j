@@ -86,6 +86,17 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 			throws QueryEvaluationException;
 
 	/**
+	 * Prepare a QueryEvaluationStep that tries to do as much work once per query avoiding repeated calls to the same
+	 * code as much as possible
+	 * 
+	 * @param expr that is to be evaluated later
+	 * @return a QueryEvaluationStep that may avoid doing repeating the same work over and over.
+	 */
+	default QueryEvaluationStep prepare(TupleExpr expr) {
+		return QueryEvaluationStep.minimal(this, expr);
+	}
+
+	/**
 	 * Gets the value of this expression.
 	 *
 	 * @param expr
