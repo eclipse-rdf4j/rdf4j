@@ -116,6 +116,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
@@ -320,6 +321,37 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return ret;
 	}
 
+	@Override
+	public QueryEvaluationStep prepare(TupleExpr expr) {
+
+		if (expr instanceof StatementPattern) {
+			QueryEvaluationStep qes = new StatementPatternIteration((StatementPattern) expr, dataset, tripleSource);
+			if (trackTime) {
+				qes = trackTime(expr, qes);
+			}
+			if (trackResultSize) {
+				qes = trackResultSize(expr, qes);
+			}
+			return qes;
+		} else {
+			return EvaluationStrategy.super.prepare(expr);
+		}
+	}
+
+	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
+		return QueryEvaluationStep.wrap(qes, expr, (iter) -> {
+			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
+			return new ResultSizeCountingIterator(iter, expr);
+		});
+	}
+
+	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
+		return QueryEvaluationStep.wrap(qes, expr, (iter) -> {
+			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
+			return new TimedIterator(iter, expr);
+		});
+	}
+
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
 			final BindingSet bindings) throws QueryEvaluationException {
 		final Scope scope = alp.getScope();
@@ -474,7 +506,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern statementPattern,
 			final BindingSet bindings) throws QueryEvaluationException {
-		return new StatementPatternIteration(statementPattern, bindings, dataset, tripleSource).evaluate();
+		return new StatementPatternIteration(statementPattern, dataset, tripleSource).evaluate(bindings);
 	}
 
 	public static Value getVarValue(Var var, BindingSet bindings) {

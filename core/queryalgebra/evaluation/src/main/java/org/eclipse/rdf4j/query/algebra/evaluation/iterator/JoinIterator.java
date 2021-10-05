@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /**
  * Interleaved join iterator.
@@ -34,27 +34,22 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 * Variables *
 	 *-----------*/
 
-	private final EvaluationStrategy strategy;
-
-	private final Join join;
-
 	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
 
 	private volatile CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+
+	private final QueryEvaluationStep preparedRight;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings) throws QueryEvaluationException {
-		this.strategy = strategy;
-		this.join = join;
-
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		// Initialize with empty iteration so that var is never null
 		rightIter = new EmptyIteration<>();
-
+		preparedRight = strategy.prepare(join.getRightArg());
 		join.setAlgorithm(this);
 	}
 
@@ -64,6 +59,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
+
 		try {
 			while (rightIter.hasNext() || leftIter.hasNext()) {
 				if (rightIter.hasNext()) {
@@ -74,8 +70,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 				rightIter.close();
 
 				if (leftIter.hasNext()) {
-					TupleExpr rightArg = join.getRightArg();
-					rightIter = strategy.evaluate(rightArg, leftIter.next());
+					rightIter = preparedRight.evaluate(leftIter.next());
 				}
 			}
 		} catch (NoSuchElementException ignore) {
