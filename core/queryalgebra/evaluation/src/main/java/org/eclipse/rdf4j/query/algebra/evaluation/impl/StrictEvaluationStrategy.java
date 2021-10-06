@@ -322,8 +322,13 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Override
 	public QueryEvaluationStep prepare(TupleExpr expr) {
 
+		QueryEvaluationStep qes = null;
 		if (expr instanceof StatementPattern) {
-			QueryEvaluationStep qes = new StatementPatternIteration((StatementPattern) expr, dataset, tripleSource);
+			qes = new StatementPatternIteration((StatementPattern) expr, dataset, tripleSource);
+		} else if (expr instanceof Join) {
+			qes = new JoinQueryEvaluationStep(this, (Join) expr);
+		}
+		if (qes != null) {
 			if (trackTime) {
 				qes = trackTime(expr, qes);
 			}
@@ -703,21 +708,47 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
 			throws QueryEvaluationException {
-		// efficient computation of a SERVICE join using vectored evaluation
-		// TODO maybe we can create a ServiceJoin node already in the parser?
-		if (join.getRightArg() instanceof Service) {
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter = evaluate(join.getLeftArg(), bindings);
-			return new ServiceJoinIterator(leftIter, (Service) join.getRightArg(), bindings, this);
-		}
-
-		if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
-			return new HashJoinIteration(this, join, bindings);
-		} else {
-			return new JoinIterator(this, join, bindings);
-		}
+		return new JoinQueryEvaluationStep(this, join).evaluate(bindings);
 	}
 
-	private boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
+	private static class JoinQueryEvaluationStep implements QueryEvaluationStep {
+
+		private final EvaluationStrategy strategy;
+		private final QueryEvaluationStep leftPrepared;
+		private final Join join;
+		private final boolean useHash;
+
+		public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join) {
+			this.strategy = strategy;
+			this.join = join;
+			// efficient computation of a SERVICE join using vectored evaluation
+			// TODO maybe we can create a ServiceJoin node already in the parser?
+			if (join.getRightArg() instanceof Service) {
+				leftPrepared = strategy.prepare(join.getLeftArg());
+
+			} else {
+				leftPrepared = null;
+			}
+
+			useHash = isOutOfScopeForLeftArgBindings(join.getRightArg());
+
+		}
+
+		@Override
+		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			if (leftPrepared != null)
+				return new ServiceJoinIterator(leftPrepared.evaluate(bindings), (Service) join.getRightArg(), bindings,
+						strategy);
+			else if (useHash) {
+				return new HashJoinIteration(strategy, join, bindings);
+			} else {
+				return new JoinIterator(strategy, join, bindings);
+			}
+		}
+
+	}
+
+	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
 		return (TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr));
 	}
 
