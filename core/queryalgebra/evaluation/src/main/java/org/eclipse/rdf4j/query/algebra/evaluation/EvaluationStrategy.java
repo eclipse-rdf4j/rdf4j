@@ -140,4 +140,24 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	default void setTrackTime(boolean trackTime) {
 		// no-op for backwards compatibility
 	}
+
+	default QueryValueEvaluationStep prepare(ValueExpr arg) {
+		return new QueryValueEvaluationStepImplementation(this, arg);
+	}
+	
+	final class QueryValueEvaluationStepImplementation implements QueryValueEvaluationStep {
+		private final ValueExpr ve;
+		private final EvaluationStrategy strategy;
+
+		public QueryValueEvaluationStepImplementation(EvaluationStrategy strategy, ValueExpr ve) {
+			super();
+			this.strategy = strategy;
+			this.ve = ve;
+		}
+
+		@Override
+		public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+			return strategy.evaluate(ve, bindings);
+		}
+	}
 }
