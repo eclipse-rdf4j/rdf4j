@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
@@ -71,6 +72,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private final BindingSet parentBindings;
 
 	private final Group group;
+
 	private final File tempFile;
 	private final DB db;
 	/**
@@ -107,6 +109,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			this.tempFile = null;
 			this.db = null;
 		}
+		super.setIterator(createIterator());
 	}
 
 	/*---------*
@@ -350,6 +353,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private final ValueExpr arg;
 
+		private final QueryValueEvaluationStep qes;
+		
 		public Aggregate(AbstractAggregateOperator operator) {
 			this.arg = operator.getArg();
 
@@ -358,6 +363,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			} else {
 				distinctValues = null;
 			}
+			qes = strategy.prepare(getArg());
 		}
 
 		public abstract Value getValue() throws ValueExprEvaluationException;
@@ -384,7 +390,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		protected Value evaluate(BindingSet s) throws QueryEvaluationException {
 			try {
-				return strategy.evaluate(getArg(), s);
+				return qes.evaluate(s);
 			} catch (ValueExprEvaluationException e) {
 				return null; // treat missing or invalid expressions as null
 			}
