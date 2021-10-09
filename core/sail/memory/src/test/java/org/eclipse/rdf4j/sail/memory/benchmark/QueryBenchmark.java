@@ -122,12 +122,26 @@ public class QueryBenchmark {
 	}
 
 	@Benchmark
-	public List<BindingSet> groupByQuery() {
+	public long groupByQuery() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return Iterations.asList(connection
+			return connection
 					.prepareTupleQuery(query1)
-					.evaluate());
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+	@Benchmark
+	public long complexQuery() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(query4)
+					.evaluate()
+					.stream()
+					.count();
 		}
 	}
 
