@@ -239,11 +239,6 @@
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
-			<artifactId>rdf4j-sail-spin</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-spin</artifactId>
 			<version>${project.version}</version>
 			<exclusions>
