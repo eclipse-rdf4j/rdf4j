@@ -18,7 +18,6 @@
 		<module>nativerdf</module>
 		<module>federation</module>
 		<module>model</module>
-		<module>sail-spin</module>
 		<module>shacl</module>
 		<module>lucene-api</module>
 		<module>lucene</module>
