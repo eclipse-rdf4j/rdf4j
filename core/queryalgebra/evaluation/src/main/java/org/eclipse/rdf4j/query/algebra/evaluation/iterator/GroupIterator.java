@@ -19,6 +19,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -279,26 +280,36 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private final BindingSet prototype;
 
-		private Map<String, Aggregate> aggregates;
+		private final Map<String, Aggregate> aggregates;
+		private final Consumer<BindingSet> bs;
 
 		public Entry(BindingSet prototype) throws QueryEvaluationException {
 			this.prototype = prototype;
-
-		}
-
-		private Map<String, Aggregate> getAggregates() throws QueryEvaluationException {
-			Map<String, Aggregate> result = aggregates;
-			if (result == null) {
-				result = aggregates = new LinkedHashMap<>();
-				for (GroupElem ge : group.getGroupElements()) {
-					Aggregate create = create(ge.getOperator());
-					if (create != null) {
-						aggregates.put(ge.getName(), create);
+			this.aggregates = new LinkedHashMap<>();
+			Consumer<BindingSet> bsPrototype = null;
+			for (GroupElem ge : group.getGroupElements()) {
+				Aggregate create = create(ge.getOperator());
+				if (create != null) {
+					aggregates.put(ge.getName(), create);
+					Consumer<BindingSet> bsAgg = create::processAggregate;
+					if (bsPrototype == null) {
+						bsPrototype = bsAgg;
+					} else {
+						bsPrototype = bsPrototype.andThen(bsAgg);
 					}
 				}
 
 			}
-			return result;
+			if (bsPrototype == null) {
+				bs = (bs) -> {
+				};
+			} else {
+				bs = bsPrototype;
+			}
+		}
+
+		public Map<String, Aggregate> getAggregates() {
+			return aggregates;
 		}
 
 		public BindingSet getPrototype() {
@@ -306,15 +317,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		public void addSolution(BindingSet bindingSet) throws QueryEvaluationException {
-			for (Aggregate aggregate : getAggregates().values()) {
-				aggregate.processAggregate(bindingSet);
-			}
+			bs.accept(bindingSet);
 		}
 
 		public void bindSolution(QueryBindingSet sol) throws QueryEvaluationException {
-			for (String name : getAggregates().keySet()) {
+			for (String name : aggregates.keySet()) {
 				try {
-					Value value = getAggregates().get(name).getValue();
+					Value value = aggregates.get(name).getValue();
 					if (value != null) {
 						// Potentially overwrites bindings from super
 						sol.setBinding(name, value);
