@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 
@@ -34,12 +35,15 @@ import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
  */
 public class HashJoin extends JoinExecutorBase<BindingSet> {
 
+	private final QueryEvaluationStep rightPrepared;
+
 	public HashJoin(FederationEvalStrategy strategy,
 			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
 			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
 		super(strategy, leftIter, rightArg, bindings, queryInfo);
 		setJoinVars(joinVars);
+		rightPrepared = strategy.prepare(rightArg);
 	}
 
 	@Override
@@ -54,7 +58,7 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 		// evaluate the right join argument
 		// Note: wrapped in lazy mutable iteration for repetitive reading
 		try (LazyMutableClosableIteration rightArgIter = new LazyMutableClosableIteration(
-				strategy.evaluate(rightArg, bindings))) {
+				rightPrepared.evaluate(bindings))) {
 
 			while (!isClosed() && leftIter.hasNext()) {
 
