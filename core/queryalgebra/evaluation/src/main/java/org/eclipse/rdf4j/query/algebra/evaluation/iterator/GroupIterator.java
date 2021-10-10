@@ -341,7 +341,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private final ValueExpr arg;
 
 		private final QueryValueEvaluationStep qes;
-		
+
 		public Aggregate(AbstractAggregateOperator operator) {
 			this.arg = operator.getArg();
 
