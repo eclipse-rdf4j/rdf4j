@@ -60,6 +60,7 @@ public class QueryBenchmark {
 	private static final String query2;
 	private static final String query3;
 	private static final String query4;
+	private static final String query9_orderby;
 	private static final String query7_pathexpression1;
 	private static final String query8_pathexpression2;
 
@@ -73,6 +74,7 @@ public class QueryBenchmark {
 					StandardCharsets.UTF_8);
 			query8_pathexpression2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query8-pathexpression2.qr"),
 					StandardCharsets.UTF_8);
+			query9_orderby = IOUtils.toString(getResourceAsStream("benchmarkFiles/query9.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -227,6 +229,17 @@ public class QueryBenchmark {
 	private boolean hasStatement() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
+		}
+	}
+
+	@Benchmark
+	public long orderbyQuery9() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(query9_orderby)
+					.evaluate()
+					.stream()
+					.count();
 		}
 	}
 
