@@ -730,10 +730,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 			} else {
 				leftPrepared = null;
+				useHash = isOutOfScopeForLeftArgBindings(join.getRightArg());
 			}
-
-			useHash = isOutOfScopeForLeftArgBindings(join.getRightArg());
-
 		}
 
 		@Override
