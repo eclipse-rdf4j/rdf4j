@@ -144,6 +144,11 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	}
 
 	@Experimental
+	public void setAlgorithm(String classSimpleName) {
+		this.algorithmName = classSimpleName;
+	}
+
+	@Experimental
 	public String getAlgorithmName() {
 		return algorithmName;
 	}

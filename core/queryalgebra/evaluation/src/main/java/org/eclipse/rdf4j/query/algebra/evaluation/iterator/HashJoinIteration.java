@@ -15,6 +15,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
@@ -79,6 +81,16 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			boolean leftJoin) throws QueryEvaluationException {
 		this(strategy, strategy.evaluate(left, bindings), left.getBindingNames(), strategy.evaluate(right, bindings),
 				right.getBindingNames(), leftJoin);
+	}
+
+	public HashJoinIteration(EvaluationStrategy strategy, QueryEvaluationStep left, QueryEvaluationStep right,
+			BindingSet bindings,
+			boolean leftJoin, String[] joinAttributes)
+			throws QueryEvaluationException {
+		this.leftIter = left.evaluate(bindings);
+		this.rightIter = right.evaluate(bindings);
+		this.joinAttributes = joinAttributes;
+		this.leftJoin = leftJoin;
 	}
 
 	public HashJoinIteration(EvaluationStrategy strategy,
