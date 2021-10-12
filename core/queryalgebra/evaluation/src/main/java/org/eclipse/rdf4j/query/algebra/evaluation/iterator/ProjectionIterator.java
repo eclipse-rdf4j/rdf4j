@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.function.BiConsumer;
+import java.util.function.Supplier;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -25,11 +28,9 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 * Constants *
 	 *-----------*/
 
-	private final Projection projection;
+	private final BiConsumer<QueryBindingSet, BindingSet> projector;
 
-	private final BindingSet parentBindings;
-
-	private final boolean isOuterProjection;
+	private final Supplier<QueryBindingSet> maker;
 
 	/*--------------*
 	 * Constructors *
@@ -38,13 +39,39 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet, QueryEvaluationException> iter,
 			BindingSet parentBindings) throws QueryEvaluationException {
 		super(iter);
-		this.projection = projection;
-		this.parentBindings = parentBindings;
-		this.isOuterProjection = determineOuterProjection();
+		ProjectionElemList projectionElemList = projection.getProjectionElemList();
+		boolean isOuterProjection = determineOuterProjection(projection);
+		boolean includeAllParentBindings = !isOuterProjection;
+
+		BiConsumer<QueryBindingSet, BindingSet> consumer = null;
+		for (ProjectionElem pe : projectionElemList.getElements()) {
+			BiConsumer<QueryBindingSet, BindingSet> next = (resultBindings, sourceBindings) -> {
+				Value targetValue = sourceBindings.getValue(pe.getSourceName());
+				if (!includeAllParentBindings && targetValue == null) {
+					targetValue = parentBindings.getValue(pe.getSourceName());
+				}
+				if (targetValue != null) {
+					resultBindings.setBinding(pe.getTargetName(), targetValue);
+				}
+			};
+			consumer = andThen(consumer, next);
+		}
+		if (includeAllParentBindings) {
+			this.maker = () -> new QueryBindingSet(parentBindings);
+		} else
+			this.maker = () -> new QueryBindingSet();
+		this.projector = consumer;
 	}
 
-	private final boolean determineOuterProjection() {
-		QueryModelNode ancestor = projection;
+	private BiConsumer<QueryBindingSet, BindingSet> andThen(BiConsumer<QueryBindingSet, BindingSet> consumer,
+			BiConsumer<QueryBindingSet, BindingSet> next) {
+		if (consumer == null)
+			return next;
+		else
+			return consumer.andThen(next);
+	}
+
+	private final boolean determineOuterProjection(QueryModelNode ancestor) {
 		while (ancestor.getParentNode() != null) {
 			ancestor = ancestor.getParentNode();
 			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {
@@ -60,7 +87,9 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	@Override
 	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
-		return project(projection.getProjectionElemList(), sourceBindings, parentBindings, !isOuterProjection);
+		QueryBindingSet qbs = maker.get();
+		projector.accept(qbs, sourceBindings);
+		return qbs;
 	}
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
@@ -70,10 +99,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
 			BindingSet parentBindings, boolean includeAllParentBindings) {
-		final QueryBindingSet resultBindings = new QueryBindingSet();
-		if (includeAllParentBindings) {
-			resultBindings.addAll(parentBindings);
-		}
+		final QueryBindingSet resultBindings = makeNewQueryBindings(parentBindings, includeAllParentBindings);
 
 		for (ProjectionElem pe : projElemList.getElements()) {
 			Value targetValue = sourceBindings.getValue(pe.getSourceName());
@@ -85,6 +111,14 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			}
 		}
 
+		return resultBindings;
+	}
+
+	private static QueryBindingSet makeNewQueryBindings(BindingSet parentBindings, boolean includeAllParentBindings) {
+		final QueryBindingSet resultBindings = new QueryBindingSet();
+		if (includeAllParentBindings) {
+			resultBindings.addAll(parentBindings);
+		}
 		return resultBindings;
 	}
 }
