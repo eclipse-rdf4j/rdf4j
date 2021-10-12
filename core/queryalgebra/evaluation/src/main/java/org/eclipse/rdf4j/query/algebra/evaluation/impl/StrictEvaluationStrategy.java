@@ -327,6 +327,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			qes = new StatementPatternIteration((StatementPattern) expr, dataset, tripleSource);
 		} else if (expr instanceof Join) {
 			qes = new JoinQueryEvaluationStep(this, (Join) expr);
+		} else if (expr instanceof Union) {
+			qes = prepare((Union) expr);
 		}
 		if (qes != null) {
 			if (trackTime) {
@@ -777,30 +779,42 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
-	@SuppressWarnings("unchecked")
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Union union,
 			final BindingSet bindings) throws QueryEvaluationException {
-		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
+		return prepare(union).evaluate(bindings);
+	}
 
-		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
+	public QueryEvaluationStep prepare(final Union union) {
 
+		QueryEvaluationStep leftQes = prepare(union.getLeftArg());
+		QueryEvaluationStep rightQes = prepare(union.getRightArg());
+
+		return new QueryEvaluationStep() {
+
+			@SuppressWarnings("unchecked")
 			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(union.getLeftArg(), bindings);
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
+				leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
+
+					@Override
+					protected Iteration<BindingSet, QueryEvaluationException> createIteration()
+							throws QueryEvaluationException {
+						return leftQes.evaluate(bindings);
+					}
+				};
+
+				rightArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
+
+					@Override
+					protected Iteration<BindingSet, QueryEvaluationException> createIteration()
+							throws QueryEvaluationException {
+						return rightQes.evaluate(bindings);
+					}
+				};
+				return new UnionIteration<>(leftArg, rightArg);
 			}
 		};
-
-		rightArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(union.getRightArg(), bindings);
-			}
-		};
-
-		return new UnionIteration<>(leftArg, rightArg);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Intersection intersection,
