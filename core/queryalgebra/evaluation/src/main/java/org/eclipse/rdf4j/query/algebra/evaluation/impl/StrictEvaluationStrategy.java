@@ -329,6 +329,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			qes = new JoinQueryEvaluationStep(this, (Join) expr);
 		} else if (expr instanceof Union) {
 			qes = prepare((Union) expr);
+		} else if (expr instanceof Projection) {
+			qes = prepare((Projection) expr);
 		}
 		if (qes != null) {
 			if (trackTime) {
@@ -611,11 +613,21 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Projection projection, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
+		return prepare(projection).evaluate(bindings);
+	}
 
-		result = this.evaluate(projection.getArg(), bindings);
-		result = new ProjectionIterator(projection, result, bindings);
-		return result;
+	public QueryEvaluationStep prepare(Projection projection)
+			throws QueryEvaluationException {
+
+		QueryEvaluationStep qes = this.prepare(projection.getArg());
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				return new ProjectionIterator(projection, qes.evaluate(bindings), bindings);
+			}
+		};
+
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(MultiProjection multiProjection,

@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -134,4 +135,24 @@ public class StrictEvaluationStrategyTest {
 		assertThat(values).containsExactlyInAnyOrder("foo.bar", "FOO.BAR");
 	}
 
+	@Test
+	public void testComplex() {
+		String query = "PREFIX dcat: <http://www.w3.org/ns/dcat#>\n" +
+				"PREFIX foaf:  <http://xmlns.com/foaf/0.1/>\n" +
+				"PREFIX dct: <http://purl.org/dc/terms/>\n" +
+
+				"SELECT ?type1 ?type2 ?language ?mbox where {\n" +
+				"        ?b dcat:dataset ?a.\n" +
+
+				"        ?b a ?type1." +
+
+				"        ?a a ?type2." +
+				"        ?a dct:identifier ?identifier." +
+				"        ?a dct:language ?language." +
+				"        ?a dct:publisher [foaf:mbox ?mbox] .}";
+		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryEvaluationStep prepared = strategy.prepare(pq.getTupleExpr());
+		assertNotNull(prepared);
+	}
 }
