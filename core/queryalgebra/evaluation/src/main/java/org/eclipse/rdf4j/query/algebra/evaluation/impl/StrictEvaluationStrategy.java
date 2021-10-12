@@ -495,6 +495,21 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return visitor.boundVars;
 	}
 
+	private final class ProjectionQueryEvaluationStep implements QueryEvaluationStep {
+		private final Projection projection;
+		private final QueryEvaluationStep qes;
+
+		private ProjectionQueryEvaluationStep(Projection projection, QueryEvaluationStep qes) {
+			this.projection = projection;
+			this.qes = qes;
+		}
+
+		@Override
+		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+			return new ProjectionIterator(projection, qes.evaluate(bindings), bindings);
+		}
+	}
+
 	private static class BoundVarVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final Set<Var> boundVars = new HashSet<>();
@@ -621,14 +636,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	public QueryEvaluationStep prepare(Projection projection)
 			throws QueryEvaluationException {
 
-		QueryEvaluationStep qes = this.prepare(projection.getArg());
-		return new QueryEvaluationStep() {
-
-			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-				return new ProjectionIterator(projection, qes.evaluate(bindings), bindings);
-			}
-		};
+		QueryEvaluationStep qes = prepare(projection.getArg());
+		return new ProjectionQueryEvaluationStep(projection, qes);
 
 	}
 
