@@ -713,35 +713,36 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	private static class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
-		private final EvaluationStrategy strategy;
-		private final QueryEvaluationStep leftPrepared;
-		private final Join join;
-		private final boolean useHash;
+		private final java.util.function.Function<BindingSet, CloseableIteration<BindingSet, QueryEvaluationException>> eval;
 
 		public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join) {
-			this.strategy = strategy;
-			this.join = join;
 			// efficient computation of a SERVICE join using vectored evaluation
 			// TODO maybe we can create a ServiceJoin node already in the parser?
+			QueryEvaluationStep leftPrepared = strategy.prepare(join.getLeftArg());
+			QueryEvaluationStep rightPrepared = strategy.prepare(join.getRightArg());
 			if (join.getRightArg() instanceof Service) {
-				leftPrepared = strategy.prepare(join.getLeftArg());
-
+				eval = (bindings) -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
+						(Service) join.getRightArg(), bindings,
+						strategy);
+				join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
+			} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
+				Set<String> leftBindingNames = join.getLeftArg().getBindingNames();
+				Set<String> rightBindingNames = join.getRightArg().getBindingNames();
+				Set<String> joinAttributeNames = new HashSet<>(leftBindingNames);
+				joinAttributeNames.retainAll(rightBindingNames);
+				String[] joinAttributes = joinAttributeNames.toArray(new String[0]);
+				eval = (bindings) -> new HashJoinIteration(strategy, leftPrepared, rightPrepared, bindings, false,
+						joinAttributes);
+				join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 			} else {
-				leftPrepared = null;
-				useHash = isOutOfScopeForLeftArgBindings(join.getRightArg());
+				eval = (bindings) -> new JoinIterator(strategy, leftPrepared, rightPrepared, join, bindings);
+				join.setAlgorithm(JoinIterator.class.getSimpleName());
 			}
 		}
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-			if (leftPrepared != null)
-				return new ServiceJoinIterator(leftPrepared.evaluate(bindings), (Service) join.getRightArg(), bindings,
-						strategy);
-			else if (useHash) {
-				return new HashJoinIteration(strategy, join, bindings);
-			} else {
-				return new JoinIterator(strategy, join, bindings);
-			}
+			return eval.apply(bindings);
 		}
 
 	}
