@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * A Step that may need to be executed in a EvaluationStrategy. The evaluate method should do the minimal work required
  * to evaluate given the bindings.
  */
+@FunctionalInterface
 public interface QueryEvaluationStep {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs);
 

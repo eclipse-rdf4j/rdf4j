@@ -72,7 +72,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 			// Current Iteration exhausted, continue with the next one
 			Iterations.closeCloseable(nextCurrentIter);
-			
+
 			if (argIter.hasNext()) {
 				currentIter = argIter.next();
 			} else {
