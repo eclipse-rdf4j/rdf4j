@@ -326,7 +326,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		if (expr instanceof StatementPattern) {
 			qes = new StatementPatternIteration((StatementPattern) expr, dataset, tripleSource);
 		} else if (expr instanceof Join) {
-			qes = new JoinQueryEvaluationStep(this, (Join) expr);
+			qes = prepare((Join) expr);
 		} else if (expr instanceof Union) {
 			qes = prepare((Union) expr);
 		} else if (expr instanceof Projection) {
@@ -343,6 +343,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else {
 			return EvaluationStrategy.super.prepare(expr);
 		}
+	}
+
+	protected QueryEvaluationStep prepare(Join expr) {
+		return new JoinQueryEvaluationStep(this, expr);
 	}
 
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {

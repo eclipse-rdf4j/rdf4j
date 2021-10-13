@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
@@ -70,6 +71,11 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 			executor.execute((Runnable) result);
 		}
 		return result;
+	}
+
+	@Override
+	public QueryEvaluationStep prepare(Join join) {
+		return QueryEvaluationStep.minimal(this, join);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(NaryJoin join, BindingSet bindings)
