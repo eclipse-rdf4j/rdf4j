@@ -63,6 +63,20 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 	}
 
 	@Override
+	public QueryEvaluationStep prepare(TupleExpr expr)
+			throws QueryEvaluationException {
+		QueryEvaluationStep result;
+		if (expr instanceof NaryJoin) {
+			result = prepare((NaryJoin) expr);
+		} else if (expr instanceof OwnedTupleExpr) {
+			result = prepare((OwnedTupleExpr) expr);
+		} else {
+			result = super.prepare(expr);
+		}
+		return result;
+	}
+
+	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
 			throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(join.getLeftArg(), bindings);
@@ -76,6 +90,14 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 	@Override
 	public QueryEvaluationStep prepare(Join join) {
 		return QueryEvaluationStep.minimal(this, join);
+	}
+
+	public QueryEvaluationStep prepare(NaryJoin join) {
+		return QueryEvaluationStep.minimal(this, join);
+	}
+
+	public QueryEvaluationStep prepare(OwnedTupleExpr owe) {
+		return QueryEvaluationStep.minimal(this, owe);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(NaryJoin join, BindingSet bindings)
