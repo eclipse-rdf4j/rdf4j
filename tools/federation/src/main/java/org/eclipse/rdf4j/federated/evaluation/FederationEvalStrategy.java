@@ -79,11 +79,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
@@ -356,6 +358,63 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		return super.evaluate(expr, bindings);
+	}
+
+	@Override
+	public QueryEvaluationStep prepare(
+			TupleExpr expr)
+			throws QueryEvaluationException {
+
+		if (expr instanceof StatementTupleExpr) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof NJoin) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof NUnion) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof ExclusiveGroup) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof ExclusiveTupleExpr) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof FedXLeftJoin) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof SingleSourceQuery) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof FedXService) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		if (expr instanceof EmptyResult) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
+
+		return super.prepare(expr);
+	}
+
+	@Override
+	public QueryEvaluationStep prepare(Join join) {
+		return QueryEvaluationStep.minimal(this, join);
+	}
+
+	public QueryEvaluationStep prepare(FedXService join) {
+		return QueryEvaluationStep.minimal(this, join);
+	}
+
+	public QueryEvaluationStep prepare(SingleSourceQuery owe) {
+		return QueryEvaluationStep.minimal(this, owe);
 	}
 
 	/**
