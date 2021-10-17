@@ -8,22 +8,23 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
-interface SliceQueryEvaluationStep {
+interface SliceQueryEvaluationStep extends QueryEvaluationStep {
 
 	public static QueryEvaluationStep supply(Slice slice, QueryEvaluationStep argument) {
+		// if there is no offset nor limit then the operator does nothing
+		// pass through the argument in one go.
 		if (!slice.hasOffset() && !slice.hasLimit()) {
 			return argument;
-		} else if (slice.hasOffset() && !slice.hasLimit()) {
+		} else if (slice.hasOffset() && slice.hasLimit()) {
 			return new OffSetAndLimitQueryEvaluationStep(slice.getOffset(), slice.getLimit(), argument);
 		} else if (slice.hasOffset() && !slice.hasLimit()) {
 			return new OnlyOffsetQueryEvaluationStep(slice.getOffset(), argument);
 		} else {
 			return new OnlyLimitQueryEvaluationStep(slice.getLimit(), argument);
 		}
-
 	}
 
-	public static class OnlyOffsetQueryEvaluationStep implements QueryEvaluationStep {
+	static class OnlyOffsetQueryEvaluationStep implements SliceQueryEvaluationStep {
 
 		private final long offset;
 		private final QueryEvaluationStep argument;
@@ -37,10 +38,9 @@ interface SliceQueryEvaluationStep {
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
 			return new OffsetIteration<>(argument.evaluate(bs), offset);
 		}
-
 	}
 
-	public static class OffSetAndLimitQueryEvaluationStep implements QueryEvaluationStep {
+	static class OffSetAndLimitQueryEvaluationStep implements SliceQueryEvaluationStep {
 
 		private final long offset;
 		private final long limit;
@@ -54,12 +54,14 @@ interface SliceQueryEvaluationStep {
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-			return new LimitIteration<>(new OffsetIteration<>(argument.evaluate(bs), offset), limit);
+			OffsetIteration<BindingSet, QueryEvaluationException> offsetIter = new OffsetIteration<>(
+					argument.evaluate(bs), offset);
+			LimitIteration<BindingSet, QueryEvaluationException> limitIter = new LimitIteration<>(offsetIter, limit);
+			return limitIter;
 		}
-
 	}
 
-	public static class OnlyLimitQueryEvaluationStep implements QueryEvaluationStep {
+	static class OnlyLimitQueryEvaluationStep implements SliceQueryEvaluationStep {
 
 		private final long limit;
 		private final QueryEvaluationStep argument;
@@ -73,6 +75,5 @@ interface SliceQueryEvaluationStep {
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
 			return new LimitIteration<>(argument.evaluate(bs), limit);
 		}
-
 	}
 }
