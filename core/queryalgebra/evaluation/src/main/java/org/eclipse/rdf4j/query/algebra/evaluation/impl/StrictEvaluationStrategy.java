@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -134,6 +135,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StandardQueryOptimizerPip
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
@@ -343,8 +345,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			qes = prepare((Intersection) expr);
 		} else if (expr instanceof Order) {
 			qes = prepare((Order) expr);
+		} else if (expr instanceof Extension) {
+			qes = prepare((Extension) expr);
 		}
-
 		if (qes != null) {
 			if (trackTime) {
 				qes = trackTime(expr, qes);
@@ -672,10 +675,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(MultiProjection multiProjection,
 			BindingSet bindings) throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
-		result = this.evaluate(multiProjection.getArg(), bindings);
-		result = new MultiProjectionIterator(multiProjection, result, bindings);
-		return result;
+		return prepare(multiProjection).evaluate(bindings);
+	}
+
+	public QueryEvaluationStep prepare(MultiProjection multiProjection) throws QueryEvaluationException {
+
+		QueryEvaluationStep arg = prepare(multiProjection.getArg());
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				return new MultiProjectionIterator(multiProjection, arg.evaluate(bindings), bindings);
+			}
+
+		};
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Filter filter, BindingSet bindings)
@@ -688,33 +701,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Slice slice, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(slice.getArg(), bindings);
-
-		if (slice.hasOffset()) {
-			result = new OffsetIteration<>(result, slice.getOffset());
-		}
-
-		if (slice.hasLimit()) {
-			result = new LimitIteration<>(result, slice.getLimit());
-		}
-
-		return result;
+		return prepare(slice).evaluate(bindings);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Extension extension, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
-		try {
-			result = this.evaluate(extension.getArg(), bindings);
-		} catch (ValueExprEvaluationException e) {
-			// a type error in an extension argument should be silently ignored
-			// and
-			// result in zero bindings.
-			result = new EmptyIteration<>();
-		}
+		return prepare(extension).evaluate(bindings);
+	}
 
-		result = new ExtensionIterator(extension, result, this);
-		return result;
+	public QueryEvaluationStep prepare(Extension extension)
+			throws QueryEvaluationException {
+		QueryEvaluationStep arg = prepare(extension.getArg());
+		Consumer<QueryBindingSet> consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(extension, this);
+		return new ExtensionQueryEvaluationStep(arg, consumer);
+
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct, BindingSet bindings)
@@ -839,27 +839,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
 			final BindingSet bindings) throws QueryEvaluationException {
-		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
+		return prepare(difference).evaluate(bindings);
+	}
 
-		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(difference.getLeftArg(), bindings);
-			}
-		};
-
-		rightArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(difference.getRightArg(), bindings);
-			}
-		};
-
-		return new SPARQLMinusIteration<>(leftArg, rightArg);
+	public QueryEvaluationStep prepare(final Difference difference) throws QueryEvaluationException {
+		return new MinusQueryEvaluationStep(prepare(difference.getLeftArg()), prepare(difference.getRightArg()));
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(SingletonSet singletonSet,
