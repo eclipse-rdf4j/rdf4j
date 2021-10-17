@@ -61,8 +61,9 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		join.setAlgorithm(this);
 		joinCondition = strategy.prepare(join.getCondition());
 	}
-	
-	public LeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right, QueryValueEvaluationStep joinCondition, BindingSet bindings, Set<String> scopeBindingNamse)
+
+	public LeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right, QueryValueEvaluationStep joinCondition,
+			BindingSet bindings, Set<String> scopeBindingNamse)
 			throws QueryEvaluationException {
 		this.scopeBindingNames = scopeBindingNamse;
 

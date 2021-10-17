@@ -8,24 +8,22 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SPARQLMinusIteration;
 
-public class UnionQueryEvaluationStep implements QueryEvaluationStep {
+public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep leftQes;
 	private final QueryEvaluationStep rightQes;
 
-	public UnionQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes) {
+	public MinusQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes) {
 		this.leftQes = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(leftQes, bs);
 		this.rightQes = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(rightQes, bs);
-		;
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		return new UnionIteration<>(leftQes.evaluate(bindings), rightQes.evaluate(bindings));
+		return new SPARQLMinusIteration<>(leftQes.evaluate(bindings), rightQes.evaluate(bindings));
 	}
 }
