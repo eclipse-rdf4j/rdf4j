@@ -270,7 +270,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	@Override
 	protected Iteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
 		BindingSet threshold = null;
-		ArrayList<BindingSet> list = new ArrayList<>();
+		List<BindingSet> list = new LinkedList<>();
 		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;
 		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
 		try {
@@ -286,7 +286,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 						threshold = stream.sorted(comparator).skip(serialized.size() - 1).findFirst().get();
 					}
 				} else if (list.size() >= limit2 || !distinct && threshold == null && list.size() >= limit) {
-					ArrayList<BindingSet> sorted = new ArrayList<>(limit2);
+					List<BindingSet> sorted = new ArrayList<>(limit2);
 					sort(list).forEach(bs -> sorted.add(bs));
 					decrement(list.size() - sorted.size());
 					list = sorted;
@@ -321,11 +321,10 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		// let subclasses know that the expected result size is smaller
 	}
 
-	private Stream<BindingSet> sort(ArrayList<BindingSet> collection) {
-
-		Stream<BindingSet> stream = collection.stream()
-				.parallel()
-				.sorted(comparator);
+	private Stream<BindingSet> sort(Collection<BindingSet> collection) {
+		BindingSet[] array = collection.toArray(new BindingSet[collection.size()]);
+		Arrays.parallelSort(array, comparator);
+		Stream<BindingSet> stream = Stream.of(array);
 		if (distinct) {
 			stream = stream.distinct();
 		}
