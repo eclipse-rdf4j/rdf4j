@@ -333,7 +333,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			qes = prepare((Union) expr);
 		} else if (expr instanceof Projection) {
 			qes = prepare((Projection) expr);
+		} else if (expr instanceof Slice) {
+			qes = prepare((Slice) expr);
 		}
+
 		if (qes != null) {
 			if (trackTime) {
 				qes = trackTime(expr, qes);
@@ -349,6 +352,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	protected QueryEvaluationStep prepare(Join expr) {
 		return new JoinQueryEvaluationStep(this, expr);
+	}
+
+	protected QueryEvaluationStep prepare(Slice slice) {
+		QueryEvaluationStep arg = prepare(slice.getArg());
+		return SliceQueryEvaluationStep.supply(slice, arg);
+
 	}
 
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
