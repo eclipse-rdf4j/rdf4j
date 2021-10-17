@@ -45,16 +45,23 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 		BiConsumer<QueryBindingSet, BindingSet> consumer = null;
 		for (ProjectionElem pe : projectionElemList.getElements()) {
+			String sourceName = pe.getSourceName();
+			String targetName = pe.getTargetName();
 			BiConsumer<QueryBindingSet, BindingSet> next = (resultBindings, sourceBindings) -> {
-				Value targetValue = sourceBindings.getValue(pe.getSourceName());
+				Value targetValue = sourceBindings.getValue(sourceName);
 				if (!includeAllParentBindings && targetValue == null) {
-					targetValue = parentBindings.getValue(pe.getSourceName());
+					targetValue = parentBindings.getValue(sourceName);
 				}
 				if (targetValue != null) {
-					resultBindings.setBinding(pe.getTargetName(), targetValue);
+					resultBindings.setBinding(targetName, targetValue);
 				}
 			};
 			consumer = andThen(consumer, next);
+		}
+		if (projectionElemList.getElements().isEmpty()) {
+			consumer = (resultBindings, sourceBindings) -> {
+				// If there are no projection elements we do nothing.
+			};
 		}
 
 		if (includeAllParentBindings) {
@@ -62,10 +69,6 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		} else
 			this.maker = () -> new QueryBindingSet();
 		this.projector = consumer;
-		if (this.projector == null) {
-			throw new QueryEvaluationException("Projection consumer does not exist");
-		}
-
 	}
 
 	private BiConsumer<QueryBindingSet, BindingSet> andThen(BiConsumer<QueryBindingSet, BindingSet> consumer,
