@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 
 /**
  * @author Arjohn Kampman
@@ -43,6 +45,14 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	/*---------*
 	 * Methods *
 	 *---------*/
+
+	public BadlyDesignedLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
+			QueryValueEvaluationStep joinCondition, BindingSet inputBindings, Set<String> problemVars)
+			throws QueryEvaluationException {
+		super(left, right, joinCondition, getFilteredBindings(inputBindings, problemVars), problemVars);
+		this.inputBindings = inputBindings;
+		this.problemVars = problemVars;
+	}
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {

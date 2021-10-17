@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.DelayedIteration;
+import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -20,6 +22,23 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 @FunctionalInterface
 public interface QueryEvaluationStep {
+	public class DelayedEvaluationIteration
+			extends DelayedIteration<BindingSet, QueryEvaluationException> {
+		private final QueryEvaluationStep arg;
+		private final BindingSet bs;
+
+		public DelayedEvaluationIteration(QueryEvaluationStep arg, BindingSet bs) {
+			this.arg = arg;
+			this.bs = bs;
+		}
+
+		@Override
+		protected Iteration<? extends BindingSet, ? extends QueryEvaluationException> createIteration()
+				throws QueryEvaluationException {
+			return arg.evaluate(bs);
+		}
+	}
+
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs);
 
 	public static QueryEvaluationStep minimal(EvaluationStrategy strategy, TupleExpr expr) {
