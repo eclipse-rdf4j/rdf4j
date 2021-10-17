@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
  * possible.
  */
-public class StatementPatternIteration implements QueryEvaluationStep {
+public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
 
 	private final StatementPattern statementPattern;
 	private final TripleSource tripleSource;
@@ -48,7 +48,7 @@ public class StatementPatternIteration implements QueryEvaluationStep {
 
 	// We try to do as much work as possible in the constructor.
 	// With the aim of making the evaluate method as cheap as possible.
-	public StatementPatternIteration(StatementPattern statementPattern, Dataset dataset,
+	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, Dataset dataset,
 			TripleSource tripleSource) {
 		super();
 		this.statementPattern = statementPattern;
