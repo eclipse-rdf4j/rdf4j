@@ -56,11 +56,16 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			};
 			consumer = andThen(consumer, next);
 		}
+
 		if (includeAllParentBindings) {
 			this.maker = () -> new QueryBindingSet(parentBindings);
 		} else
 			this.maker = () -> new QueryBindingSet();
 		this.projector = consumer;
+		if (this.projector == null) {
+			throw new QueryEvaluationException("Projection consumer does not exist");
+		}
+
 	}
 
 	private BiConsumer<QueryBindingSet, BindingSet> andThen(BiConsumer<QueryBindingSet, BindingSet> consumer,

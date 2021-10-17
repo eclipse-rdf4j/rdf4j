@@ -12,6 +12,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.junit.jupiter.api.Test;
 
@@ -78,7 +79,9 @@ public class FilterTests extends SPARQLBaseTest {
 				+ "FILTER (?person=ns1:Person_1)"
 				+ "}";
 
-		try (TupleQueryResult tqr = federationContext().getQueryManager().prepareTupleQuery(query).evaluate()) {
+		QueryManager queryManager = federationContext().getQueryManager();
+		TupleQuery prepareTupleQuery = queryManager.prepareTupleQuery(query);
+		try (TupleQueryResult tqr = prepareTupleQuery.evaluate()) {
 
 			List<BindingSet> res = Iterations.asList(tqr);
 			assertContainsAll(res, "person",
