@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * An Iteration that contains exactly one element.
@@ -20,7 +19,7 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	 * Variables *
 	 *-----------*/
 
-	private final AtomicReference<E> value;
+	private E value;
 
 	/*--------------*
 	 * Constructors *
@@ -30,7 +29,7 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	 * Creates a new EmptyIteration.
 	 */
 	public SingletonIteration(E value) {
-		this.value = new AtomicReference<>(value);
+		this.value = value;
 	}
 
 	/*---------*
@@ -39,12 +38,13 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 
 	@Override
 	public boolean hasNext() {
-		return value.get() != null;
+		return value != null;
 	}
 
 	@Override
 	public E next() throws X {
-		E result = value.getAndSet(null);
+		E result = value;
+		value = null;
 		if (result == null) {
 			close();
 			throw new NoSuchElementException();
@@ -55,14 +55,5 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
-	}
-
-	@Override
-	protected void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			value.set(null);
-		}
 	}
 }
