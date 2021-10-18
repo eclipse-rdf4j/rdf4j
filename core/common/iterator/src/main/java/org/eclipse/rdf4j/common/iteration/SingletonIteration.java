@@ -56,4 +56,10 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	public void remove() {
 		throw new UnsupportedOperationException();
 	}
+
+	@Override
+	protected void handleClose() throws X {
+		value = null;
+		super.handleClose();
+	}
 }
