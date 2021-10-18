@@ -14,10 +14,13 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
@@ -26,6 +29,37 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep left;
 	private final LeftJoin leftJoin;
 	private final VarNameCollector optionalVarCollector;
+
+	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin) {
+		QueryEvaluationStep left = strategy.prepare(leftJoin.getLeftArg());
+		QueryEvaluationStep right = strategy.prepare(leftJoin.getRightArg());
+		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
+			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
+			Set<String> rightBindingNames = leftJoin.getRightArg().getBindingNames();
+			Set<String> joinAttributeNames = new HashSet<>(leftBindingNames);
+			joinAttributeNames.retainAll(rightBindingNames);
+			String[] joinAttributes = joinAttributeNames.toArray(new String[0]);
+			return new QueryEvaluationStep() {
+
+				@Override
+				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+					return new HashJoinIteration(strategy, left, right, bs, true, joinAttributes);
+				}
+			};
+		}
+
+		// Check whether optional join is "well designed" as defined in section
+		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
+		VarNameCollector optionalVarCollector = new VarNameCollector();
+		leftJoin.getRightArg().visit(optionalVarCollector);
+		if (leftJoin.hasCondition()) {
+			leftJoin.getCondition().visit(optionalVarCollector);
+		}
+
+		QueryValueEvaluationStep condition = strategy.prepare(leftJoin.getCondition());
+
+		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector);
+	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
 			QueryEvaluationStep left, LeftJoin leftJoin, VarNameCollector optionalVarCollector) {
