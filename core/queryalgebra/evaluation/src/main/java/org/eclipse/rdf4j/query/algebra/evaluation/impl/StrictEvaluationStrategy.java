@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -682,10 +683,19 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Filter filter, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
-		result = this.evaluate(filter.getArg(), bindings);
-		result = new FilterIterator(filter, result, this);
-		return result;
+		return prepare(filter).evaluate(bindings);
+	}
+
+	public QueryEvaluationStep prepare(Filter filter)
+			throws QueryEvaluationException {
+		QueryEvaluationStep arg = prepare(filter.getArg());
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+				return new FilterIterator(filter, arg.evaluate(bs), StrictEvaluationStrategy.this);
+			}
+		};
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Slice slice, BindingSet bindings)
@@ -733,14 +743,31 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		boolean reduced = isReducedOrDistinct(node);
 		long limit = getLimit(node);
 		QueryEvaluationStep preparedArg = prepare(node.getArg());
-		return new QueryEvaluationStep() {
+		return new OrderQueryEvaluationStep(cmp, limit, reduced, preparedArg, iterationCacheSyncThreshold);
+	}
 
-			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return new OrderIterator(preparedArg.evaluate(bs), cmp, limit, reduced, iterationCacheSyncThreshold);
-			}
-		};
+	private static class OrderQueryEvaluationStep implements QueryEvaluationStep {
 
+		private final long iterationCacheSyncThreshold;
+		private final Comparator<BindingSet> cmp;
+		private final long limit;
+		private final boolean reduced;
+		private final QueryEvaluationStep preparedArg;
+
+		public OrderQueryEvaluationStep(Comparator<BindingSet> cmp, long limit, boolean reduced,
+				QueryEvaluationStep preparedArg, long iterationCacheSyncThreshold) {
+			super();
+			this.cmp = cmp;
+			this.limit = limit;
+			this.reduced = reduced;
+			this.preparedArg = preparedArg;
+			this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
+		}
+
+		@Override
+		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+			return new OrderIterator(preparedArg.evaluate(bs), cmp, limit, reduced, iterationCacheSyncThreshold);
+		}
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BinaryTupleOperator expr,

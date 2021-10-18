@@ -165,7 +165,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private Collection<Entry> buildEntries() throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> iter;
-		iter = strategy.evaluate(group.getArg(), parentBindings);
+		iter = strategy.prepare(group.getArg()).evaluate(parentBindings);
 
 		try {
 			Map<Key, Entry> entries = new LinkedHashMap<>();
