@@ -28,7 +28,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryValueEvaluationStep condition;
 	private final QueryEvaluationStep left;
 	private final LeftJoin leftJoin;
-	private final VarNameCollector optionalVarCollector;
+	private final Set<String> optionalVars;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin) {
 		QueryEvaluationStep left = strategy.prepare(leftJoin.getLeftArg());
@@ -52,12 +52,13 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
 		VarNameCollector optionalVarCollector = new VarNameCollector();
 		leftJoin.getRightArg().visit(optionalVarCollector);
+		QueryValueEvaluationStep condition;
 		if (leftJoin.hasCondition()) {
 			leftJoin.getCondition().visit(optionalVarCollector);
+			condition = strategy.prepare(leftJoin.getCondition());
+		} else {
+			condition = null;
 		}
-
-		QueryValueEvaluationStep condition = strategy.prepare(leftJoin.getCondition());
-
 		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector);
 	}
 
@@ -67,19 +68,20 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		this.condition = condition;
 		this.left = left;
 		this.leftJoin = leftJoin;
-		this.optionalVarCollector = optionalVarCollector;
+		// This is used to determine if the left join is well designed.
+		this.optionalVars = optionalVarCollector.getVarNames();
+		this.optionalVars.removeAll(leftJoin.getLeftArg().getBindingNames());
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		Set<String> problemVars = new HashSet<>(optionalVarCollector.getVarNames());
-		problemVars.removeAll(leftJoin.getLeftArg().getBindingNames());
-		problemVars.retainAll(bindings.getBindingNames());
 
+		Set<String> problemVars = new HashSet<>(optionalVars);
+		problemVars.retainAll(bindings.getBindingNames());
 		if (problemVars.isEmpty()) {
 			// left join is "well designed"
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
-			return new LeftJoinIterator(left, right, condition, bindings, problemVars);
+			return new LeftJoinIterator(left, right, condition, bindings, leftJoin.getBindingNames());
 		} else {
 			leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
 			return new BadlyDesignedLeftJoinIterator(left, right, condition, bindings, problemVars);
