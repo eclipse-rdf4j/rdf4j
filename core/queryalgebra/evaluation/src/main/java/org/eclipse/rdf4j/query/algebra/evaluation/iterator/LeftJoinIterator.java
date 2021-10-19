@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -59,7 +60,12 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 
 		prepareRightArg = strategy.prepare(join.getRightArg());
 		join.setAlgorithm(this);
-		joinCondition = strategy.prepare(join.getCondition());
+		final ValueExpr condition = join.getCondition();
+		if (condition == null) {
+			joinCondition = null;
+		} else {
+			joinCondition = strategy.prepare(condition);
+		}
 	}
 
 	public LeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right, QueryValueEvaluationStep joinCondition,
