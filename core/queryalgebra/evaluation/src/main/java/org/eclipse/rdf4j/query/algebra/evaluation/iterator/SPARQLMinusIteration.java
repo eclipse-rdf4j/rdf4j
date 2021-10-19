@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
@@ -39,6 +40,8 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 
 	private volatile Set<BindingSet> excludeSet;
 
+	private final Supplier<Set<BindingSet>> setMaker;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -51,7 +54,12 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 */
 	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg) {
-		this(leftArg, rightArg, false);
+		this(leftArg, rightArg, false, HashSet::new);
+	}
+
+	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg,
+			Supplier<Set<BindingSet>> setMaker) {
+		this(leftArg, rightArg, false, setMaker);
 	}
 
 	/**
@@ -62,8 +70,10 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg, boolean distinct) {
+	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg, boolean distinct,
+			Supplier<Set<BindingSet>> setMaker) {
 		super(leftArg);
+		this.setMaker = setMaker;
 
 		assert rightArg != null;
 

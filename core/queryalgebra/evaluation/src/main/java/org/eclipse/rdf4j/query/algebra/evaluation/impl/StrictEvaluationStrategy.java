@@ -453,7 +453,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		@Override
 		public void meet(Difference node) throws QueryEvaluationException {
 			qes = new MinusQueryEvaluationStep(strategy.prepare(node.getLeftArg()),
-					strategy.prepare(node.getRightArg()));
+					strategy.prepare(node.getRightArg()), strategy::makeSet);
 		}
 
 		@Override
@@ -470,7 +470,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		public void meet(Intersection node) throws QueryEvaluationException {
 			QueryEvaluationStep leftArg = strategy.prepare(node.getLeftArg());
 			QueryEvaluationStep rightArg = strategy.prepare(node.getRightArg());
-			qes = new IntersectionQueryEvaluationStep(leftArg, rightArg);
+			qes = new IntersectionQueryEvaluationStep(leftArg, rightArg, strategy::makeSet);
 		}
 
 		@Override
@@ -693,7 +693,15 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		@Override
 		public void meet(Distinct node) throws QueryEvaluationException {
-			// TODO Auto-generated method stub
+			final QueryEvaluationStep child = strategy.prepare(node.getArg());
+			qes = new QueryEvaluationStep() {
+
+				@Override
+				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+					final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
+					return new DistinctIteration<BindingSet, QueryEvaluationException>(evaluate, strategy::makeSet);
+				}
+			};
 
 		}
 
@@ -1056,7 +1064,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct, BindingSet bindings)
 			throws QueryEvaluationException {
-		return new DistinctIteration<>(evaluate(distinct.getArg(), bindings));
+		return prepare(distinct).evaluate(bindings);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Reduced reduced, BindingSet bindings)
@@ -1116,10 +1124,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return prepare(difference).evaluate(bindings);
-	}
-
-	private QueryEvaluationStep prepare(final Difference difference) throws QueryEvaluationException {
-		return new MinusQueryEvaluationStep(prepare(difference.getLeftArg()), prepare(difference.getRightArg()));
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(SingletonSet singletonSet,

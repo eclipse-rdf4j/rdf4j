@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.Spliterator;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -137,5 +138,21 @@ public class Iterations {
 			}
 		}
 
+	}
+
+	/**
+	 * Get a Set containing all elements obtained from the specified Iteration.
+	 *
+	 * @param iter     the Iteration to get the elements from
+	 * @param setMaker the Supplier that constructs a new set
+	 * @return a Set containing all elements obtained from the specified Iteration.
+	 */
+	public static <E, X extends Exception> Set<E> asSet(Iteration<? extends E, ? extends X> arg2,
+			Supplier<Set<E>> setMaker) throws X {
+		Set<E> set = setMaker.get();
+		while (arg2.hasNext()) {
+			set.add(arg2.next());
+		}
+		return set;
 	}
 }

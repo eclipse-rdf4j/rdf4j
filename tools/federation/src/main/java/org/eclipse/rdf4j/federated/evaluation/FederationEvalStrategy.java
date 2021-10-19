@@ -358,7 +358,9 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	public QueryEvaluationStep prepare(
 			TupleExpr expr)
 			throws QueryEvaluationException {
-
+		if (expr instanceof Join) {
+			return QueryEvaluationStep.minimal(this, expr);
+		}
 		if (expr instanceof StatementTupleExpr) {
 			return QueryEvaluationStep.minimal(this, expr);
 		}
@@ -396,19 +398,6 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		return super.prepare(expr);
-	}
-
-	@Override
-	public QueryEvaluationStep prepare(Join join) {
-		return QueryEvaluationStep.minimal(this, join);
-	}
-
-	public QueryEvaluationStep prepare(FedXService join) {
-		return QueryEvaluationStep.minimal(this, join);
-	}
-
-	public QueryEvaluationStep prepare(SingleSourceQuery owe) {
-		return QueryEvaluationStep.minimal(this, owe);
 	}
 
 	/**

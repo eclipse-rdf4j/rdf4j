@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * An Iteration that filters any duplicate elements from an underlying iterator.
@@ -38,6 +39,11 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 		super(iter);
 
 		excludeSet = makeSet();
+	}
+
+	public DistinctIteration(Iteration<? extends E, ? extends X> iter, Supplier<Set<E>> setMaker) {
+		super(iter);
+		excludeSet = setMaker.get();
 	}
 
 	/*---------*
