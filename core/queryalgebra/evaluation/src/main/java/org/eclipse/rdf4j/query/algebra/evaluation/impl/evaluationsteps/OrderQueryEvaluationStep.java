@@ -7,27 +7,34 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.Comparator;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.IntersectIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.OrderIterator;
 
-/**
- * A step that prepares the arguments of an Intersection operator before execution.
- */
-public class IntersectionQueryEvaluationStep implements QueryEvaluationStep {
+public class OrderQueryEvaluationStep implements QueryEvaluationStep {
 
-	private final QueryEvaluationStep leftArgDelayed;
-	private final QueryEvaluationStep rightArgDelayed;
+	private final long iterationCacheSyncThreshold;
+	private final Comparator<BindingSet> cmp;
+	private final long limit;
+	private final boolean reduced;
+	private final QueryEvaluationStep preparedArg;
 
-	public IntersectionQueryEvaluationStep(QueryEvaluationStep leftArg, QueryEvaluationStep rightArg) {
-		leftArgDelayed = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(leftArg, bs);
-		rightArgDelayed = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(rightArg, bs);
+	public OrderQueryEvaluationStep(Comparator<BindingSet> cmp, long limit, boolean reduced,
+			QueryEvaluationStep preparedArg, long iterationCacheSyncThreshold) {
+		super();
+		this.cmp = cmp;
+		this.limit = limit;
+		this.reduced = reduced;
+		this.preparedArg = preparedArg;
+		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-		return new IntersectIteration<>(leftArgDelayed.evaluate(bs), rightArgDelayed.evaluate(bs));
+		return new OrderIterator(preparedArg.evaluate(bs), cmp, limit, reduced, iterationCacheSyncThreshold);
 	}
 }

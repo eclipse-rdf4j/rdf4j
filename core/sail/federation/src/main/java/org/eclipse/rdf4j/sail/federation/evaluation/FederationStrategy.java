@@ -66,7 +66,9 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 	public QueryEvaluationStep prepare(TupleExpr expr)
 			throws QueryEvaluationException {
 		QueryEvaluationStep result;
-		if (expr instanceof NaryJoin) {
+		if (expr instanceof Join) {
+			return QueryEvaluationStep.minimal(this, expr);
+		} else if (expr instanceof NaryJoin) {
 			result = prepare((NaryJoin) expr);
 		} else if (expr instanceof OwnedTupleExpr) {
 			result = prepare((OwnedTupleExpr) expr);
@@ -85,11 +87,6 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 			executor.execute((Runnable) result);
 		}
 		return result;
-	}
-
-	@Override
-	public QueryEvaluationStep prepare(Join join) {
-		return QueryEvaluationStep.minimal(this, join);
 	}
 
 	public QueryEvaluationStep prepare(NaryJoin join) {
