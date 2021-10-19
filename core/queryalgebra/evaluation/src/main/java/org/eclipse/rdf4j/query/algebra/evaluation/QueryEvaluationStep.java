@@ -39,7 +39,7 @@ public interface QueryEvaluationStep {
 		}
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs);
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings);
 
 	public static QueryEvaluationStep minimal(EvaluationStrategy strategy, TupleExpr expr) {
 		return new QueryEvaluationStep() {

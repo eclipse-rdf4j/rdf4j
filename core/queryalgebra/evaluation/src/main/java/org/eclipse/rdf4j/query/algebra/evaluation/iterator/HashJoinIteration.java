@@ -15,7 +15,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Stream;
+import java.util.function.IntFunction;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -53,6 +53,10 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	private BindingSet currentScanElem;
 	private Iterator<BindingSet> hashTableValues;
 
+	private final IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker;
+
+	private final IntFunction<List<BindingSet>> mapValueMaker;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -83,20 +87,43 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		this.rightIter = right.evaluate(bindings);
 		this.joinAttributes = joinAttributes;
 		this.leftJoin = leftJoin;
+		this.mapMaker = this::makeHashTable;
+		this.mapValueMaker = this::makeHashValue;
 	}
 
 	public HashJoinIteration(EvaluationStrategy strategy,
 			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
 			CloseableIteration<BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
-			boolean leftJoin) throws QueryEvaluationException {
+			boolean leftJoin
+	) throws QueryEvaluationException {
 		this.leftIter = leftIter;
 		this.rightIter = rightIter;
+		this.mapMaker = this::makeHashTable;
 
 		Set<String> joinAttributeNames = leftBindingNames;
 		joinAttributeNames.retainAll(rightBindingNames);
 		joinAttributes = joinAttributeNames.toArray(new String[joinAttributeNames.size()]);
 
 		this.leftJoin = leftJoin;
+		this.mapValueMaker = this::makeHashValue;
+	}
+
+	public HashJoinIteration(EvaluationStrategy strategy,
+			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
+			CloseableIteration<BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
+			boolean leftJoin, IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker,
+			IntFunction<List<BindingSet>> mapValueMaker
+	) throws QueryEvaluationException {
+		this.leftIter = leftIter;
+		this.rightIter = rightIter;
+		this.mapMaker = mapMaker;
+
+		Set<String> joinAttributeNames = leftBindingNames;
+		joinAttributeNames.retainAll(rightBindingNames);
+		joinAttributes = joinAttributeNames.toArray(new String[joinAttributeNames.size()]);
+
+		this.leftJoin = leftJoin;
+		this.mapValueMaker = mapValueMaker;
 	}
 
 	/*---------*
@@ -259,7 +286,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 		// create the hash table for our join
 		// hash table will never be any bigger than smallestResult.size()
-		Map<BindingSetHashKey, List<BindingSet>> resultHashTable = makeHashTable(smallestResult.size());
+		Map<BindingSetHashKey, List<BindingSet>> resultHashTable = mapMaker.apply(smallestResult.size());
 		int maxListSize = 1;
 		for (BindingSet b : smallestResult) {
 			BindingSetHashKey hashKey = BindingSetHashKey.create(joinAttributes, b);
@@ -267,7 +294,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			List<BindingSet> hashValue = resultHashTable.get(hashKey);
 			boolean newEntry = (hashValue == null);
 			if (newEntry) {
-				hashValue = makeHashValue(maxListSize);
+				hashValue = mapValueMaker.apply(maxListSize);
 			}
 			add(hashValue, b);
 			// always do a put() in case the map implementation is not memory-based

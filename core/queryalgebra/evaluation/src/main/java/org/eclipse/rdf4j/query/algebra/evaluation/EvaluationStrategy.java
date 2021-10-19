@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -159,5 +162,9 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
 			return strategy.evaluate(ve, bindings);
 		}
+	}
+
+	default <T> Set<T> makeSet() {
+		return new HashSet<T>();
 	}
 }
