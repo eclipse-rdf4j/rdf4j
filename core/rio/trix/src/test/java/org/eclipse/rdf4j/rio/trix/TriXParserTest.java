@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.trix;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -77,6 +78,39 @@ public class TriXParserTest {
 		assertEquals(
 				"[Rio fatal] DOCTYPE is disallowed when the feature \"http://apache.org/xml/features/disallow-doctype-decl\" set to true. (1, 10)",
 				el.getFatalErrors().get(0));
+	}
+
+	@Test
+	public void testIgnoreExternalDTD_default() throws Exception {
+		try (final InputStream in = this.getClass()
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-dtd.trix");) {
+			parser.parse(in, "");
+		} catch (FileNotFoundException e) {
+			fail("parser tried to read external DTD");
+		}
+
+		assertEquals(0, el.getWarnings().size());
+		assertEquals(0, el.getErrors().size());
+		assertEquals(0, el.getFatalErrors().size());
+
+		assertThat(sc.getStatements().size()).isEqualTo(1);
+
+		Statement st = sc.getStatements().iterator().next();
+
+		// literal value should be empty string as it should not have processed the external entity
+		assertThat(st.getObject().stringValue()).isEqualTo("");
+	}
+
+	@Test
+	public void testLoadExternalDTD_configured() throws Exception {
+		parser.getParserConfig().set(XMLParserSettings.LOAD_EXTERNAL_DTD, true);
+		try (final InputStream in = this.getClass()
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-dtd.trix")) {
+
+			assertThatExceptionOfType(FileNotFoundException.class)
+					.isThrownBy(() -> parser.parse(in, ""))
+					.withMessageMatching(".*non-existent\\.dtd.*");
+		}
 	}
 
 	@Test
