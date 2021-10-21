@@ -10,12 +10,12 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-
-import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 public class PropertyPathTest {
 	@Test
