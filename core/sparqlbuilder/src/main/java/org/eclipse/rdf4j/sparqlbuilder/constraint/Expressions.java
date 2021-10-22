@@ -609,14 +609,6 @@ public class Expressions {
 		return function(SparqlFunction.IF, testExp, thenExp, elseExp);
 	}
 
-	public static RdfPredicate pathZeroOrMoreAlt(IRI... properties) {
-		return new PZeroOrMore(properties);
-	}
-
-	public static RdfPredicate pathSequence(IRI... properties) {
-		return new PSequence(properties);
-	}
-
 	public static SequencePath pSeq(PropertyPath left, PropertyPath right) {
 		return new SequencePath(left, right);
 	}
