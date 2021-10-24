@@ -11,6 +11,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 
 /**
  * Expressions implementing this interface can apply some {@link FilterValueExpr} during evaluation.
@@ -22,7 +23,7 @@ import org.eclipse.rdf4j.query.BindingSet;
  * @see ExclusiveGroup
  *
  */
-public interface FilterTuple {
+public interface FilterTuple extends QueryModelNode {
 
 	/**
 	 * @return true if this expression has a filter to apply
