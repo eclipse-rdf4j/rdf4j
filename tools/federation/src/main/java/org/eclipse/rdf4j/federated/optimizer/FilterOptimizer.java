@@ -329,7 +329,9 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 		}
 
 		public boolean shouldAddFilter(FilterTuple filterTuple) {
-			if (hasUnionParent(filterTuple)) {
+			if (filterTuple.getParentNode() instanceof ExclusiveGroup) {
+				return false;
+			} else if (hasUnionParent(filterTuple)) {
 				return true;
 			} else if (added > 0) {
 				// only push filter if it has not been applied to another statement

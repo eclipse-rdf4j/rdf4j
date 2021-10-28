@@ -64,6 +64,8 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 		ownedEndpoint = queryInfo.getFederationContext().getEndpointManager().getEndpoint(owner.getEndpointID());
 
 		strategy = queryInfo.getFederationContext().getStrategy();
+
+		ownedNodes.forEach(node -> node.setParentNode(this));
 	}
 
 	/**
@@ -86,6 +88,9 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 		if (boundFilters != null) {
 			BoundFiltersNode.visit(visitor, boundFilters);
 		}
+		if (filterExpr != null) {
+			filterExpr.visit(visitor);
+		}
 	}
 
 	@Override
@@ -96,12 +101,16 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		return Collections.emptySet();
+		Set<String> res = new HashSet<>();
+		owned.forEach(e -> res.addAll(e.getAssuredBindingNames()));
+		return res;
 	}
 
 	@Override
 	public Set<String> getBindingNames() {
-		return Collections.emptySet();
+		Set<String> res = new HashSet<>();
+		owned.forEach(e -> res.addAll(e.getBindingNames()));
+		return res;
 	}
 
 	@Override
