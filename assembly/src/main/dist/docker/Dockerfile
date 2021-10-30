@@ -1,10 +1,12 @@
-FROM tomcat:8.5-jre8-alpine
+FROM tomcat:8.5-jre11-temurin
 MAINTAINER Bart Hanssens (bart.hanssens@bosa.fgov.be)
 
 ENV JAVA_OPTS="-Xmx2g"
 ENV CATALINA_OPTS="-Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j"
 
-RUN adduser -S tomcat
+RUN apt update
+RUN apt install unzip
+RUN adduser --system tomcat
 
 COPY ignore/rdf4j.zip /tmp/rdf4j.zip
 
