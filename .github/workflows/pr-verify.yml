@@ -23,8 +23,10 @@ jobs:
           ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
+    - name: Check maven install
+      run: mvn -B clean install -DskipTests
     - name: Test
-      run: mvn -B clean test -P-formatting -DskipITs -Dmaven.javadoc.skip=true
+      run: mvn -B test -P-formatting -DskipITs -Dmaven.javadoc.skip=true
     - name: Print test failures
       if: failure()
       run: ./scripts/printTestResults.sh
