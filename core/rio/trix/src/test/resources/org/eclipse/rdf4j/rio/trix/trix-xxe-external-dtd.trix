@@ -1,0 +1,10 @@
+<!DOCTYPE TriX SYSTEM "non-existent.dtd">
+<TriX>
+    <graph>
+        <triple>
+            <uri>http://example.org/Bob</uri>
+            <uri>http://example.org/name</uri>
+            <plainLiteral>&xxe;</plainLiteral>
+        </triple>
+    </graph>
+</TriX>
