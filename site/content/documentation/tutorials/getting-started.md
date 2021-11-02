@@ -20,7 +20,7 @@ The [Resource Description Framework (RDF)](https://www.w3.org/TR/rdf11-primer/) 
 
 A _resource_ can be anything that we can stick an identifier on: a web page, an image, but also more abstract/real-world things like you, me, the concept of "world peace", the number 42, and that library book you never returned.
 
-RDF is intended for modeling information that needs to processed by applications, rather than just being shown to people.
+RDF is intended for modeling information that needs to be processed by applications, rather than just being shown to people.
 
 In this tutorial, we will be modeling information about artists . Let's start with a simple fact: "Picasso's first name is Pablo". In RDF, this could be expressed as follows:
 
