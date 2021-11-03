@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 public class LuceneSailConfigSchema {
 
 	/**
-	 * The LuceneSail schema namespace ( <tt>http://www.openrdf.org/config/sail/lucene#</tt>).
+	 * The LuceneSail schema namespace ( <var>http://www.openrdf.org/config/sail/lucene#</var>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/lucene#";
 

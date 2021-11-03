@@ -36,7 +36,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	/**
 	 * Creates a new N-Ary value operator.
 	 *
-	 * @param args The operator's list of arguments, must not be <tt>null</tt>.
+	 * @param args The operator's list of arguments, must not be <var>null</var>.
 	 */
 	protected NAryValueOperator(List<ValueExpr> args) {
 		setArguments(args);

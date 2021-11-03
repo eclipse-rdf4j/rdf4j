@@ -39,7 +39,7 @@ public interface MemValue extends Value {
 	 * Checks whether this MemValue has any statements. A MemValue object has statements if there is at least one
 	 * statement where it is used as the subject, predicate, object or context value.
 	 *
-	 * @return <tt>true</tt> if the MemValue has statements, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the MemValue has statements, <var>false</var> otherwise.
 	 */
 	boolean hasStatements();
 

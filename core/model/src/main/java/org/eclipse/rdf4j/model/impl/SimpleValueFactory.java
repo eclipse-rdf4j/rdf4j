@@ -144,7 +144,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	}
 
 	/**
-	 * Generates a new bnode prefix and resets <tt>nextBNodeID</tt> to <tt>1</tt> .
+	 * Generates a new bnode prefix and resets <var>nextBNodeID</var> to <var>1</var> .
 	 */
 	protected void initBNodeParams() {
 		// BNode prefix is based on currentTimeMillis(). Combined with a

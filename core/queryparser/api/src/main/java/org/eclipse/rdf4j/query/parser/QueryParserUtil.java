@@ -31,7 +31,7 @@ public class QueryParserUtil {
 	 * @param ql        The language in which the operation is formulated.
 	 * @param operation The operation.
 	 * @param baseURI   The base URI to resolve any relative URIs that are in the operation against, can be
-	 *                  <tt>null</tt> if the operation does not contain any relative URIs.
+	 *                  <var>null</var> if the operation does not contain any relative URIs.
 	 * @return The model for the parsed operation.
 	 * @throws MalformedQueryException           If the supplied operation was malformed.
 	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
@@ -64,8 +64,8 @@ public class QueryParserUtil {
 	 *
 	 * @param ql      The language in which the update operation is formulated.
 	 * @param update  The update operation.
-	 * @param baseURI The base URI to resolve any relative URIs that are in the operation against, can be <tt>null</tt>
-	 *                if the update operation does not contain any relative URIs.
+	 * @param baseURI The base URI to resolve any relative URIs that are in the operation against, can be
+	 *                <var>null</var> if the update operation does not contain any relative URIs.
 	 * @return The model for the parsed update operation.
 	 * @throws MalformedQueryException           If the supplied update operation was malformed.
 	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
@@ -81,7 +81,7 @@ public class QueryParserUtil {
 	 *
 	 * @param ql      The language in which the query is formulated.
 	 * @param query   The query.
-	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
+	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <var>null</var> if
 	 *                the query does not contain any relative URIs.
 	 * @return The query model for the parsed query.
 	 * @throws MalformedQueryException           If the supplied query was malformed.

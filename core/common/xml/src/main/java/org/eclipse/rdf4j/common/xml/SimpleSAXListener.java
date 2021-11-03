@@ -13,7 +13,7 @@ import java.util.Map;
 import org.xml.sax.SAXException;
 
 /**
- * A listener for events reported by <tt>SimpleSAXParser</tt>.
+ * A listener for events reported by <var>SimpleSAXParser</var>.
  */
 public interface SimpleSAXListener {
 

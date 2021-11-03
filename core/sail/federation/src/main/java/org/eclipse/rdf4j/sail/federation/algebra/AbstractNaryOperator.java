@@ -78,7 +78,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	}
 
 	/**
-	 * Gets the <tt>idx</tt>-th argument of this n-ary operator.
+	 * Gets the <var>idx</var>-th argument of this n-ary operator.
 	 *
 	 * @return The operator's arguments.
 	 */
@@ -112,7 +112,7 @@ public abstract class AbstractNaryOperator<Expr extends QueryModelNode> extends 
 	}
 
 	/**
-	 * Sets the <tt>idx</tt>-th argument of this n-ary tuple operator.
+	 * Sets the <var>idx</var>-th argument of this n-ary tuple operator.
 	 */
 	protected final void setArg(final int idx, final Expr arg) {
 		assert arg != this : "arg must not be itself";

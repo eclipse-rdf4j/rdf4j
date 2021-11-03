@@ -426,8 +426,6 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	/**
 	 * For rsx:targetShape
-	 *
-	 * @return
 	 */
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,

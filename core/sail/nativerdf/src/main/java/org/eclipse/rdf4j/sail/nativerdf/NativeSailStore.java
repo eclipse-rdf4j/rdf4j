@@ -204,9 +204,9 @@ class NativeSailStore implements SailStore {
 	/**
 	 * Creates a statement iterator based on the supplied pattern.
 	 *
-	 * @param subj     The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
-	 * @param pred     The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
-	 * @param obj      The object of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param subj     The subject of the pattern, or <var>null</var> to indicate a wildcard.
+	 * @param pred     The predicate of the pattern, or <var>null</var> to indicate a wildcard.
+	 * @param obj      The object of the pattern, or <var>null</var> to indicate a wildcard.
 	 * @param contexts The context(s) of the pattern. Note that this parameter is a vararg and as such is optional. If
 	 *                 no contexts are supplied the method operates on the entire repository.
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.

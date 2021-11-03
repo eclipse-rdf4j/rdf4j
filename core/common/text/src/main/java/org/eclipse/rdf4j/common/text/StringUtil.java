@@ -30,7 +30,7 @@ public class StringUtil {
 	 * @param text The String in which the substitution is done.
 	 * @return The result String containing the substitutions; if no substitutions were made, the result is 'text'.
 	 * 
-	 * @deprecated use {@link String#replace(CharSequence, CharSequence) instead.
+	 * @deprecated use {@link String#replace(CharSequence, CharSequence) instead}.
 	 */
 	@Deprecated
 	public static String gsub(String olds, String news, String text) {
@@ -130,7 +130,7 @@ public class StringUtil {
 	}
 
 	/**
-	 * Appends the specified character <tt>n</tt> times to the supplied StringBuilder.
+	 * Appends the specified character <var>n</var> times to the supplied StringBuilder.
 	 *
 	 * @param c  The character to append.
 	 * @param n  The number of times the character should be appended.
@@ -144,11 +144,11 @@ public class StringUtil {
 
 	/**
 	 * Removes the double quote from the start and end of the supplied string if it starts and ends with this character.
-	 * This method does not create a new string if <tt>text</tt> doesn't start and end with double quotes, the
-	 * <tt>text</tt> object itself is returned in that case.
+	 * This method does not create a new string if <var>text</var> doesn't start and end with double quotes, the
+	 * <var>text</var> object itself is returned in that case.
 	 *
 	 * @param text The string to remove the double quotes from.
-	 * @return The trimmed string, or a reference to <tt>text</tt> if it did not start and end with double quotes.
+	 * @return The trimmed string, or a reference to <var>text</var> if it did not start and end with double quotes.
 	 */
 	public static String trimDoubleQuotes(String text) {
 		int textLength = text.length();

@@ -47,7 +47,7 @@ public class URIUtil {
 	 * <li>Find the <em>first</em> occurrence of the '#' character,
 	 * <li>If this fails, find the <em>last</em> occurrence of the '/' character,
 	 * <li>If this fails, find the <em>last</em> occurrence of the ':' character.
-	 * <li>Add <tt>1<tt> to the found index and return this value.
+	 * <li>Add <var>1<var> to the found index and return this value.
 	 * </ul>
 	 * Note that the third step should never fail as every legal (non-relative) URI contains at least one ':' character
 	 * to seperate the scheme from the rest of the URI. If this fails anyway, the method will throw an
@@ -83,10 +83,10 @@ public class URIUtil {
 	 * Checks whether the URI consisting of the specified namespace and local name has been split correctly according to
 	 * the URI splitting rules specified in {@link URI}.
 	 *
-	 * @param namespace The URI's namespace, must not be <tt>null</tt>.
-	 * @param localName The URI's local name, must not be <tt>null</tt>.
-	 * @return <tt>true</tt> if the specified URI has been correctly split into a namespace and local name,
-	 *         <tt>false</tt> otherwise.
+	 * @param namespace The URI's namespace, must not be <var>null</var>.
+	 * @param localName The URI's local name, must not be <var>null</var>.
+	 * @return <var>true</var> if the specified URI has been correctly split into a namespace and local name,
+	 *         <var>false</var> otherwise.
 	 * @see URI
 	 * @see #getLocalNameIndex(String)
 	 */

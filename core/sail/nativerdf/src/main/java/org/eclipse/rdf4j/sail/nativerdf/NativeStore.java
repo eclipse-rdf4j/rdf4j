@@ -150,7 +150,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	/**
 	 * Sets the triple indexes for the native store, must be called before initialization.
 	 *
-	 * @param tripleIndexes An index strings, e.g. <tt>spoc,posc</tt>.
+	 * @param tripleIndexes An index strings, e.g. <var>spoc,posc</var>.
 	 */
 	public void setTripleIndexes(String tripleIndexes) {
 		if (isInitialized()) {

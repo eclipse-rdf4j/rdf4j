@@ -230,7 +230,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final StatementPattern theStatementPattern) throws Exception {
@@ -238,7 +238,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final Slice theSlice) throws Exception {
@@ -254,7 +254,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final ExtensionElem theExtensionElem) throws Exception {
@@ -262,7 +262,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final ProjectionElemList theProjectionElemList) throws Exception {
@@ -274,7 +274,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final OrderElem theOrderElem) throws Exception {
@@ -282,7 +282,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final Distinct theDistinct) throws Exception {
@@ -292,7 +292,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final Reduced theReduced) throws Exception {

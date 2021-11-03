@@ -94,7 +94,7 @@ public class GenericPlanNode {
 	 * The cost estimate that the query planner calculated for this node. Value has no meaning outside of this
 	 * explanation and is only used to compare and order the nodes in the query plan.
 	 *
-	 * @return
+	 * @return a cost estimate as a double value
 	 */
 	public Double getCostEstimate() {
 		return costEstimate;
@@ -109,7 +109,7 @@ public class GenericPlanNode {
 	/**
 	 * The number of results that this node was estimated to produce.
 	 *
-	 * @return
+	 * @return result size estimate
 	 */
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
@@ -124,7 +124,7 @@ public class GenericPlanNode {
 	/**
 	 * The actual number of results that this node produced while the query was executed.
 	 *
-	 * @return
+	 * @return number of results that this query produced
 	 */
 	public Long getResultSizeActual() {
 		return resultSizeActual;
@@ -139,7 +139,7 @@ public class GenericPlanNode {
 	/**
 	 * The total time in milliseconds that this node-tree (all children and so on) used while the query was executed.
 	 *
-	 * @return
+	 * @return time in milliseconds that was used to execute the query
 	 */
 	public Double getTotalTimeActual() {
 		// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child plans
@@ -175,7 +175,6 @@ public class GenericPlanNode {
 	/**
 	 * The time that this node used by itself (eg. totalTimeActual - sum of plans[0..n].totalTimeActual)
 	 *
-	 * @return
 	 */
 	public Double getSelfTimeActual() {
 
@@ -228,7 +227,7 @@ public class GenericPlanNode {
 	/**
 	 * Human readable string. Do not attempt to parse this.
 	 *
-	 * @return
+	 * @return an unparsable string
 	 */
 	@Override
 	public String toString() {

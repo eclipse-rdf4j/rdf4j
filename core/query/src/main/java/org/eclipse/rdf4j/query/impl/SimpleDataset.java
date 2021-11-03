@@ -51,7 +51,7 @@ public class SimpleDataset implements Dataset, Serializable {
 	/**
 	 * Removes a graph URI from the set of default remove graph URIs.
 	 *
-	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain the URI.
+	 * @return <var>true</var> if the URI was removed from the set, <var>false</var> if the set did not contain the URI.
 	 */
 	public boolean removeDefaultRemoveGraph(IRI graphURI) {
 		return defaultRemoveGraphs.remove(graphURI);
@@ -87,7 +87,7 @@ public class SimpleDataset implements Dataset, Serializable {
 	/**
 	 * Removes a graph URI from the set of default graph URIs.
 	 *
-	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain the URI.
+	 * @return <var>true</var> if the URI was removed from the set, <var>false</var> if the set did not contain the URI.
 	 */
 	public boolean removeDefaultGraph(IRI graphURI) {
 		return defaultGraphs.remove(graphURI);
@@ -111,7 +111,7 @@ public class SimpleDataset implements Dataset, Serializable {
 	/**
 	 * Removes a graph URI from the set of named graph URIs.
 	 *
-	 * @return <tt>true</tt> if the URI was removed from the set, <tt>false</tt> if the set did not contain the URI.
+	 * @return <var>true</var> if the URI was removed from the set, <var>false</var> if the set did not contain the URI.
 	 */
 	public boolean removeNamedGraph(IRI graphURI) {
 		return namedGraphs.remove(graphURI);

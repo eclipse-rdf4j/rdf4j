@@ -28,7 +28,7 @@ public class HTTPRepositoryFactory implements RepositoryFactory {
 	public static final String REPOSITORY_TYPE = "openrdf:HTTPRepository";
 
 	/**
-	 * Returns the repository's type: <tt>openrdf:HTTPRepository</tt>.
+	 * Returns the repository's type: <var>openrdf:HTTPRepository</var>.
 	 */
 	@Override
 	public String getRepositoryType() {

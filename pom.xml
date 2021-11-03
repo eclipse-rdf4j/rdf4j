@@ -236,7 +236,7 @@
 				<jdk>[11,)</jdk>
 			</activation>
 			<properties>
-				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
+				<javadoc.opts>-Xdoclint:none -html5 -tag implNote:a:"Implementation Note"</javadoc.opts>
 			</properties>
 		</profile>
 		<profile>

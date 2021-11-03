@@ -54,7 +54,7 @@ public class DataStore implements Closeable {
 	 * Gets the value for the specified ID.
 	 *
 	 * @param id A value ID, should be larger than 0.
-	 * @return The value for the ID, or <tt>null</tt> if no such value could be found.
+	 * @return The value for the ID, or <var>null</var> if no such value could be found.
 	 * @exception IOException If an I/O error occurred.
 	 */
 	public byte[] getData(int id) throws IOException {
@@ -73,8 +73,8 @@ public class DataStore implements Closeable {
 	/**
 	 * Gets the ID for the specified value.
 	 *
-	 * @param queryData The value to get the ID for, must not be <tt>null</tt>.
-	 * @return The ID for the specified value, or <tt>-1</tt> if no such ID could be found.
+	 * @param queryData The value to get the ID for, must not be <var>null</var>.
+	 * @return The ID for the specified value, or <var>-1</var> if no such ID could be found.
 	 * @exception IOException If an I/O error occurred.
 	 */
 	public int getID(byte[] queryData) throws IOException {
@@ -105,7 +105,7 @@ public class DataStore implements Closeable {
 	/**
 	 * Returns the maximum value-ID that is in use.
 	 *
-	 * @return The largest ID, or <tt>0</tt> if the store does not contain any values.
+	 * @return The largest ID, or <var>0</var> if the store does not contain any values.
 	 * @throws IOException If an I/O error occurs.
 	 */
 	public int getMaxID() throws IOException {
@@ -116,7 +116,7 @@ public class DataStore implements Closeable {
 	 * Stores the supplied value and returns the ID that has been assigned to it. In case the data to store is already
 	 * present, the ID of this existing data is returned.
 	 *
-	 * @param data The data to store, must not be <tt>null</tt>.
+	 * @param data The data to store, must not be <var>null</var>.
 	 * @return The ID that has been assigned to the value.
 	 * @exception IOException If an I/O error occurred.
 	 */

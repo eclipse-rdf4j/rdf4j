@@ -61,7 +61,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	private int mIndent = 2;
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void reset() {
@@ -72,7 +72,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public String render(final TupleExpr theExpr) throws Exception {
@@ -92,7 +92,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	protected String renderValueExpr(final ValueExpr theExpr) throws Exception {
@@ -124,7 +124,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Join theJoin) throws Exception {
@@ -138,7 +138,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(LeftJoin theJoin) throws Exception {
@@ -203,7 +203,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Union theOp) throws Exception {
@@ -231,7 +231,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Difference theOp) throws Exception {
@@ -245,7 +245,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Intersection theOp) throws Exception {
@@ -260,7 +260,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final Filter theFilter) throws Exception {
@@ -302,7 +302,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(StatementPattern thePattern) throws Exception {
@@ -314,7 +314,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Extension node) throws Exception {
@@ -322,7 +322,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(ExtensionElem node) throws Exception {
@@ -452,7 +452,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(ValueConstant node) throws Exception {
@@ -460,8 +460,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @throws Exception
-	 * @inheritDoc
+	 * @throws Exception {@inheritDoc}
 	 */
 	@Override
 	public void meet(Var node) throws Exception {

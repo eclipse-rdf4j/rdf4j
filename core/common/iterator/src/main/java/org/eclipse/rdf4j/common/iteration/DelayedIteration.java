@@ -14,7 +14,7 @@ import java.util.NoSuchElementException;
  * An iteration that delays the creation of the underlying iteration until it is being accessed. This is mainly useful
  * for situations where iteration creation adds considerable overhead but where the iteration may not actually be used,
  * or where a created iteration consumes scarce resources like JDBC-connections or memory. Subclasses must implement the
- * <tt>createIteration</tt> method, which is called once when the iteration is first needed.
+ * <var>createIteration</var> method, which is called once when the iteration is first needed.
  */
 public abstract class DelayedIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
@@ -46,7 +46,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	protected abstract Iteration<? extends E, ? extends X> createIteration() throws X;
 
 	/**
-	 * Calls the <tt>hasNext</tt> method of the underlying iteration.
+	 * Calls the <var>hasNext</var> method of the underlying iteration.
 	 */
 	@Override
 	public boolean hasNext() throws X {
@@ -68,7 +68,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	}
 
 	/**
-	 * Calls the <tt>next</tt> method of the underlying iteration.
+	 * Calls the <var>next</var> method of the underlying iteration.
 	 */
 	@Override
 	public E next() throws X {
@@ -90,7 +90,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	}
 
 	/**
-	 * Calls the <tt>remove</tt> method of the underlying iteration.
+	 * Calls the <var>remove</var> method of the underlying iteration.
 	 */
 	@Override
 	public void remove() throws X {

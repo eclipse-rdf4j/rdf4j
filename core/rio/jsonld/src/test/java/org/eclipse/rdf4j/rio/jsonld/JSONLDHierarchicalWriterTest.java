@@ -267,7 +267,7 @@ public class JSONLDHierarchicalWriterTest {
 	 * Verify output hierarchy does not duplicate nodes B and C.
 	 *
 	 * @throws IOException
-	 * @see https://github.com/eclipse/rdf4j/issues/1283
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/1283">GH-1283</a>
 	 */
 	@Test
 	public void testOrder() throws IOException {

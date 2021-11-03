@@ -32,7 +32,7 @@ public abstract class AbstractCloseableIteration<E, X extends Exception> impleme
 	/**
 	 * Checks whether this CloseableIteration has been closed.
 	 *
-	 * @return <tt>true</tt> if the CloseableIteration has been closed, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
 	 */
 	public final boolean isClosed() {
 		return closed;

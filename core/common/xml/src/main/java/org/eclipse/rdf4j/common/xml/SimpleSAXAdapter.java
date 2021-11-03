@@ -13,7 +13,7 @@ import java.util.Map;
 import org.xml.sax.SAXException;
 
 /**
- * An implementation of <tt>SimpleSAXListener</tt> providing dummy implementations for all its methods.
+ * An implementation of <var>SimpleSAXListener</var> providing dummy implementations for all its methods.
  */
 public class SimpleSAXAdapter implements SimpleSAXListener {
 

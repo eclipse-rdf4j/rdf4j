@@ -31,7 +31,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	private final Queue<Exception> exceptions = new ConcurrentLinkedQueue<>();
 
 	/**
-	 * Creates an <tt>QueueIteration</tt> with the given (fixed) capacity and default access policy.
+	 * Creates an <var>QueueIteration</var> with the given (fixed) capacity and default access policy.
 	 *
 	 * @param capacity the capacity of this queue
 	 */
@@ -40,11 +40,11 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	/**
-	 * Creates an <tt>QueueIteration</tt> with the given (fixed) capacity and the specified access policy.
+	 * Creates an <var>QueueIteration</var> with the given (fixed) capacity and the specified access policy.
 	 *
 	 * @param capacity the capacity of this queue
-	 * @param fair     if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
-	 *                 in FIFO order; if <tt>false</tt> the access order is unspecified.
+	 * @param fair     if <var>true</var> then queue accesses for threads blocked on insertion or removal, are processed
+	 *                 in FIFO order; if <var>false</var> the access order is unspecified.
 	 */
 	protected QueueIteration(int capacity, boolean fair) {
 		super();
@@ -52,7 +52,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	/**
-	 * Creates an <tt>QueueIteration</tt> with the given {@link BlockingQueue} as its backing queue.<br>
+	 * Creates an <var>QueueIteration</var> with the given {@link BlockingQueue} as its backing queue.<br>
 	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This method
 	 * only enables the default {@link ArrayBlockingQueue} to be overridden.
 	 *
@@ -64,7 +64,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	/**
-	 * Converts an exception from the underlying iteration to an exception of type <tt>X</tt>.
+	 * Converts an exception from the underlying iteration to an exception of type <var>X</var>.
 	 */
 	protected abstract T convert(Exception e);
 
@@ -111,7 +111,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	/**
-	 * Returns the next item in the queue, which may be <tt>null</tt>, or throws an exception.
+	 * Returns the next item in the queue, which may be <var>null</var>, or throws an exception.
 	 */
 	@Override
 	public E getNextElement() throws T {

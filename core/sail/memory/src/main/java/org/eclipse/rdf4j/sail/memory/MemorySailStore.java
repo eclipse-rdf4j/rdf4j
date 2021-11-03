@@ -151,9 +151,9 @@ class MemorySailStore implements SailStore {
 
 	/**
 	 * Creates a StatementIterator that contains the statements matching the specified pattern of subject, predicate,
-	 * object, context. Inferred statements are excluded when <tt>explicitOnly</tt> is set to <tt>true</tt> . Statements
-	 * from the null context are excluded when <tt>namedContextsOnly</tt> is set to <tt>true</tt>. The returned
-	 * StatementIterator will assume the specified read mode.
+	 * object, context. Inferred statements are excluded when <var>explicitOnly</var> is set to <var>true</var> .
+	 * Statements from the null context are excluded when <var>namedContextsOnly</var> is set to <var>true</var>. The
+	 * returned StatementIterator will assume the specified read mode.
 	 */
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
 			Boolean explicit, int snapshot, Resource... contexts) {

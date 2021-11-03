@@ -28,7 +28,7 @@ public class SchemaCachingRDFSInferencerFactory implements SailFactory {
 	public static final String SAIL_TYPE = "rdf4j:SchemaCachingRDFSInferencer";
 
 	/**
-	 * Returns the Sail's type: <tt>rdf4j:SchemaCachingRDFSInferencer</tt>.
+	 * Returns the Sail's type: <var>rdf4j:SchemaCachingRDFSInferencer</var>.
 	 */
 	@Override
 	public String getSailType() {

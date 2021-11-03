@@ -32,8 +32,8 @@ public class Namespaces {
 	/**
 	 * Set of RDFa 1.1 "initial context" namespaces
 	 *
-	 * @see http://www.w3.org/2011/rdfa-context/rdfa-1.1
-	 * @see http://www.w3.org/2013/json-ld-context/rdfa11
+	 * @see <a href="http://www.w3.org/2011/rdfa-context/rdfa-1.1">RDFa 1.1 context</a>
+	 * @see <a href="http://www.w3.org/2013/json-ld-context/rdfa11">JDON-lD rdfa1 context</a>
 	 */
 	public static final Set<Namespace> DEFAULT_RDFA11;
 

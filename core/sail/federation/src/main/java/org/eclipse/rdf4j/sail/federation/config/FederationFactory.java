@@ -35,7 +35,7 @@ public class FederationFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:Federation";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:Federation</tt>.
+	 * Returns the Sail's type: <var>openrdf:Federation</var>.
 	 */
 	@Override
 	public String getSailType() {

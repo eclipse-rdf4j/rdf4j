@@ -54,12 +54,8 @@ public abstract class SPARQLComplianceTest {
 
 	/**
 	 * @param displayName
-	 * @param testURI2
-	 * @param name2
-	 * @param queryFileURL2
-	 * @param resultFileURL2
-	 * @param dataset2
-	 * @param ordered2
+	 * @param testURI
+	 * @param name
 	 */
 	public SPARQLComplianceTest(String displayName, String testURI, String name) {
 		this.displayName = displayName;

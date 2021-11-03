@@ -143,7 +143,7 @@ public class RDF4JTemplate {
 	}
 
 	/**
-	 * Reads the update from the specified resource and provides it through a {@link Supplier<String>} in
+	 * Reads the update from the specified resource and provides it through a {@link Supplier <String>} in
 	 * {@link #update(Class, String, Supplier)}, using the <code>resourceName
 	 * </code> as the <code>operationName</code>.
 	 *
@@ -197,7 +197,7 @@ public class RDF4JTemplate {
 	}
 
 	/**
-	 * Reads the query from the specified resource and provides it through a {@link Supplier<String>} in
+	 * Reads the query from the specified resource and provides it through a {@link Supplier <String>} in
 	 * {@link #tupleQuery(Class, String, Supplier)}, using the <code>
 	 * resourceName</code> as the <code>operationName</code>.
 	 *
@@ -244,7 +244,7 @@ public class RDF4JTemplate {
 	}
 
 	/**
-	 * Reads the query from the specified resource and provides it through a {@link Supplier<String>} in
+	 * Reads the query from the specified resource and provides it through a {@link Supplier <String>} in
 	 * {@link #graphQuery(Class, String, Supplier)}, using the <code>
 	 * resourceName</code> as the <code>operationName</code>.
 	 */
@@ -359,7 +359,7 @@ public class RDF4JTemplate {
 	}
 
 	/**
-	 * Returns a {@link Supplier<String>} that returns the String content of the specified resource (as obtained by a
+	 * Returns a {@link Supplier <String>} that returns the String content of the specified resource (as obtained by a
 	 * {@link ResourceLoader}). The resource's content is read once when this method is called (revealing any problem
 	 * reading the resource early on.
 	 */

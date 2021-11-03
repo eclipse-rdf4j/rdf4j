@@ -47,7 +47,7 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	 * {@link #setDataset(Dataset)} or the dataset that has been specified in the query, where the former takes
 	 * precedence over the latter.
 	 *
-	 * @return The active dataset, or <tt>null</tt> if there is no dataset.
+	 * @return The active dataset, or <var>null</var> if there is no dataset.
 	 */
 	public Dataset getActiveDataset() {
 		if (dataset != null) {

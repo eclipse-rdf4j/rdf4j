@@ -66,7 +66,7 @@ public interface ValueFactory {
 	 * Creates a new literal with the supplied label. The return value of {@link Literal#getDatatype()} for the returned
 	 * object must be <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a>.
 	 *
-	 * @param label The literal's label, must not be <tt>null</tt>.
+	 * @param label The literal's label, must not be <var>null</var>.
 	 */
 	Literal createLiteral(String label);
 
@@ -75,15 +75,15 @@ public interface ValueFactory {
 	 * {@link Literal#getDatatype()} for the returned object must be
 	 * <a href="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString">{@code rdf:langString}</a>.
 	 *
-	 * @param label    The literal's label, must not be <tt>null</tt>.
-	 * @param language The literal's language attribute, must not be <tt>null</tt>.
+	 * @param label    The literal's label, must not be <var>null</var>.
+	 * @param language The literal's language attribute, must not be <var>null</var>.
 	 */
 	Literal createLiteral(String label, String language);
 
 	/**
 	 * Creates a new literal with the supplied label and datatype.
 	 *
-	 * @param label    The literal's label, must not be <tt>null</tt>.
+	 * @param label    The literal's label, must not be <var>null</var>.
 	 * @param datatype The literal's datatype. If it is null, the datatype
 	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to this
 	 *                 literal.
@@ -91,68 +91,68 @@ public interface ValueFactory {
 	Literal createLiteral(String label, IRI datatype);
 
 	/**
-	 * Creates a new <tt>xsd:boolean</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:boolean</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:boolean</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:boolean</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(boolean value);
 
 	/**
-	 * Creates a new <tt>xsd:byte</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:byte</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:byte</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:byte</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(byte value);
 
 	/**
-	 * Creates a new <tt>xsd:short</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:short</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:short</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:short</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(short value);
 
 	/**
-	 * Creates a new <tt>xsd:int</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:int</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:int</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:int</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(int value);
 
 	/**
-	 * Creates a new <tt>xsd:long</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:long</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:long</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:long</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(long value);
 
 	/**
-	 * Creates a new <tt>xsd:float</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:float</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:float</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:float</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(float value);
 
 	/**
-	 * Creates a new <tt>xsd:double</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:double</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:double</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:double</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(double value);
 
 	/**
-	 * Creates a new literal representing the specified bigDecimal that is typed as an <tt>xsd:Decimal</tt>.
+	 * Creates a new literal representing the specified bigDecimal that is typed as an <var>xsd:Decimal</var>.
 	 */
 	Literal createLiteral(BigDecimal bigDecimal);
 
 	/**
-	 * Creates a new literal representing the specified bigInteger that is typed as an <tt>xsd:Integer</tt>.
+	 * Creates a new literal representing the specified bigInteger that is typed as an <var>xsd:Integer</var>.
 	 */
 	Literal createLiteral(BigInteger bigInteger);
 

@@ -118,7 +118,7 @@ public final class NioFile implements Closeable {
 	/**
 	 * Close any open channels and then deletes the file.
 	 *
-	 * @return <tt>true</tt> if the file has been deleted successfully, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the file has been deleted successfully, <var>false</var> otherwise.
 	 * @throws IOException If there was a problem closing the open file channel.
 	 */
 	public boolean delete() throws IOException {

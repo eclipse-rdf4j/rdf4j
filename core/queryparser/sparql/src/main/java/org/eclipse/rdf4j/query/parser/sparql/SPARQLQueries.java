@@ -44,7 +44,7 @@ public class SPARQLQueries {
 	 * Escape the supplied string with backslashes for any special characters, so it can be used as a string literal
 	 * value in a SPARQL query.
 	 * 
-	 * @see https://www.w3.org/TR/sparql11-query/#grammarEscapes
+	 * @see <a href="https://www.w3.org/TR/sparql11-query/#grammarEscapes">SPAQL 1.1 grammar escapes</a>
 	 * 
 	 * @since 3.6.0
 	 */
@@ -68,7 +68,7 @@ public class SPARQLQueries {
 	 * @return The un-escaped string.
 	 * @exception IllegalArgumentException If the supplied string is not a correctly escaped SPARQL string.
 	 * 
-	 * @see https://www.w3.org/TR/sparql11-query/#grammarEscapes
+	 * @see <a href="https://www.w3.org/TR/sparql11-query/#grammarEscapes">SPAQL 1.1 grammar escapes</a>
 	 * 
 	 * @since 3.6.0
 	 */

@@ -80,12 +80,12 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	/**
-	 * Returns a previously created MemValue that is equal to the supplied value, or <tt>null</tt> if the supplied value
-	 * is a new value or is equal to <tt>null</tt>.
+	 * Returns a previously created MemValue that is equal to the supplied value, or <var>null</var> if the supplied
+	 * value is a new value or is equal to <var>null</var>.
 	 *
-	 * @param value The MemValue equivalent of the supplied value, or <tt>null</tt>.
-	 * @return A previously created MemValue that is equal to <tt>value</tt>, or <tt>null</tt> if no such value exists
-	 *         or if <tt>value</tt> is equal to <tt>null</tt>.
+	 * @param value The MemValue equivalent of the supplied value, or <var>null</var>.
+	 * @return A previously created MemValue that is equal to <var>value</var>, or <var>null</var> if no such value
+	 *         exists or if <var>value</var> is equal to <var>null</var>.
 	 */
 	public MemValue getMemValue(Value value) {
 		if (value instanceof Resource) {
@@ -150,7 +150,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	/**
-	 * Checks whether the supplied value is an instance of <tt>MemValue</tt> and whether it has been created by this
+	 * Checks whether the supplied value is an instance of <var>MemValue</var> and whether it has been created by this
 	 * MemValueFactory.
 	 */
 	private boolean isOwnMemValue(Value value) {

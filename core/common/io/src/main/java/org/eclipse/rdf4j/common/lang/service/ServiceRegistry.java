@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A registry that stores services by some key. Upon initialization, the registry searches for service description files
- * at <tt>META-INF/services/&lt;service class name&gt;</tt> and initializes itself accordingly.
+ * at <var>META-INF/services/&lt;service class name&gt;</var> and initializes itself accordingly.
  *
  * @see javax.imageio.spi.ServiceRegistry
  * @author Arjohn Kampman
@@ -93,7 +93,7 @@ public abstract class ServiceRegistry<K, S> {
 	 * Checks whether a service for the specified key is available.
 	 *
 	 * @param key The key identifying which service to search for.
-	 * @return <tt>true</tt> if a service for the specific key is available, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if a service for the specific key is available, <var>false</var> otherwise.
 	 */
 	public boolean has(K key) {
 		return services.containsKey(key);

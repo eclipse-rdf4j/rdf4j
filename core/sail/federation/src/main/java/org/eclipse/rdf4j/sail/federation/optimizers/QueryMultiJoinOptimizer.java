@@ -47,8 +47,6 @@ public class QueryMultiJoinOptimizer implements QueryOptimizer {
 
 	/**
 	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
-	 *
-	 * @throws StoreException
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {

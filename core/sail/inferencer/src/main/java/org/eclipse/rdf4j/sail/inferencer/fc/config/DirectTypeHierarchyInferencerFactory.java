@@ -28,7 +28,7 @@ public class DirectTypeHierarchyInferencerFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:DirectTypeHierarchyInferencer";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:DirectTypeHierarchyInferencer</tt>.
+	 * Returns the Sail's type: <var>openrdf:DirectTypeHierarchyInferencer</var>.
 	 */
 	@Override
 	public String getSailType() {

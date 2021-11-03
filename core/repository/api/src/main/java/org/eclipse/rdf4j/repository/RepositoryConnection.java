@@ -153,7 +153,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param query The query string, in SPARQL syntax.
 	 * @return A query ready to be evaluated on this repository.
 	 * @throws MalformedQueryException       If the supplied query is malformed.
-	 * @throws UnsupportedOperationException If the <tt>prepareQuery</tt> method is not supported by this repository.
+	 * @throws UnsupportedOperationException If the <var>prepareQuery</var> method is not supported by this repository.
 	 * @see #prepareQuery(QueryLanguage, String)
 	 */
 	default Query prepareQuery(String query) throws RepositoryException, MalformedQueryException {
@@ -173,7 +173,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @return A query ready to be evaluated on this repository.
 	 * @throws MalformedQueryException           If the supplied query is malformed.
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
-	 * @throws UnsupportedOperationException     If the <tt>prepareQuery</tt> method is not supported by this
+	 * @throws UnsupportedOperationException     If the <var>prepareQuery</var> method is not supported by this
 	 *                                           repository.
 	 */
 	Query prepareQuery(QueryLanguage ql, String query) throws RepositoryException, MalformedQueryException;
@@ -186,12 +186,12 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *
 	 * @param ql      The {@link QueryLanguage query language} in which the query is formulated.
 	 * @param query   The query string.
-	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
+	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <var>null</var> if
 	 *                the query does not contain any relative URIs.
 	 * @return A query ready to be evaluated on this repository.
 	 * @throws MalformedQueryException           If the supplied query is malformed.
 	 * @throws UnsupportedQueryLanguageException If the supplied query language is not supported.
-	 * @throws UnsupportedOperationException     If the <tt>prepareQuery</tt> method is not supported by this
+	 * @throws UnsupportedOperationException     If the <var>prepareQuery</var> method is not supported by this
 	 *                                           repository.
 	 */
 	Query prepareQuery(QueryLanguage ql, String query, String baseURI)
@@ -232,7 +232,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *
 	 * @param ql      The {@link QueryLanguage query language} in which the query is formulated.
 	 * @param query   The query string.
-	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
+	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <var>null</var> if
 	 *                the query does not contain any relative URIs.
 	 * @return a {@link TupleQuery} ready to be evaluated on this {@link RepositoryConnection}.
 	 * @throws IllegalArgumentException          If the supplied query is not a tuple query.
@@ -276,7 +276,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *
 	 * @param ql      The {@link QueryLanguage query language} in which the query is formulated.
 	 * @param query   The query string.
-	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
+	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <var>null</var> if
 	 *                the query does not contain any relative URIs.
 	 * @return a {@link GraphQuery} ready to be evaluated on this {@link RepositoryConnection}.
 	 * @throws IllegalArgumentException          If the supplied query is not a graph query.
@@ -287,7 +287,7 @@ public interface RepositoryConnection extends AutoCloseable {
 			throws RepositoryException, MalformedQueryException;
 
 	/**
-	 * Prepares SPARQL queries that return <tt>true</tt> or <tt>false</tt>, that is, SPARQL ASK queries. In case the
+	 * Prepares SPARQL queries that return <var>true</var> or <var>false</var>, that is, SPARQL ASK queries. In case the
 	 * query contains relative URIs that need to be resolved against an external base URI, one should use
 	 * {@link #prepareBooleanQuery(QueryLanguage, String, String)} instead.
 	 *
@@ -302,8 +302,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	}
 
 	/**
-	 * Prepares queries that return <tt>true</tt> or <tt>false</tt>. In case the query contains relative URIs that need
-	 * to be resolved against an external base URI, one should use
+	 * Prepares queries that return <var>true</var> or <var>false</var>. In case the query contains relative URIs that
+	 * need to be resolved against an external base URI, one should use
 	 * {@link #prepareBooleanQuery(QueryLanguage, String, String)} instead.
 	 *
 	 * @param ql    The {@link QueryLanguage query language} in which the query is formulated.
@@ -317,11 +317,11 @@ public interface RepositoryConnection extends AutoCloseable {
 			throws RepositoryException, MalformedQueryException;
 
 	/**
-	 * Prepares queries that return <tt>true</tt> or <tt>false</tt>.
+	 * Prepares queries that return <var>true</var> or <var>false</var>.
 	 *
 	 * @param ql      The {@link QueryLanguage query language} in which the query is formulated.
 	 * @param query   The query string.
-	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <tt>null</tt> if
+	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be <var>null</var> if
 	 *                the query does not contain any relative URIs.
 	 * @return a {@link BooleanQuery} ready to be evaluated on this {@link RepositoryConnection}.
 	 * @throws IllegalArgumentException          If the supplied query is not a boolean query.
@@ -360,8 +360,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *
 	 * @param ql      The {@link QueryLanguage query language} in which the update operation is formulated.
 	 * @param update  The update operation string.
-	 * @param baseURI The base URI to resolve any relative URIs that are in the update against, can be <tt>null</tt> if
-	 *                the update does not contain any relative URIs.
+	 * @param baseURI The base URI to resolve any relative URIs that are in the update against, can be <var>null</var>
+	 *                if the update does not contain any relative URIs.
 	 * @return a {@link Update} ready to be executed on this {@link RepositoryConnection}.
 	 * @throws MalformedQueryException If the supplied update operation string is malformed.
 	 */
@@ -381,9 +381,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * optionally restricted to the specified set of named contexts. If the repository supports inferencing, inferred
 	 * statements will be included in the result.
 	 *
-	 * @param subj     A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred     A URI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj      A Value specifying the object, or <tt>null</tt> for a wildcard.
+	 * @param subj     A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred     A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj      A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @param contexts The context(s) to get the data from. Note that this parameter is a vararg and as such is
 	 *                 optional. If no contexts are supplied the method operates on the entire repository.
 	 * @return The statements matching the specified pattern. The result object is a {@link RepositoryResult} object, a
@@ -399,9 +399,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Gets all statements with a specific subject, predicate and/or object from the repository. The result is
 	 * optionally restricted to the specified set of named contexts.
 	 *
-	 * @param subj            A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred            An IRI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj             A Value specifying the object, or <tt>null</tt> for a wildcard.
+	 * @param subj            A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred            An IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj             A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
 	 *                        optional. If no contexts are supplied the method operates on the entire repository.
 	 * @param includeInferred if false, no inferred statements are returned; if true, inferred statements are returned
@@ -417,9 +417,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Checks whether the repository contains statements with a specific subject, predicate and/or object, optionally in
 	 * the specified contexts.
 	 *
-	 * @param subj            A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred            An IRI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj             A Value specifying the object, or <tt>null</tt> for a wildcard.
+	 * @param subj            A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred            An IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj             A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @param contexts        The context(s) the need to be searched. Note that this parameter is a vararg and as such
 	 *                        is optional. If no contexts are supplied the method operates on the entire repository.
 	 * @param includeInferred if false, no inferred statements are considered; if true, inferred statements are
@@ -480,9 +480,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	long size(Resource... contexts) throws RepositoryException;
 
 	/**
-	 * Returns <tt>true</tt> if this repository does not contain any (explicit) statements.
+	 * Returns <var>true</var> if this repository does not contain any (explicit) statements.
 	 *
-	 * @return <tt>true</tt> if this repository is empty, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if this repository is empty, <var>false</var> otherwise.
 	 * @throws RepositoryException If the repository could not be checked to be empty.
 	 */
 	boolean isEmpty() throws RepositoryException;
@@ -794,9 +794,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * contexts.
 	 *
 	 * @param url        The URL of the RDF data.
-	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
-	 *                   determined by examining the content type in the HTTP response header, and failing that, the
-	 *                   file name extension of the supplied URL.
+	 * @param dataFormat The serialization format of the data. If set to <var>null</var>, the format will be
+	 *                   automatically determined by examining the content type in the HTTP response header, and failing
+	 *                   that, the file name extension of the supplied URL.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
 	 *                   these contexts, ignoring any context information in the data itself.
 	 *
@@ -821,14 +821,14 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param url        The URL of the RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.net.URL#toExternalForm() url.toExternalForm()} if the value is set to
-	 *                   <tt>null</tt>.
+	 *                   <var>null</var>.
 	 *                   <p>
 	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
 	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
 	 *                   5.1 for details).
-	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
-	 *                   determined by examining the content type in the HTTP response header, and failing that, the
-	 *                   file name extension of the supplied URL.
+	 * @param dataFormat The serialization format of the data. If set to <var>null</var>, the format will be
+	 *                   automatically determined by examining the content type in the HTTP response header, and failing
+	 *                   that, the file name extension of the supplied URL.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
 	 *                   these contexts, ignoring any context information in the data itself.
 	 * @throws IOException                  If an I/O error occurred while reading from the URL.
@@ -868,8 +868,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Adds RDF data from the specified file to a specific contexts in the repository.
 	 *
 	 * @param file       A file containing RDF data.
-	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
-	 *                   determined by examining the file name extension of the supplied File.
+	 * @param dataFormat The serialization format of the data. If set to <var>null</var>, the format will be
+	 *                   automatically determined by examining the file name extension of the supplied File.
 	 * @param contexts   The contexts to add the data to. Note that this parameter is a vararg and as such is optional.
 	 *                   If no contexts are specified, the data is added to any context specified in the actual data
 	 *                   file, or if the data contains no context, it is added without context. If one or more contexts
@@ -894,13 +894,13 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *
 	 * @param file       A file containing RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
-	 *                   value of {@link java.io.File#toURI() file.toURI()} if the value is set to <tt>null</tt>.
+	 *                   value of {@link java.io.File#toURI() file.toURI()} if the value is set to <var>null</var>.
 	 *                   <p>
 	 *                   Note that if the data contains an embedded base URI, that embedded base URI will overrule the
 	 *                   value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section
 	 *                   5.1 for details).
-	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
-	 *                   determined by examining the file name extension of the supplied File.
+	 * @param dataFormat The serialization format of the data. If set to <var>null</var>, the format will be
+	 *                   automatically determined by examining the file name extension of the supplied File.
 	 * @param contexts   The contexts to add the data to. Note that this parameter is a vararg and as such is optional.
 	 *                   If no contexts are specified, the data is added to any context specified in the actual data
 	 *                   file, or if the data contains no context, it is added without context. If one or more contexts
@@ -998,9 +998,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Removes the statement(s) with the specified subject, predicate and object from the repository, optionally
 	 * restricted to the specified contexts.
 	 *
-	 * @param subject   The statement's subject, or <tt>null</tt> for a wildcard.
-	 * @param predicate The statement's predicate, or <tt>null</tt> for a wildcard.
-	 * @param object    The statement's object, or <tt>null</tt> for a wildcard.
+	 * @param subject   The statement's subject, or <var>null</var> for a wildcard.
+	 * @param predicate The statement's predicate, or <var>null</var> for a wildcard.
+	 * @param object    The statement's object, or <var>null</var> for a wildcard.
 	 * @param contexts  The context(s) to remove the data from. Note that this parameter is a vararg and as such is
 	 *                  optional. If no contexts are supplied the method operates on the entire repository.
 	 * @throws RepositoryException If the statement(s) could not be removed from the repository, for example because the
@@ -1089,10 +1089,10 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Gets the namespace that is associated with the specified prefix, if any.
 	 *
 	 * @param prefix A namespace prefix, or an empty string in case of the default namespace.
-	 * @return The namespace name that is associated with the specified prefix, or <tt>null</tt> if there is no such
+	 * @return The namespace name that is associated with the specified prefix, or <var>null</var> if there is no such
 	 *         namespace.
 	 * @throws RepositoryException  If the namespace could not be read from the repository.
-	 * @throws NullPointerException In case <tt>prefix</tt> is <tt>null</tt>.
+	 * @throws NullPointerException In case <var>prefix</var> is <var>null</var>.
 	 */
 	String getNamespace(String prefix) throws RepositoryException;
 
@@ -1103,7 +1103,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param name   The namespace name that the prefix maps to.
 	 * @throws RepositoryException  If the namespace could not be set in the repository, for example because the
 	 *                              repository is not writable.
-	 * @throws NullPointerException In case <tt>prefix</tt> or <tt>name</tt> is <tt>null</tt>.
+	 * @throws NullPointerException In case <var>prefix</var> or <var>name</var> is <var>null</var>.
 	 */
 	void setNamespace(String prefix, String name) throws RepositoryException;
 
@@ -1112,7 +1112,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *
 	 * @param prefix The namespace prefix, or an empty string in case of the default namespace.
 	 * @throws RepositoryException  If the namespace prefix could not be removed.
-	 * @throws NullPointerException In case <tt>prefix</tt> is <tt>null</tt>.
+	 * @throws NullPointerException In case <var>prefix</var> is <var>null</var>.
 	 */
 	void removeNamespace(String prefix) throws RepositoryException;
 

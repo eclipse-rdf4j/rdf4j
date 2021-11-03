@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.rio.RioSetting;
 public class TurtleParserSettings {
 
 	/**
-	 * Allows the Turtle parser to recognize <tt>@BASE</tt> and <tt>@PREFIX</tt> in a similar way to the SPARQL case
+	 * Allows the Turtle parser to recognize <var>@BASE</var> and <var>@PREFIX</var> in a similar way to the SPARQL case
 	 * insensitive directives.
 	 * <p>
 	 * Defaults to false.

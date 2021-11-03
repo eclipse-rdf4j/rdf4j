@@ -30,7 +30,7 @@ public class ElasticsearchStoreFactory implements SailFactory {
 	public static final String SAIL_TYPE = "rdf4j:ElasticsearchStore";
 
 	/**
-	 * Returns the Sail's type: <tt>rdf4j:ElasticsearchStore</tt>.
+	 * Returns the Sail's type: <var>rdf4j:ElasticsearchStore</var>.
 	 */
 	@Override
 	public String getSailType() {

@@ -174,7 +174,7 @@ class Transaction implements AutoCloseable {
 	 * @param queryLanguage The {@link QueryLanguage query language} in which the query is formulated.
 	 * @param query         The query string.
 	 * @param baseURI       The base URI to resolve any relative URIs that are in the query against, can be
-	 *                      <tt>null</tt> if the query does not contain any relative URIs.
+	 *                      <var>null</var> if the query does not contain any relative URIs.
 	 * @return A query ready to be evaluated on this repository.
 	 * @throws InterruptedException if the transaction thread is interrupted
 	 * @throws ExecutionException   if an error occurs while executing the operation.

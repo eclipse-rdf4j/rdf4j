@@ -70,7 +70,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public int size() {
@@ -78,7 +78,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public UnionBuilder<T, E> addGroup(final Group theGroup) {
@@ -94,7 +94,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public UnionBuilder<T, E> removeGroup(final Group theGroup) {
@@ -108,7 +108,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void addChild(final Group theGroup) {
@@ -116,7 +116,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public TupleExpr expr() {
@@ -133,7 +133,7 @@ public class UnionBuilder<T extends ParsedQuery, E extends SupportsGroups>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public boolean isOptional() {

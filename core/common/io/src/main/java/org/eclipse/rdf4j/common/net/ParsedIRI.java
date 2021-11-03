@@ -72,8 +72,8 @@ import java.util.List;
  * @author James Leigh
  * @since 2.3
  * @see <a href="http://www.ietf.org/rfc/rfc3987.txt"><i>RFC&nbsp;3987: Internationalized Resource Identifiers
- *      (IRIs)</i></a>, <br>
- *      <a href="http://www.ietf.org/rfc/rfc3986.txt"><i>RFC&nbsp;3986: Uniform Resource Identifiers (URI): Generic
+ *      (IRIs)</i></a>
+ * @see <a href="http://www.ietf.org/rfc/rfc3986.txt"><i>RFC&nbsp;3986: Uniform Resource Identifiers (URI): Generic
  *      Syntax</i></a>
  */
 public class ParsedIRI implements Cloneable, Serializable {
@@ -1178,8 +1178,8 @@ public class ParsedIRI implements Cloneable, Serializable {
 
 	/**
 	 * Normalizes the path of this URI if it has one. Normalizing a path means that any unnecessary '.' and '..'
-	 * segments are removed. For example, the URI <tt>http://server.com/a/b/../c/./d</tt> would be normalized to
-	 * <tt>http://server.com/a/c/d</tt>. A URI doens't have a path if it is opaque.
+	 * segments are removed. For example, the URI <var>http://server.com/a/b/../c/./d</var> would be normalized to
+	 * <var>http://server.com/a/c/d</var>. A URI doens't have a path if it is opaque.
 	 */
 	private String pathSegmentNormalization(String _path) {
 		if (_path == null) {

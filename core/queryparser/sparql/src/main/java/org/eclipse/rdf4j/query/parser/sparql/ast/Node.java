@@ -44,7 +44,7 @@ public interface Node {
 	void jjtAppendChild(Node n);
 
 	/**
-	 * Adds the supplied node as the <tt>i</tt>'th child node to this node.
+	 * Adds the supplied node as the <var>i</var>'th child node to this node.
 	 */
 	void jjtInsertChild(Node n, int i);
 

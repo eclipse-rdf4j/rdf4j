@@ -863,9 +863,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 		/**
 		 * Creates a new Statement with the supplied subject, predicate and object.
 		 *
-		 * @param subject   The statement's subject, may be <tt>null</tt>.
-		 * @param predicate The statement's predicate, may be <tt>null</tt>.
-		 * @param object    The statement's object, may be <tt>null</tt>.
+		 * @param subject   The statement's subject, may be <var>null</var>.
+		 * @param predicate The statement's predicate, may be <var>null</var>.
+		 * @param object    The statement's object, may be <var>null</var>.
 		 */
 		public WildStatement(Resource subject, IRI predicate, Value object) {
 			this(subject, predicate, object, null);
@@ -874,10 +874,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		/**
 		 * Creates a new Statement with the supplied subject, predicate and object for the specified associated context.
 		 *
-		 * @param subject   The statement's subject, may be <tt>null</tt>.
-		 * @param predicate The statement's predicate, may be <tt>null</tt>.
-		 * @param object    The statement's object, may be <tt>null</tt>.
-		 * @param context   The statement's context, <tt>null</tt> to indicate no context is associated.
+		 * @param subject   The statement's subject, may be <var>null</var>.
+		 * @param predicate The statement's predicate, may be <var>null</var>.
+		 * @param object    The statement's object, may be <var>null</var>.
+		 * @param context   The statement's context, <var>null</var> to indicate no context is associated.
 		 */
 		public WildStatement(Resource subject, IRI predicate, Value object, Resource context) {
 			this.subject = subject;

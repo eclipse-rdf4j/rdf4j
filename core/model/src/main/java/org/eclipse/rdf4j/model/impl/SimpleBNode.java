@@ -46,7 +46,7 @@ public class SimpleBNode extends AbstractBNode {
 	/**
 	 * Creates a new blank node with the supplied identifier.
 	 *
-	 * @param id The identifier for this blank node, must not be <tt>null</tt>.
+	 * @param id The identifier for this blank node, must not be <var>null</var>.
 	 */
 	protected SimpleBNode(String id) {
 		this();
