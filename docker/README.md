@@ -1,6 +1,6 @@
 # Eclipse RDF4J server and workbench
 
-Docker image for RDF4J server and workbench, based on the Tomcat 8.5 Alpine image.
+Docker image for RDF4J server and workbench, based on the Tomcat 8.5 (JRE 11) image.
 
 A slightly modified web.mxl is used to fix a known UTF-8 issue 
 (see also http://docs.rdf4j.org/server-workbench-console)
