@@ -28,6 +28,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Uses {@link ArtistDao} and {@link PaintingDao} to query and manipulate the repository.
+ *
+ *
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 @Component
 public class ArtService {
 	@Autowired

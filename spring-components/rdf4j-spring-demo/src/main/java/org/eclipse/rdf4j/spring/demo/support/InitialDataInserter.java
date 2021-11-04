@@ -13,6 +13,12 @@ import javax.annotation.PostConstruct;
 import org.eclipse.rdf4j.spring.support.DataInserter;
 import org.springframework.core.io.Resource;
 
+/**
+ * Inserts data from the specified TTL file into the repository at startup.
+ * 
+ * @since 4.0.0
+ * @author Florian Kleedorfer
+ */
 public class InitialDataInserter {
 	DataInserter dataInserter;
 	Resource ttlFile;

@@ -25,6 +25,10 @@ import org.eclipse.rdf4j.spring.util.QueryResultUtils;
 import org.springframework.stereotype.Component;
 
 /**
+ * Class responsible for repository access for managing {@link Artist} entities.
+ *
+ * The class extends the {@link SimpleRDF4JCRUDDao}, providing capabilities for inserting and reading entities.
+ *
  * @since 4.0.0
  * @author Florian Kleedorfer
  */

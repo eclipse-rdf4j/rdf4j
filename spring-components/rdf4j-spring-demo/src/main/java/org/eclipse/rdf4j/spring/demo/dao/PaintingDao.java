@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.spring.dao.RDF4JDao;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
+import org.eclipse.rdf4j.spring.demo.model.Artist;
 import org.eclipse.rdf4j.spring.demo.model.EX;
 import org.eclipse.rdf4j.spring.demo.model.Painting;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
@@ -26,6 +27,10 @@ import org.eclipse.rdf4j.spring.util.QueryResultUtils;
 import org.springframework.stereotype.Component;
 
 /**
+ * Class responsible for repository access for managing {@link Painting} entities.
+ *
+ * The class extends the {@link SimpleRDF4JCRUDDao}, providing capabilities for inserting and reading entities.
+ *
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
