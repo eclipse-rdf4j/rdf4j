@@ -95,11 +95,6 @@
 								</goals>
 							</execution>
 						</executions>
-						<configuration>
-							<encoding>utf8</encoding>
-							<source>11</source>
-							<additionalparam>${javadoc.opts}</additionalparam>
-						</configuration>
 					</plugin>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
@@ -193,11 +188,6 @@
 								</configuration>
 							</execution>
 						</executions>
-						<configuration>
-							<encoding>utf8</encoding>
-							<source>11</source>
-							<additionalparam>${javadoc.opts}</additionalparam>
-						</configuration>
 					</plugin>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
@@ -229,15 +219,6 @@
 					</plugin>
 				</plugins>
 			</build>
-		</profile>
-		<profile>
-			<id>doclint-disable</id>
-			<activation>
-				<jdk>[11,)</jdk>
-			</activation>
-			<properties>
-				<javadoc.opts>-Xdoclint:none -html5 -tag implNote:a:"Implementation Note"</javadoc.opts>
-			</properties>
 		</profile>
 		<profile>
 			<id>use-sonatype-snapshots</id>
@@ -746,8 +727,12 @@
 					<artifactId>maven-javadoc-plugin</artifactId>
 					<version>3.3.1</version>
 					<configuration>
+						<encoding>utf8</encoding>
 						<source>11</source>
-						<additionalparam>${javadoc.opts}</additionalparam>
+						<doclint>none</doclint>
+						<additionalOptions>
+							<additionalOption>-html5</additionalOption>
+						</additionalOptions>
 						<additionalJOption>${additional.j.option}</additionalJOption>
 						<additionalDependencies>
 							<additionalDependency>
