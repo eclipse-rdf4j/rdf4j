@@ -168,7 +168,7 @@ public abstract class AbstractSail implements Sail {
 	 * Checks whether the Sail has been initialized. Sails are initialized from {@link #initialize() initialization}
 	 * until {@link #shutDown() shutdown}.
 	 *
-	 * @return <tt>true</tt> if the Sail has been initialized, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the Sail has been initialized, <var>false</var> otherwise.
 	 */
 	protected boolean isInitialized() {
 		return initialized;

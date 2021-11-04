@@ -71,42 +71,42 @@ public interface Literal extends Value {
 	IRI getDatatype();
 
 	/**
-	 * Returns the <tt>boolean</tt> value of this literal.
+	 * Returns the <var>boolean</var> value of this literal.
 	 *
-	 * @return The <tt>boolean</tt> value of the literal.
-	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <tt>boolean</tt> .
+	 * @return The <var>boolean</var> value of the literal.
+	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <var>boolean</var> .
 	 */
 	boolean booleanValue();
 
 	/**
-	 * Returns the <tt>byte</tt> value of this literal.
+	 * Returns the <var>byte</var> value of this literal.
 	 *
-	 * @return The <tt>byte</tt> value of the literal.
-	 * @throws NumberFormatException If the literal cannot be represented by a <tt>byte</tt>.
+	 * @return The <var>byte</var> value of the literal.
+	 * @throws NumberFormatException If the literal cannot be represented by a <var>byte</var>.
 	 */
 	byte byteValue();
 
 	/**
-	 * Returns the <tt>short</tt> value of this literal.
+	 * Returns the <var>short</var> value of this literal.
 	 *
-	 * @return The <tt>short</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>short</tt>.
+	 * @return The <var>short</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <var>short</var>.
 	 */
 	short shortValue();
 
 	/**
-	 * Returns the <tt>int</tt> value of this literal.
+	 * Returns the <var>int</var> value of this literal.
 	 *
-	 * @return The <tt>int</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>int</tt>.
+	 * @return The <var>int</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <var>int</var>.
 	 */
 	int intValue();
 
 	/**
-	 * Returns the <tt>long</tt> value of this literal.
+	 * Returns the <var>long</var> value of this literal.
 	 *
-	 * @return The <tt>long</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by to a <tt>long</tt> .
+	 * @return The <var>long</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by to a <var>long</var> .
 	 */
 	long longValue();
 
@@ -127,18 +127,18 @@ public interface Literal extends Value {
 	BigDecimal decimalValue();
 
 	/**
-	 * Returns the <tt>float</tt> value of this literal.
+	 * Returns the <var>float</var> value of this literal.
 	 *
-	 * @return The <tt>float</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>float</tt>.
+	 * @return The <var>float</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <var>float</var>.
 	 */
 	float floatValue();
 
 	/**
-	 * Returns the <tt>double</tt> value of this literal.
+	 * Returns the <var>double</var> value of this literal.
 	 *
-	 * @return The <tt>double</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>double</tt>.
+	 * @return The <var>double</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <var>double</var>.
 	 */
 	double doubleValue();
 
@@ -259,8 +259,8 @@ public interface Literal extends Value {
 	/**
 	 * Returns the {@link XMLGregorianCalendar} value of this literal. A calendar representation can be given for
 	 * literals whose label conforms to the syntax of the following <a href="https://www.w3.org/TR/xmlschema11-2/">XML
-	 * Schema datatypes</a>: <tt>dateTime</tt>, <tt>time</tt>, <tt>date</tt>, <tt>gYearMonth</tt>, <tt>gMonthDay</tt>,
-	 * <tt>gYear</tt>, <tt>gMonth</tt> or <tt>gDay</tt>.
+	 * Schema datatypes</a>: <var>dateTime</var>, <var>time</var>, <var>date</var>, <var>gYearMonth</var>,
+	 * <var>gMonthDay</var>, <var>gYear</var>, <var>gMonth</var> or <var>gDay</var>.
 	 *
 	 * @return The calendar value of the literal.
 	 * @throws IllegalArgumentException If the literal cannot be represented by a {@link XMLGregorianCalendar}.

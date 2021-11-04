@@ -78,7 +78,7 @@ public class FedXFactory {
 	 *
 	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
 	 *
-	 * @throws Exception
+	 * @throws FedXException
 	 */
 	public static FedXRepository createFederation(
 			List<Endpoint> endpoints) throws FedXException {

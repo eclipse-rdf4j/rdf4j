@@ -33,7 +33,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	private SparqlTupleExprRenderer mRenderer = new SparqlTupleExprRenderer();
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public QueryLanguage getLanguage() {
@@ -41,7 +41,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public String render(final ParsedQuery theQuery) throws Exception {

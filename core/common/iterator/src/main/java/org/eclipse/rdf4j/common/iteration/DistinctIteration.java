@@ -45,7 +45,7 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	 *---------*/
 
 	/**
-	 * Returns <tt>true</tt> if the specified object hasn't been seen before.
+	 * Returns <var>true</var> if the specified object hasn't been seen before.
 	 */
 	@Override
 	protected boolean accept(E object) throws X {

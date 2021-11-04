@@ -244,7 +244,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Sets the preferred format for encoding tuple query results.
 	 *
-	 * @param format The preferred {@link TupleQueryResultFormat}, or <tt>null</tt> to indicate no specific format is
+	 * @param format The preferred {@link TupleQueryResultFormat}, or <var>null</var> to indicate no specific format is
 	 *               preferred.
 	 */
 	public void setPreferredTupleQueryResultFormat(TupleQueryResultFormat format) {
@@ -255,7 +255,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Gets the preferred {@link TupleQueryResultFormat} for encoding tuple query results. The
 	 * {@link TupleQueryResultFormat#SPARQL SPARQL/XML} format is preferred by default.
 	 *
-	 * @return The preferred format, of <tt>null</tt> if no specific format is preferred.
+	 * @return The preferred format, of <var>null</var> if no specific format is preferred.
 	 */
 	public TupleQueryResultFormat getPreferredTupleQueryResultFormat() {
 		return preferredTQRFormat;
@@ -264,7 +264,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Sets the preferred format for encoding RDF documents.
 	 *
-	 * @param format The preferred {@link RDFFormat}, or <tt>null</tt> to indicate no specific format is preferred.
+	 * @param format The preferred {@link RDFFormat}, or <var>null</var> to indicate no specific format is preferred.
 	 */
 	public void setPreferredRDFFormat(RDFFormat format) {
 		preferredRDFFormat = format;
@@ -274,7 +274,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Gets the preferred {@link RDFFormat} for encoding RDF documents. The {@link RDFFormat#TURTLE Turtle} format is
 	 * preferred by default.
 	 *
-	 * @return The preferred format, of <tt>null</tt> if no specific format is preferred.
+	 * @return The preferred format, of <var>null</var> if no specific format is preferred.
 	 */
 	public RDFFormat getPreferredRDFFormat() {
 		return preferredRDFFormat;
@@ -283,8 +283,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Sets the preferred format for encoding boolean query results.
 	 *
-	 * @param format The preferred {@link BooleanQueryResultFormat}, or <tt>null</tt> to indicate no specific format is
-	 *               preferred.
+	 * @param format The preferred {@link BooleanQueryResultFormat}, or <var>null</var> to indicate no specific format
+	 *               is preferred.
 	 */
 	public void setPreferredBooleanQueryResultFormat(BooleanQueryResultFormat format) {
 		preferredBQRFormat = format;
@@ -294,7 +294,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Gets the preferred {@link BooleanQueryResultFormat} for encoding boolean query results. The
 	 * {@link BooleanQueryResultFormat#TEXT binary} format is preferred by default.
 	 *
-	 * @return The preferred format, of <tt>null</tt> if no specific format is preferred.
+	 * @return The preferred format, of <var>null</var> if no specific format is preferred.
 	 */
 	public BooleanQueryResultFormat getPreferredBooleanQueryResultFormat() {
 		return preferredBQRFormat;
@@ -1138,11 +1138,11 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Gets the MIME type specified in the response headers of the supplied method, if any. For example, if the response
-	 * headers contain <tt>Content-Type: application/xml;charset=UTF-8</tt>, this method will return
-	 * <tt>application/xml</tt> as the MIME type.
+	 * headers contain <var>Content-Type: application/xml;charset=UTF-8</var>, this method will return
+	 * <var>application/xml</var> as the MIME type.
 	 *
 	 * @param method The method to get the reponse MIME type from.
-	 * @return The response MIME type, or <tt>null</tt> if not available.
+	 * @return The response MIME type, or <var>null</var> if not available.
 	 */
 	protected String getResponseMIMEType(HttpResponse method) throws IOException {
 		Header[] headers = method.getHeaders("Content-Type");
@@ -1164,7 +1164,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Gets the character encoding specified in the HTTP headers of the supplied response, if any. For example, if the
-	 * response headers contain <tt>Content-Type: application/xml;charset=UTF-8</tt>, this method will return
+	 * response headers contain <var>Content-Type: application/xml;charset=UTF-8</var>, this method will return
 	 * {@link StandardCharsets#UTF_8 UTF-8} as the character encoding.
 	 * 
 	 * @param response the response to get the character encoding from.

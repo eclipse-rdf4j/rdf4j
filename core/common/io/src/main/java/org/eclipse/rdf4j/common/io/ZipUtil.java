@@ -22,7 +22,7 @@ import java.util.zip.ZipFile;
 public class ZipUtil {
 
 	/**
-	 * Magic number for ZIP files (4 bytes: <tt>0x04034b50</tt>).
+	 * Magic number for ZIP files (4 bytes: <var>0x04034b50</var>).
 	 */
 	private final static byte MAGIC_NUMBER[] = { (byte) 0x50, (byte) 0x4B, (byte) 0x03, (byte) 0x04 };
 

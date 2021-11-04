@@ -19,7 +19,7 @@ import java.util.stream.StreamSupport;
 
 /**
  * This class consists exclusively of static methods that operate on or return Iterations. It is the
- * Iteration-equivalent of <tt>java.util.Collections</tt>.
+ * Iteration-equivalent of <var>java.util.Collections</var>.
  */
 public class Iterations {
 
@@ -56,7 +56,7 @@ public class Iterations {
 	 * @param iter       An Iteration containing elements to add to the container. If the Iteration is an instance of
 	 *                   {@link CloseableIteration} it is automatically closed after consumption.
 	 * @param collection The collection to add the elements to.
-	 * @return The <tt>collection</tt> object that was supplied to this method.
+	 * @return The <var>collection</var> object that was supplied to this method.
 	 */
 	public static <E, X extends Exception, C extends Collection<E>> C addAll(Iteration<? extends E, X> iter,
 			C collection) throws X {

@@ -9,7 +9,7 @@
 package org.eclipse.rdf4j.common.iteration;
 
 /**
- * An Iteration that skips the first <tt>offset</tt> elements from an underlying Iteration.
+ * An Iteration that skips the first <var>offset</var> elements from an underlying Iteration.
  */
 public class OffsetIteration<E, X extends Exception> extends FilterIteration<E, X> {
 
@@ -34,7 +34,7 @@ public class OffsetIteration<E, X extends Exception> extends FilterIteration<E, 
 	/**
 	 * Creates a new OffsetIteration.
 	 *
-	 * @param iter   The underlying Iteration, must not be <tt>null</tt>.
+	 * @param iter   The underlying Iteration, must not be <var>null</var>.
 	 * @param offset The number of elements to skip, must be larger than or equal to 0.
 	 */
 	public OffsetIteration(Iteration<? extends E, X> iter, long offset) {
@@ -51,7 +51,7 @@ public class OffsetIteration<E, X extends Exception> extends FilterIteration<E, 
 	 *---------*/
 
 	/**
-	 * Returns <tt>false</tt> for the first OFFSET objects.
+	 * Returns <var>false</var> for the first OFFSET objects.
 	 */
 	@Override
 	protected boolean accept(E object) {

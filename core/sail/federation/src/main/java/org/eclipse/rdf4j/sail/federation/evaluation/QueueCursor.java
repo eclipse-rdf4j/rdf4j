@@ -18,7 +18,7 @@ package org.eclipse.rdf4j.sail.federation.evaluation;
 public class QueueCursor<E> extends org.eclipse.rdf4j.http.client.QueueCursor<E> {
 
 	/**
-	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and default access policy.
+	 * Creates an <var>QueueCursor</var> with the given (fixed) capacity and default access policy.
 	 *
 	 * @param capacity the capacity of this queue
 	 */
@@ -27,11 +27,11 @@ public class QueueCursor<E> extends org.eclipse.rdf4j.http.client.QueueCursor<E>
 	}
 
 	/**
-	 * Creates an <tt>QueueCursor</tt> with the given (fixed) capacity and the specified access policy.
+	 * Creates an <var>QueueCursor</var> with the given (fixed) capacity and the specified access policy.
 	 *
 	 * @param capacity the capacity of this queue
-	 * @param fair     if <tt>true</tt> then queue accesses for threads blocked on insertion or removal, are processed
-	 *                 in FIFO order; if <tt>false</tt> the access order is unspecified.
+	 * @param fair     if <var>true</var> then queue accesses for threads blocked on insertion or removal, are processed
+	 *                 in FIFO order; if <var>false</var> the access order is unspecified.
 	 */
 	public QueueCursor(int capacity, boolean fair) {
 		super(capacity, fair);

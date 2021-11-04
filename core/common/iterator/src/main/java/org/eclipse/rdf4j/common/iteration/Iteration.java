@@ -26,10 +26,10 @@ import java.util.stream.Stream;
 public interface Iteration<E, X extends Exception> {
 
 	/**
-	 * Returns <tt>true</tt> if the iteration has more elements. (In other words, returns <tt>true</tt> if {@link #next}
-	 * would return an element rather than throwing a <tt>NoSuchElementException</tt>.)
+	 * Returns <var>true</var> if the iteration has more elements. (In other words, returns <var>true</var> if
+	 * {@link #next} would return an element rather than throwing a <var>NoSuchElementException</var>.)
 	 *
-	 * @return <tt>true</tt> if the iteration has more elements.
+	 * @return <var>true</var> if the iteration has more elements.
 	 * @throws X
 	 */
 	boolean hasNext() throws X;
@@ -47,9 +47,9 @@ public interface Iteration<E, X extends Exception> {
 	 * method can be called only once per call to next.
 	 *
 	 * @throws UnsupportedOperationException if the remove operation is not supported by this Iteration.
-	 * @throws IllegalStateException         If the Iteration has been closed, or if <tt>next()</tt> has not yet been
-	 *                                       called, or <tt>remove()</tt> has already been called after the last call to
-	 *                                       <tt>next()</tt>.
+	 * @throws IllegalStateException         If the Iteration has been closed, or if <var>next()</var> has not yet been
+	 *                                       called, or <var>remove()</var> has already been called after the last call
+	 *                                       to <var>next()</var>.
 	 */
 	void remove() throws X;
 

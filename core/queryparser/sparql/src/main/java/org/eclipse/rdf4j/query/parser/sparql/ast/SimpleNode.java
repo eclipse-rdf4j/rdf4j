@@ -111,7 +111,7 @@ public class SimpleNode implements Node {
 	 * Gets the (first) child of this node that is of the specific type.
 	 *
 	 * @param type The type of the child node that should be returned.
-	 * @return The (first) child node of the specified type, or <tt>null</tt> if no such child node was found.
+	 * @return The (first) child node of the specified type, or <var>null</var> if no such child node was found.
 	 */
 	public <T extends Node> T jjtGetChild(Class<T> type) {
 		for (Node n : children) {

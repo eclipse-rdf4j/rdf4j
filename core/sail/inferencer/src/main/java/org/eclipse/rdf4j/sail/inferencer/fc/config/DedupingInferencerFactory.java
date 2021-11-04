@@ -23,7 +23,7 @@ public class DedupingInferencerFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:DedupingInferencer";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:DedupingInferencer</tt>.
+	 * Returns the Sail's type: <var>openrdf:DedupingInferencer</var>.
 	 */
 	@Override
 	public String getSailType() {

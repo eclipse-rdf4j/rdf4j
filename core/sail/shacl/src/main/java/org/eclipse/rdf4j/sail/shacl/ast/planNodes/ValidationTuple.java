@@ -282,7 +282,6 @@ public class ValidationTuple {
 	/**
 	 * This is only the target part. For property shape scope it will not include the value.
 	 *
-	 * @return
 	 * @param includePropertyShapeValues
 	 */
 	public List<Value> getTargetChain(boolean includePropertyShapeValues) {

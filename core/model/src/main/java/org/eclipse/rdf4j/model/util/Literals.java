@@ -37,10 +37,10 @@ public class Literals {
 
 	/**
 	 * Gets the label of the supplied literal. The fallback value is returned in case the supplied literal is
-	 * <tt>null</tt>.
+	 * <var>null</var>.
 	 *
 	 * @param l        The literal to get the label for.
-	 * @param fallback The value to fall back to in case the supplied literal is <tt>null</tt>.
+	 * @param fallback The value to fall back to in case the supplied literal is <var>null</var>.
 	 * @return Either the literal's label, or the fallback value.
 	 */
 	public static String getLabel(Literal l, String fallback) {
@@ -61,12 +61,13 @@ public class Literals {
 	}
 
 	/**
-	 * Retrieves the {@link XSD.Datatype} value for the supplied Literal, if it has one.
+	 * Retrieves the {@link org.eclipse.rdf4j.model.vocabulary.XSD.Datatype} value for the supplied Literal, if it has
+	 * one.
 	 *
-	 * @param a Literal
-	 * @return an Optional {@link XSD.Datatype} enum, if one is available. Note that the absence of this enum does
-	 *         <i>not</i> indicate that the literal has no datatype, merely that it has no cached enum representation of
-	 *         that datatype.
+	 * @param l a Literal
+	 * @return an Optional {@link org.eclipse.rdf4j.model.vocabulary.XSD.Datatype} enum, if one is available. Note that
+	 *         the absence of this enum does <i>not</i> indicate that the literal has no datatype, merely that it has no
+	 *         cached enum representation of that datatype.
 	 * @since 3.5.0
 	 */
 	public static Optional<XSD.Datatype> getXsdDatatype(Literal l) {

@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.Namespace;
  */
 public class XSD {
 
-	/** The XML Schema namespace (<tt>http://www.w3.org/2001/XMLSchema#</tt>). */
+	/** The XML Schema namespace (<var>http://www.w3.org/2001/XMLSchema#</var>). */
 	public static final String NAMESPACE = "http://www.w3.org/2001/XMLSchema#";
 
 	/**
@@ -40,149 +40,149 @@ public class XSD {
 	 * Primitive datatypes
 	 */
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#duration</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#duration</var> */
 	public final static IRI DURATION = create("duration");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#dateTime</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#dateTime</var> */
 	public final static IRI DATETIME = create("dateTime");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#dateTimeStamp</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#dateTimeStamp</var> */
 	public final static IRI DATETIMESTAMP = create("dateTimeStamp");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#dayTimeDuration</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#dayTimeDuration</var> */
 	public static final IRI DAYTIMEDURATION = create("dayTimeDuration");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#time</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#time</var> */
 	public final static IRI TIME = create("time");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#date</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#date</var> */
 	public final static IRI DATE = create("date");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#gYearMonth</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#gYearMonth</var> */
 	public final static IRI GYEARMONTH = create("gYearMonth");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#gYear</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#gYear</var> */
 	public final static IRI GYEAR = create("gYear");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#gMonthDay</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#gMonthDay</var> */
 	public final static IRI GMONTHDAY = create("gMonthDay");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#gDay</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#gDay</var> */
 	public final static IRI GDAY = create("gDay");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#gMonth</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#gMonth</var> */
 	public final static IRI GMONTH = create("gMonth");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#string</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#string</var> */
 	public final static IRI STRING = create("string");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#boolean</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#boolean</var> */
 	public final static IRI BOOLEAN = create("boolean");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#base64Binary</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#base64Binary</var> */
 	public final static IRI BASE64BINARY = create("base64Binary");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#hexBinary</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#hexBinary</var> */
 	public final static IRI HEXBINARY = create("hexBinary");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#float</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#float</var> */
 	public final static IRI FLOAT = create("float");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#decimal</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#decimal</var> */
 	public final static IRI DECIMAL = create("decimal");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#double</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#double</var> */
 	public final static IRI DOUBLE = create("double");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#anyURI</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#anyURI</var> */
 	public final static IRI ANYURI = create("anyURI");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#QName</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#QName</var> */
 	public final static IRI QNAME = create("QName");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#NOTATION</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#NOTATION</var> */
 	public final static IRI NOTATION = create("NOTATION");
 
 	/*
 	 * Derived datatypes
 	 */
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#normalizedString</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#normalizedString</var> */
 	public final static IRI NORMALIZEDSTRING = create("normalizedString");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#token</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#token</var> */
 	public final static IRI TOKEN = create("token");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#language</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#language</var> */
 	public final static IRI LANGUAGE = create("language");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#NMTOKEN</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#NMTOKEN</var> */
 	public final static IRI NMTOKEN = create("NMTOKEN");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#NMTOKENS</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#NMTOKENS</var> */
 	public final static IRI NMTOKENS = create("NMTOKENS");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#Name</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#Name</var> */
 	public final static IRI NAME = create("Name");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#NCName</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#NCName</var> */
 	public final static IRI NCNAME = create("NCName");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#ID</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#ID</var> */
 	public final static IRI ID = create("ID");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#IDREF</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#IDREF</var> */
 	public final static IRI IDREF = create("IDREF");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#IDREFS</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#IDREFS</var> */
 	public final static IRI IDREFS = create("IDREFS");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#ENTITY</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#ENTITY</var> */
 	public final static IRI ENTITY = create("ENTITY");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#ENTITIES</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#ENTITIES</var> */
 	public final static IRI ENTITIES = create("ENTITIES");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#integer</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#integer</var> */
 	public final static IRI INTEGER = create("integer");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#long</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#long</var> */
 	public final static IRI LONG = create("long");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#int</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#int</var> */
 	public final static IRI INT = create("int");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#short</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#short</var> */
 	public final static IRI SHORT = create("short");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#byte</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#byte</var> */
 	public final static IRI BYTE = create("byte");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#nonPositiveInteger</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#nonPositiveInteger</var> */
 	public final static IRI NON_POSITIVE_INTEGER = create("nonPositiveInteger");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#negativeInteger</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#negativeInteger</var> */
 	public final static IRI NEGATIVE_INTEGER = create("negativeInteger");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#nonNegativeInteger</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#nonNegativeInteger</var> */
 	public final static IRI NON_NEGATIVE_INTEGER = create("nonNegativeInteger");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#positiveInteger</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#positiveInteger</var> */
 	public final static IRI POSITIVE_INTEGER = create("positiveInteger");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#unsignedLong</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#unsignedLong</var> */
 	public final static IRI UNSIGNED_LONG = create("unsignedLong");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#unsignedInt</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#unsignedInt</var> */
 	public final static IRI UNSIGNED_INT = create("unsignedInt");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#unsignedShort</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#unsignedShort</var> */
 	public final static IRI UNSIGNED_SHORT = create("unsignedShort");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#unsignedByte</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#unsignedByte</var> */
 	public final static IRI UNSIGNED_BYTE = create("unsignedByte");
 
-	/** <tt>http://www.w3.org/2001/XMLSchema#yearMonthDuration</tt> */
+	/** <var>http://www.w3.org/2001/XMLSchema#yearMonthDuration</var> */
 	public static final IRI YEARMONTHDURATION = create("yearMonthDuration");
 
 	private static IRI create(String localName) {
@@ -353,7 +353,7 @@ public class XSD {
 
 		/**
 		 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each
-		 * other using operators like <tt>&lt;</tt> and <tt>&gt;</tt>.
+		 * other using operators like <var>&lt;</var> and <var>&gt;</var>.
 		 *
 		 * @return true if the datatype is ordered
 		 */

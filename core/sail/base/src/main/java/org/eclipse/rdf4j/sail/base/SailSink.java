@@ -44,7 +44,7 @@ public interface SailSink extends SailClosable {
 	 * @param prefix The new prefix, or an empty string in case of the default namespace.
 	 * @param name   The namespace name that the prefix maps to.
 	 * @throws SailException        If the Sail object encountered an error or unexpected situation internally.
-	 * @throws NullPointerException In case <tt>prefix</tt> or <tt>name</tt> is <tt>null</tt>.
+	 * @throws NullPointerException In case <var>prefix</var> or <var>name</var> is <var>null</var>.
 	 */
 	void setNamespace(String prefix, String name) throws SailException;
 
@@ -53,7 +53,7 @@ public interface SailSink extends SailClosable {
 	 *
 	 * @param prefix The namespace prefix, or an empty string in case of the default namespace.
 	 * @throws SailException
-	 * @throws NullPointerException In case <tt>prefix</tt> is <tt>null</tt>.
+	 * @throws NullPointerException In case <var>prefix</var> is <var>null</var>.
 	 */
 	void removeNamespace(String prefix) throws SailException;
 
@@ -70,7 +70,7 @@ public interface SailSink extends SailClosable {
 	 *
 	 * @param contexts The context(s) from which to remove the statements. Note that this parameter is a vararg and as
 	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
-	 *                 <tt>null</tt> value can be used to match context-less statements.
+	 *                 <var>null</var> value can be used to match context-less statements.
 	 * @throws SailException If the statements could not be removed.
 	 */
 	void clear(Resource... contexts) throws SailException;
@@ -80,9 +80,9 @@ public interface SailSink extends SailClosable {
 	 * {@link SailSink} is committed, iff this was opened in an isolation level compatible with
 	 * {@link IsolationLevels#SERIALIZABLE}.
 	 *
-	 * @param subj     A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred     A IRI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj      A Value specifying the object, or <tt>null</tt> for a wildcard.
+	 * @param subj     A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred     A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj      A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @param contexts The context(s) of the observed statements. Note that this parameter is a vararg and as such is
 	 *                 optional. If no contexts are supplied the method operates on all contexts.
 	 * @throws SailException If the triple source failed to observe these statements.

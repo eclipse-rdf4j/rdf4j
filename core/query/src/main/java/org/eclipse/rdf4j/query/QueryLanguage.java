@@ -64,7 +64,7 @@ public class QueryLanguage {
 	 * Returns the query language whose name matches the specified name.
 	 *
 	 * @param qlName A query language name.
-	 * @return The query language whose name matches the specified name, or <tt>null</tt> if there is no such query
+	 * @return The query language whose name matches the specified name, or <var>null</var> if there is no such query
 	 *         language.
 	 */
 	public static QueryLanguage valueOf(String qlName) {

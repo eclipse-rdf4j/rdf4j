@@ -21,7 +21,7 @@ public interface RecordIterator extends Closeable {
 	/**
 	 * Returns the next record in the BTree.
 	 *
-	 * @return A record that is stored in the BTree, or <tt>null</tt> if all records have been returned.
+	 * @return A record that is stored in the BTree, or <var>null</var> if all records have been returned.
 	 * @exception IOException In case an I/O error occurred.
 	 */
 	byte[] next() throws IOException;

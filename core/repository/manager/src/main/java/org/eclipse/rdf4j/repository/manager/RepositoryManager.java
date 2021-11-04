@@ -53,11 +53,11 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 
 	/**
 	 * The {@link org.eclipse.rdf4j.repository.sail.ProxyRepository} schema namespace (
-	 * <tt>http://www.openrdf.org/config/repository/proxy#</tt>).
+	 * <var>http://www.openrdf.org/config/repository/proxy#</var>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/proxy#";
 
-	/** <tt>http://www.openrdf.org/config/repository/proxy#proxiedID</tt> */
+	/** <var>http://www.openrdf.org/config/repository/proxy#proxiedID</var> */
 	public final static IRI PROXIED_ID = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "proxiedID");
 
 	/*-----------*
@@ -195,7 +195,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * a repository ID in this manager yet and is suitable for use as a file name (e.g. for the repository's data
 	 * directory).
 	 *
-	 * @param baseName The String on which the returned ID should be based, must not be <tt>null</tt>.
+	 * @param baseName The String on which the returned ID should be based, must not be <var>null</var>.
 	 * @return A new repository ID derived from the specified base name.
 	 * @throws RepositoryException
 	 * @throws RepositoryConfigException
@@ -266,8 +266,8 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 
 	/**
 	 * Adds or updates the configuration of a repository to the manager's system repository. The system repository may
-	 * already contain a configuration for a repository with the same ID as specified by <tt>config</tt>, in which case
-	 * all previous configuration data for that repository will be cleared before the new configuration is added.
+	 * already contain a configuration for a repository with the same ID as specified by <var>config</var>, in which
+	 * case all previous configuration data for that repository will be cleared before the new configuration is added.
 	 *
 	 * @param config The repository configuration that should be added to or updated in the system repository.
 	 * @throws RepositoryException       If the manager failed to update it's system repository.
@@ -285,7 +285,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 
 	/**
 	 * Removes the configuration for the specified repository from the manager's system repository if such a
-	 * configuration is present. Returns <tt>true</tt> if the system repository actually contained the specified
+	 * configuration is present. Returns <var>true</var> if the system repository actually contained the specified
 	 * repository configuration.
 	 *
 	 * @param repositoryID The ID of the repository whose configuration needs to be removed.
@@ -350,9 +350,9 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 
 	/**
 	 * Removes the specified repository by deleting its configuration from the manager's system repository if such a
-	 * configuration is present, and removing any persistent data associated with the repository. Returns <tt>true</tt>
-	 * if the system repository actually contained the specified repository configuration. <strong>NB this operation can
-	 * not be undone!</strong>
+	 * configuration is present, and removing any persistent data associated with the repository. Returns
+	 * <var>true</var> if the system repository actually contained the specified repository configuration. <strong>NB
+	 * this operation can not be undone!</strong>
 	 *
 	 * @param repositoryID The ID of the repository that needs to be removed.
 	 * @throws RepositoryException       If the manager failed to update its system repository.
@@ -395,7 +395,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * Gets the repository that is known by the specified ID from this manager.
 	 *
 	 * @param identity A repository ID.
-	 * @return An initialized Repository object, or <tt>null</tt> if no repository was known for the specified ID.
+	 * @return An initialized Repository object, or <var>null</var> if no repository was known for the specified ID.
 	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration
 	 *                                   data.
 	 */
@@ -513,7 +513,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * Creates and initializes the repository with the specified ID.
 	 *
 	 * @param id A repository ID.
-	 * @return The created and initialized repository, or <tt>null</tt> if no such repository exists.
+	 * @return The created and initialized repository, or <var>null</var> if no such repository exists.
 	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration
 	 *                                   data.
 	 * @throws RepositoryException       If the repository could not be initialized.
@@ -524,7 +524,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 * Gets the repository that is known by the specified ID from this manager.
 	 *
 	 * @param id A repository ID.
-	 * @return A Repository object, or <tt>null</tt> if no repository was known for the specified ID.
+	 * @return A Repository object, or <var>null</var> if no repository was known for the specified ID.
 	 * @throws RepositoryException When not able to retrieve existing configurations
 	 */
 	public RepositoryInfo getRepositoryInfo(String id) throws RepositoryException {

@@ -70,7 +70,7 @@ public interface Operation {
 	/**
 	 * Returns whether or not this operation will return inferred statements (if any are present in the repository).
 	 *
-	 * @return <tt>true</tt> if inferred statements will be returned, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if inferred statements will be returned, <var>false</var> otherwise.
 	 */
 	boolean getIncludeInferred();
 

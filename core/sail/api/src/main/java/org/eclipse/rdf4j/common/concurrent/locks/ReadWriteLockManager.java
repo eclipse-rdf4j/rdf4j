@@ -18,7 +18,7 @@ package org.eclipse.rdf4j.common.concurrent.locks;
 public interface ReadWriteLockManager {
 
 	/**
-	 * Gets a read lock, if available. This method will return <tt>null</tt> if the read lock is not immediately
+	 * Gets a read lock, if available. This method will return <var>null</var> if the read lock is not immediately
 	 * available.
 	 */
 	Lock tryReadLock();
@@ -31,7 +31,7 @@ public interface ReadWriteLockManager {
 	Lock getReadLock() throws InterruptedException;
 
 	/**
-	 * Gets an exclusive write lock, if available. This method will return <tt>null</tt> if the write lock is not
+	 * Gets an exclusive write lock, if available. This method will return <var>null</var> if the write lock is not
 	 * immediately available.
 	 */
 	Lock tryWriteLock();

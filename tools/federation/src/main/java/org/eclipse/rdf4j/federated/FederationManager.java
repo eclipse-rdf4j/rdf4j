@@ -133,7 +133,6 @@ public class FederationManager {
 	 * Returns the managed {@link Executor} which takes for properly handling any configured
 	 * {@link FedXConfig#getTaskWrapper()}
 	 * 
-	 * @return
 	 */
 	public Executor getExecutor() {
 		final Optional<TaskWrapper> taskWrapper = federationContext.getConfig().getTaskWrapper();

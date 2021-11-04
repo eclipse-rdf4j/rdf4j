@@ -39,8 +39,8 @@ public class RDFRemover extends AbstractRDFHandler {
 	private boolean enforceContext;
 
 	/**
-	 * The context to remove the statements from; <tt>null</tt> to indicate the null context. This context value is used
-	 * when enforceContext is set to true.
+	 * The context to remove the statements from; <var>null</var> to indicate the null context. This context value is
+	 * used when enforceContext is set to true.
 	 */
 	private Resource context;
 
@@ -65,7 +65,7 @@ public class RDFRemover extends AbstractRDFHandler {
 	/**
 	 * Enforces the supplied context upon all statements that are reported to this RDFRemover.
 	 *
-	 * @param context A Resource identifying the context, or <tt>null</tt> for the null context.
+	 * @param context A Resource identifying the context, or <var>null</var> for the null context.
 	 */
 	public void enforceContext(Resource context) {
 		this.context = context;
@@ -75,7 +75,7 @@ public class RDFRemover extends AbstractRDFHandler {
 	/**
 	 * Checks whether this RDFRemover enforces its context upon all statements that are reported to it.
 	 *
-	 * @return <tt>true</tt> if it enforces its context, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if it enforces its context, <var>false</var> otherwise.
 	 */
 	public boolean enforcesContext() {
 		return enforceContext;
@@ -83,9 +83,9 @@ public class RDFRemover extends AbstractRDFHandler {
 
 	/**
 	 * Gets the context identifier that this RDFRemover enforces upon all statements that are reported to it (in case
-	 * <tt>enforcesContext()</tt> returns <tt>true</tt>).
+	 * <var>enforcesContext()</var> returns <var>true</var>).
 	 *
-	 * @return A Resource identifying the context, or <tt>null</tt> if the null context is enforced.
+	 * @return A Resource identifying the context, or <var>null</var> if the null context is enforced.
 	 */
 	public Resource getContext() {
 		return context;

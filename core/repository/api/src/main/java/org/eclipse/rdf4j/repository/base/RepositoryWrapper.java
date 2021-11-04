@@ -26,13 +26,13 @@ public class RepositoryWrapper implements DelegatingRepository {
 	private volatile Repository delegate;
 
 	/**
-	 * Creates a new <tt>RepositoryWrapper</tt>.
+	 * Creates a new <var>RepositoryWrapper</var>.
 	 */
 	public RepositoryWrapper() {
 	}
 
 	/**
-	 * Creates a new <tt>RepositoryWrapper</tt> and calls {@link #setDelegate(Repository)} with the supplied delegate
+	 * Creates a new <var>RepositoryWrapper</var> and calls {@link #setDelegate(Repository)} with the supplied delegate
 	 * repository.
 	 */
 	public RepositoryWrapper(Repository delegate) {

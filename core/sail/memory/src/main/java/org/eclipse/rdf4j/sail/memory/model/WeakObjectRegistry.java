@@ -58,10 +58,10 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	 *---------*/
 
 	/**
-	 * Retrieves the stored object that is equal to the supplied <tt>key</tt> object.
+	 * Retrieves the stored object that is equal to the supplied <var>key</var> object.
 	 *
 	 * @param key The object that should be used as the search key for the operation.
-	 * @return A stored object that is equal to the supplied key, or <tt>null</tt> if no such object was found.
+	 * @return A stored object that is equal to the supplied key, or <var>null</var> if no such object was found.
 	 */
 	public E get(Object key) {
 		WeakReference<E> weakRef = objectMap.get(key);

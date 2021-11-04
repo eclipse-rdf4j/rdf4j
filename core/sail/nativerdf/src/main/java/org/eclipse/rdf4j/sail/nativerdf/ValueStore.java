@@ -174,7 +174,7 @@ public class ValueStore extends SimpleValueFactory {
 	 * Gets the value for the specified ID.
 	 *
 	 * @param id A value ID.
-	 * @return The value for the ID, or <tt>null</tt> no such value could be found.
+	 * @return The value for the ID, or <var>null</var> no such value could be found.
 	 * @exception IOException If an I/O error occurred.
 	 */
 	public NativeValue getValue(int id) throws IOException {

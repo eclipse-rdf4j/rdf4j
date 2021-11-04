@@ -90,7 +90,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 *
 	 * @param expr
 	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
-	 * @return The Value that this expression evaluates to, or <tt>null</tt> if the expression could not be evaluated.
+	 * @return The Value that this expression evaluates to, or <var>null</var> if the expression could not be evaluated.
 	 */
 	Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException;
@@ -103,7 +103,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @return The result of the evaluation.
 	 * @throws ValueExprEvaluationException If the value expression could not be evaluated, for example when comparing
 	 *                                      two incompatible operands. When thrown, the result of the boolean expression
-	 *                                      is neither <tt>true</tt> nor <tt>false</tt> , but unknown.
+	 *                                      is neither <var>true</var> nor <var>false</var> , but unknown.
 	 */
 	boolean isTrue(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException;

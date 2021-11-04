@@ -697,8 +697,6 @@ public class ShaclSail extends NotifyingSailWrapper {
 
 	/**
 	 * Deprecated since 3.3.0 and planned removed!
-	 *
-	 * @return
 	 */
 	@Deprecated
 	public boolean isIgnoreNoShapesLoadedException() {

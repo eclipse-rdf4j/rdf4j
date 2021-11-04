@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.common.exception.RDF4JException;
 /**
  * An exception that can be thrown by an RDFHandler when it encounters an unrecoverable error. If an exception is
  * associated with the error then this exception can be wrapped in an RDFHandlerException and can later be retrieved
- * from it when the RDFHandlerException is catched using the <tt>getCause()</tt>.
+ * from it when the RDFHandlerException is catched using the <var>getCause()</var>.
  */
 public class RDFHandlerException extends RDF4JException {
 

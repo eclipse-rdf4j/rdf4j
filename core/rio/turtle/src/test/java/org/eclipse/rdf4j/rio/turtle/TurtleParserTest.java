@@ -62,9 +62,6 @@ public class TurtleParserTest {
 
 	private SimpleParseLocationListener locationListener = new SimpleParseLocationListener();
 
-	/**
-	 * @throws java.lang.Exception
-	 */
 	@Before
 	public void setUp() {
 		parser = new TurtleParser();

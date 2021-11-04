@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
- * An extension of RDFStoreTest for testing the class {@link MulgaraStore}.
+ * An extension of RDFStoreTest for testing the class {@link Federation}.
  */
 public class FederationTest extends RDFStoreTest {
 

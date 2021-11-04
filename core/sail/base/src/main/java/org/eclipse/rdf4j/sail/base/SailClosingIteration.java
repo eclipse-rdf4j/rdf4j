@@ -29,7 +29,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	/**
 	 * Creates a new {@link Iteration} that automatically closes the given {@link SailClosable}s.
 	 *
-	 * @param iter   The underlying Iteration, must not be <tt>null</tt>.
+	 * @param iter   The underlying Iteration, must not be <var>null</var>.
 	 * @param closes The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
 	 * @return a {@link CloseableIteration} that closes the given {@link SailClosable}
 	 */
@@ -60,7 +60,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	/**
 	 * Creates a new {@link Iteration} that automatically closes the given {@link SailClosable}s.
 	 *
-	 * @param iter   The underlying Iteration, must not be <tt>null</tt>.
+	 * @param iter   The underlying Iteration, must not be <var>null</var>.
 	 * @param closes The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
 	 */
 	public SailClosingIteration(CloseableIteration<? extends T, X> iter, SailClosable... closes) {

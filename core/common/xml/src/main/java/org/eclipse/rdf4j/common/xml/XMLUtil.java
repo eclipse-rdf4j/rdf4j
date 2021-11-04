@@ -15,8 +15,8 @@ public class XMLUtil {
 
 	/**
 	 * Escapes any special characters in the supplied text so that it can be included as character data in an XML
-	 * document. The characters that are escaped are <tt>&amp;</tt>, <tt>&lt;</tt>, <tt>&gt;</tt> and <tt>carriage
-	 * return (\r)</tt>.
+	 * document. The characters that are escaped are <var>&amp;</var>, <var>&lt;</var>, <var>&gt;</var> and
+	 * <var>carriage return (\r)</var>.
 	 */
 	public static String escapeCharacterData(String text) {
 		text = text.replace("&", "&amp;");
@@ -28,8 +28,8 @@ public class XMLUtil {
 
 	/**
 	 * Escapes any special characters in the supplied value so that it can be used as an double-quoted attribute value
-	 * in an XML document. The characters that are escaped are <tt>&amp;</tt>, <tt>&lt;</tt>, <tt>&gt;</tt>,
-	 * <tt>tab (\t)</tt>, <tt>carriage return (\r)</tt>, <tt>line feed (\n)</tt> and <tt>"</tt> .
+	 * in an XML document. The characters that are escaped are <var>&amp;</var>, <var>&lt;</var>, <var>&gt;</var>,
+	 * <var>tab (\t)</var>, <var>carriage return (\r)</var>, <var>line feed (\n)</var> and <var>"</var> .
 	 */
 	public static String escapeDoubleQuotedAttValue(String value) {
 		value = _escapeAttValue(value);
@@ -39,8 +39,8 @@ public class XMLUtil {
 
 	/**
 	 * Escapes any special characters in the supplied value so that it can be used as an single-quoted attribute value
-	 * in an XML document. The characters that are escaped are <tt>&amp;</tt>, <tt>&lt;</tt>, <tt>&gt;</tt>,
-	 * <tt>tab (\t)</tt>, <tt>carriage return (\r)</tt>, <tt>line feed (\n)</tt> and <tt>'</tt> .
+	 * in an XML document. The characters that are escaped are <var>&amp;</var>, <var>&lt;</var>, <var>&gt;</var>,
+	 * <var>tab (\t)</var>, <var>carriage return (\r)</var>, <var>line feed (\n)</var> and <var>'</var> .
 	 */
 	public static String escapeSingleQuotedAttValue(String value) {
 		value = _escapeAttValue(value);
@@ -126,7 +126,7 @@ public class XMLUtil {
 	 * followed by zero or more 'NCName' characters.
 	 *
 	 * @param uri The URI to split.
-	 * @return The index of the first character of the local name, or <tt>-1</tt> if the URI can not be split into a
+	 * @return The index of the first character of the local name, or <var>-1</var> if the URI can not be split into a
 	 *         namespace and local name.
 	 */
 	public static int findURISplitIndex(String uri) {

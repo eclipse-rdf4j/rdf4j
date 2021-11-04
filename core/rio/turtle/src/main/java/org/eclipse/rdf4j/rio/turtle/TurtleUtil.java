@@ -36,7 +36,7 @@ public class TurtleUtil {
 	 * serialization constraints of the Turtle format.
 	 *
 	 * @param uri The URI to split.
-	 * @return The index where the supplied URI can be split, or <tt>-1</tt> if the URI cannot be split.
+	 * @return The index where the supplied URI can be split, or <var>-1</var> if the URI cannot be split.
 	 */
 	public static int findURISplitIndex(String uri) {
 		int uriLength = uri.length();

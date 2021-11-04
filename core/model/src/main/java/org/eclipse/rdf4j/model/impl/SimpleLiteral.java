@@ -71,7 +71,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	/**
 	 * Creates a new plain literal with the supplied label.
 	 *
-	 * @param label The label for the literal, must not be <tt>null</tt>.
+	 * @param label The label for the literal, must not be <var>null</var>.
 	 */
 	protected SimpleLiteral(String label) {
 		setLabel(label);
@@ -81,8 +81,8 @@ public class SimpleLiteral extends AbstractLiteral {
 	/**
 	 * Creates a new plain literal with the supplied label and language tag.
 	 *
-	 * @param label    The label for the literal, must not be <tt>null</tt>.
-	 * @param language The language tag for the literal, must not be <tt>null</tt> and not be empty.
+	 * @param label    The label for the literal, must not be <var>null</var>.
+	 * @param language The language tag for the literal, must not be <var>null</var> and not be empty.
 	 */
 	protected SimpleLiteral(String label, String language) {
 		setLabel(label);
@@ -92,7 +92,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	/**
 	 * Creates a new datatyped literal with the supplied label and datatype.
 	 *
-	 * @param label    The label for the literal, must not be <tt>null</tt>.
+	 * @param label    The label for the literal, must not be <var>null</var>.
 	 * @param datatype The datatype for the literal.
 	 */
 	protected SimpleLiteral(String label, IRI datatype) {

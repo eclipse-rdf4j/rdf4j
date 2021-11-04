@@ -1528,7 +1528,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithBinding1() throws Exception {
@@ -1577,7 +1577,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithBinding2() throws Exception {
@@ -1628,7 +1628,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithBinding3() throws Exception {
@@ -1679,7 +1679,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithBinding4() throws Exception {
@@ -1730,7 +1730,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithBinding5() throws Exception {
@@ -1787,7 +1787,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithBinding6() throws Exception {
@@ -1844,7 +1844,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithBinding7() throws Exception {
@@ -1904,7 +1904,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithBinding8() throws Exception {
@@ -1963,7 +1963,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithFilter1() throws Exception {
@@ -1995,7 +1995,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithFilter2() throws Exception {
@@ -2027,7 +2027,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see http://www.openrdf.org/issues/browse/SES-1091
+	 * @see <a href="http://www.openrdf.org/issues/browse/SES-1091">SES-1091</a>
 	 * @throws Exception
 	 */
 	public void testArbitraryLengthPathWithFilter3() throws Exception {
@@ -2059,7 +2059,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	@Test
 	/**
-	 * @see https://github.com/eclipse/rdf4j/issues/2727
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/2727">GH-2727</a>
 	 */
 	public void testNestedInversePropertyPathWithZeroLength() throws Exception {
 		String insert = "insert data {\n"
