@@ -9,30 +9,33 @@
 package org.eclipse.rdf4j.spring.demo.model;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
 
 /**
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
 public class EX {
-	private static final String base = "http://example.org/";
-	public static final IRI Artist = SimpleValueFactory.getInstance().createIRI(base, "Artist");
-	public static final IRI Gallery = SimpleValueFactory.getInstance().createIRI(base, "Gallery");
-	public static final IRI Painting = SimpleValueFactory.getInstance().createIRI(base, "Painting");
-	public static final IRI Picasso = SimpleValueFactory.getInstance().createIRI(base, "Picasso");
-	public static final IRI VanGogh = SimpleValueFactory.getInstance().createIRI(base, "VanGogh");
-	public static final IRI street = SimpleValueFactory.getInstance().createIRI(base, "street");
-	public static final IRI city = SimpleValueFactory.getInstance().createIRI(base, "city");
-	public static final IRI country = SimpleValueFactory.getInstance().createIRI(base, "country");
-	public static final IRI creatorOf = SimpleValueFactory.getInstance().createIRI(base, "creatorOf");
-	public static final IRI technique = SimpleValueFactory.getInstance().createIRI(base, "technique");
-	public static final IRI starryNight = SimpleValueFactory.getInstance().createIRI(base, "starryNight");
-	public static final IRI sunflowers = SimpleValueFactory.getInstance().createIRI(base, "sunflowers");
-	public static final IRI potatoEaters = SimpleValueFactory.getInstance().createIRI(base, "potatoEaters");
-	public static final IRI guernica = SimpleValueFactory.getInstance().createIRI(base, "guernica");
+	private static final Namespace base = new SimpleNamespace("ex", "http://example.org/");
+	public static final IRI Artist = Values.iri(base, "Artist");
+	public static final IRI Gallery = Values.iri(base, "Gallery");
+	public static final IRI Painting = Values.iri(base, "Painting");
+	public static final IRI Picasso = Values.iri(base, "Picasso");
+	public static final IRI VanGogh = Values.iri(base, "VanGogh");
+	public static final IRI street = Values.iri(base, "street");
+	public static final IRI city = Values.iri(base, "city");
+	public static final IRI country = Values.iri(base, "country");
+	public static final IRI creatorOf = Values.iri(base, "creatorOf");
+	public static final IRI technique = Values.iri(base, "technique");
+	public static final IRI starryNight = Values.iri(base, "starryNight");
+	public static final IRI sunflowers = Values.iri(base, "sunflowers");
+	public static final IRI potatoEaters = Values.iri(base, "potatoEaters");
+	public static final IRI guernica = Values.iri(base, "guernica");
 
 	public static IRI of(String localName) {
-		return SimpleValueFactory.getInstance().createIRI(base, localName);
+		return Values.iri(base, localName);
 	}
 }
