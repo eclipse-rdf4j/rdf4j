@@ -10,6 +10,9 @@
 
 package org.eclipse.rdf4j.spring.demo.dao;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+import static org.eclipse.rdf4j.spring.demo.model.Painting.*;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -23,9 +26,6 @@ import org.eclipse.rdf4j.spring.demo.model.Painting;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 import org.eclipse.rdf4j.spring.util.QueryResultUtils;
 import org.springframework.stereotype.Component;
-
-import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.eclipse.rdf4j.spring.demo.model.Painting.*;
 
 /**
  * @since 4.0.0

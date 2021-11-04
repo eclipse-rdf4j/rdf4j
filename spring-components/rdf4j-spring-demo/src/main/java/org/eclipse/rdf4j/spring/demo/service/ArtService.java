@@ -10,6 +10,16 @@
 
 package org.eclipse.rdf4j.spring.demo.service;
 
+import static java.util.stream.Collectors.groupingBy;
+import static java.util.stream.Collectors.toSet;
+
+import static org.eclipse.rdf4j.spring.demo.model.EX.Artist;
+import static org.eclipse.rdf4j.spring.demo.model.EX.Painting;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.spring.demo.dao.ArtistDao;
 import org.eclipse.rdf4j.spring.demo.dao.PaintingDao;
@@ -19,15 +29,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import static java.util.stream.Collectors.groupingBy;
-import static java.util.stream.Collectors.toSet;
-import static org.eclipse.rdf4j.spring.demo.model.EX.Artist;
-import static org.eclipse.rdf4j.spring.demo.model.EX.Painting;
 
 @Component
 public class ArtService {
@@ -55,27 +56,27 @@ public class ArtService {
 	}
 
 	@Transactional(propagation = Propagation.REQUIRED)
-	public List<Painting> getPaintings(){
+	public List<Painting> getPaintings() {
 		return paintingDao.list();
 	}
 
 	@Transactional(propagation = Propagation.REQUIRED)
-	public List<Artist> getArtists(){
+	public List<Artist> getArtists() {
 		return artistDao.list();
 	}
 
 	@Transactional(propagation = Propagation.REQUIRED)
-	public Map<Artist, Set<Painting>> getPaintingsGroupedByArtist(){
+	public Map<Artist, Set<Painting>> getPaintingsGroupedByArtist() {
 		List<Painting> paintings = paintingDao.list();
 		return paintings
-						.stream()
-						.collect(groupingBy(
-										p -> artistDao.getById(p.getArtistId()),
-										toSet()));
+				.stream()
+				.collect(groupingBy(
+						p -> artistDao.getById(p.getArtistId()),
+						toSet()));
 	}
 
 	@Transactional(propagation = Propagation.REQUIRED)
-	public IRI addArtist(Artist artist){
+	public IRI addArtist(Artist artist) {
 		return artistDao.saveAndReturnId(artist);
 	}
 

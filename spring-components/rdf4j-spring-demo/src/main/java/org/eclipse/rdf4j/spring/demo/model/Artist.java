@@ -10,10 +10,10 @@
 
 package org.eclipse.rdf4j.spring.demo.model;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
-
-import java.util.Objects;
 
 /**
  * @since 4.0.0
@@ -51,7 +51,8 @@ public class Artist {
 		this.id = id;
 	}
 
-	@Override public boolean equals(Object o) {
+	@Override
+	public boolean equals(Object o) {
 		if (this == o)
 			return true;
 		if (o == null || getClass() != o.getClass())
@@ -60,7 +61,8 @@ public class Artist {
 		return Objects.equals(id, artist.id);
 	}
 
-	@Override public int hashCode() {
+	@Override
+	public int hashCode() {
 		return Objects.hash(id);
 	}
 }
