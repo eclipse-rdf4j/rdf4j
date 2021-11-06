@@ -85,4 +85,12 @@ public class FilterTests extends SPARQLBaseTest {
 					Sets.newHashSet(iri("http://namespace1.org/", "Person_1")));
 		}
 	}
+
+	@Test
+	public void testFilter_ExclusiveGroup_Regex() throws Exception {
+		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data3.ttl"));
+
+		execute("/tests/filter/query07.rq", "/tests/filter/query07.srx", false);
+		evaluateQueryPlan("/tests/filter/query07.rq", "/tests/filter/query07.qp");
+	}
 }

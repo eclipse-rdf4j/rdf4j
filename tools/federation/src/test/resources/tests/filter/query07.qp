@@ -1,0 +1,28 @@
+QueryRoot
+   Distinct
+      Projection
+         ProjectionElemList
+            ProjectionElem "person"
+         NJoin
+            ExclusiveGroup
+               ExclusiveStatement
+                  Var (name=person)
+                  Var (name=_const_23b7c3b6_uri, value=http://xmlns.com/foaf/0.1/name, anonymous)
+                  Var (name=name)
+                  StatementSource (id=endpoint1, type=REMOTE)
+               ExclusiveStatement
+                  Var (name=person)
+                  Var (name=_const_8d89de74_uri, value=http://xmlns.com/foaf/0.1/age, anonymous)
+                  Var (name=age)
+                  StatementSource (id=endpoint1, type=REMOTE)
+               FilterExpr
+                  Regex
+                     Var (name=name)
+                     ValueConstant (value="Person1")
+                     ValueConstant (value="i")
+            StatementSourcePattern
+               Var (name=person)
+               Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)
+               Var (name=type)
+               StatementSource (id=endpoint1, type=REMOTE)
+               StatementSource (id=endpoint2, type=REMOTE)
