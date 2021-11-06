@@ -111,6 +111,46 @@
 				</plugins>
 			</build>
 		</profile>
+		<profile>
+			<!-- build jmh benchmark jar files in package phase -->
+			<id>benchmarks</id>
+			<build>
+				<plugins>
+					<plugin>
+						<artifactId>maven-assembly-plugin</artifactId>
+						<dependencies>
+							<dependency>
+								<groupId>${project.groupId}</groupId>
+								<artifactId>rdf4j-assembly-descriptors</artifactId>
+								<version>${project.version}</version>
+							</dependency>
+						</dependencies>
+						<configuration>
+							<finalName>jmh</finalName>
+							<descriptorRefs>
+								<descriptorRef>benchmark</descriptorRef>
+							</descriptorRefs>
+						</configuration>
+						<executions>
+							<execution>
+								<id>benchmark-jar</id>
+								<phase>package</phase>
+								<goals>
+									<goal>single</goal>
+								</goals>
+								<configuration>
+									<archive>
+										<manifest>
+											<mainClass>org.openjdk.jmh.Main</mainClass>
+										</manifest>
+									</archive>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 	</profiles>
 	<dependencies>
 		<!-- shared test dependencies -->
@@ -142,42 +182,6 @@
 		</dependency>
 	</dependencies>
 	<build>
-		<pluginManagement>
-			<plugins>
-				<plugin>
-					<artifactId>maven-assembly-plugin</artifactId>
-					<dependencies>
-						<dependency>
-							<groupId>${project.groupId}</groupId>
-							<artifactId>rdf4j-assembly-descriptors</artifactId>
-							<version>${project.version}</version>
-						</dependency>
-					</dependencies>
-					<configuration>
-						<finalName>jmh</finalName>
-						<descriptorRefs>
-							<descriptorRef>benchmark</descriptorRef>
-						</descriptorRefs>
-					</configuration>
-					<executions>
-						<execution>
-							<id>benchmark-jar</id>
-							<phase>package</phase>
-							<goals>
-								<goal>single</goal>
-							</goals>
-							<configuration>
-								<archive>
-									<manifest>
-										<mainClass>org.openjdk.jmh.Main</mainClass>
-									</manifest>
-								</archive>
-							</configuration>
-						</execution>
-					</executions>
-				</plugin>
-			</plugins>
-		</pluginManagement>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
