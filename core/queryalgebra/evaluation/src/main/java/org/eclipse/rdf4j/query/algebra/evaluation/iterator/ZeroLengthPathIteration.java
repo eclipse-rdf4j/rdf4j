@@ -10,12 +10,15 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
@@ -27,6 +30,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
+	private static final Literal OBJECT = SimpleValueFactory.getInstance().createLiteral("object");
+
+	private static final Literal SUBJECT = SimpleValueFactory.getInstance().createLiteral("subject");
+
 	private static final String ANON_SUBJECT_VAR = "zero-length-internal-start";
 
 	private static final String ANON_PREDICATE_VAR = "zero-length-internal-pred";
@@ -36,10 +43,6 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	private static final String ANON_SEQUENCE_VAR = "zero-length-internal-seq";
 
 	private QueryBindingSet result;
-
-	private Var subjectVar;
-
-	private Var objVar;
 
 	private Value subj;
 
@@ -57,12 +60,19 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private final QueryEvaluationStep precompile;
 
+	private final QueryEvaluationContext context;
+
+	private final BiConsumer<Value, MutableBindingSet> setSubject;
+
+	private final BiConsumer<Value, MutableBindingSet> setObject;
+
+	private final BiConsumer<Value, MutableBindingSet> setContext;
+
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
 			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
 		this.evaluationStrategy = evaluationStrategyImpl;
+		this.context = context;
 		this.result = new QueryBindingSet(bindings);
-		this.subjectVar = subjectVar;
-		this.objVar = objVar;
 		this.contextVar = contextVar;
 		this.subj = subj;
 		this.obj = obj;
@@ -76,6 +86,13 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 			subjects.setContextVar(contextVar);
 		}
 		precompile = evaluationStrategy.precompile(subjects, context);
+		setSubject = context.addVariable(subjectVar.getName());
+		setObject = context.addVariable(objVar.getName());
+		if (contextVar != null) {
+			setContext = context.addVariable(contextVar.getName());
+		} else {
+			setContext = null;
+		}
 
 	}
 
@@ -88,9 +105,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 			if (this.iter == null) {
 				// join with a sequence so we iterate over every entry twice
 				QueryBindingSet bs1 = new QueryBindingSet(1);
-				bs1.addBinding(ANON_SEQUENCE_VAR, SimpleValueFactory.getInstance().createLiteral("subject"));
+				bs1.addBinding(ANON_SEQUENCE_VAR, SUBJECT);
 				QueryBindingSet bs2 = new QueryBindingSet(1);
-				bs2.addBinding(ANON_SEQUENCE_VAR, SimpleValueFactory.getInstance().createLiteral("object"));
+				bs2.addBinding(ANON_SEQUENCE_VAR, OBJECT);
 				List<BindingSet> seqList = Arrays.<BindingSet>asList(bs1, bs2);
 				iter = new CrossProductIteration(createIteration(), seqList);
 			}
@@ -103,13 +120,13 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 				Value v = bs.getValue(endpointVarName);
 
 				if (reportedValues.add(v)) {
-					QueryBindingSet next = new QueryBindingSet(bindings);
-					next.addBinding(subjectVar.getName(), v);
-					next.addBinding(objVar.getName(), v);
-					if (contextVar != null) {
+					MutableBindingSet next = context.createBindingSet(bindings);
+					setSubject.accept(v, next);
+					setObject.accept(v, next);
+					if (setContext != null) {
 						Value context = bs.getValue(contextVar.getName());
 						if (context != null) {
-							next.addBinding(contextVar.getName(), context);
+							setContext.accept(context, next);
 						}
 					}
 					return next;
@@ -124,9 +141,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 		} else {
 			if (result != null) {
 				if (obj == null && subj != null) {
-					result.addBinding(objVar.getName(), subj);
+					setObject.accept(subj, result);
 				} else if (subj == null && obj != null) {
-					result.addBinding(subjectVar.getName(), obj);
+					setSubject.accept(obj, result);
 				} else if (subj != null && subj.equals(obj)) {
 					// empty bindings
 					// (result but nothing to bind as subjectVar and objVar are both fixed)

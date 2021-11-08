@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
@@ -25,7 +26,6 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
@@ -101,10 +101,13 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			}
 
 			while (currentIter.hasNext()) {
-				BindingSet nextElement = currentIter.next();
+				BindingSet potentialNextElement = currentIter.next();
+				MutableBindingSet nextElement;
 				// if it is not a compatible type of BindingSet
-				if (!(nextElement instanceof QueryBindingSet) && !(nextElement instanceof MapBindingSet)) {
-					nextElement = new QueryBindingSet(nextElement);
+				if (potentialNextElement instanceof MutableBindingSet) {
+					nextElement = (MutableBindingSet) potentialNextElement;
+				} else {
+					nextElement = new QueryBindingSet(potentialNextElement);
 				}
 
 				if (!startVarFixed && !endVarFixed && currentVp != null) {
@@ -193,14 +196,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 		}
 	}
 
-	private void addBinding(BindingSet bs, String name, Value value) {
-		if (bs instanceof QueryBindingSet) {
-			((QueryBindingSet) bs).addBinding(name, value);
-		} else if (bs instanceof MapBindingSet) {
-			((MapBindingSet) bs).addBinding(name, value);
-		} else {
-			throw new IllegalStateException("Unexpected BindingSet implementation: " + bs.getClass());
-		}
+	private void addBinding(MutableBindingSet bs, String name, Value value) {
+		bs.addBinding(name, value);
 	}
 
 	@Override
