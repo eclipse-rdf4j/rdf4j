@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,11 +38,12 @@ public class OrderComparator implements Comparator<BindingSet> {
 
 	private final Comparator<BindingSet> bindingContentsComparator;
 
-	public OrderComparator(EvaluationStrategy strategy, Order order, ValueComparator vcmp) {
+	public OrderComparator(EvaluationStrategy strategy, Order order, ValueComparator vcmp,
+			QueryEvaluationContext context) {
 		this.cmp = vcmp;
 		Comparator<BindingSet> allComparator = null;
 		for (OrderElem element : order.getElements()) {
-			final QueryValueEvaluationStep prepared = strategy.prepare(element.getExpr());
+			final QueryValueEvaluationStep prepared = strategy.precompile(element.getExpr(), context);
 			final boolean ascending = element.isAscending();
 			Comparator<BindingSet> comparator = new Comparator<BindingSet>() {
 

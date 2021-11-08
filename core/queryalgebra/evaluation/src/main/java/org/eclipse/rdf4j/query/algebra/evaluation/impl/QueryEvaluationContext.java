@@ -8,10 +8,18 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Date;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * A QueryEvaluationContext stores values and methods that are valid throughout the lifetime of a query execution.
@@ -60,4 +68,20 @@ public interface QueryEvaluationContext {
 	 * @return The dataset that this query is operation on.
 	 */
 	public Dataset getDataset();
+
+	public default BindingSet createBindingSet() {
+		return new QueryBindingSet();
+	}
+
+	public default Function<BindingSet, Boolean> hasVariableSet(String variableName) {
+		return (bs) -> bs.hasBinding(variableName);
+	}
+
+	public default Function<BindingSet, Binding> getSetVariable(String variableName) {
+		return (bs) -> bs.getBinding(variableName);
+	}
+
+	public default BiConsumer<Value, MutableBindingSet> addVariable(String variableName) {
+		return (val, bs) -> bs.addBinding(variableName, val);
+	}
 }

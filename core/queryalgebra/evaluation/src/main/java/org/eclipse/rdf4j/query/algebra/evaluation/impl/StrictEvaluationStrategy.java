@@ -109,6 +109,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -373,14 +374,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
 			final BindingSet bindings) throws QueryEvaluationException {
-		final Scope scope = alp.getScope();
-		final Var subjectVar = alp.getSubjectVar();
-		final TupleExpr pathExpression = alp.getPathExpression();
-		final Var objVar = alp.getObjectVar();
-		final Var contextVar = alp.getContextVar();
-		final long minLength = alp.getMinLength();
-
-		return new PathIteration(this, scope, subjectVar, pathExpression, objVar, contextVar, minLength, bindings);
+		return precompile(alp).evaluate(bindings);
 	}
 
 	public QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
@@ -403,30 +397,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ZeroLengthPath zlp,
 			final BindingSet bindings) throws QueryEvaluationException {
-
-		final Var subjectVar = zlp.getSubjectVar();
-		final Var objVar = zlp.getObjectVar();
-		final Var contextVar = zlp.getContextVar();
-
-		Value subj = null;
-		try {
-			subj = evaluate(subjectVar, bindings);
-		} catch (QueryEvaluationException ignored) {
-		}
-
-		Value obj = null;
-		try {
-			obj = evaluate(objVar, bindings);
-		} catch (QueryEvaluationException ignored) {
-		}
-
-		if (subj != null && obj != null) {
-			if (!subj.equals(obj)) {
-				return new EmptyIteration<>();
-			}
-		}
-
-		return getZeroLengthPathIterator(bindings, subjectVar, objVar, contextVar, subj, obj);
+		return precompile(zlp).evaluate(bindings);
 	}
 
 	public QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
@@ -544,7 +515,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return new StatementPatternQueryEvaluationStep(node, context.getDataset(), tripleSource);
+		return new StatementPatternQueryEvaluationStep(node, context, tripleSource);
 	}
 
 	public QueryEvaluationStep prepare(Union node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -903,6 +874,85 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				return external.evaluate(bindings);
 			}
 		};
+	}
+
+	@Override
+	public org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep precompile(ValueExpr expr,
+			QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		if (expr instanceof Var) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof ValueConstant) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof BNodeGenerator) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Bound) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Str) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Label) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Lang) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof LangMatches) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Datatype) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Namespace) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof LocalName) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof IsResource) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof IsURI) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof IsBNode) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof IsLiteral) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof IsNumeric) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof IRIFunction) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Regex) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Coalesce) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Like) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof FunctionCall) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof And) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Or) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Not) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof SameTerm) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Compare) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof MathExpr) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof In) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof CompareAny) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof CompareAll) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof Exists) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof If) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof ListMemberOperator) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr instanceof ValueExprTripleRef) {
+			return new QueryValueEvaluationStepImplementation(this, expr, context);
+		} else if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		} else {
+			throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
+		}
 	}
 
 	@Override
@@ -1495,6 +1545,16 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			sharedValueOfNow = node.evaluate(tripleSource.getValueFactory());
 		}
 		return sharedValueOfNow;
+	}
+
+	public QueryValueEvaluationStep prepare(Now node, QueryEvaluationContext context) throws QueryEvaluationException {
+		return new QueryValueEvaluationStep() {
+
+			@Override
+			public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+				return context.getNow();
+			}
+		};
 	}
 
 	public Value evaluate(SameTerm node, BindingSet bindings)

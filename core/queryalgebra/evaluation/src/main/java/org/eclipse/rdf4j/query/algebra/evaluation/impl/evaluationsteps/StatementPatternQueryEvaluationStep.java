@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
@@ -48,12 +50,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	// We try to do as much work as possible in the constructor.
 	// With the aim of making the evaluate method as cheap as possible.
-	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, Dataset dataset,
+	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
 			TripleSource tripleSource) {
 		super();
 		this.statementPattern = statementPattern;
 		this.tripleSource = tripleSource;
 		Set<IRI> graphs = null;
+		Dataset dataset = context.getDataset();
 		if (dataset != null) {
 			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
 				graphs = dataset.getDefaultGraphs();
@@ -74,7 +77,23 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			emptyGraph = false;
 		}
 		contextSup = extractContextsFromDatasets(statementPattern.getContextVar(), emptyGraph, graphs);
-		converter = makeConverter();
+		converter = makeConverter(context);
+
+	}
+
+	private BiConsumer<Value, MutableBindingSet> makeSetVariable(Var var, QueryEvaluationContext context) {
+		if (var == null) {
+			return null;
+		} else
+			return context.addVariable(var.getName());
+	}
+
+	private Function<BindingSet, Boolean> makeIsVariableSet(Var var, QueryEvaluationContext context) {
+		if (var == null) {
+			return (bindings) -> false;
+		} else {
+			return context.hasVariableSet(var.getName());
+		}
 	}
 
 	@Override
@@ -335,7 +354,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * 
 	 * @return a converter from statement into QueryBindingSet
 	 */
-	private BiConsumer<QueryBindingSet, Statement> makeConverter() {
+	private BiConsumer<QueryBindingSet, Statement> makeConverter(QueryEvaluationContext context) {
 		final Var subjVar = statementPattern.getSubjectVar();
 		final Var predVar = statementPattern.getPredicateVar();
 		final Var objVar = statementPattern.getObjectVar();
@@ -343,26 +362,31 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		BiConsumer<QueryBindingSet, Statement> co = null;
 
 		if (subjVar != null && !subjVar.isConstant()) {
-			String subVarName = subjVar.getName();
-			co = andThen(co, (result, st) -> addValueToBinding(result, subVarName, st.getSubject()));
+			Function<BindingSet, Boolean> subjectIsSet = makeIsVariableSet(subjVar, context);
+			BiConsumer<Value, MutableBindingSet> setSubject = makeSetVariable(subjVar, context);
+			co = andThen(co, (result, st) -> addValueToBinding(result, st.getSubject(), subjectIsSet, setSubject));
 		}
 		// We should not overwrite previous set values so if pred == subj we don't need to call this again.
 		// etc.
 		if (predVar != null && !predVar.isConstant()
 				&& !predVar.equals(subjVar)) {
-			String predVarName = predVar.getName();
-			co = andThen(co, (result, st) -> addValueToBinding(result, predVarName, st.getPredicate()));
+			Function<BindingSet, Boolean> predicateIsSet = makeIsVariableSet(predVar, context);
+			BiConsumer<Value, MutableBindingSet> setPredicate = makeSetVariable(predVar, context);
+			co = andThen(co,
+					(result, st) -> addValueToBinding(result, st.getPredicate(), predicateIsSet, setPredicate));
 		}
 		if (objVar != null && !objVar.isConstant() && !objVar.equals(subjVar) && !objVar.equals(predVar)) {
-			String objVarName = objVar.getName();
-			co = andThen(co, (result, st) -> addValueToBinding(result, objVarName, st.getObject()));
+			BiConsumer<Value, MutableBindingSet> setObject = makeSetVariable(objVar, context);
+			Function<BindingSet, Boolean> objectIsSet = makeIsVariableSet(objVar, context);
+			co = andThen(co, (result, st) -> addValueToBinding(result, st.getObject(), objectIsSet, setObject));
 		}
 		if (conVar != null && !conVar.isConstant() && !conVar.equals(subjVar) && !conVar.equals(predVar)
 				&& !conVar.equals(objVar)) {
-			String conVarName = conVar.getName();
+			Function<BindingSet, Boolean> contextIsSet = makeIsVariableSet(conVar, context);
+			BiConsumer<Value, MutableBindingSet> setContext = makeSetVariable(conVar, context);
 			co = andThen(co, (result, st) -> {
 				if (st.getContext() != null) {
-					addValueToBinding(result, conVarName, st.getContext());
+					addValueToBinding(result, st.getContext(), contextIsSet, setContext);
 				}
 			});
 		}
@@ -373,9 +397,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return co;
 	}
 
-	private void addValueToBinding(QueryBindingSet result, String predVarName, Value value) {
-		if (!result.hasBinding(predVarName)) {
-			result.addBinding(predVarName, value);
+	private void addValueToBinding(QueryBindingSet result, Value value,
+			Function<BindingSet, Boolean> varIsSet, BiConsumer<Value, MutableBindingSet> setVal) {
+		if (!varIsSet.apply(result)) {
+			setVal.accept(value, result);
 		}
 	}
 

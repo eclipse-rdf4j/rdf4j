@@ -795,7 +795,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		return super.evaluate(expr, bindings);
 	}
-	
+
 	@Override
 	public QueryValueEvaluationStep precompile(ValueExpr expr, QueryEvaluationContext context)
 			throws ValueExprEvaluationException, QueryEvaluationException {
@@ -816,7 +816,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		Value v = evaluate(node.getExpression(), bindings);
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(v));
 	}
-	
+
 	protected QueryValueEvaluationStep prepare(FilterExpr node, QueryEvaluationContext context)
 			throws ValueExprEvaluationException, QueryEvaluationException {
 
@@ -840,20 +840,18 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	protected QueryValueEvaluationStep prepare(ConjunctiveFilterExpr node, QueryEvaluationContext context)
 			throws ValueExprEvaluationException, QueryEvaluationException {
 
-		
-
 		List<QueryValueEvaluationStep> collect = node.getExpressions()
-			.stream()
-			.map((e)-> precompile(e, context))
-			.collect(Collectors.toList());
+				.stream()
+				.map((e) -> precompile(e, context))
+				.collect(Collectors.toList());
 
 		return new QueryValueEvaluationStep() {
-			
+
 			@Override
 			public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
 				ValueExprEvaluationException error = null;
 				try {
-					for (QueryValueEvaluationStep ves: collect) {
+					for (QueryValueEvaluationStep ves : collect) {
 						Value v = ves.evaluate(bindings);
 						if (QueryEvaluationUtil.getEffectiveBooleanValue(v) == false) {
 							return BooleanLiteral.FALSE;
@@ -868,7 +866,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			}
 		};
 	}
-	
+
 	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateAtStatementSources(Object preparedQuery,
 			List<StatementSource> statementSources, QueryInfo queryInfo) throws QueryEvaluationException {
 		if (preparedQuery instanceof String) {

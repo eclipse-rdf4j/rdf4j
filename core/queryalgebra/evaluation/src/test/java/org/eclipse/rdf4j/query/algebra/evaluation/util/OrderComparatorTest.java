@@ -40,7 +40,9 @@ import org.junit.Test;
  */
 public class OrderComparatorTest {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
-	private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(vf.createLiteral(Date.from(Instant.now())), null);
+	private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
+			vf.createLiteral(Date.from(Instant.now())), null);
+
 	class EvaluationStrategyStub implements EvaluationStrategy {
 
 		@Override
