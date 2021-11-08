@@ -32,7 +32,8 @@ public class RdfStarQueryEvaluationStep implements QueryEvaluationStep {
 	private final RDFStarTripleSource tripleSource;
 	private final QueryEvaluationContext context;
 
-	public RdfStarQueryEvaluationStep(Var subjVar, Var predVar, Var objVar, Var extVar, RDFStarTripleSource tripleSource, QueryEvaluationContext context) {
+	public RdfStarQueryEvaluationStep(Var subjVar, Var predVar, Var objVar, Var extVar,
+			RDFStarTripleSource tripleSource, QueryEvaluationContext context) {
 		this.extVar = extVar;
 		this.predVar = predVar;
 		this.objVar = objVar;
