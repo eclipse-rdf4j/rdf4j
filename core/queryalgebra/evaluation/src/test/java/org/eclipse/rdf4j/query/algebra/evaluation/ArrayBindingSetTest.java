@@ -28,7 +28,7 @@ public class ArrayBindingSetTest {
 
 	@Before
 	public void setup() {
-		qbs.getDirectSetterForVariable("foo").accept(qbs, vf.createIRI("urn:foo"));
+		qbs.getDirectSetterForVariable("foo").accept(vf.createIRI("urn:foo"), qbs);
 		mbs.addBinding("foo", vf.createIRI("urn:foo"));
 	}
 
@@ -39,7 +39,7 @@ public class ArrayBindingSetTest {
 		assertFalse(bs.equals(qbs));
 		assertFalse(bs.equals(mbs));
 
-		bs.getDirectSetterForVariable("foo").accept(bs, vf.createIRI("urn:foo"));
+		bs.getDirectSetterForVariable("foo").accept(vf.createIRI("urn:foo"), bs);
 
 		assertEquals(bs, qbs);
 		assertEquals(bs, mbs);
@@ -63,13 +63,13 @@ public class ArrayBindingSetTest {
 		ArrayBindingSet bs1 = new ArrayBindingSet("x", "y", "z");
 		ArrayBindingSet bs2 = new ArrayBindingSet("x", "y", "z");
 
-		bs1.getDirectSetterForVariable("x").accept(bs1, RDF.ALT);
-		bs1.getDirectSetterForVariable("y").accept(bs1, RDF.BAG);
-		bs1.getDirectSetterForVariable("z").accept(bs1, RDF.FIRST);
+		bs1.getDirectSetterForVariable("x").accept(RDF.ALT, bs1);
+		bs1.getDirectSetterForVariable("y").accept(RDF.BAG, bs1);
+		bs1.getDirectSetterForVariable("z").accept(RDF.FIRST, bs1);
 
-		bs2.getDirectSetterForVariable("y").accept(bs2, RDF.BAG);
-		bs2.getDirectSetterForVariable("x").accept(bs2, RDF.ALT);
-		bs2.getDirectSetterForVariable("z").accept(bs2, RDF.FIRST);
+		bs2.getDirectSetterForVariable("y").accept(RDF.BAG, bs2);
+		bs2.getDirectSetterForVariable("x").accept(RDF.ALT, bs2);
+		bs2.getDirectSetterForVariable("z").accept(RDF.FIRST, bs2);
 		assertEquals(bs1, bs2);
 		assertEquals(bs1.hashCode(), bs2.hashCode());
 	}

@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
@@ -82,11 +83,31 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	 * @return the setter biconsumer which can operate on any ArrayBindingSet but should only be used on ones with an
 	 *         identical bindingNames array. Otherwise returns null.
 	 */
-	public BiConsumer<ArrayBindingSet, Value> getDirectSetterForVariable(String bindingName) {
+	public BiConsumer<Value, ArrayBindingSet> getDirectSetterForVariable(String bindingName) {
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(bindingName)) {
 				final int idx = i;
-				return (a, v) -> a.values[idx] = v;
+				return (v, a) -> a.values[idx] = v;
+			}
+		}
+		return null;
+	}
+
+	public Function<ArrayBindingSet, Binding> getDirectAccessForVariable(String variableName) {
+		for (int i = 0; i < this.bindingNames.length; i++) {
+			if (bindingNames[i].equals(variableName)) {
+				final int idx = i;
+				return (a) -> new SimpleBinding(variableName, a.values[idx]);
+			}
+		}
+		return null;
+	}
+
+	public Function<ArrayBindingSet, Boolean> getDirectHasVariable(String bindingName) {
+		for (int i = 0; i < this.bindingNames.length; i++) {
+			if (bindingNames[i].equals(bindingName)) {
+				final int idx = i;
+				return (a) -> a.values[idx] != null;
 			}
 		}
 		return null;
@@ -187,6 +208,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public void addBinding(Binding binding) {
-		getDirectSetterForVariable(binding.getName()).accept(this, binding.getValue());
+		getDirectSetterForVariable(binding.getName()).accept(binding.getValue(), this);
 	}
+
 }

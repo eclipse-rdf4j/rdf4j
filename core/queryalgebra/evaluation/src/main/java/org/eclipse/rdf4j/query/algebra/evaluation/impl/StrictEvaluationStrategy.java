@@ -7,8 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -141,6 +143,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.util.UUIDable;
 
 import com.google.common.base.Stopwatch;
@@ -485,8 +488,25 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 
-		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		String[] allVariables = findAllVariablesUsedInQuery(node);
+		QueryEvaluationContext newContext = new ArrayBindingBasedQueryEvaluationContext(context, allVariables);
+		QueryEvaluationStep arg = precompile(node.getArg(), newContext);
 		return new QueryRootQueryEvaluationStep(arg);
+	}
+
+	private String[] findAllVariablesUsedInQuery(QueryRoot node) {
+		Set<String> varNames = new HashSet<>();
+		AbstractQueryModelVisitor<QueryEvaluationException> queryModelVisitorBase = new AbstractQueryModelVisitor<QueryEvaluationException>() {
+
+			@Override
+			public void meet(Var node) throws QueryEvaluationException {
+				super.meet(node);
+				varNames.add(node.getName());
+			}
+		};
+		node.visit(queryModelVisitorBase);
+		String[] varNamesArr = varNames.toArray(new String[0]);
+		return varNamesArr;
 	}
 
 	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
