@@ -16,11 +16,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 
 /**
  * A Map-based implementation of the {@link BindingSet} interface.
  */
-public class MapBindingSet extends AbstractBindingSet {
+public class MapBindingSet extends AbstractBindingSet implements MutableBindingSet {
 
 	private static final long serialVersionUID = -8857324525220429607L;
 
@@ -44,18 +45,9 @@ public class MapBindingSet extends AbstractBindingSet {
 	/**
 	 * Adds a binding to the binding set.
 	 *
-	 * @param name  The binding's name.
-	 * @param value The binding's value.
-	 */
-	public void addBinding(String name, Value value) {
-		addBinding(new SimpleBinding(name, value));
-	}
-
-	/**
-	 * Adds a binding to the binding set.
-	 *
 	 * @param binding The binding to add to the binding set.
 	 */
+	@Override
 	public void addBinding(Binding binding) {
 		bindings.put(binding.getName(), binding);
 	}

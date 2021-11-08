@@ -78,12 +78,12 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 	}
 
 	@Override
-	public QueryEvaluationStep prepare(TupleExpr expr)
+	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		if (expr instanceof TupleFunctionCall) {
-			return prepare((TupleFunctionCall) expr);
+			return prepare((TupleFunctionCall) expr, context);
 		} else {
-			return super.prepare(expr);
+			return super.precompile(expr, context);
 		}
 	}
 
@@ -102,14 +102,15 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 		return evaluate(func, expr.getResultVars(), bindings, tripleSource.getValueFactory(), argValues);
 	}
 
-	public QueryEvaluationStep prepare(TupleFunctionCall expr) throws QueryEvaluationException {
+	public QueryEvaluationStep prepare(TupleFunctionCall expr, QueryEvaluationContext context)
+			throws QueryEvaluationException {
 		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
 				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
 
 		List<ValueExpr> args = expr.getArgs();
 		QueryValueEvaluationStep[] argEpresions = new QueryValueEvaluationStep[args.size()];
 		for (int i = 0; i < args.size(); i++) {
-			argEpresions[i] = prepare(args.get(i));
+			argEpresions[i] = precompile(args.get(i), context);
 		}
 
 		return new QueryEvaluationStep() {

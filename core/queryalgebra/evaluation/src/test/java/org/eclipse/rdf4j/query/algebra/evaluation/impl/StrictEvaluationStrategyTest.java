@@ -151,7 +151,7 @@ public class StrictEvaluationStrategyTest {
 				"        ?a dct:language ?language." +
 				"        ?a dct:publisher [foaf:mbox ?mbox] .}";
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
-		QueryEvaluationStep prepared = strategy.prepare(pq.getTupleExpr());
+		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
 		assertNotNull(prepared);
 	}
 }

@@ -245,7 +245,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
-			QueryEvaluationStep qes = strategy.prepare(tupleExpr);
+			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
 			iteration = qes.evaluate(EmptyBindingSet.getInstance());
 			iteration = interlock(iteration, rdfDataset, branch);
 			allGood = true;

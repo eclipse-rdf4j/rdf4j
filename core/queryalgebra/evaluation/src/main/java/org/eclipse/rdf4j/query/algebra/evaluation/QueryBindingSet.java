@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
@@ -26,7 +27,7 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
  * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that the
  * Binding objects are created lazily.
  */
-public class QueryBindingSet extends AbstractBindingSet {
+public class QueryBindingSet extends AbstractBindingSet implements MutableBindingSet {
 
 	private static final long serialVersionUID = -2010715346095527301L;
 
@@ -62,6 +63,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 	 *
 	 * @param binding The binding to add this this BindingSet.
 	 */
+	@Override
 	public void addBinding(Binding binding) {
 		addBinding(binding.getName(), binding.getValue());
 	}
@@ -72,6 +74,7 @@ public class QueryBindingSet extends AbstractBindingSet {
 	 * @param name  The binding's name, must not be bound in this binding set already.
 	 * @param value The binding's value.
 	 */
+	@Override
 	public void addBinding(String name, Value value) {
 		assert !bindings.containsKey(name) : "variable already bound: " + name;
 		setBinding(name, value);
