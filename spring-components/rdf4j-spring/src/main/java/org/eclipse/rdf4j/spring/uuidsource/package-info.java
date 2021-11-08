@@ -7,12 +7,15 @@
  *******************************************************************************/
 
 /**
- * This package contains three different approaches for obtaining UUIDs from a
+ * This package contains different approaches for generating UUIDs. One of them always generates the same sequence of
+ * UUIDs after bean initialization, which is useful for tests. Three of them obtain them from a
  * {@link org.eclipse.rdf4j.repository.Repository Repository}, guaranteeing their uniqueness. Due to the <b>very, very,
- * very</b> low probability of a collision, it is recommended not to use any of these and instead rely on the
- * {@link org.eclipse.rdf4j.spring.support.DefaultUUIDSource DefaultUUIDSource}.
+ * very</b> low probability of a collision, it is recommended not to use any of the latter and instead rely on the one
+ * instantiated by default, {@link org.eclipse.rdf4j.spring.support.DefaultUUIDSource DefaultUUIDSource}.
  *
  * <ol>
+ * <li>{@link org.eclipse.rdf4j.spring.uuidsource.predictable.PredictableUUIDSource PredictableUUIDSource}: Always
+ * generate the same sequence of UUIDs.</li>
  * <li>{@link org.eclipse.rdf4j.spring.uuidsource.noveltychecking.NoveltyCheckingUUIDSource NoveltyCheckingUUIDSource}:
  * Generate a {@link java.util.UUID UUID} locally using {@link java.util.UUID#randomUUID() UUID.randomUUID()} and then
  * ask the repository if the UUID is unique. Enable with
