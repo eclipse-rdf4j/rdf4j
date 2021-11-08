@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 /**
@@ -26,7 +27,7 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
  * @author Jerven Bolleman
  */
 @InternalUseOnly
-public class ArrayBindingSet extends AbstractBindingSet {
+public class ArrayBindingSet extends AbstractBindingSet implements MutableBindingSet {
 
 	private static final long serialVersionUID = -1L;
 
@@ -182,5 +183,10 @@ public class ArrayBindingSet extends AbstractBindingSet {
 		public void remove() {
 			throw new UnsupportedOperationException();
 		}
+	}
+
+	@Override
+	public void addBinding(Binding binding) {
+		getDirectSetterForVariable(binding.getName()).accept(this, binding.getValue());
 	}
 }
