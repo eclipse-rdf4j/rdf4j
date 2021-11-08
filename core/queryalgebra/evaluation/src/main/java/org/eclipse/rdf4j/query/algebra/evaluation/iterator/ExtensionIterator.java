@@ -22,15 +22,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	private Consumer<QueryBindingSet> setter;
 
 	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			EvaluationStrategy strategy) throws QueryEvaluationException {
+			EvaluationStrategy strategy, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
-		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy);
+		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy, context);
 	}
 
 	public ExtensionIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
@@ -40,12 +41,12 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	}
 
 	public static Consumer<QueryBindingSet> buildLambdaToEvaluateTheExpressions(Extension extension,
-			EvaluationStrategy strategy) {
+			EvaluationStrategy strategy, QueryEvaluationContext context) {
 		Consumer<QueryBindingSet> consumer = null;
 		for (ExtensionElem extElem : extension.getElements()) {
 			ValueExpr expr = extElem.getExpr();
 			if (!(expr instanceof AggregateOperator)) {
-				QueryValueEvaluationStep prepared = strategy.prepare(extElem.getExpr());
+				QueryValueEvaluationStep prepared = strategy.precompile(extElem.getExpr(), context);
 				consumer = andThen(consumer, (targetBindings) -> setValue(extElem.getName(), prepared, targetBindings));
 			}
 		}

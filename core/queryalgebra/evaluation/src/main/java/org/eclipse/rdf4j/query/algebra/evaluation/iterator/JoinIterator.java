@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
  * Interleaved join iterator.
@@ -53,12 +54,13 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 		this.preparedRight = rightPrepared;
 	}
 
-	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings) throws QueryEvaluationException {
+	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings, QueryEvaluationContext context)
+			throws QueryEvaluationException {
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		// Initialize with empty iteration so that var is never null
 		rightIter = new EmptyIteration<>();
-		preparedRight = strategy.prepare(join.getRightArg());
+		preparedRight = strategy.precompile(join.getRightArg(), context);
 		join.setAlgorithm(this);
 	}
 

@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -86,12 +88,14 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
@@ -361,8 +365,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	}
 
 	@Override
-	public QueryEvaluationStep prepare(
-			TupleExpr expr)
+	public QueryEvaluationStep precompile(
+			TupleExpr expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		if (expr instanceof Join) {
 			return QueryEvaluationStep.minimal(this, expr);
@@ -372,11 +376,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		if (expr instanceof NJoin) {
-			return QueryEvaluationStep.minimal(this, expr);
+			return prepareNJoin((NJoin) expr, context);
 		}
 
 		if (expr instanceof NUnion) {
-			return QueryEvaluationStep.minimal(this, expr);
+			return prepareNaryUnion((NUnion) expr, context);
 		}
 
 		if (expr instanceof ExclusiveGroup) {
@@ -384,11 +388,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		if (expr instanceof ExclusiveTupleExpr) {
-			return QueryEvaluationStep.minimal(this, expr);
+			return prepareExclusiveTupleExpr((ExclusiveTupleExpr) expr, context);
 		}
 
 		if (expr instanceof FedXLeftJoin) {
-			return QueryEvaluationStep.minimal(this, expr);
+			return prepareLeftJoin((FedXLeftJoin) expr, context);
 		}
 
 		if (expr instanceof SingleSourceQuery) {
@@ -403,7 +407,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			return QueryEvaluationStep.minimal(this, expr);
 		}
 
-		return super.prepare(expr);
+		return super.precompile(expr, context);
 	}
 
 	/**
@@ -499,24 +503,38 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateNJoin(NJoin join, BindingSet bindings)
 			throws QueryEvaluationException {
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(join.getArg(0), bindings);
+		return precompile(join).evaluate(bindings);
+	}
+
+	protected QueryEvaluationStep prepareNJoin(NJoin join, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+
+		QueryEvaluationStep resultProvider = precompile(join.getArg(0), context);
 
 		ControlledWorkerScheduler<BindingSet> joinScheduler = federationContext.getManager().getJoinScheduler();
 
-		boolean completed = false;
-		try {
-			for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
+		return new QueryEvaluationStep() {
 
-				result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,
-						join.getQueryInfo());
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				boolean completed = false;
+				CloseableIteration<BindingSet, QueryEvaluationException> result = resultProvider.evaluate(bindings);
+				try {
+					for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
+
+						result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,
+								join.getQueryInfo());
+					}
+					completed = true;
+				} finally {
+					if (!completed) {
+						result.close();
+					}
+				}
+				return result;
 			}
-			completed = true;
-		} finally {
-			if (!completed) {
-				result.close();
-			}
-		}
-		return result;
+		};
+
 	}
 
 	/**
@@ -531,6 +549,11 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateLeftJoin(FedXLeftJoin leftJoin,
 			final BindingSet bindings) throws QueryEvaluationException {
 
+		return precompile(leftJoin).evaluate(bindings);
+	}
+
+	protected QueryEvaluationStep prepareLeftJoin(FedXLeftJoin leftJoin, QueryEvaluationContext context)
+			throws QueryEvaluationException {
 		/*
 		 * NOTE: this implementation is taken from StrictEvaluationStrategy.evaluate(LeftJoin, BindingSet)
 		 *
@@ -539,51 +562,80 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		 */
 
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
-			return new HashJoinIteration(this, leftJoin, bindings);
-		}
+			return new QueryEvaluationStep() {
 
-		// Check whether optional join is "well designed" as defined in section
-		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
-		VarNameCollector optionalVarCollector = new VarNameCollector();
-		leftJoin.getRightArg().visit(optionalVarCollector);
-		if (leftJoin.hasCondition()) {
-			leftJoin.getCondition().visit(optionalVarCollector);
-		}
+				@Override
+				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+					return new HashJoinIteration(FederationEvalStrategy.this, leftJoin, bindings);
+				}
 
-		Set<String> problemVars = optionalVarCollector.getVarNames();
-		problemVars.removeAll(leftJoin.getLeftArg().getBindingNames());
-		problemVars.retainAll(bindings.getBindingNames());
-
-		if (problemVars.isEmpty()) {
-			// left join is "well designed"
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter = evaluate(leftJoin.getLeftArg(),
-					bindings);
-			ControlledWorkerScheduler<BindingSet> scheduler = federationContext.getManager().getLeftJoinScheduler();
-
-			ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(scheduler, this, leftIter, leftJoin,
-					bindings, leftJoin.getQueryInfo());
-			executor.execute(join);
-			return join;
+			};
 		} else {
-			// TODO optimize with a FedX secure implementation
-			return new BadlyDesignedLeftJoinIterator(this, leftJoin, bindings, problemVars);
+			// Check whether optional join is "well designed" as defined in section
+			// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
+			VarNameCollector optionalVarCollector = new VarNameCollector();
+			leftJoin.getRightArg().visit(optionalVarCollector);
+			if (leftJoin.hasCondition()) {
+				leftJoin.getCondition().visit(optionalVarCollector);
+			}
+
+			Set<String> problemVars = optionalVarCollector.getVarNames();
+			problemVars.removeAll(leftJoin.getLeftArg().getBindingNames());
+
+			QueryEvaluationStep leftPrepared = precompile(leftJoin.getLeftArg(), context);
+			// left join is "well designed"
+			ControlledWorkerScheduler<BindingSet> scheduler = federationContext.getManager().getLeftJoinScheduler();
+			return new QueryEvaluationStep() {
+
+				@Override
+				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+					Set<String> problemVarsClone = new HashSet<>(problemVars);
+					problemVarsClone.retainAll(bindings.getBindingNames());
+					if (problemVarsClone.isEmpty()) {
+						CloseableIteration<BindingSet, QueryEvaluationException> leftIter = leftPrepared
+								.evaluate(bindings);
+						ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(scheduler,
+								FederationEvalStrategy.this, leftIter, leftJoin, bindings, leftJoin.getQueryInfo());
+						executor.execute(join);
+						return join;
+					} else {
+						return new BadlyDesignedLeftJoinIterator(FederationEvalStrategy.this, leftJoin, bindings,
+								problemVarsClone, context);
+					}
+				}
+			};
 		}
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateNaryUnion(NUnion union, BindingSet bindings)
 			throws QueryEvaluationException {
+		return precompile(union).evaluate(bindings);
+	}
+
+	public QueryEvaluationStep prepareNaryUnion(NUnion union, QueryEvaluationContext context)
+			throws QueryEvaluationException {
 
 		ControlledWorkerScheduler<BindingSet> unionScheduler = federationContext.getManager().getUnionScheduler();
 		ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<>(this, unionScheduler,
 				union.getQueryInfo());
-
-		for (int i = 0; i < union.getNumberOfArguments(); i++) {
-			unionRunnable.addTask(new ParallelUnionOperatorTask(unionRunnable, this, union.getArg(i), bindings));
+		int numberOfArguments = union.getNumberOfArguments();
+		QueryEvaluationStep[] args = new QueryEvaluationStep[numberOfArguments];
+		for (int i = 0; i < numberOfArguments; i++) {
+			args[i] = precompile(union.getArg(i), context);
 		}
+		return new QueryEvaluationStep() {
 
-		executor.execute(unionRunnable);
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				for (int i = 0; i < numberOfArguments; i++) {
+					unionRunnable.addTask(new ParallelUnionOperatorTask(unionRunnable, args[i], bindings));
+				}
+				executor.execute(unionRunnable);
 
-		return unionRunnable;
+				return unionRunnable;
+			}
+
+		};
 	}
 
 	/**
@@ -629,12 +681,27 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			ExclusiveTupleExpr expr,
 			BindingSet bindings) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 
+		return precompile(expr).evaluate(bindings);
+	}
+
+	protected QueryEvaluationStep prepareExclusiveTupleExpr(
+			ExclusiveTupleExpr expr,
+			QueryEvaluationContext context)
+			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+
 		if (expr instanceof StatementTupleExpr) {
-			return ((StatementTupleExpr) expr).evaluate(bindings);
+			return new QueryEvaluationStep() {
+
+				@Override
+				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+					return ((StatementTupleExpr) expr).evaluate(bindings);
+				}
+
+			};
 		}
 
 		if (!(expr instanceof ExclusiveTupleExprRenderer)) {
-			return super.evaluate(expr, bindings);
+			return super.precompile(expr);
 		}
 
 		Endpoint ownedEndpoint = federationContext
@@ -642,22 +709,27 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				.getEndpoint(expr.getOwner().getEndpointID());
 		TripleSource t = ownedEndpoint.getTripleSource();
 
-		AtomicBoolean isEvaluated = new AtomicBoolean(false);
+		return new QueryEvaluationStep() {
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				AtomicBoolean isEvaluated = new AtomicBoolean(false);
+				FilterValueExpr filterValueExpr = null; // TODO consider optimization using FilterTuple
+				try {
+					String preparedQuery = QueryStringUtil.selectQueryString((ExclusiveTupleExprRenderer) expr,
+							bindings, filterValueExpr, isEvaluated, expr.getQueryInfo().getDataset());
+					return t.getStatements(preparedQuery, bindings, (isEvaluated.get() ? null : filterValueExpr),
+							expr.getQueryInfo());
+				} catch (IllegalQueryException e) {
+					/* no projection vars, e.g. local vars only, can occur in joins */
+					if (t.hasStatements(expr, bindings)) {
+						return new SingleBindingSetIteration(bindings);
+					}
+					return new EmptyIteration<>();
+				}
 
-		try {
-			FilterValueExpr filterValueExpr = null; // TODO consider optimization using FilterTuple
-			String preparedQuery = QueryStringUtil.selectQueryString((ExclusiveTupleExprRenderer) expr, bindings,
-					filterValueExpr,
-					isEvaluated, expr.getQueryInfo().getDataset());
-			return t.getStatements(preparedQuery, bindings,
-					(isEvaluated.get() ? null : filterValueExpr), expr.getQueryInfo());
-		} catch (IllegalQueryException e) {
-			/* no projection vars, e.g. local vars only, can occur in joins */
-			if (t.hasStatements(expr, bindings)) {
-				return new SingleBindingSetIteration(bindings);
 			}
-			return new EmptyIteration<>();
-		}
+		};
+
 	}
 
 	/**
@@ -730,6 +802,20 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		return super.evaluate(expr, bindings);
 	}
 
+	@Override
+	public QueryValueEvaluationStep precompile(ValueExpr expr, QueryEvaluationContext context)
+			throws ValueExprEvaluationException, QueryEvaluationException {
+
+		if (expr instanceof FilterExpr) {
+			return prepare((FilterExpr) expr, context);
+		}
+		if (expr instanceof ConjunctiveFilterExpr) {
+			return prepare((ConjunctiveFilterExpr) expr, context);
+		}
+
+		return super.precompile(expr, context);
+	}
+
 	public Value evaluate(FilterExpr node, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException {
 
@@ -737,28 +823,54 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(v));
 	}
 
+	protected QueryValueEvaluationStep prepare(FilterExpr node, QueryEvaluationContext context)
+			throws ValueExprEvaluationException, QueryEvaluationException {
+
+		QueryValueEvaluationStep expr = precompile(node.getExpression(), context);
+		return new QueryValueEvaluationStep() {
+
+			@Override
+			public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+				Value v = expr.evaluate(bindings);
+				return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(v));
+			}
+		};
+	}
+
 	public Value evaluate(ConjunctiveFilterExpr node, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException {
 
-		ValueExprEvaluationException error = null;
+		return prepare(node, new QueryEvaluationContext.Minimal(dataset)).evaluate(bindings);
+	}
 
-		for (FilterExpr expr : node.getExpressions()) {
+	protected QueryValueEvaluationStep prepare(ConjunctiveFilterExpr node, QueryEvaluationContext context)
+			throws ValueExprEvaluationException, QueryEvaluationException {
 
-			try {
-				Value v = evaluate(expr.getExpression(), bindings);
-				if (QueryEvaluationUtil.getEffectiveBooleanValue(v) == false) {
-					return BooleanLiteral.FALSE;
+		List<QueryValueEvaluationStep> collect = node.getExpressions()
+				.stream()
+				.map((e) -> precompile(e, context))
+				.collect(Collectors.toList());
+
+		return new QueryValueEvaluationStep() {
+
+			@Override
+			public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+				ValueExprEvaluationException error = null;
+				try {
+					for (QueryValueEvaluationStep ves : collect) {
+						Value v = ves.evaluate(bindings);
+						if (QueryEvaluationUtil.getEffectiveBooleanValue(v) == false) {
+							return BooleanLiteral.FALSE;
+						}
+					}
+				} catch (ValueExprEvaluationException e) {
+					error = e;
 				}
-			} catch (ValueExprEvaluationException e) {
-				error = e;
+				if (error != null)
+					throw error;
+				return BooleanLiteral.TRUE;
 			}
-		}
-
-		if (error != null) {
-			throw error;
-		}
-
-		return BooleanLiteral.TRUE;
+		};
 	}
 
 	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateAtStatementSources(Object preparedQuery,

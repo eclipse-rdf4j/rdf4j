@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -83,21 +84,25 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private final long iterationCacheSyncThreshold;
 	private boolean initialized = false;
 
+	private final QueryEvaluationContext context;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
-	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings)
+	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		this(strategy, group, parentBindings, 0);
+		this(strategy, group, parentBindings, 0, context);
 	}
 
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
-			long iterationCacheSyncThreshold) throws QueryEvaluationException {
+			long iterationCacheSyncThreshold, QueryEvaluationContext context) throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
+		this.context = context;
 
 		if (this.iterationCacheSyncThreshold > 0) {
 			try {
@@ -182,7 +187,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private Collection<Entry> buildEntries() throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> iter;
-		iter = strategy.prepare(group.getArg()).evaluate(parentBindings);
+		iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings);
 
 		try {
 			Map<Key, Entry> entries = new LinkedHashMap<>();
@@ -372,7 +377,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			} else {
 				distinctValues = null;
 			}
-			qes = strategy.prepare(getArg());
+			qes = strategy.precompile(getArg(), context);
 		}
 
 		public abstract Value getValue() throws ValueExprEvaluationException;
