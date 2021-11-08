@@ -640,4 +640,8 @@ For using the `predictable` UUIDSource, which always produces the same sequence 
 rdf4j.spring.uuidsource.predictable.enabled=true
 ```  
 
- 
+## Acknowledgments
+
+The RDF4J-Spring module, the RDF4J-Spring-Demo, and this documentation have been developed in the project 
+'BIM-Interoperables Merkmalservice', funded by the Austrian Research Promotion Agency and Österreichische Bautechnik 
+Veranstaltungs GmbH.
