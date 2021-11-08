@@ -51,6 +51,8 @@ public class ArtDemoCli implements CommandLineRunner {
 		paintingsMap = artService.getPaintingsGroupedByArtist();
 		listPaintingsByArtist(paintingsMap);
 		System.out.println("\n");
+		listArtistsWithoutPaintings();
+		System.out.println("\n");
 	}
 
 	private void addPaintingWithArtist() {
@@ -70,6 +72,18 @@ public class ArtDemoCli implements CommandLineRunner {
 			System.out.println(String.format("%s %s", a.getFirstName(), a.getLastName()));
 			for (Painting p : paintingsMap.get(a)) {
 				System.out.println(String.format("\t%s (%s)", p.getTitle(), p.getTechnique()));
+			}
+		}
+	}
+
+	private void listArtistsWithoutPaintings() {
+		System.out.println("Artists without paintings:");
+		Set<Artist> a = artService.getArtistsWithoutPaintings();
+		if (a.isEmpty()) {
+			System.out.println("\t[none]");
+		} else {
+			for (Artist artist : a) {
+				System.out.println(String.format("%s %s", artist.getFirstName(), artist.getLastName()));
 			}
 		}
 	}

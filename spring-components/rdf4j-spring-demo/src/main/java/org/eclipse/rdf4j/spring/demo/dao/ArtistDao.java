@@ -8,18 +8,25 @@
 
 package org.eclipse.rdf4j.spring.demo.dao;
 
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.bound;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.not;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import static org.eclipse.rdf4j.spring.demo.model.Artist.*;
+
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResultUtil;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.demo.model.Artist;
 import org.eclipse.rdf4j.spring.demo.model.EX;
+import org.eclipse.rdf4j.spring.demo.model.Painting;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 import org.eclipse.rdf4j.spring.util.QueryResultUtils;
 import org.springframework.stereotype.Component;
@@ -49,11 +56,6 @@ public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {
 		bindingsBuilder
 				.add(ARTIST_FIRST_NAME, artist.getFirstName())
 				.add(ARTIST_LAST_NAME, artist.getLastName());
-	}
-
-	@Override
-	protected NamedSparqlSupplierPreparer prepareNamedSparqlSuppliers(NamedSparqlSupplierPreparer preparer) {
-		return null;
 	}
 
 	@Override
@@ -90,6 +92,32 @@ public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {
 			return getRdf4JTemplate().getNewUUID();
 		}
 		return artist.getId();
+	}
+
+	static abstract class QUERY_KEYS {
+		public static final String ARTISTS_WITHOUT_PAINTINGS = "artists-without-paintings";
+	}
+
+	@Override
+	protected NamedSparqlSupplierPreparer prepareNamedSparqlSuppliers(NamedSparqlSupplierPreparer preparer) {
+		return preparer.forKey(QUERY_KEYS.ARTISTS_WITHOUT_PAINTINGS)
+				.supplySparql(Queries.SELECT(
+						ARTIST_ID)
+						.where(
+								ARTIST_ID.isA(iri(EX.Artist))
+										.and(ARTIST_ID.has(iri(EX.creatorOf), Painting.PAINTING_ID).optional())
+										.filter(not(bound(Painting.PAINTING_ID))))
+						.getQueryString()
+				);
+	}
+
+	public Set<Artist> getArtistsWithoutPaintings() {
+		return getNamedTupleQuery(QUERY_KEYS.ARTISTS_WITHOUT_PAINTINGS)
+				.evaluateAndConvert()
+				.toStream()
+				.map(bs -> QueryResultUtils.getIRI(bs, ARTIST_ID))
+				.map(iri -> getById(iri))
+				.collect(Collectors.toSet());
 	}
 
 }

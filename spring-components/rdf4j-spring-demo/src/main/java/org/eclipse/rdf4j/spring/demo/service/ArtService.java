@@ -43,7 +43,7 @@ public class ArtService {
 	@Autowired
 	private PaintingDao paintingDao;
 
-	@Transactional(propagation = Propagation.REQUIRED)
+	@Transactional
 	public Artist createArtist(String firstName, String lastName) {
 		Artist artist = new Artist();
 		artist.setFirstName(firstName);
@@ -51,7 +51,7 @@ public class ArtService {
 		return artistDao.save(artist);
 	}
 
-	@Transactional(propagation = Propagation.REQUIRED)
+	@Transactional
 	public Painting createPainting(String title, String technique, IRI artist) {
 		Painting painting = new Painting();
 		painting.setTitle(title);
@@ -60,17 +60,22 @@ public class ArtService {
 		return paintingDao.save(painting);
 	}
 
-	@Transactional(propagation = Propagation.REQUIRED)
+	@Transactional
 	public List<Painting> getPaintings() {
 		return paintingDao.list();
 	}
 
-	@Transactional(propagation = Propagation.REQUIRED)
+	@Transactional
 	public List<Artist> getArtists() {
 		return artistDao.list();
 	}
 
-	@Transactional(propagation = Propagation.REQUIRED)
+	@Transactional
+	public Set<Artist> getArtistsWithoutPaintings() {
+		return artistDao.getArtistsWithoutPaintings();
+	}
+
+	@Transactional
 	public Map<Artist, Set<Painting>> getPaintingsGroupedByArtist() {
 		List<Painting> paintings = paintingDao.list();
 		return paintings
@@ -80,12 +85,12 @@ public class ArtService {
 						toSet()));
 	}
 
-	@Transactional(propagation = Propagation.REQUIRED)
+	@Transactional
 	public IRI addArtist(Artist artist) {
 		return artistDao.saveAndReturnId(artist);
 	}
 
-	@Transactional(propagation = Propagation.REQUIRED)
+	@Transactional
 	public IRI addPainting(Painting painting) {
 		return paintingDao.saveAndReturnId(painting);
 	}
