@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService;
 
 /**
@@ -95,7 +96,11 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @param expr that is to be evaluated later
 	 * @return a QueryEvaluationStep that may avoid doing repeating the same work over and over.
 	 */
-	default QueryEvaluationStep prepare(TupleExpr expr) {
+	default QueryEvaluationStep precompile(TupleExpr expr) {
+		return QueryEvaluationStep.minimal(this, expr);
+	}
+
+	default QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
 		return QueryEvaluationStep.minimal(this, expr);
 	}
 
@@ -144,18 +149,21 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		// no-op for backwards compatibility
 	}
 
-	default QueryValueEvaluationStep prepare(ValueExpr arg) {
-		return new QueryValueEvaluationStepImplementation(this, arg);
+	default QueryValueEvaluationStep precompile(ValueExpr arg, QueryEvaluationContext context) {
+		return new QueryValueEvaluationStepImplementation(this, arg, context);
 	}
 
 	final class QueryValueEvaluationStepImplementation implements QueryValueEvaluationStep {
 		private final ValueExpr ve;
 		private final EvaluationStrategy strategy;
+		private final QueryEvaluationContext context;
 
-		public QueryValueEvaluationStepImplementation(EvaluationStrategy strategy, ValueExpr ve) {
+		public QueryValueEvaluationStepImplementation(EvaluationStrategy strategy, ValueExpr ve,
+				QueryEvaluationContext context) {
 			super();
 			this.strategy = strategy;
 			this.ve = ve;
+			this.context = context;
 		}
 
 		@Override

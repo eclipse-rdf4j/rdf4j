@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 
 /**
  * An {@link EvaluationStrategy} that has support for {@link TupleFunction}s.
@@ -77,7 +76,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 			return super.evaluate(expr, bindings);
 		}
 	}
-	
+
 	@Override
 	public QueryEvaluationStep prepare(TupleExpr expr)
 			throws QueryEvaluationException {
@@ -102,7 +101,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 
 		return evaluate(func, expr.getResultVars(), bindings, tripleSource.getValueFactory(), argValues);
 	}
-	
+
 	public QueryEvaluationStep prepare(TupleFunctionCall expr) throws QueryEvaluationException {
 		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
 				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
@@ -112,17 +111,18 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 		for (int i = 0; i < args.size(); i++) {
 			argEpresions[i] = prepare(args.get(i));
 		}
-		
+
 		return new QueryEvaluationStep() {
 
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 				Value[] argValues = new Value[args.size()];
 				for (int i = 0; i < args.size(); i++) {
-					argValues [i] = argEpresions[i].evaluate(bindings);
+					argValues[i] = argEpresions[i].evaluate(bindings);
 				}
-				
-				return TupleFunctionEvaluationStrategy.evaluate(func, expr.getResultVars(), bindings, tripleSource.getValueFactory(), argValues);
+
+				return TupleFunctionEvaluationStrategy.evaluate(func, expr.getResultVars(), bindings,
+						tripleSource.getValueFactory(), argValues);
 			}
 		};
 	}

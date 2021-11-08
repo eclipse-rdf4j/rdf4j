@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -27,11 +28,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private final java.util.function.Function<BindingSet, CloseableIteration<BindingSet, QueryEvaluationException>> eval;
 
-	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join) {
+	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context) {
 		// efficient computation of a SERVICE join using vectored evaluation
 		// TODO maybe we can create a ServiceJoin node already in the parser?
-		QueryEvaluationStep leftPrepared = strategy.prepare(join.getLeftArg());
-		QueryEvaluationStep rightPrepared = strategy.prepare(join.getRightArg());
+		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
+		QueryEvaluationStep rightPrepared = strategy.precompile(join.getRightArg(), context);
 		if (join.getRightArg() instanceof Service) {
 			eval = (bindings) -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,

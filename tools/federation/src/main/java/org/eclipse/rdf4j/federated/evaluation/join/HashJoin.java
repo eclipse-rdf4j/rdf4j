@@ -39,11 +39,12 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 
 	public HashJoin(FederationEvalStrategy strategy,
 			CloseableIteration<BindingSet, QueryEvaluationException> leftIter,
-			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
+			TupleExpr rightArg, QueryEvaluationStep rightPrepared, Set<String> joinVars, BindingSet bindings,
+			QueryInfo queryInfo)
 			throws QueryEvaluationException {
 		super(strategy, leftIter, rightArg, bindings, queryInfo);
 		setJoinVars(joinVars);
-		rightPrepared = strategy.prepare(rightArg);
+		this.rightPrepared = rightPrepared;
 	}
 
 	@Override

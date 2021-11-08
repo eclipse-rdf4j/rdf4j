@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
@@ -63,7 +64,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 	}
 
 	@Override
-	public QueryEvaluationStep prepare(TupleExpr expr)
+	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep result;
 		if (expr instanceof Join) {
@@ -73,7 +74,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 		} else if (expr instanceof OwnedTupleExpr) {
 			result = prepare((OwnedTupleExpr) expr);
 		} else {
-			result = super.prepare(expr);
+			result = super.precompile(expr, context);
 		}
 		return result;
 	}
@@ -122,27 +123,34 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 	}
 
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,
-			final BindingSet bindings) throws QueryEvaluationException {
-		// Check whether optional join is "well designed" as defined in section
-		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
-		Set<String> boundVars = bindings.getBindingNames();
-		Set<String> leftVars = leftJoin.getLeftArg().getBindingNames();
-		Set<String> optionalVars = leftJoin.getRightArg().getBindingNames();
+	public QueryEvaluationStep prepare(LeftJoin leftJoin, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return new QueryEvaluationStep() {
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				// TODO Auto-generated method stub
+				// Check whether optional join is "well designed" as defined in section
+				// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
+				Set<String> boundVars = bindings.getBindingNames();
+				Set<String> leftVars = leftJoin.getLeftArg().getBindingNames();
+				Set<String> optionalVars = leftJoin.getRightArg().getBindingNames();
 
-		final Set<String> problemVars = new HashSet<>(boundVars);
-		problemVars.retainAll(optionalVars);
-		problemVars.removeAll(leftVars);
+				final Set<String> problemVars = new HashSet<>(boundVars);
+				problemVars.retainAll(optionalVars);
+				problemVars.removeAll(leftVars);
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
-		if (problemVars.isEmpty()) {
-			// left join is "well designed"
-			result = new ParallelLeftJoinCursor(this, leftJoin, bindings);
-			executor.execute((Runnable) result);
-		} else {
-			result = new BadlyDesignedLeftJoinIterator(this, leftJoin, bindings, problemVars);
-		}
-		return result;
+				CloseableIteration<BindingSet, QueryEvaluationException> result;
+				if (problemVars.isEmpty()) {
+					// left join is "well designed"
+					result = new ParallelLeftJoinCursor(FederationStrategy.this, leftJoin, bindings);
+					executor.execute((Runnable) result);
+				} else {
+					result = new BadlyDesignedLeftJoinIterator(FederationStrategy.this, leftJoin, bindings, problemVars,
+							context);
+				}
+				return result;
+			}
+		};
 	}
 
 	@Override

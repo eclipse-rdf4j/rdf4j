@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -49,7 +50,8 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 * Constructors *
 	 *--------------*/
 
-	public LeftJoinIterator(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
+	public LeftJoinIterator(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings,
+			QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		this.scopeBindingNames = join.getBindingNames();
 
@@ -58,13 +60,13 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		// Initialize with empty iteration so that var is never null
 		rightIter = new EmptyIteration<>();
 
-		prepareRightArg = strategy.prepare(join.getRightArg());
+		prepareRightArg = strategy.precompile(join.getRightArg(), context);
 		join.setAlgorithm(this);
 		final ValueExpr condition = join.getCondition();
 		if (condition == null) {
 			joinCondition = null;
 		} else {
-			joinCondition = strategy.prepare(condition);
+			joinCondition = strategy.precompile(condition, context);
 		}
 	}
 

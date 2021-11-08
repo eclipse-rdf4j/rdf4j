@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
@@ -30,9 +31,10 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
 
-	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin) {
-		QueryEvaluationStep left = strategy.prepare(leftJoin.getLeftArg());
-		QueryEvaluationStep right = strategy.prepare(leftJoin.getRightArg());
+	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
+			QueryEvaluationContext context) {
+		QueryEvaluationStep left = strategy.precompile(leftJoin.getLeftArg(), context);
+		QueryEvaluationStep right = strategy.precompile(leftJoin.getRightArg(), context);
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
 			Set<String> rightBindingNames = leftJoin.getRightArg().getBindingNames();
@@ -55,7 +57,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		QueryValueEvaluationStep condition;
 		if (leftJoin.hasCondition()) {
 			leftJoin.getCondition().visit(optionalVarCollector);
-			condition = strategy.prepare(leftJoin.getCondition());
+			condition = strategy.precompile(leftJoin.getCondition(), context);
 		} else {
 			condition = null;
 		}

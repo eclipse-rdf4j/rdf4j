@@ -9,19 +9,22 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.Assert.assertEquals;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.Test;
@@ -31,9 +34,11 @@ import org.junit.Test;
  */
 public class JoinIteratorTest {
 
-	private final ValueFactory vf = ValueFactoryImpl.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
+	private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
+			vf.createLiteral(Date.from(Instant.now())), null);
 
 	/**
 	 * Tests joins between two different BindingSetAssignments with the same BindingSets but ordered differently.
@@ -79,11 +84,11 @@ public class JoinIteratorTest {
 			right.setBindingSets(rightb);
 		}
 
-		JoinIterator lrIter = new JoinIterator(evaluator, new Join(left, right), bindings);
+		JoinIterator lrIter = new JoinIterator(evaluator, new Join(left, right), bindings, context);
 		Set<BindingSet> lr = Iterations.asSet(lrIter);
 		assertEquals(expectedSize, lr.size());
 
-		JoinIterator rlIter = new JoinIterator(evaluator, new Join(right, left), bindings);
+		JoinIterator rlIter = new JoinIterator(evaluator, new Join(right, left), bindings, context);
 		Set<BindingSet> rl = Iterations.asSet(rlIter);
 		assertEquals(expectedSize, rl.size());
 
