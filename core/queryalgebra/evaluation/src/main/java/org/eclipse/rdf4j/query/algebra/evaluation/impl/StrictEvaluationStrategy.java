@@ -12,7 +12,6 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
@@ -106,6 +105,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep.ConstantQueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -123,6 +123,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQuer
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RdfStarQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RegexValueEvaluationStepSupplier;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ReificationRdfStarQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
@@ -841,7 +842,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		if (expr instanceof Var) {
 			return new QueryValueEvaluationStepImplementation(this, expr, context);
 		} else if (expr instanceof ValueConstant) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return prepare((ValueConstant) expr, context);
 		} else if (expr instanceof BNodeGenerator) {
 			return new QueryValueEvaluationStepImplementation(this, expr, context);
 		} else if (expr instanceof Bound) {
@@ -873,7 +874,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (expr instanceof IRIFunction) {
 			return new QueryValueEvaluationStepImplementation(this, expr, context);
 		} else if (expr instanceof Regex) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return prepare((Regex) expr, context);
 		} else if (expr instanceof Coalesce) {
 			return new QueryValueEvaluationStepImplementation(this, expr, context);
 		} else if (expr instanceof Like) {
@@ -1008,6 +1009,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	public Value evaluate(ValueConstant valueConstant, BindingSet bindings)
 			throws QueryEvaluationException {
 		return valueConstant.getValue();
+	}
+
+	protected QueryValueEvaluationStep prepare(ValueConstant valueConstant, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return new ConstantQueryValueEvaluationStep(valueConstant);
 	}
 
 	public Value evaluate(BNodeGenerator node, BindingSet bindings)
@@ -1249,58 +1255,18 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 */
 	public Value evaluate(Regex node, BindingSet bindings)
 			throws QueryEvaluationException {
-		Value arg = evaluate(node.getArg(), bindings);
-		Value parg = evaluate(node.getPatternArg(), bindings);
-		Value farg = null;
-		ValueExpr flagsArg = node.getFlagsArg();
-		if (flagsArg != null) {
-			farg = evaluate(flagsArg, bindings);
-		}
+		return prepare(node, new QueryEvaluationContext.Minimal(dataset)).evaluate(bindings);
+	}
 
-		if (QueryEvaluationUtil.isStringLiteral(arg) && QueryEvaluationUtil.isSimpleLiteral(parg)
-				&& (farg == null || QueryEvaluationUtil.isSimpleLiteral(farg))) {
-			String text = ((Literal) arg).getLabel();
-			String ptn = ((Literal) parg).getLabel();
-			String flags = "";
-			if (farg != null) {
-				flags = ((Literal) farg).getLabel();
-			}
-			// TODO should this Pattern be cached?
-			int f = 0;
-			for (char c : flags.toCharArray()) {
-				switch (c) {
-				case 's':
-					f |= Pattern.DOTALL;
-					break;
-				case 'm':
-					f |= Pattern.MULTILINE;
-					break;
-				case 'i':
-					f |= Pattern.CASE_INSENSITIVE;
-					f |= Pattern.UNICODE_CASE;
-					break;
-				case 'x':
-					f |= Pattern.COMMENTS;
-					break;
-				case 'd':
-					f |= Pattern.UNIX_LINES;
-					break;
-				case 'u':
-					f |= Pattern.UNICODE_CASE;
-					break;
-				case 'q':
-					f |= Pattern.LITERAL;
-					break;
-				default:
-					throw new ValueExprEvaluationException(flags);
-				}
-			}
-			Pattern pattern = Pattern.compile(ptn, f);
-			boolean result = pattern.matcher(text).find();
-			return BooleanLiteral.valueOf(result);
-		}
-
-		throw new ValueExprEvaluationException();
+	/**
+	 * Determines whether the two operands match according to the <code>regex</code> operator.
+	 *
+	 * @return <var>true</var> if the operands match according to the <var>regex</var> operator, <var>false</var>
+	 *         otherwise.
+	 */
+	protected QueryValueEvaluationStep prepare(Regex node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return RegexValueEvaluationStepSupplier.make(this, node, context);
 	}
 
 	public Value evaluate(LangMatches node, BindingSet bindings)
