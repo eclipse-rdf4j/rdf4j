@@ -407,7 +407,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);
 		QueryValueEvaluationStep objPrep = precompile(objVar, context);
 
-		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this);
+		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context);
 	}
 
 	@Override

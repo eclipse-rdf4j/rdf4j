@@ -12,21 +12,11 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.limited.iterator.LimitedSizePathIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.limited.iterator.LimitedSizeZeroLengthPathIteration;
 
 /**
  * @author Jerven Bolleman, SIB Swiss Institute of Bioinformatics
@@ -55,27 +45,6 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 			FederatedServiceResolver serviceManager) {
 		super(tripleSource, dataset, serviceManager);
 		this.maxSize = maxCollectionsSize;
-	}
-
-	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
-			final BindingSet bindings) throws QueryEvaluationException {
-		final Scope scope = alp.getScope();
-		final Var subjectVar = alp.getSubjectVar();
-		final TupleExpr pathExpression = alp.getPathExpression();
-		final Var objVar = alp.getObjectVar();
-		final Var contextVar = alp.getContextVar();
-		final long minLength = alp.getMinLength();
-
-		return new LimitedSizePathIterator(this, scope, subjectVar, pathExpression, objVar, contextVar, minLength,
-				bindings, used, maxSize);
-	}
-
-	@Override
-	protected ZeroLengthPathIteration getZeroLengthPathIterator(BindingSet bindings, Var subjectVar, Var objVar,
-			Var contextVar, Value subj, Value obj) {
-		return new LimitedSizeZeroLengthPathIteration(this, subjectVar, objVar, subj, obj, contextVar, bindings, used,
-				maxSize);
 	}
 
 	@Override
