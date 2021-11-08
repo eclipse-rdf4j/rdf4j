@@ -24,7 +24,7 @@ import org.junit.BeforeClass;
 
 /**
  * An extension of RDFStoreTest for testing the class
- * <tt>org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore</tt>.
+ * <var>org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore</var>.
  */
 public class ElasticsearchStoreIT extends RDFNotifyingStoreTest {
 

@@ -26,7 +26,6 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -699,13 +698,13 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if they consist of isomorphic graphs and the isomorphic graph
-	 * identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from one graphs can be mapped
-	 * 1:1 on to statements in the other graphs. In this mapping, blank nodes are not considered mapped when having an
-	 * identical internal id, but are mapped from one graph to the other by looking at the statements in which the blank
-	 * nodes occur. A Model can consist of more than one graph (denoted by context identifiers). Two models are
-	 * considered isomorphic if for each of the graphs in one model, an isomorphic graph exists in the other model, and
-	 * the context identifiers of these graphs are either identical or (in the case of blank nodes) map 1:1 on each
+	 * Compares two RDF models, and returns <var>true</var> if they consist of isomorphic graphs and the isomorphic
+	 * graph identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from one graphs can be
+	 * mapped 1:1 on to statements in the other graphs. In this mapping, blank nodes are not considered mapped when
+	 * having an identical internal id, but are mapped from one graph to the other by looking at the statements in which
+	 * the blank nodes occur. A Model can consist of more than one graph (denoted by context identifiers). Two models
+	 * are considered isomorphic if for each of the graphs in one model, an isomorphic graph exists in the other model,
+	 * and the context identifiers of these graphs are either identical or (in the case of blank nodes) map 1:1 on each
 	 * other.
 	 *
 	 * @see <a href="http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism">RDF Concepts &amp; Abstract Syntax, section
@@ -756,7 +755,7 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a subset of the second model, using
+	 * Compares two RDF models, and returns <var>true</var> if the first model is a subset of the second model, using
 	 * graph isomorphism to map statements between models.
 	 */
 	public static boolean isSubset(Iterable<? extends Statement> model1, Iterable<? extends Statement> model2) {
@@ -768,7 +767,7 @@ public class Models {
 	}
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if the first model is a subset of the second model, using
+	 * Compares two RDF models, and returns <var>true</var> if the first model is a subset of the second model, using
 	 * graph isomorphism to map statements between models.
 	 */
 	public static boolean isSubset(Set<? extends Statement> model1, Set<? extends Statement> model2) {

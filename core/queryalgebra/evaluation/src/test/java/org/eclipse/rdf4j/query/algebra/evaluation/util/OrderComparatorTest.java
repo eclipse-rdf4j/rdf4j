@@ -180,8 +180,8 @@ public class OrderComparatorTest {
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
 		QueryBindingSet a = new QueryBindingSet();
 		QueryBindingSet b = new QueryBindingSet();
-		a.addBinding("a", vf.createLiteral("a"));
-		b.addBinding("b", vf.createLiteral("b"));
+		a.addBinding("a", SimpleValueFactory.getInstance().createLiteral("a"));
+		b.addBinding("b", SimpleValueFactory.getInstance().createLiteral("b"));
 		assertTrue(sud.compare(a, b) != 0);
 		assertTrue(sud.compare(a, b) != sud.compare(b, a));
 	}
@@ -191,10 +191,10 @@ public class OrderComparatorTest {
 		OrderComparator sud = new OrderComparator(strategy, order, new ValueComparator(), context);
 		QueryBindingSet a = new QueryBindingSet();
 		QueryBindingSet b = new QueryBindingSet();
-		a.addBinding("a", vf.createLiteral("ab"));
-		a.addBinding("b", vf.createLiteral("b"));
-		b.addBinding("b", vf.createLiteral("b"));
-		b.addBinding("a", vf.createLiteral("ac"));
+		a.addBinding("a", SimpleValueFactory.getInstance().createLiteral("ab"));
+		a.addBinding("b", SimpleValueFactory.getInstance().createLiteral("b"));
+		b.addBinding("b", SimpleValueFactory.getInstance().createLiteral("b"));
+		b.addBinding("a", SimpleValueFactory.getInstance().createLiteral("ac"));
 		assertTrue(sud.compare(a, b) < 0);
 		assertTrue(sud.compare(a, b) != sud.compare(b, a));
 	}

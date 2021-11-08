@@ -95,10 +95,10 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	 *---------*/
 
 	/**
-	 * Searches through statementList, starting from index <tt>_nextStatementIdx + 1</tt>, for statements that match the
-	 * constraints that have been set for this iterator. If a matching statement has been found it will be stored in
-	 * <tt>_nextStatement</tt> and <tt>_nextStatementIdx</tt> points to the index of this statement in
-	 * <tt>_statementList</tt>. Otherwise, <tt>_nextStatement</tt> will set to <tt>null</tt>.
+	 * Searches through statementList, starting from index <var>_nextStatementIdx + 1</var>, for statements that match
+	 * the constraints that have been set for this iterator. If a matching statement has been found it will be stored in
+	 * <var>_nextStatement</var> and <var>_nextStatementIdx</var> points to the index of this statement in
+	 * <var>_statementList</var>. Otherwise, <var>_nextStatement</var> will set to <var>null</var>.
 	 */
 	@Override
 	protected MemStatement getNextElement() {

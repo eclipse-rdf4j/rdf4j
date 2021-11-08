@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public interface ParallelTask<T> {
 
-	public CloseableIteration<T, QueryEvaluationException> performTask() throws Exception;
+	CloseableIteration<T, QueryEvaluationException> performTask() throws Exception;
 
 	/**
 	 * return the controlling instance, e.g. in most cases the instance of a thread. Shared variables are used to inform
@@ -27,18 +27,18 @@ public interface ParallelTask<T> {
 	 *
 	 * @return the control executor
 	 */
-	public ParallelExecutor<T> getControl();
+	ParallelExecutor<T> getControl();
 
 	/**
 	 *
 	 * @return the {@link QueryInfo}
 	 */
-	public default QueryInfo getQueryInfo() {
+	default QueryInfo getQueryInfo() {
 		return getControl().getQueryInfo();
 	}
 
 	/**
 	 * Optional implementation to cancel this task on a best effort basis
 	 */
-	public void cancel();
+	void cancel();
 }

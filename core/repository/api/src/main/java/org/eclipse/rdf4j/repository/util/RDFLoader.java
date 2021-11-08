@@ -13,14 +13,12 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
-import java.lang.annotation.Native;
 import java.net.HttpURLConnection;
 import java.net.ProtocolException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.PrivilegedAction;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
@@ -67,7 +65,7 @@ public class RDFLoader {
 	 *
 	 * @param file       A file containing RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
-	 *                   value of {@link java.io.File#toURI() file.toURI()} if the value is set to <tt>null</tt>.
+	 *                   value of {@link java.io.File#toURI() file.toURI()} if the value is set to <var>null</var>.
 	 * @param dataFormat The serialization format of the data.
 	 * @param rdfHandler Receives RDF parser events.
 	 * @throws IOException                  If an I/O error occurred while reading from the file.
@@ -94,19 +92,19 @@ public class RDFLoader {
 
 	/**
 	 * Parses the RDF data that can be found at the specified URL to the RDFHandler. This method uses the class
-	 * {@link URL} to resolve the provided <tt>url</tt>. This method honors
-	 * {@link HttpURLConnection#getFollowRedirects()} to determine if redirects are followed and if set to <tt>true</tt>
-	 * will also follow redirects from HTTP to HTTPS. The maximum number of redirects can be controlled using system
-	 * property <tt>http.maxRedirects</tt>.
+	 * {@link URL} to resolve the provided <var>url</var>. This method honors
+	 * {@link HttpURLConnection#getFollowRedirects()} to determine if redirects are followed and if set to
+	 * <var>true</var> will also follow redirects from HTTP to HTTPS. The maximum number of redirects can be controlled
+	 * using system property <var>http.maxRedirects</var>.
 	 *
 	 * 
 	 * @param url        The URL of the RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.net.URL#toExternalForm() url.toExternalForm()} if the value is set to
-	 *                   <tt>null</tt>.
-	 * @param dataFormat The serialization format of the data. If set to <tt>null</tt>, the format will be automatically
-	 *                   determined by examining the content type in the HTTP response header, and failing that, the
-	 *                   file name extension of the supplied URL.
+	 *                   <var>null</var>.
+	 * @param dataFormat The serialization format of the data. If set to <var>null</var>, the format will be
+	 *                   automatically determined by examining the content type in the HTTP response header, and failing
+	 *                   that, the file name extension of the supplied URL.
 	 * @param rdfHandler Receives RDF parser events.
 	 * @throws IOException                  If an I/O error occurred while reading from the URL.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format, or the RDF format

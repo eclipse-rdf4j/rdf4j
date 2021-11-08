@@ -192,7 +192,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	 * Creates and initializes the repository with the specified ID.
 	 *
 	 * @param id A repository ID.
-	 * @return The created repository, or <tt>null</tt> if no such repository exists.
+	 * @return The created repository, or <var>null</var> if no such repository exists.
 	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration
 	 *                                   data.
 	 */

@@ -54,7 +54,7 @@ public class MemStatement extends ContextStatement {
 
 	/**
 	 * Creates a new MemStatement with the supplied subject, predicate, object and context. The value of the
-	 * <tt>explicit</tt> parameter determines if this statement is marked as 'explicit' or not.
+	 * <var>explicit</var> parameter determines if this statement is marked as 'explicit' or not.
 	 */
 	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context, boolean explicit,
 			int sinceSnapshot) {
@@ -131,7 +131,7 @@ public class MemStatement extends ContextStatement {
 
 	/**
 	 * Lets this statement remove itself from the appropriate statement lists of its subject, predicate, object and
-	 * context. The transaction status will be set to <tt>null</tt>.
+	 * context. The transaction status will be set to <var>null</var>.
 	 */
 	public void removeFromComponentLists() {
 		getSubject().removeSubjectStatement(this);

@@ -23,7 +23,6 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -42,7 +41,7 @@ import org.junit.Test;
  */
 public class JSONLDHierarchicalWriterTest {
 
-	private static ValueFactory vf = SimpleValueFactory.getInstance();
+	private static SimpleValueFactory vf = SimpleValueFactory.getInstance();
 	private Model model;
 	private WriterConfig writerConfig;
 
@@ -268,7 +267,7 @@ public class JSONLDHierarchicalWriterTest {
 	 * Verify output hierarchy does not duplicate nodes B and C.
 	 *
 	 * @throws IOException
-	 * @see https://github.com/eclipse/rdf4j/issues/1283
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/1283">GH-1283</a>
 	 */
 	@Test
 	public void testOrder() throws IOException {
@@ -298,11 +297,11 @@ public class JSONLDHierarchicalWriterTest {
 		verifyOutput();
 	}
 
-	private void addStatement(Resource subject, URI predicate, Value object, Resource context) {
+	private void addStatement(Resource subject, IRI predicate, Value object, Resource context) {
 		model.add(vf.createStatement(subject, predicate, object, context));
 	}
 
-	private void addStatement(Resource subject, URI predicate, Value object) {
+	private void addStatement(Resource subject, IRI predicate, Value object) {
 		model.add(vf.createStatement(subject, predicate, object));
 	}
 

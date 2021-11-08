@@ -425,8 +425,8 @@ public class QueryResultIO {
 	 * @param value  The value to write.
 	 * @param format The file format of the document to write.
 	 * @param out    An OutputStream to write the document to.
-	 * @throws IOException                           If an I/O error occurred while writing the query result document to
-	 *                                               the stream.
+	 * @throws QueryResultHandlerException           If an I/O or other error occurred while writing the query result
+	 *                                               document to the stream.
 	 * @throws UnsupportedQueryResultFormatException If an unsupported query result file format was specified.
 	 */
 	public static void writeBoolean(boolean value, QueryResultFormat format, OutputStream out)

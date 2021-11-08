@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.slf4j.Logger;
@@ -66,13 +65,13 @@ class GraphComparisons {
 	private static final HashCode distinguisher = hashFunction.hashString("@", Charsets.UTF_8);
 
 	/**
-	 * Compares two RDF models, and returns <tt>true</tt> if they consist of isomorphic graphs and the isomorphic graph
-	 * identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from one graphs can be mapped
-	 * 1:1 on to statements in the other graphs. In this mapping, blank nodes are not considered mapped when having an
-	 * identical internal id, but are mapped from one graph to the other by looking at the statements in which the blank
-	 * nodes occur. A Model can consist of more than one graph (denoted by context identifiers). Two models are
-	 * considered isomorphic if for each of the graphs in one model, an isomorphic graph exists in the other model, and
-	 * the context identifiers of these graphs are identical.
+	 * Compares two RDF models, and returns <var>true</var> if they consist of isomorphic graphs and the isomorphic
+	 * graph identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from one graphs can be
+	 * mapped 1:1 on to statements in the other graphs. In this mapping, blank nodes are not considered mapped when
+	 * having an identical internal id, but are mapped from one graph to the other by looking at the statements in which
+	 * the blank nodes occur. A Model can consist of more than one graph (denoted by context identifiers). Two models
+	 * are considered isomorphic if for each of the graphs in one model, an isomorphic graph exists in the other model,
+	 * and the context identifiers of these graphs are identical.
 	 * 
 	 * @implNote The algorithm used by this comparison is a depth-first search for an iso-canonical blank node mapping
 	 *           for each model, and using that as a basis for comparison. The algorithm is described in detail in:
@@ -81,9 +80,9 @@ class GraphComparisons {
 	 *
 	 * @see <a href="http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism">RDF Concepts &amp; Abstract Syntax, section
 	 *      3.6 (Graph Comparison)</a>
-	 * @see Hogan, A. (2017). Canonical forms for isomorphic and equivalent RDF graphs: algorithms for leaning and
-	 *      labelling blank nodes. ACM Transactions on the Web (TWEB), 11(4), 1-62.
-	 *      <a href="http://aidanhogan.com/docs/rdf-canonicalisation.pdf">Technical Paper (PDF )</a>
+	 * @see <a href="http://aidanhogan.com/docs/rdf-canonicalisation.pdf">Hogan, A. (2017). Canonical forms for
+	 *      isomorphic and equivalent RDF graphs: algorithms for leaning and labelling blank nodes. ACM Transactions on
+	 *      the Web (TWEB), 11(4), 1-62. Technical Paper (PDF )</a>
 	 * 
 	 */
 	public static boolean isomorphic(Model model1, Model model2) {

@@ -118,8 +118,9 @@ public class QueryStorage {
 	 * @throws RepositoryException if there is an issue creating the object to access the repository
 	 * @throws IOException
 	 */
-	protected QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
+	private QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
 		queries = new SailRepository(new NativeStore(new File(appConfig.getDataDir(), "queries")));
+		queries.init();
 	}
 
 	public void shutdown() {
@@ -190,7 +191,7 @@ public class QueryStorage {
 	 *
 	 * @param query       the node identifying the query of interest
 	 * @param currentUser the user to check access for
-	 * @return <tt>true</tt> if the given query was saved by the given user or the anonymous user
+	 * @return <var>true</var> if the given query was saved by the given user or the anonymous user
 	 */
 	public boolean canChange(final IRI query, final String currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
@@ -202,7 +203,7 @@ public class QueryStorage {
 	 *
 	 * @param query       the node identifying the query of interest
 	 * @param currentUser the user to check access for
-	 * @return <tt>true</tt> if the given query was saved by either the given user or the anonymous user, or is shared
+	 * @return <var>true</var> if the given query was saved by either the given user or the anonymous user, or is shared
 	 */
 	public boolean canRead(IRI query, String currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {

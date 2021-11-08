@@ -22,7 +22,7 @@ import org.junit.Test;
 import org.mockito.Mockito;
 
 /**
- * Some general tests for {@link NogifyingSailConnectionWrapper} expected behaviour.
+ * Some general tests for {@link NotifyingSailConnectionWrapper} expected behaviour.
  *
  * @author Dale Visser
  */

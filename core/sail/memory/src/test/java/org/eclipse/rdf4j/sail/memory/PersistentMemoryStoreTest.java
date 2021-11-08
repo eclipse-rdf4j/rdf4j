@@ -17,7 +17,7 @@ import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * An extension of RDFStoreTest for testing the class <tt>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</tt>.
+ * An extension of RDFStoreTest for testing the class <var>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</var>.
  */
 public class PersistentMemoryStoreTest extends RDFNotifyingStoreTest {
 

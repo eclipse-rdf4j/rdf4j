@@ -455,7 +455,7 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses a collection, e.g. <tt>( item1 item2 item3 )</tt>.
+	 * Parses a collection, e.g. <var>( item1 item2 item3 )</var>.
 	 */
 	protected Resource parseCollection() throws IOException, RDFParseException, RDFHandlerException {
 		verifyCharacterOrFail(readCodePoint(), "(");
@@ -513,7 +513,7 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses an implicit blank node. This method parses the token <tt>[]</tt> and predicateObjectLists that are
+	 * Parses an implicit blank node. This method parses the token <var>[]</var> and predicateObjectLists that are
 	 * surrounded by square brackets.
 	 */
 	protected Resource parseImplicitBlank() throws IOException, RDFParseException, RDFHandlerException {
@@ -1065,7 +1065,7 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Parses a blank node ID, e.g. <tt>_:node1</tt>.
+	 * Parses a blank node ID, e.g. <var>_:node1</var>.
 	 */
 	protected Resource parseNodeID() throws IOException, RDFParseException {
 		// Node ID should start with "_:"
@@ -1119,8 +1119,8 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Verifies that the supplied character code point <tt>codePoint</tt> is one of the expected characters specified in
-	 * <tt>expected</tt>. This method will throw a <tt>ParseException</tt> if this is not the case.
+	 * Verifies that the supplied character code point <var>codePoint</var> is one of the expected characters specified
+	 * in <var>expected</var>. This method will throw a <var>ParseException</var> if this is not the case.
 	 */
 	protected void verifyCharacterOrFail(int codePoint, String expected) throws RDFParseException {
 		if (codePoint == -1) {
@@ -1149,11 +1149,11 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Consumes any white space characters (space, tab, line feed, newline) and comments (#-style) from <tt>reader</tt>.
-	 * After this method has been called, the first character that is returned by <tt>reader</tt> is either a
-	 * non-ignorable character, or EOF. For convenience, this character is also returned by this method.
+	 * Consumes any white space characters (space, tab, line feed, newline) and comments (#-style) from
+	 * <var>reader</var>. After this method has been called, the first character that is returned by <var>reader</var>
+	 * is either a non-ignorable character, or EOF. For convenience, this character is also returned by this method.
 	 *
-	 * @return The next character code point that will be returned by <tt>reader</tt>.
+	 * @return The next character code point that will be returned by <var>reader</var>.
 	 */
 	protected int skipWSC() throws IOException, RDFHandlerException {
 		int c = readCodePoint();

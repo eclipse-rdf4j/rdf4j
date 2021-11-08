@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
- * A {@link IntegerCastFunction} that tries to cast its argument to an <tt>xsd:unsignedInt</tt> .
+ * A {@link IntegerCastFunction} that tries to cast its argument to an <var>xsd:unsignedInt</var> .
  *
  * @author Jeen Broekstra
  */

@@ -39,7 +39,7 @@ public class Iterators {
 	 *
 	 * @param iter       An iterator containing elements to add to the container.
 	 * @param collection The collection to add the elements to.
-	 * @return The <tt>collection</tt> object that was supplied to this method.
+	 * @return The <var>collection</var> object that was supplied to this method.
 	 */
 	public static <E, C extends Collection<E>> C addAll(Iterator<? extends E> iter, C collection) {
 		while (iter.hasNext()) {

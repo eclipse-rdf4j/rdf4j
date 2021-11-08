@@ -127,14 +127,14 @@ public final class ProcessLauncher {
 		 *
 		 * @param output text to output
 		 */
-		public void standardOutput(char[] output);
+		void standardOutput(char[] output);
 
 		/**
 		 * Send to standard error
 		 *
 		 * @param output test to output
 		 */
-		public void errorOutput(char[] output);
+		void errorOutput(char[] output);
 	}
 
 	/**

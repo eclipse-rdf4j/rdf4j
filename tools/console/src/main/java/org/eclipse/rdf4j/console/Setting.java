@@ -20,31 +20,31 @@ public interface Setting<T> {
 	 *
 	 * @return class type
 	 */
-	public Class getType();
+	Class getType();
 
 	/**
 	 * Get the initial value
 	 *
 	 * @return T
 	 */
-	public T getInitValue();
+	T getInitValue();
 
 	/**
 	 * Get the current value for this setting
 	 *
 	 * @return value
 	 */
-	public T get();
+	T get();
 
 	/**
 	 * Set the value for this setting
 	 *
 	 * @param value
 	 */
-	public void set(T value) throws IllegalArgumentException;
+	void set(T value) throws IllegalArgumentException;
 
 	/**
 	 * Clear setting
 	 */
-	public void clear();
+	void clear();
 }

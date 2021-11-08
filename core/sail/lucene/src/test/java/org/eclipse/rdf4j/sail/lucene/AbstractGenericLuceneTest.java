@@ -118,9 +118,6 @@ public abstract class AbstractGenericLuceneTest {
 	public void setUp() throws Exception {
 		// set logging, uncomment this to get better logging for debugging
 		// org.apache.log4j.BasicConfigurator.configure();
-		// TODO: disable logging for org.eclipse.rdf4j.query.parser.serql.SeRQLParser,
-		// which is not possible
-		// to configure using just the Logger
 
 		// setup a LuceneSail
 		MemoryStore memoryStore = new MemoryStore();

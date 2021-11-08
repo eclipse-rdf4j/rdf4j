@@ -19,7 +19,7 @@ public interface IsolationLevel extends TransactionSetting {
 	/**
 	 * Shared constant for the {@link TransactionSetting} name used for isolation levels.
 	 */
-	static String NAME = IsolationLevel.class.getCanonicalName();
+	String NAME = IsolationLevel.class.getCanonicalName();
 
 	/**
 	 * Verifies if this transaction isolation level is compatible with the supplied other isolation level - that is, if

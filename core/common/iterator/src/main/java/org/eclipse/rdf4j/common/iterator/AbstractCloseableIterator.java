@@ -34,7 +34,7 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	/**
 	 * Checks whether this Iterator has been closed.
 	 *
-	 * @return <tt>true</tt> if the Iterator has been closed, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the Iterator has been closed, <var>false</var> otherwise.
 	 */
 	public final boolean isClosed() {
 		return closed.get();

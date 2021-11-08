@@ -15,14 +15,14 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 public interface NotifyingRepositoryConnection extends RepositoryConnection {
 
 	/**
-	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that are
+	 * Registers a <var>RepositoryConnectionListener</var> that will receive notifications of operations that are
 	 * performed on this connection.
 	 */
-	public void addRepositoryConnectionListener(RepositoryConnectionListener listener);
+	void addRepositoryConnectionListener(RepositoryConnectionListener listener);
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this connection.
+	 * Removes a registered <var>RepositoryConnectionListener</var> from this connection.
 	 */
-	public void removeRepositoryConnectionListener(RepositoryConnectionListener listener);
+	void removeRepositoryConnectionListener(RepositoryConnectionListener listener);
 
 }

@@ -20,12 +20,12 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
  */
 public interface RepositoryInterceptor extends EventListener {
 
-	public abstract boolean getConnection(Repository repo, RepositoryConnection conn);
+	boolean getConnection(Repository repo, RepositoryConnection conn);
 
-	public abstract boolean initialize(Repository repo);
+	boolean initialize(Repository repo);
 
-	public abstract boolean setDataDir(Repository repo, File dataDir);
+	boolean setDataDir(Repository repo, File dataDir);
 
-	public abstract boolean shutDown(Repository repo);
+	boolean shutDown(Repository repo);
 
 }

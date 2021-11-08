@@ -22,9 +22,9 @@ public interface RepositoryFactory {
 	 * should uniquely identify specific implementations of the Repository API. This type <em>can</em> be equal to the
 	 * fully qualified class name of the repository, but this is not required.
 	 */
-	public String getRepositoryType();
+	String getRepositoryType();
 
-	public RepositoryImplConfig getConfig();
+	RepositoryImplConfig getConfig();
 
 	/**
 	 * Returns a Repository instance that has been initialized using the supplied configuration data.
@@ -34,5 +34,5 @@ public interface RepositoryFactory {
 	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration
 	 *                                   data.
 	 */
-	public Repository getRepository(RepositoryImplConfig config) throws RepositoryConfigException;
+	Repository getRepository(RepositoryImplConfig config) throws RepositoryConfigException;
 }

@@ -9,9 +9,10 @@
 	<packaging>pom</packaging>
 	<modules>
 		<module>spring-boot-sparql-web</module>
+		<module>rdf4j-spring</module>
 	</modules>
 	<properties>
-		<spring.boot.version>2.4.3</spring.boot.version>
+		<spring.boot.version>2.4.12</spring.boot.version>
 	</properties>
 	<artifactId>rdf4j-spring-components</artifactId>
 	<name>RDF4J: Spring components</name>

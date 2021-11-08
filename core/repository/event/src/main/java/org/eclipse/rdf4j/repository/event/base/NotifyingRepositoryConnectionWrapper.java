@@ -78,7 +78,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	}
 
 	/**
-	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that are
+	 * Registers a <var>RepositoryConnectionListener</var> that will receive notifications of operations that are
 	 * performed on this connection.
 	 */
 	@Override
@@ -88,7 +88,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this connection.
+	 * Removes a registered <var>RepositoryConnectionListener</var> from this connection.
 	 */
 	@Override
 	public void removeRepositoryConnectionListener(RepositoryConnectionListener listener) {

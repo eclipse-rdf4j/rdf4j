@@ -16,6 +16,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -413,6 +414,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+
 			double cost = cardinalityMap.get(tupleExpr);
 
 			List<Var> vars = varsMap.get(tupleExpr);
@@ -420,7 +422,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			// Compensate for variables that are bound earlier in the evaluation
 			List<Var> unboundVars = getUnboundVars(vars);
 			List<Var> constantVars = getConstantVars(vars);
+
 			int nonConstantVarCount = vars.size() - constantVars.size();
+
 			if (nonConstantVarCount > 0) {
 				double exp = (double) unboundVars.size() / nonConstantVarCount;
 				cost = Math.pow(cost, exp);
@@ -436,6 +440,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);
 				if (foreignVarFreq > 0) {
 					cost /= 1 + foreignVarFreq;
+				}
+			}
+
+			// BindingSetAssignment has a typical constant cost. This cost is not based on statistics so is much more
+			// reliable. If the BindingSetAssignment binds to any of the other variables in the other tuple expressions
+			// to choose from, then the cost of the BindingSetAssignment should be set to 0 since it will always limit
+			// the upper bound of any other costs. This way the BindingSetAssignment will be chosen as the left
+			// argument.
+			if (tupleExpr instanceof BindingSetAssignment) {
+
+				Set<Var> varsUsedInOtherExpressions = varFreqMap.keySet();
+
+				for (String assuredBindingName : tupleExpr.getAssuredBindingNames()) {
+					if (varsUsedInOtherExpressions.contains(new Var(assuredBindingName))) {
+						cost = 0;
+						break;
+					}
 				}
 			}
 

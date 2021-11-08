@@ -29,7 +29,7 @@ public class MemoryStoreFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:MemoryStore";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:MemoryStore</tt>.
+	 * Returns the Sail's type: <var>openrdf:MemoryStore</var>.
 	 */
 	@Override
 	public String getSailType() {

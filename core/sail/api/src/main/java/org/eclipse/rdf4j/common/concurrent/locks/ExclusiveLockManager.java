@@ -47,7 +47,7 @@ public class ExclusiveLockManager {
 	 */
 
 	/**
-	 * Gets the exclusive lock, if available. This method will return <tt>null</tt> if the exclusive lock is not
+	 * Gets the exclusive lock, if available. This method will return <var>null</var> if the exclusive lock is not
 	 * immediately available.
 	 */
 	public Lock tryExclusiveLock() {

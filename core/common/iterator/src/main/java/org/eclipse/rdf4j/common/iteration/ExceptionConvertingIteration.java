@@ -12,7 +12,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /**
- * A CloseableIteration that converts an arbitrary iteration to an iteration with exceptions of type <tt>X</tt>.
+ * A CloseableIteration that converts an arbitrary iteration to an iteration with exceptions of type <var>X</var>.
  * Subclasses need to override {@link #convert(Exception)} to do the conversion.
  */
 public abstract class ExceptionConvertingIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
@@ -33,7 +33,8 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	/**
 	 * Creates a new ExceptionConvertingIteration that operates on the supplied iteration.
 	 *
-	 * @param iter The Iteration that this <tt>ExceptionConvertingIteration</tt> operates on, must not be <tt>null</tt>.
+	 * @param iter The Iteration that this <var>ExceptionConvertingIteration</var> operates on, must not be
+	 *             <var>null</var>.
 	 */
 	protected ExceptionConvertingIteration(Iteration<? extends E, ? extends Exception> iter) {
 		this.iter = Objects.requireNonNull(iter, "The iterator was null");
@@ -44,14 +45,14 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	 *---------*/
 
 	/**
-	 * Converts an exception from the underlying iteration to an exception of type <tt>X</tt>.
+	 * Converts an exception from the underlying iteration to an exception of type <var>X</var>.
 	 */
 	protected abstract X convert(Exception e);
 
 	/**
 	 * Checks whether the underlying Iteration contains more elements.
 	 *
-	 * @return <tt>true</tt> if the underlying Iteration contains more elements, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the underlying Iteration contains more elements, <var>false</var> otherwise.
 	 * @throws X
 	 */
 	@Override
@@ -95,9 +96,9 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	}
 
 	/**
-	 * Calls <tt>remove()</tt> on the underlying Iteration.
+	 * Calls <var>remove()</var> on the underlying Iteration.
 	 *
-	 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <tt>remove</tt> operation.
+	 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <var>remove</var> operation.
 	 * @throws IllegalStateException         If the Iteration has been closed, or if {@link #next} has not yet been
 	 *                                       called, or {@link #remove} has already been called after the last call to
 	 *                                       {@link #next}.

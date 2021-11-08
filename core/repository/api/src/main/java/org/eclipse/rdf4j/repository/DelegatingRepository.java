@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.repository;
  */
 public interface DelegatingRepository extends Repository {
 
-	public Repository getDelegate();
+	Repository getDelegate();
 
-	public void setDelegate(Repository delegate);
+	void setDelegate(Repository delegate);
 }

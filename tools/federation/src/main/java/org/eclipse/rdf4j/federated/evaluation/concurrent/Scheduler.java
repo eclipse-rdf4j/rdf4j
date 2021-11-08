@@ -24,46 +24,46 @@ public interface Scheduler<T> {
 	 *
 	 * @param task
 	 */
-	public void schedule(ParallelTask<T> task);
+	void schedule(ParallelTask<T> task);
 
 	/**
 	 * Callback to handle the result.
 	 *
 	 * @param res
 	 */
-	public void handleResult(CloseableIteration<T, QueryEvaluationException> res);
+	void handleResult(CloseableIteration<T, QueryEvaluationException> res);
 
 	/**
 	 * Inform the scheduler that a certain task is done.
 	 *
 	 */
-	public void done();
+	void done();
 
 	/**
 	 * Toss an exception to the scheduler.
 	 *
 	 * @param e
 	 */
-	public void toss(Exception e);
+	void toss(Exception e);
 
 	/**
 	 * Abort the execution of running and queued tasks.
 	 *
 	 */
-	public void abort();
+	void abort();
 
-	public void shutdown();
+	void shutdown();
 
 	/**
 	 * Inform the scheduler that no more tasks will be scheduled.
 	 */
-	public void informFinish();
+	void informFinish();
 
 	/**
 	 * Determine if the scheduler has unfinished tasks.
 	 *
 	 * @return whether the scheduler is running
 	 */
-	public boolean isRunning();
+	boolean isRunning();
 
 }

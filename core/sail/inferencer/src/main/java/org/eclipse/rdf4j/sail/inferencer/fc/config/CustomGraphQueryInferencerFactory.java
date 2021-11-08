@@ -29,7 +29,7 @@ public class CustomGraphQueryInferencerFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:CustomGraphQueryInferencer";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:CustomGraphQueryInferencer</tt>.
+	 * Returns the Sail's type: <var>openrdf:CustomGraphQueryInferencer</var>.
 	 */
 	@Override
 	public String getSailType() {

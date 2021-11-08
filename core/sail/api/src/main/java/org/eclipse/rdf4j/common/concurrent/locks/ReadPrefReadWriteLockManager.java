@@ -47,7 +47,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 */
 
 	/**
-	 * Gets a read lock, if available. This method will return <tt>null</tt> if the read lock is not immediately
+	 * Gets a read lock, if available. This method will return <var>null</var> if the read lock is not immediately
 	 * available.
 	 */
 	@Override
@@ -79,7 +79,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	}
 
 	/**
-	 * Gets an exclusive write lock, if available. This method will return <tt>null</tt> if the write lock is not
+	 * Gets an exclusive write lock, if available. This method will return <var>null</var> if the write lock is not
 	 * immediately available.
 	 */
 	@Override

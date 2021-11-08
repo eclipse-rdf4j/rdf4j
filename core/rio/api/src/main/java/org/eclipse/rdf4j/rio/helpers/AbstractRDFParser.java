@@ -589,7 +589,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Reports a warning to the registered ParseErrorListener, if any. This method simply calls
-	 * {@link #reportWarning(String, long, long)} supplying <tt>-1</tt> for the line- and column number.
+	 * {@link #reportWarning(String, long, long)} supplying <var>-1</var> for the line- and column number.
 	 */
 	protected void reportWarning(String msg) {
 		reportWarning(msg, -1, -1);
@@ -608,8 +608,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
 	 * setting has been set to true.
 	 * <p>
-	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
-	 * is not a nonFatalError.
+	 * This method also throws an {@link RDFParseException} when the given setting has been set to <var>true</var> and
+	 * it is not a nonFatalError.
 	 *
 	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
@@ -628,8 +628,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
 	 * setting has been set to true.
 	 * <p>
-	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
-	 * is not a nonFatalError.
+	 * This method also throws an {@link RDFParseException} when the given setting has been set to <var>true</var> and
+	 * it is not a nonFatalError.
 	 *
 	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
@@ -655,8 +655,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
 	 * setting has been set to true.
 	 * <p>
-	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
-	 * is not a nonFatalError.
+	 * This method also throws an {@link RDFParseException} when the given setting has been set to <var>true</var> and
+	 * it is not a nonFatalError.
 	 *
 	 * @param e               The exception whose message will be used for
 	 *                        {@link ParseErrorListener#error(String, long, long)} and for
@@ -676,8 +676,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
 	 * setting has been set to true.
 	 * <p>
-	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
-	 * is not a nonFatalError.
+	 * This method also throws an {@link RDFParseException} when the given setting has been set to <var>true</var> and
+	 * it is not a nonFatalError.
 	 *
 	 * @param e               The exception whose message will be used for
 	 *                        {@link ParseErrorListener#error(String, long, long)} and for
@@ -704,8 +704,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
 	 * setting has been set to true.
 	 * <p>
-	 * This method also throws an {@link RDFParseException} when the given setting has been set to <tt>true</tt> and it
-	 * is not a nonFatalError.
+	 * This method also throws an {@link RDFParseException} when the given setting has been set to <var>true</var> and
+	 * it is not a nonFatalError.
 	 *
 	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
 	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
@@ -731,9 +731,9 @@ public abstract class AbstractRDFParser implements RDFParser {
 	}
 
 	/**
-	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a <tt>ParseException</tt>
-	 * afterwards. This method simply calls {@link #reportFatalError(String, long, long)} supplying <tt>-1</tt> for the
-	 * line- and column number.
+	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a <var>ParseException</var>
+	 * afterwards. This method simply calls {@link #reportFatalError(String, long, long)} supplying <var>-1</var> for
+	 * the line- and column number.
 	 */
 	protected void reportFatalError(String msg) throws RDFParseException {
 		RDFParserHelper.reportFatalError(msg, getParseErrorListener());
@@ -741,21 +741,21 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if any, and
-	 * throws a <tt>ParseException</tt> afterwards.
+	 * throws a <var>ParseException</var> afterwards.
 	 */
 	protected void reportFatalError(String msg, long lineNo, long columnNo) throws RDFParseException {
 		RDFParserHelper.reportFatalError(msg, lineNo, columnNo, getParseErrorListener());
 	}
 
 	/**
-	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a <tt>ParseException</tt>
+	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a <var>ParseException</var>
 	 * afterwards. An exception is made for the case where the supplied exception is a {@link RDFParseException}; in
 	 * that case the supplied exception is not wrapped in another ParseException and the error message is not reported
 	 * to the ParseErrorListener, assuming that it has already been reported when the original ParseException was
 	 * thrown.
 	 * <p>
-	 * This method simply calls {@link #reportFatalError(Exception, long, long)} supplying <tt>-1</tt> for the line- and
-	 * column number.
+	 * This method simply calls {@link #reportFatalError(Exception, long, long)} supplying <var>-1</var> for the line-
+	 * and column number.
 	 */
 	protected void reportFatalError(Exception e) throws RDFParseException {
 		RDFParserHelper.reportFatalError(e, getParseErrorListener());
@@ -763,7 +763,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if any, and
-	 * throws a <tt>ParseException</tt> wrapped the supplied exception afterwards. An exception is made for the case
+	 * throws a <var>ParseException</var> wrapped the supplied exception afterwards. An exception is made for the case
 	 * where the supplied exception is a {@link RDFParseException}; in that case the supplied exception is not wrapped
 	 * in another ParseException and the error message is not reported to the ParseErrorListener, assuming that it has
 	 * already been reported when the original ParseException was thrown.
@@ -774,7 +774,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if any, and
-	 * throws a <tt>ParseException</tt> wrapped the supplied exception afterwards. An exception is made for the case
+	 * throws a <var>ParseException</var> wrapped the supplied exception afterwards. An exception is made for the case
 	 * where the supplied exception is a {@link RDFParseException}; in that case the supplied exception is not wrapped
 	 * in another ParseException and the error message is not reported to the ParseErrorListener, assuming that it has
 	 * already been reported when the original ParseException was thrown.

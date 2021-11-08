@@ -1,0 +1,7 @@
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+SELECT DISTINCT ?person WHERE { 
+	?person foaf:name ?name .
+	?person foaf:age ?age . 
+	FILTER(REGEX(?name, "Person1", "i"))
+	?person a ?type .
+}

@@ -35,8 +35,8 @@ public class ExtendedFeaturesetTest {
 	@Test
 	public void testDashIsDisabledByDefault() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl",
-				false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl"
+		);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -49,8 +49,8 @@ public class ExtendedFeaturesetTest {
 	@Test(expected = ShaclSailValidationException.class)
 	public void testThatDashCanBeEnabled() throws Throwable {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl",
-				false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl"
+		);
 		((ShaclSail) shaclRepository.getSail()).setDashDataShapes(true);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
@@ -69,7 +69,7 @@ public class ExtendedFeaturesetTest {
 	public void testTargetShapeIsDisabledByDefault() throws Exception {
 
 		SailRepository shaclRepository = Utils
-				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl", false);
+				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -85,7 +85,7 @@ public class ExtendedFeaturesetTest {
 	public void testThatTargetShapesCanBeEnabled() throws Throwable {
 
 		SailRepository shaclRepository = Utils
-				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl", false);
+				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl");
 
 		((ShaclSail) shaclRepository.getSail()).setDashDataShapes(true);
 		((ShaclSail) shaclRepository.getSail()).setEclipseRdf4jShaclExtensions(true);

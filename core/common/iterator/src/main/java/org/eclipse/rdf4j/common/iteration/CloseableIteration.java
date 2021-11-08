@@ -31,6 +31,6 @@ public interface CloseableIteration<E, X extends Exception> extends Iteration<E,
 	 * invoking this method has no effect.
 	 */
 	@Override
-	public void close() throws X;
+	void close() throws X;
 
 }

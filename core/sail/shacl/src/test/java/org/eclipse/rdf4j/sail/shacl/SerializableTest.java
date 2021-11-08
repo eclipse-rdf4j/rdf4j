@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class SerializableTest {
@@ -34,7 +33,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCountSnapshot() throws IOException, InterruptedException {
 		for (int i = 0; i < 10; i++) {
-			SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+			SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 			Sail sail = repo.getSail();
 //			((ShaclSail) sail).setGlobalLogValidationExecution(true);
@@ -60,7 +59,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCountSerializable() throws IOException, InterruptedException {
 
-		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 		multithreadedMaxCountViolation(IsolationLevels.SERIALIZABLE, repo);
 
@@ -81,7 +80,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCount2Serializable() throws IOException, InterruptedException {
 
-		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 		multithreadedMaxCount2Violation(IsolationLevels.SERIALIZABLE, repo);
 
@@ -102,7 +101,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCount2Snapshot() throws IOException, InterruptedException {
 
-		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 		multithreadedMaxCount2Violation(IsolationLevels.SNAPSHOT, repo);
 
@@ -124,7 +123,7 @@ public class SerializableTest {
 	public void serializableParallelValidation() throws Throwable {
 
 		SailRepository repo = Utils
-				.getInitializedShaclRepository("test-cases/complex/targetShapeAndQualifiedShape/shacl.ttl", false);
+				.getInitializedShaclRepository("test-cases/complex/targetShapeAndQualifiedShape/shacl.ttl");
 
 		ShaclSail sail = (ShaclSail) repo.getSail();
 

@@ -33,7 +33,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	private SparqlTupleExprRenderer mRenderer = new SparqlTupleExprRenderer();
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public QueryLanguage getLanguage() {
@@ -41,7 +41,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public String render(final ParsedQuery theQuery) throws Exception {
@@ -95,25 +95,6 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 						}
 
 						aQuery.append("?" + aElem.getSourceName());
-
-						// SPARQL does not support this, its an artifact of copy and
-						// paste from the serql stuff
-						// aQuery.append(mRenderer.getExtensions().containsKey(aElem.getSourceName())
-						// ?
-						// mRenderer.renderValueExpr(mRenderer.getExtensions().get(aElem.getSourceName()))
-						// : "?"+aElem.getSourceName());
-						//
-						// if (!aElem.getSourceName().equals(aElem.getTargetName()) ||
-						// (mRenderer.getExtensions().containsKey(aElem.getTargetName())
-						// &&
-						// !mRenderer.getExtensions().containsKey(aElem.getSourceName())))
-						// {
-						// aQuery.append(" as
-						// ").append(mRenderer.getExtensions().containsKey(aElem.getTargetName())
-						// ?
-						// mRenderer.renderValueExpr(mRenderer.getExtensions().get(aElem.getTargetName()))
-						// : aElem.getTargetName());
-						// }
 					}
 				}
 			}

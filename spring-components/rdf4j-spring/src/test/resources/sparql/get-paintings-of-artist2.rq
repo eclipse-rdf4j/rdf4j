@@ -1,0 +1,7 @@
+PREFIX ex: <http://example.org/>
+
+SELECT distinct ?painting ?artist
+WHERE { ?artist
+            a ex:Artist;
+            ex:creatorOf ?painting .
+}

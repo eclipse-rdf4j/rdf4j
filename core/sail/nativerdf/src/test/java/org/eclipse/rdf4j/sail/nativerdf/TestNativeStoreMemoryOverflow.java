@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -86,11 +86,11 @@ public class TestNativeStoreMemoryOverflow {
 		int size = 10000; // this should really be bigger
 		// load a lot of triples in two different contexts
 		testCon.begin();
-		final ValueFactory vf = testCon.getValueFactory();
-		URI context1 = vf.createURI("http://my.context.1");
-		URI context2 = vf.createURI("http://my.context.2");
-		final URI predicate = vf.createURI("http://my.predicate");
-		final URI object = vf.createURI("http://my.object");
+		ValueFactory vf = testCon.getValueFactory();
+		IRI context1 = vf.createIRI("http://my.context.1");
+		IRI context2 = vf.createIRI("http://my.context.2");
+		IRI predicate = vf.createIRI("http://my.predicate");
+		IRI object = vf.createIRI("http://my.object");
 
 		testCon.add(new DynamicIteration(size, predicate, object, vf), context1);
 		testCon.add(new DynamicIteration(size, predicate, object, vf), context2);
@@ -109,15 +109,15 @@ public class TestNativeStoreMemoryOverflow {
 
 		private final int size;
 
-		private final URI predicate;
+		private final IRI predicate;
 
-		private final URI object;
+		private final IRI object;
 
 		private final ValueFactory vf;
 
 		private int i;
 
-		private DynamicIteration(int size, URI predicate, URI object, ValueFactory vf) {
+		private DynamicIteration(int size, IRI predicate, IRI object, ValueFactory vf) {
 			this.size = size;
 			this.predicate = predicate;
 			this.object = object;
@@ -131,7 +131,7 @@ public class TestNativeStoreMemoryOverflow {
 
 		@Override
 		public Statement next() throws RuntimeException {
-			return vf.createStatement(vf.createURI("http://my.subject" + i++), predicate, object);
+			return vf.createStatement(vf.createIRI("http://my.subject" + i++), predicate, object);
 		}
 
 		@Override

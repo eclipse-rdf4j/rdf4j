@@ -38,7 +38,7 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 	/**
 	 * Creates a new unary value operator.
 	 *
-	 * @param args The operator's argument, must not be <tt>null</tt>.
+	 * @param args The operator's argument, must not be <var>null</var>.
 	 */
 	public FunctionCall(String uri, ValueExpr... args) {
 		setURI(uri);

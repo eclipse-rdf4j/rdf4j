@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.Namespace;
 public class SESAME {
 
 	/**
-	 * The Sesame Schema namespace ( <tt>http://www.openrdf.org/schema/sesame#</tt>).
+	 * The Sesame Schema namespace ( <var>http://www.openrdf.org/schema/sesame#</var>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/schema/sesame#";
 
@@ -30,17 +30,17 @@ public class SESAME {
 	 */
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
-	/** <tt>http://www.openrdf.org/schema/sesame#directSubClassOf</tt> */
+	/** <var>http://www.openrdf.org/schema/sesame#directSubClassOf</var> */
 	public final static IRI DIRECTSUBCLASSOF;
 
-	/** <tt>http://www.openrdf.org/schema/sesame#directSubPropertyOf</tt> */
+	/** <var>http://www.openrdf.org/schema/sesame#directSubPropertyOf</var> */
 	public final static IRI DIRECTSUBPROPERTYOF;
 
-	/** <tt>http://www.openrdf.org/schema/sesame#directType</tt> */
+	/** <var>http://www.openrdf.org/schema/sesame#directType</var> */
 	public final static IRI DIRECTTYPE;
 
 	/**
-	 * The SPARQL null context identifier ( <tt>http://www.openrdf.org/schema/sesame#nil</tt>)
+	 * The SPARQL null context identifier ( <var>http://www.openrdf.org/schema/sesame#nil</var>)
 	 *
 	 * @deprecated since 3.3.2 - use {@link RDF4J#NIL} instead
 	 */
@@ -48,7 +48,7 @@ public class SESAME {
 	public final static IRI NIL;
 
 	/**
-	 * <tt>http://www.openrdf.org/schema/sesame#wildcard</tt>
+	 * <var>http://www.openrdf.org/schema/sesame#wildcard</var>
 	 */
 	public final static IRI WILDCARD;
 

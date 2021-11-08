@@ -50,7 +50,7 @@ import org.slf4j.LoggerFactory;
  * parameters and mapping the methods to the basic (abstractly declared) methods.
  * <p>
  * Open connections are automatically closed when being garbage collected. A warning message will be logged when the
- * system property <tt>org.eclipse.rdf4j.repository.debug</tt> has been set to a non-<tt>null</tt> value.
+ * system property <var>org.eclipse.rdf4j.repository.debug</var> has been set to a non-<var>null</var> value.
  *
  * @author Jeen Broekstra
  * @author Arjohn Kampman

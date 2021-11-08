@@ -98,7 +98,7 @@ public class QueryResponder {
 	}
 
 	/**
-	 * @see https://www.w3.org/TR/sparql11-protocol/#dataset
+	 * @see <a href="https://www.w3.org/TR/sparql11-protocol/#dataset">protocol dataset</a>
 	 * @param q               the query
 	 * @param defaultGraphUri
 	 * @param namedGraphUri

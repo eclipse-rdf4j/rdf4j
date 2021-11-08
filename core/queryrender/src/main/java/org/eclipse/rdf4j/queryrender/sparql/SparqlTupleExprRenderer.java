@@ -12,10 +12,7 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
-import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
-import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -64,7 +61,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	private int mIndent = 2;
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void reset() {
@@ -75,7 +72,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public String render(final TupleExpr theExpr) throws Exception {
@@ -95,7 +92,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	protected String renderValueExpr(final ValueExpr theExpr) throws Exception {
@@ -108,7 +105,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		if (aContext != null) {
 			mJoinBuffer.append(indent()).append("GRAPH ");
 			if (aContext.hasValue()) {
-				mJoinBuffer.append(RenderUtils.getSPARQLQueryString(aContext.getValue()));
+				mJoinBuffer.append(RenderUtils.toSPARQL(aContext.getValue()));
 			} else {
 				mJoinBuffer.append("?").append(aContext.getName());
 			}
@@ -127,7 +124,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Join theJoin) throws Exception {
@@ -141,7 +138,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(LeftJoin theJoin) throws Exception {
@@ -206,7 +203,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Union theOp) throws Exception {
@@ -234,7 +231,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Difference theOp) throws Exception {
@@ -248,7 +245,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Intersection theOp) throws Exception {
@@ -263,7 +260,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final Filter theFilter) throws Exception {
@@ -305,7 +302,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(StatementPattern thePattern) throws Exception {
@@ -317,7 +314,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Extension node) throws Exception {
@@ -325,7 +322,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(ExtensionElem node) throws Exception {
@@ -455,7 +452,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(ValueConstant node) throws Exception {
@@ -463,8 +460,7 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 	}
 
 	/**
-	 * @throws Exception
-	 * @inheritDoc
+	 * @throws Exception {@inheritDoc}
 	 */
 	@Override
 	public void meet(Var node) throws Exception {

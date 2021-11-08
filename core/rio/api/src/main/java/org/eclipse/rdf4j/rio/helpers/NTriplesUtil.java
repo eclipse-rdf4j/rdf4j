@@ -43,7 +43,7 @@ public class NTriplesUtil {
 	private static String IRI = "<(?:[^\u0000-\u0020<>\"{}|^`\\\\]|" + UCHAR + ")*>";
 
 	private static String ECHAR = "\\\\[tbnrf\"'\\\\]";
-	private static String STRING_LITERAL_QUOTE = "\"(?:[^\"\\\\\n\r]|" + ECHAR + "|" + UCHAR + ")*\"";
+	private static String STRING_LITERAL_QUOTE = "\"(?:[^\"\\\\\n\r]|" + ECHAR + "|" + UCHAR + ")*+\"";
 	private static String LANGTAG = "@[a-zA-Z]+(?:-[a-zA-Z0-9]+)*";
 	private static String LITERAL = STRING_LITERAL_QUOTE + "(?:\\^\\^" + IRI + "|" + LANGTAG + ")?";
 
@@ -293,7 +293,7 @@ public class NTriplesUtil {
 	 * Finds the end of the label in a literal string. This method takes into account that characters can be escaped
 	 * using backslashes.
 	 *
-	 * @return The index of the double quote ending the label, or <tt>-1</tt> if it could not be found.
+	 * @return The index of the double quote ending the label, or <var>-1</var> if it could not be found.
 	 */
 	private static int findEndOfLabel(String nTriplesLiteral) {
 		// First character of literal is guaranteed to be a double
@@ -547,7 +547,7 @@ public class NTriplesUtil {
 	 * @param xsdStringToPlainLiteral True to omit serializing the xsd:string datatype and false to always serialize the
 	 *                                datatype for literals.
 	 * @param escapeUnicode           True to escape non-ascii/non-printable characters using Unicode escapes
-	 *                                (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>), false to print without
+	 *                                (<var>&#x5C;uxxxx</var> and <var>&#x5C;Uxxxxxxxx</var>), false to print without
 	 *                                escaping.
 	 * @throws IOException
 	 */
@@ -624,7 +624,7 @@ public class NTriplesUtil {
 	 *
 	 * @deprecated use {@link ASCIIUtil#isLetter(int)}
 	 * @param c
-	 * @return
+	 * @return true if c is an ascii leter
 	 */
 	@Deprecated
 	public static boolean isLetter(int c) {
@@ -688,11 +688,11 @@ public class NTriplesUtil {
 
 	/**
 	 * Escapes a Unicode string to an all-ASCII character sequence.Any special characters are escaped using backslashes
-	 * ( <tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable characters are escaped using Unicode escapes
-	 * ( <tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>).
+	 * ( <var>"</var> becomes <var>\"</var>, etc.), and non-ascii/non-printable characters are escaped using Unicode
+	 * escapes ( <var>&#x5C;uxxxx</var> and <var>&#x5C;Uxxxxxxxx</var>).
 	 *
 	 * @param label
-	 * @return
+	 * @return an escaped string (unicode to ascii plus codepoints).
 	 */
 	public static String escapeString(String label) {
 		try {
@@ -706,8 +706,8 @@ public class NTriplesUtil {
 
 	/**
 	 * Escapes a Unicode string to an all-ASCII character sequence. Any special characters are escaped using backslashes
-	 * ( <tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable characters are escaped using Unicode escapes
-	 * ( <tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>).
+	 * ( <var>"</var> becomes <var>\"</var>, etc.), and non-ascii/non-printable characters are escaped using Unicode
+	 * escapes ( <var>&#x5C;uxxxx</var> and <var>&#x5C;Uxxxxxxxx</var>).
 	 *
 	 * @param label
 	 * @param appendable
@@ -719,8 +719,8 @@ public class NTriplesUtil {
 
 	/**
 	 * Escapes a Unicode string to an N-Triples compatible character sequence.Any special characters are escaped using
-	 * backslashes (<tt>"</tt> becomes <tt>\"</tt>, etc.), and non-ascii/non-printable characters are escaped using
-	 * Unicode escapes (<tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>) if the option is selected.
+	 * backslashes (<var>"</var> becomes <var>\"</var>, etc.), and non-ascii/non-printable characters are escaped using
+	 * Unicode escapes (<var>&#x5C;uxxxx</var> and <var>&#x5C;Uxxxxxxxx</var>) if the option is selected.
 	 *
 	 * @param label
 	 * @param appendable
@@ -766,9 +766,9 @@ public class NTriplesUtil {
 	}
 
 	/**
-	 * Unescapes an escaped Unicode string. Any Unicode sequences ( <tt>&#x5C;uxxxx</tt> and <tt>&#x5C;Uxxxxxxxx</tt>)
-	 * are restored to the value indicated by the hexadecimal argument and any backslash-escapes ( <tt>\"</tt>,
-	 * <tt>\\</tt>, etc.) are decoded to their original form.
+	 * Unescapes an escaped Unicode string. Any Unicode sequences ( <var>&#x5C;uxxxx</var> and
+	 * <var>&#x5C;Uxxxxxxxx</var>) are restored to the value indicated by the hexadecimal argument and any
+	 * backslash-escapes ( <var>\"</var>, <var>\\</var>, etc.) are decoded to their original form.
 	 *
 	 * @param s An escaped Unicode string.
 	 * @return The unescaped string.

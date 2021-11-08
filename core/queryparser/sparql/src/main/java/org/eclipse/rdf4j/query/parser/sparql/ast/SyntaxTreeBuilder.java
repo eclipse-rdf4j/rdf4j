@@ -61,7 +61,7 @@ public class SyntaxTreeBuilder
 	}
 
 	/**
-	 * Trims <tt>n</tt> character from the start and end of the supplied string.
+	 * Trims <var>n</var> character from the start and end of the supplied string.
 	 */
 	private static String _trimString(String s, int n) {
 		if (s.length() >= 2 * n) {

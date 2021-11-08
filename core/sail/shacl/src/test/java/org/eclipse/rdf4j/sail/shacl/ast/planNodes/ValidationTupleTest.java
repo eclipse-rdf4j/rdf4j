@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import static org.junit.Assert.assertEquals;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 

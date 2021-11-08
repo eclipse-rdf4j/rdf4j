@@ -12,5 +12,5 @@ package org.eclipse.rdf4j.repository.config;
  */
 public interface DelegatingRepositoryImplConfig extends RepositoryImplConfig {
 
-	public RepositoryImplConfig getDelegate();
+	RepositoryImplConfig getDelegate();
 }

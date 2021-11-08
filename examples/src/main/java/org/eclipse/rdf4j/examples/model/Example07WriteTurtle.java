@@ -11,8 +11,6 @@ import static org.eclipse.rdf4j.model.util.Values.bnode;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -25,7 +23,6 @@ import org.eclipse.rdf4j.rio.Rio;
  * In this example, we show how you can use the Rio Parser/writer toolkit to write your model in Turtle syntax.
  *
  * @author Jeen Broekstra
- * @see
  */
 public class Example07WriteTurtle {
 

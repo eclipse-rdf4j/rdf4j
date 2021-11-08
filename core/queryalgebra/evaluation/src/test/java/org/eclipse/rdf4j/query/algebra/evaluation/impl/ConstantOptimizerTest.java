@@ -15,7 +15,7 @@ import static org.mockito.Mockito.mock;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -88,8 +88,8 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		finder.reset();
 
 		QueryBindingSet constants = new QueryBindingSet();
-		constants.addBinding("a", ValueFactoryImpl.getInstance().createLiteral("foo"));
-		constants.addBinding("b", ValueFactoryImpl.getInstance().createLiteral("bar"));
+		constants.addBinding("a", SimpleValueFactory.getInstance().createLiteral("foo"));
+		constants.addBinding("b", SimpleValueFactory.getInstance().createLiteral("bar"));
 
 		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), constants, strategy);
 

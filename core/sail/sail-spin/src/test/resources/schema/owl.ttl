@@ -1,6 +1,0 @@
-
-@prefix owl: <http://www.w3.org/2002/07/owl#> .
-
-owl:Class rdfs:subClassOf rdfs:Class .
-owl:Thing a rdfs:Class .
-owl:Restriction rdfs:subClassOf owl:Class .

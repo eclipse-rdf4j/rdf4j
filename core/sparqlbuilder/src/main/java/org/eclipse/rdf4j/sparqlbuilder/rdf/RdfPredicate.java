@@ -20,5 +20,5 @@ public interface RdfPredicate extends QueryElement {
 	 *
 	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#abbrevRdfType"> RDF Type abbreviation</a>
 	 */
-	public static RdfPredicate a = () -> "a";
+	RdfPredicate a = () -> "a";
 }

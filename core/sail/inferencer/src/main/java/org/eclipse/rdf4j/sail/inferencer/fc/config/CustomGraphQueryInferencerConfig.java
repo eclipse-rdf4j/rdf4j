@@ -41,12 +41,11 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
  */
 public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSailImplConfig {
 
-	public static final Pattern SPARQL_PATTERN, SERQL_PATTERN;
+	public static final Pattern SPARQL_PATTERN;
 
 	static {
 		int flags = Pattern.CASE_INSENSITIVE | Pattern.DOTALL;
 		SPARQL_PATTERN = Pattern.compile("^(.*construct\\s+)(\\{.*\\}\\s*)where.*$", flags);
-		SERQL_PATTERN = Pattern.compile("^\\s*construct(\\s+.*)from\\s+.*(\\s+using\\s+namespace.*)$", flags);
 	}
 
 	private QueryLanguage language;

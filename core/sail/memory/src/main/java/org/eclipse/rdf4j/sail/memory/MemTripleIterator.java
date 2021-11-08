@@ -87,7 +87,7 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	 *---------*/
 
 	/**
-	 * Searches through statementList, starting from index <tt>_nextStatementIdx + 1</tt>, for triples that match the
+	 * Searches through statementList, starting from index <var>_nextStatementIdx + 1</var>, for triples that match the
 	 * constraints that have been set for this iterator.
 	 */
 	@Override

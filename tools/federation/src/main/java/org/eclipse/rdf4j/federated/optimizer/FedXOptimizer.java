@@ -22,6 +22,6 @@ public interface FedXOptimizer {
 	 *
 	 * @param tupleExpr
 	 */
-	public void optimize(TupleExpr tupleExpr);
+	void optimize(TupleExpr tupleExpr);
 
 }

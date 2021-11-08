@@ -354,7 +354,6 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	/**
 	 * @deprecated Use getObserved() instead!
-	 * @return
 	 */
 	@Deprecated
 	public synchronized Set<StatementPattern> getObservations() {

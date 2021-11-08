@@ -11,6 +11,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 
 /**
  * Expressions implementing this interface can apply some {@link FilterValueExpr} during evaluation.
@@ -22,12 +23,12 @@ import org.eclipse.rdf4j.query.BindingSet;
  * @see ExclusiveGroup
  *
  */
-public interface FilterTuple {
+public interface FilterTuple extends QueryModelNode {
 
 	/**
 	 * @return true if this expression has a filter to apply
 	 */
-	public boolean hasFilter();
+	boolean hasFilter();
 
 	/**
 	 * register a new filter expression. If the expr has already a filter registered, the new expression is added to a
@@ -35,7 +36,7 @@ public interface FilterTuple {
 	 *
 	 * @param expr
 	 */
-	public void addFilterExpr(FilterExpr expr);
+	void addFilterExpr(FilterExpr expr);
 
 	/**
 	 * register a filter that can be directly expressed as a binding, e.g.
@@ -49,24 +50,24 @@ public interface FilterTuple {
 	 * @param varName
 	 * @param value
 	 */
-	public void addBoundFilter(String varName, Value value);
+	void addBoundFilter(String varName, Value value);
 
 	/**
 	 *
 	 * @return the currently registered filter expressions, usually of type {@link FilterExpr} or
 	 *         {@link ConjunctiveFilterExpr}
 	 */
-	public FilterValueExpr getFilterExpr();
+	FilterValueExpr getFilterExpr();
 
 	/**
 	 * @return the free variables of this expression
 	 */
-	public List<String> getFreeVars();
+	List<String> getFreeVars();
 
 	/**
 	 * Returns bound filter bindings, that need to be added as additional bindings to the final result
 	 *
 	 * @return the bound filters, or <code>null</code>
 	 */
-	public BindingSet getBoundFilters();
+	BindingSet getBoundFilters();
 }
