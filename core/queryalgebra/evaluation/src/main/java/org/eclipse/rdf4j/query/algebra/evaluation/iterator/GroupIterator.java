@@ -324,7 +324,11 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private Aggregate create(AggregateOperator operator)
 				throws ValueExprEvaluationException, QueryEvaluationException {
 			if (operator instanceof Count) {
-				return new CountAggregate((Count) operator);
+				if (((Count) operator).getArg() == null) {
+					return new WildCardCountAggregate((Count) operator);
+				} else {
+					return new CountAggregate((Count) operator);
+				}
 			} else if (operator instanceof Min) {
 				return new MinAggregate((Min) operator);
 			} else if (operator instanceof Max) {
@@ -346,19 +350,19 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private final Set<Value> distinctValues;
 
-		private final ValueExpr arg;
-
 		private final QueryValueEvaluationStep qes;
 
 		public Aggregate(AbstractAggregateOperator operator) {
-			this.arg = operator.getArg();
+			this(operator, strategy.precompile(operator.getArg(), context));
+		}
 
+		public Aggregate(AbstractAggregateOperator operator, QueryValueEvaluationStep ves) {
 			if (operator.isDistinct()) {
 				distinctValues = createSet("distinct-values-" + this.hashCode());
 			} else {
 				distinctValues = null;
 			}
-			qes = strategy.precompile(getArg(), context);
+			qes = ves;
 		}
 
 		public abstract Value getValue() throws ValueExprEvaluationException;
@@ -379,10 +383,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			return result;
 		}
 
-		protected ValueExpr getArg() {
-			return arg;
-		}
-
 		protected Value evaluate(BindingSet s) throws QueryEvaluationException {
 			try {
 				return qes.evaluate(s);
@@ -396,14 +396,36 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private long count = 0;
 
-		private final Set<BindingSet> distinctBindingSets;
-
 		public CountAggregate(Count operator) {
 			super(operator);
+		}
+
+		@Override
+		public void processAggregate(BindingSet s) throws QueryEvaluationException {
+			Value value = evaluate(s);
+			if (value != null && distinctValue(value)) {
+				count++;
+			}
+		}
+
+		@Override
+		public Value getValue() {
+			return vf.createLiteral(Long.toString(count), XSD.INTEGER);
+		}
+	}
+
+	private class WildCardCountAggregate extends Aggregate {
+
+		private long count = 0;
+
+		private final Set<BindingSet> distinctBindingSets;
+
+		public WildCardCountAggregate(Count operator) {
+			super(operator, null);
 
 			// for a wildcarded count with a DISTINCT clause we need to filter on
 			// distinct bindingsets rather than individual values.
-			if (operator.isDistinct() && getArg() == null) {
+			if (operator.isDistinct()) {
 				distinctBindingSets = createSet("distinct-bs-" + this.hashCode());
 			} else {
 				distinctBindingSets = null;
@@ -412,16 +434,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public void processAggregate(BindingSet s) throws QueryEvaluationException {
-			if (getArg() != null) {
-				Value value = evaluate(s);
-				if (value != null && distinctValue(value)) {
-					count++;
-				}
-			} else {
-				// wildcard count
-				if (s.size() > 0 && distinctBindingSet(s)) {
-					count++;
-				}
+			// wildcard count
+			if (s.size() > 0 && distinctBindingSet(s)) {
+				count++;
 			}
 		}
 
