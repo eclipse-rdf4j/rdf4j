@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.ArrayDeque;
 import java.util.HashSet;
+import java.util.Queue;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -174,5 +176,9 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 
 	default <T> Set<T> makeSet() {
 		return new HashSet<T>();
+	}
+
+	default <T> Queue<T> makeQueue() {
+		return new ArrayDeque<T>();
 	}
 }

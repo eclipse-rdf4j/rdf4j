@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -23,13 +22,10 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
-
-	/**
-	 * We potentially have to fit all resources in this set so let's start of with a reasonably big size.
-	 */
-	private static final int INITIAL_CAPACITY = 10000;
 
 	private static final String ANON_SUBJECT_VAR = "zero-length-internal-start";
 
@@ -59,23 +55,35 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private final EvaluationStrategy evaluationStrategy;
 
+	private final QueryEvaluationStep precompile;
+
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
-			Value obj, Var contextVar, BindingSet bindings) {
+			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
 		this.evaluationStrategy = evaluationStrategyImpl;
-		result = new QueryBindingSet(bindings);
+		this.result = new QueryBindingSet(bindings);
 		this.subjectVar = subjectVar;
 		this.objVar = objVar;
 		this.contextVar = contextVar;
 		this.subj = subj;
 		this.obj = obj;
 		this.bindings = bindings;
+		Var startVar = createAnonVar(ANON_SUBJECT_VAR);
+		Var predicate = createAnonVar(ANON_PREDICATE_VAR);
+		Var endVar = createAnonVar(ANON_OBJECT_VAR);
+		StatementPattern subjects = new StatementPattern(startVar, predicate, endVar);
+		if (contextVar != null) {
+			subjects.setScope(Scope.NAMED_CONTEXTS);
+			subjects.setContextVar(contextVar);
+		}
+		precompile = evaluationStrategy.precompile(subjects, context);
+
 	}
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		if (subj == null && obj == null) {
 			if (this.reportedValues == null) {
-				reportedValues = makeSet();
+				reportedValues = evaluationStrategy.makeSet();
 			}
 			if (this.iter == null) {
 				// join with a sequence so we iterate over every entry twice
@@ -94,7 +102,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 				String endpointVarName = isSubjOrObj ? ANON_SUBJECT_VAR : ANON_OBJECT_VAR;
 				Value v = bs.getValue(endpointVarName);
 
-				if (add(reportedValues, v)) {
+				if (reportedValues.add(v)) {
 					QueryBindingSet next = new QueryBindingSet(bindings);
 					next.addBinding(subjectVar.getName(), v);
 					next.addBinding(objVar.getName(), v);
@@ -133,35 +141,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 		}
 	}
 
-	/**
-	 * add param v to the set reportedValues2
-	 *
-	 * @param reportedValues2
-	 * @param v
-	 * @return true if v added to set and not yet present
-	 */
-	protected boolean add(Set<Value> reportedValues2, Value v) throws QueryEvaluationException {
-		return reportedValues2.add(v);
-	}
-
 	private CloseableIteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
-		Var startVar = createAnonVar(ANON_SUBJECT_VAR);
-		Var predicate = createAnonVar(ANON_PREDICATE_VAR);
-		Var endVar = createAnonVar(ANON_OBJECT_VAR);
-
-		StatementPattern subjects = new StatementPattern(startVar, predicate, endVar);
-
-		if (contextVar != null) {
-			subjects.setScope(Scope.NAMED_CONTEXTS);
-			subjects.setContextVar(contextVar);
-		}
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluationStrategy.evaluate(subjects, bindings);
-
+		CloseableIteration<BindingSet, QueryEvaluationException> iter = precompile.evaluate(bindings);
 		return iter;
-	}
-
-	private Set<Value> makeSet() {
-		return new HashSet<>(INITIAL_CAPACITY);
 	}
 
 	public Var createAnonVar(String varName) {

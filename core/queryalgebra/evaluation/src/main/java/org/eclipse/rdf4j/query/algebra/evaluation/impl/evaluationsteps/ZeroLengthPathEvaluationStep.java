@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 
 public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
@@ -26,15 +27,17 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 	private final QueryValueEvaluationStep subPrep;
 	private final QueryValueEvaluationStep objPrep;
 	private final EvaluationStrategy strategy;
+	private final QueryEvaluationContext context;
 
 	public ZeroLengthPathEvaluationStep(Var subjectVar, Var objVar, Var contextVar, QueryValueEvaluationStep subPrep,
-			QueryValueEvaluationStep objPrep, EvaluationStrategy strategy) {
+			QueryValueEvaluationStep objPrep, EvaluationStrategy strategy, QueryEvaluationContext context) {
 		this.subjectVar = subjectVar;
 		this.objVar = objVar;
 		this.contextVar = contextVar;
 		this.subPrep = subPrep;
 		this.objPrep = objPrep;
 		this.strategy = strategy;
+		this.context = context;
 	}
 
 	@Override
@@ -56,11 +59,11 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 				return new EmptyIteration<>();
 			}
 		}
-		return getZeroLengthPathIterator(bindings, subjectVar, objVar, contextVar, subj, obj);
+		return getZeroLengthPathIterator(bindings, subjectVar, objVar, contextVar, subj, obj, context);
 	}
 
 	protected ZeroLengthPathIteration getZeroLengthPathIterator(final BindingSet bindings, final Var subjectVar,
-			final Var objVar, final Var contextVar, Value subj, Value obj) {
-		return new ZeroLengthPathIteration(strategy, subjectVar, objVar, subj, obj, contextVar, bindings);
+			final Var objVar, final Var contextVar, Value subj, Value obj, QueryEvaluationContext context) {
+		return new ZeroLengthPathIteration(strategy, subjectVar, objVar, subj, obj, contextVar, bindings, context);
 	}
 }

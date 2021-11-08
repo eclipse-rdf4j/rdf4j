@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.util.ArrayDeque;
-import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
 
@@ -24,8 +22,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
@@ -34,7 +32,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	/**
 	 *
 	 */
-	private final StrictEvaluationStrategy evaluationStrategyImpl;
+	private final EvaluationStrategy strategy;
 
 	private long currentLength;
 
@@ -66,10 +64,10 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private static final String JOINVAR_PREFIX = "intermediate_join_";
 
-	public PathIteration(StrictEvaluationStrategy evaluationStrategyImpl, Scope scope, Var startVar,
+	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
 			throws QueryEvaluationException {
-		this.evaluationStrategyImpl = evaluationStrategyImpl;
+		this.strategy = strategy;
 		this.scope = scope;
 		this.startVar = startVar;
 		this.endVar = endVar;
@@ -83,9 +81,9 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 		this.currentLength = minLength;
 		this.bindings = bindings;
 
-		this.reportedValues = makeSet();
-		this.unreportedValues = makeSet();
-		this.valueQueue = makeQueue();
+		this.reportedValues = strategy.makeSet();
+		this.unreportedValues = strategy.makeSet();
+		this.valueQueue = strategy.makeQueue();
 
 		createIteration();
 	}
@@ -262,7 +260,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 		} else if (currentLength == 0L) {
 			ZeroLengthPath zlp = new ZeroLengthPath(scope, startVar.clone(), endVar.clone(),
 					contextVar != null ? contextVar.clone() : null);
-			currentIter = this.evaluationStrategyImpl.evaluate(zlp, bindings);
+			currentIter = this.strategy.evaluate(zlp, bindings);
 			currentLength++;
 		} else if (currentLength == 1) {
 			TupleExpr pathExprClone = pathExpression.clone();
@@ -273,7 +271,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);
 				pathExprClone.visit(replacer);
 			}
-			currentIter = this.evaluationStrategyImpl.evaluate(pathExprClone, bindings);
+			currentIter = this.strategy.evaluate(pathExprClone, bindings);
 			currentLength++;
 		} else {
 
@@ -316,7 +314,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 					pathExprClone.visit(replacer);
 				}
 
-				currentIter = this.evaluationStrategyImpl.evaluate(pathExprClone, bindings);
+				currentIter = this.strategy.evaluate(pathExprClone, bindings);
 			} else {
 				currentIter = new EmptyIteration<>();
 			}
@@ -331,14 +329,6 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 		} else {
 			return bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null;
 		}
-	}
-
-	protected Set<ValuePair> makeSet() {
-		return new HashSet<>(64, 0.9f);
-	}
-
-	protected Queue<ValuePair> makeQueue() {
-		return new ArrayDeque<>();
 	}
 
 	protected static class ValuePair {
