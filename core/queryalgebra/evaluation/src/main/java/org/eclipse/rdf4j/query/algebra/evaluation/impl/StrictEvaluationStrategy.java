@@ -265,6 +265,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return expr;
 	}
 
+	@Deprecated(forRemoval = true)
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -370,6 +371,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		});
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(alp).evaluate(bindings);
@@ -393,6 +395,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		};
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ZeroLengthPath zlp,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(zlp).evaluate(bindings);
@@ -410,6 +413,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context);
 	}
 
+	@Deprecated(forRemoval = true)
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, String serviceUri,
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
@@ -426,6 +430,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(service).evaluate(bindings);
@@ -709,56 +714,67 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSetAssignment bsa,
 			BindingSet bindings) throws QueryEvaluationException {
 		return precompile(bsa).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Projection projection, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(projection).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(MultiProjection multiProjection,
 			BindingSet bindings) throws QueryEvaluationException {
 		return precompile(multiProjection).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Filter filter, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(filter).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Slice slice, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(slice).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Extension extension, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(extension).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(distinct).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Reduced reduced, BindingSet bindings)
 			throws QueryEvaluationException {
 		return new ReducedIteration<>(evaluate(reduced.getArg(), bindings));
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Group node, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(node).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Order node, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(node).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BinaryTupleOperator expr,
 			BindingSet bindings) throws QueryEvaluationException {
 		if (expr instanceof Join) {
@@ -797,31 +813,37 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(join).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(leftJoin).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Union union,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(union).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Intersection intersection,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(intersection).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(difference).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(SingletonSet singletonSet,
 			BindingSet bindings) throws QueryEvaluationException {
 		return new SingletonIteration<>(bindings);
@@ -839,6 +861,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet, BindingSet bindings)
 			throws QueryEvaluationException {
 		return new EmptyIteration<>();
@@ -934,6 +957,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	@Override
 	public Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -1012,6 +1036,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Var var, BindingSet bindings) throws QueryEvaluationException {
 		Value value = var.getValue();
 
@@ -1026,6 +1051,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return value;
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(ValueConstant valueConstant, BindingSet bindings)
 			throws QueryEvaluationException {
 		return valueConstant.getValue();
@@ -1036,6 +1062,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return new ConstantQueryValueEvaluationStep(valueConstant);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(BNodeGenerator node, BindingSet bindings)
 			throws QueryEvaluationException {
 		ValueExpr nodeIdExpr = node.getNodeIdExpr();
@@ -1053,6 +1080,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return tripleSource.getValueFactory().createBNode();
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Bound node, BindingSet bindings) throws QueryEvaluationException {
 		try {
 			Value argValue = evaluate(node.getArg(), bindings);
@@ -1062,6 +1090,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Str node, BindingSet bindings) throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 
@@ -1082,6 +1111,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Label node, BindingSet bindings)
 			throws QueryEvaluationException {
 		// FIXME: deprecate Label in favour of Str(?)
@@ -1100,6 +1130,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Lang node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1112,6 +1143,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		throw new ValueExprEvaluationException();
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Datatype node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value v = evaluate(node.getArg(), bindings);
@@ -1134,6 +1166,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		throw new ValueExprEvaluationException();
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Namespace node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1146,6 +1179,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(LocalName node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1163,6 +1197,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a Resource, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsResource node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1174,6 +1209,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a URI, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsURI node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1185,6 +1221,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a BNode, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsBNode node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1196,6 +1233,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a Literal, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsLiteral node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1208,6 +1246,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a numeric datatyped literal, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsNumeric node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1231,6 +1270,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return a URI generated from the given arguments
 	 * @throws QueryEvaluationException
 	 */
+	@Deprecated(forRemoval = true)
 	public IRI evaluate(IRIFunction node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1273,6 +1313,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <var>true</var> if the operands match according to the <var>regex</var> operator, <var>false</var>
 	 *         otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Regex node, BindingSet bindings)
 			throws QueryEvaluationException {
 		return prepare(node, new QueryEvaluationContext.Minimal(dataset)).evaluate(bindings);
@@ -1289,6 +1330,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return RegexValueEvaluationStepSupplier.make(this, node, context);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(LangMatches node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value langTagValue = evaluate(node.getLeftArg(), bindings);
@@ -1315,6 +1357,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <var>true</var> if the operands match according to the <var>like</var> operator, <var>false</var>
 	 *         otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Like node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value val = evaluate(node.getArg(), bindings);
@@ -1405,6 +1448,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * Evaluates a function.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(FunctionCall node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Function function = FunctionRegistry.getInstance()
@@ -1430,6 +1474,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(And node, BindingSet bindings) throws QueryEvaluationException {
 		try {
 			Value leftValue = evaluate(node.getLeftArg(), bindings);
@@ -1455,6 +1500,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(rightValue));
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Or node, BindingSet bindings) throws QueryEvaluationException {
 		try {
 			Value leftValue = evaluate(node.getLeftArg(), bindings);
@@ -1480,12 +1526,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(rightValue));
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Not node, BindingSet bindings) throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 		boolean argBoolean = QueryEvaluationUtil.getEffectiveBooleanValue(argValue);
 		return BooleanLiteral.valueOf(!argBoolean);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Now node, BindingSet bindings) throws QueryEvaluationException {
 		if (sharedValueOfNow == null) {
 			sharedValueOfNow = node.evaluate(tripleSource.getValueFactory());
@@ -1505,6 +1553,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(context.getNow());
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(SameTerm node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
@@ -1513,6 +1562,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(leftVal != null && leftVal.equals(rightVal));
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Coalesce node, BindingSet bindings) throws ValueExprEvaluationException {
 		Value result = null;
 
@@ -1535,6 +1585,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return result;
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Compare node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
@@ -1543,6 +1594,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator()));
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(MathExpr node, BindingSet bindings)
 			throws QueryEvaluationException {
 		// Do the math
@@ -1556,6 +1608,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		throw new ValueExprEvaluationException("Both arguments must be numeric literals");
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(If node, BindingSet bindings) throws QueryEvaluationException {
 		Value result;
 
@@ -1578,6 +1631,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return result;
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(In node, BindingSet bindings) throws QueryEvaluationException {
 		Value leftValue = evaluate(node.getArg(), bindings);
 
@@ -1600,6 +1654,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(result);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(ListMemberOperator node, BindingSet bindings)
 			throws QueryEvaluationException {
 		List<ValueExpr> args = node.getArguments();
@@ -1633,6 +1688,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(result);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(CompareAny node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value leftValue = evaluate(node.getArg(), bindings);
@@ -1660,6 +1716,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(result);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(CompareAll node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value leftValue = evaluate(node.getArg(), bindings);
@@ -1688,6 +1745,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(result);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Exists node, BindingSet bindings)
 			throws QueryEvaluationException {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
@@ -1740,6 +1798,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return Long.MAX_VALUE;
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(ValueExprTripleRef node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value subj = evaluate(node.getSubjectVar(), bindings);
