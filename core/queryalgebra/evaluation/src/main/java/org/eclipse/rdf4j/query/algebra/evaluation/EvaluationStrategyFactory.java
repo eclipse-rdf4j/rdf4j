@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.query.Dataset;
@@ -81,4 +83,10 @@ public interface EvaluationStrategyFactory {
 		// no-op for backwards compatibility
 	}
 
+	void addOptimizer(QueryOptimizerFunctionalInterface queryOptimizerFunctionalInterface,
+			boolean beforeOtherQueryOptimizers);
+
+	List<QueryOptimizerFunctionalInterface> getQueryOptimizersPre();
+
+	List<QueryOptimizerFunctionalInterface> getQueryOptimizersPost();
 }

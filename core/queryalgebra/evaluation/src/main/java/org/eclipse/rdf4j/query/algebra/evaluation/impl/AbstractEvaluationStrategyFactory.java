@@ -7,9 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerFunctionalInterface;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 
 /**
@@ -25,6 +29,8 @@ public abstract class AbstractEvaluationStrategyFactory implements EvaluationStr
 	private boolean trackResultSize;
 
 	private QueryOptimizerPipeline pipeline;
+	private final List<QueryOptimizerFunctionalInterface> queryOptimizersPre = new ArrayList<>();
+	private final List<QueryOptimizerFunctionalInterface> queryOptimizersPost = new ArrayList<>();
 
 	@Override
 	public void setQuerySolutionCacheThreshold(long threshold) {
@@ -54,5 +60,23 @@ public abstract class AbstractEvaluationStrategyFactory implements EvaluationStr
 	@Override
 	public void setTrackResultSize(boolean trackResultSize) {
 		this.trackResultSize = trackResultSize;
+	}
+
+	@Override
+	public void addOptimizer(QueryOptimizerFunctionalInterface queryOptimizerFunctionalInterface,
+			boolean beforeOtherQueryOptimizers) {
+		if (beforeOtherQueryOptimizers) {
+			queryOptimizersPre.add(queryOptimizerFunctionalInterface);
+		} else {
+			queryOptimizersPost.add(queryOptimizerFunctionalInterface);
+		}
+	}
+
+	public List<QueryOptimizerFunctionalInterface> getQueryOptimizersPre() {
+		return Collections.unmodifiableList(queryOptimizersPre);
+	}
+
+	public List<QueryOptimizerFunctionalInterface> getQueryOptimizersPost() {
+		return Collections.unmodifiableList(queryOptimizersPost);
 	}
 }

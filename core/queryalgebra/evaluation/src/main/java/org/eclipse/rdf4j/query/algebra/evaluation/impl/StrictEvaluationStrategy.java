@@ -255,6 +255,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		this.pipeline = pipeline;
 	}
 
+	@Override
+	public QueryOptimizerPipeline getOptimizerPipeline() {
+		return pipeline;
+	}
+
 	/**
 	 * Execute the {@link QueryOptimizerPipeline} on the given {@link TupleExpr} to optimize its execution plan.
 	 *
