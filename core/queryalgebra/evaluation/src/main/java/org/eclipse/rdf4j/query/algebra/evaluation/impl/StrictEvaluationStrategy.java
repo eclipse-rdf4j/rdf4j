@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -537,7 +538,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	protected QueryEvaluationStep prepare(Extension node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		Consumer<QueryBindingSet> consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(node, this, context);
+		Consumer<MutableBindingSet> consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(node, this,
+				context);
 		return new ExtensionQueryEvaluationStep(arg, consumer);
 	}
 
@@ -1646,7 +1648,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	protected QueryValueEvaluationStep prepare(MathExpr node, QueryEvaluationContext context) {
-		return supplyBinaryValueEvaluation(node, (rightVal, leftVal) -> mathOperationApplier(node, leftVal, rightVal),
+		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> mathOperationApplier(node, leftVal, rightVal),
 				context);
 	}
 

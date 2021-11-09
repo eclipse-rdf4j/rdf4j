@@ -102,6 +102,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				};
 			}
 		}
+		assert false : "variable not known to ArrayBindingSet : " + bindingName;
 		return null;
 	}
 
@@ -116,6 +117,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				};
 			}
 		}
+		assert false : "variable not known to ArrayBindingSet : " + bindingName;
 		return null;
 	}
 
@@ -137,14 +139,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			}
 		}
 		return null;
-	}
-
-	public String nameByIndex(int i) {
-		return bindingNames[i];
-	}
-
-	public Value valueByIndex(int i) {
-		return values[i];
 	}
 
 	@Override
@@ -195,8 +189,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public int size() {
 		int size = 0;
 
-		for (Value value : values) {
-			if (value != null) {
+		for (boolean value : whichBindingsHaveBeenSet) {
+			if (value) {
 				size++;
 			}
 		}
@@ -218,7 +212,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		@Override
 		public boolean hasNext() {
 			for (; index < values.length; index++) {
-				if (values[index] != null) {
+				if (whichBindingsHaveBeenSet[index]) {
 					return true;
 				}
 			}
@@ -262,9 +256,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(name)) {
 				this.values[i] = value;
-				this.whichBindingsHaveBeenSet[i] = true;
+				this.whichBindingsHaveBeenSet[i] = value != null;
 			}
 		}
 	}
-
 }

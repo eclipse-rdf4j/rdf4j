@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -26,7 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
-	private Consumer<QueryBindingSet> setter;
+	private Consumer<MutableBindingSet> setter;
 
 	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet, QueryEvaluationException> iter,
 			EvaluationStrategy strategy, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -35,14 +36,14 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	}
 
 	public ExtensionIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			Consumer<QueryBindingSet> setter) throws QueryEvaluationException {
+			Consumer<MutableBindingSet> setter) throws QueryEvaluationException {
 		super(iter);
 		this.setter = setter;
 	}
 
-	public static Consumer<QueryBindingSet> buildLambdaToEvaluateTheExpressions(Extension extension,
+	public static Consumer<MutableBindingSet> buildLambdaToEvaluateTheExpressions(Extension extension,
 			EvaluationStrategy strategy, QueryEvaluationContext context) {
-		Consumer<QueryBindingSet> consumer = null;
+		Consumer<MutableBindingSet> consumer = null;
 		for (ExtensionElem extElem : extension.getElements()) {
 			ValueExpr expr = extElem.getExpr();
 			if (!(expr instanceof AggregateOperator)) {
@@ -58,7 +59,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 		return consumer;
 	}
 
-	private static void setValue(String extElem, QueryValueEvaluationStep prepared, QueryBindingSet targetBindings) {
+	private static void setValue(String extElem, QueryValueEvaluationStep prepared, MutableBindingSet targetBindings) {
 		try {
 			// we evaluate each extension element over the targetbindings, so that bindings from
 			// a previous extension element in this same extension can be used by other extension elements.
@@ -78,8 +79,8 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 		}
 	}
 
-	private static Consumer<QueryBindingSet> andThen(Consumer<QueryBindingSet> consumer,
-			Consumer<QueryBindingSet> next) {
+	private static Consumer<MutableBindingSet> andThen(Consumer<MutableBindingSet> consumer,
+			Consumer<MutableBindingSet> next) {
 		if (consumer == null)
 			return next;
 		else
@@ -88,7 +89,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 	@Override
 	public BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
-		QueryBindingSet targetBindings = new QueryBindingSet(sourceBindings);
+		MutableBindingSet targetBindings = new QueryBindingSet(sourceBindings);
 		setter.accept(targetBindings);
 		return targetBindings;
 	}

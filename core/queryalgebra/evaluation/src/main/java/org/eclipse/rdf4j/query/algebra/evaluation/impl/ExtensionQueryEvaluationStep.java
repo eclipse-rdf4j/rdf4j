@@ -5,17 +5,17 @@ import java.util.function.Consumer;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 
 public final class ExtensionQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep arg;
-	private final Consumer<QueryBindingSet> consumer;
+	private final Consumer<MutableBindingSet> consumer;
 
-	ExtensionQueryEvaluationStep(QueryEvaluationStep arg, Consumer<QueryBindingSet> consumer) {
+	ExtensionQueryEvaluationStep(QueryEvaluationStep arg, Consumer<MutableBindingSet> consumer) {
 		this.arg = arg;
 		this.consumer = consumer;
 	}
