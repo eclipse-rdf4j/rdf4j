@@ -72,15 +72,19 @@ public interface QueryEvaluationContext {
 		return new QueryBindingSet();
 	}
 
-	public default Function<BindingSet, Boolean> hasVariableSet(String variableName) {
+	public default Function<BindingSet, Boolean> hasBinding(String variableName) {
 		return (bs) -> bs.hasBinding(variableName);
 	}
 
-	public default Function<BindingSet, Binding> getSetVariable(String variableName) {
+	public default Function<BindingSet, Binding> getBinding(String variableName) {
 		return (bs) -> bs.getBinding(variableName);
 	}
 
-	public default BiConsumer<Value, MutableBindingSet> addVariable(String variableName) {
+	public default BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
+		return (val, bs) -> bs.setBinding(variableName, val);
+	}
+
+	public default BiConsumer<Value, MutableBindingSet> addBinding(String variableName) {
 		return (val, bs) -> bs.addBinding(variableName, val);
 	}
 

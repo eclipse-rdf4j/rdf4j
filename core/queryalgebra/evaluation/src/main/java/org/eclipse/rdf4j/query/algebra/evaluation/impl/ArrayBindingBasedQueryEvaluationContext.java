@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -42,9 +43,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
-	public java.util.function.Function<BindingSet, Boolean> hasVariableSet(String variableName) {
-		java.util.function.Function<ArrayBindingSet, Boolean> directHasVariable = new ArrayBindingSet(allVariables)
-				.getDirectHasVariable(variableName);
+	public Function<BindingSet, Boolean> hasBinding(String variableName) {
+		Function<ArrayBindingSet, Boolean> directHasVariable = new ArrayBindingSet(allVariables)
+				.getDirectHasBinding(variableName);
 		return (bs) -> {
 			if (bs instanceof ArrayBindingSet) {
 				return directHasVariable.apply((ArrayBindingSet) bs);
@@ -55,10 +56,10 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
-	public java.util.function.Function<BindingSet, Binding> getSetVariable(String variableName) {
+	public Function<BindingSet, Binding> getBinding(String variableName) {
 		ArrayBindingSet abs = new ArrayBindingSet(allVariables);
-		java.util.function.Function<ArrayBindingSet, Binding> directAccessForVariable = abs
-				.getDirectAccessForVariable(variableName);
+		Function<ArrayBindingSet, Binding> directAccessForVariable = abs
+				.getDirectGetBinding(variableName);
 		return (bs) -> {
 			if (bs instanceof ArrayBindingSet) {
 				return directAccessForVariable.apply((ArrayBindingSet) bs);
@@ -69,9 +70,23 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
-	public BiConsumer<Value, MutableBindingSet> addVariable(String variableName) {
+	public BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
+		ArrayBindingSet abs = new ArrayBindingSet(allVariables);
+		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = abs
+				.getDirectSetBinding(variableName);
+		return (val, bs) -> {
+			if (bs instanceof ArrayBindingSet) {
+				directAccessForVariable.accept(val, (ArrayBindingSet) bs);
+			} else {
+				bs.setBinding(variableName, val);
+			}
+		};
+	}
+
+	@Override
+	public BiConsumer<Value, MutableBindingSet> addBinding(String variableName) {
 		BiConsumer<Value, ArrayBindingSet> wrapped = new ArrayBindingSet(allVariables)
-				.getDirectSetterForVariable(variableName);
+				.getDirectAddBinding(variableName);
 		return (val, bs) -> {
 			if (bs instanceof ArrayBindingSet) {
 				wrapped.accept(val, (ArrayBindingSet) bs);

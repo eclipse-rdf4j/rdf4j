@@ -59,13 +59,13 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			// Get bindings from values pre-bound into variables.
 			MapBindingSet allBindings = new MapBindingSet();
 			for (Binding binding : bindings) {
-				allBindings.addBinding(binding.getName(), binding.getValue());
+				allBindings.setBinding(binding.getName(), binding.getValue());
 			}
 
 			Set<Var> boundVars = getBoundVariables(service);
 			for (Var boundVar : boundVars) {
 				freeVars.remove(boundVar.getName());
-				allBindings.addBinding(boundVar.getName(), boundVar.getValue());
+				allBindings.setBinding(boundVar.getName(), boundVar.getValue());
 			}
 			bindings = allBindings;
 
