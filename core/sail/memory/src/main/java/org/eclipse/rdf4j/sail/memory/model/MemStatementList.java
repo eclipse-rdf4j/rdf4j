@@ -63,6 +63,14 @@ public class MemStatementList {
 		return statements[index];
 	}
 
+	public MemStatement getIfExists(int index) {
+		if (index < size) {
+			return statements[index];
+		} else {
+			return null;
+		}
+	}
+
 	public void add(MemStatement st) {
 		if (size == statements.length) {
 			// Grow array

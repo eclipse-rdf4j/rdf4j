@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
-import java.math.BigInteger;
 import java.util.Collections;
 import java.util.Set;
 

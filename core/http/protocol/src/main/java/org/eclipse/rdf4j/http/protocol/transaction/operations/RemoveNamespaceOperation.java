@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.http.protocol.transaction.operations;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -52,7 +53,7 @@ public class RemoveNamespaceOperation implements TransactionOperation, Serializa
 	public boolean equals(Object other) {
 		if (other instanceof RemoveNamespaceOperation) {
 			RemoveNamespaceOperation o = (RemoveNamespaceOperation) other;
-			return ObjectUtil.nullEquals(getPrefix(), o.getPrefix());
+			return Objects.equals(getPrefix(), o.getPrefix());
 		}
 
 		return false;

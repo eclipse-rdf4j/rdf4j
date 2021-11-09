@@ -16,12 +16,12 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -274,7 +274,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 					Value v1 = bindingSet.getValue(name);
 					Value v2 = otherSolution.getValue(name);
 
-					if (!ObjectUtil.nullEquals(v1, v2)) {
+					if (!Objects.equals(v1, v2)) {
 						return false;
 					}
 				}
