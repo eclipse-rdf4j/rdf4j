@@ -486,7 +486,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	protected QueryEvaluationStep prepare(Projection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep temp = precompile(node.getArg(), context);
-		return new ProjectionQueryEvaluationStep(node, temp);
+		return new ProjectionQueryEvaluationStep(node, temp, context);
 	}
 
 	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)

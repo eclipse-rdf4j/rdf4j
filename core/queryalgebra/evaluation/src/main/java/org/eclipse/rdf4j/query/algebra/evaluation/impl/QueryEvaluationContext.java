@@ -68,7 +68,7 @@ public interface QueryEvaluationContext {
 	 */
 	public Dataset getDataset();
 
-	public default BindingSet createBindingSet() {
+	public default MutableBindingSet createBindingSet() {
 		return new QueryBindingSet();
 	}
 

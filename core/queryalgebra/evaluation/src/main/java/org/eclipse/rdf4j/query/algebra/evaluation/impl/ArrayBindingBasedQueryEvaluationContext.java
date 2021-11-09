@@ -45,7 +45,13 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	public java.util.function.Function<BindingSet, Boolean> hasVariableSet(String variableName) {
 		java.util.function.Function<ArrayBindingSet, Boolean> directHasVariable = new ArrayBindingSet(allVariables)
 				.getDirectHasVariable(variableName);
-		return (bs) -> directHasVariable.apply((ArrayBindingSet) bs);
+		return (bs) -> {
+			if (bs instanceof ArrayBindingSet) {
+				return directHasVariable.apply((ArrayBindingSet) bs);
+			} else {
+				return bs.hasBinding(variableName);
+			}
+		};
 	}
 
 	@Override
@@ -53,14 +59,26 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		ArrayBindingSet abs = new ArrayBindingSet(allVariables);
 		java.util.function.Function<ArrayBindingSet, Binding> directAccessForVariable = abs
 				.getDirectAccessForVariable(variableName);
-		return (bs) -> directAccessForVariable.apply((ArrayBindingSet) bs);
+		return (bs) -> {
+			if (bs instanceof ArrayBindingSet) {
+				return directAccessForVariable.apply((ArrayBindingSet) bs);
+			} else {
+				return bs.getBinding(variableName);
+			}
+		};
 	}
 
 	@Override
 	public BiConsumer<Value, MutableBindingSet> addVariable(String variableName) {
 		BiConsumer<Value, ArrayBindingSet> wrapped = new ArrayBindingSet(allVariables)
 				.getDirectSetterForVariable(variableName);
-		return (val, bs) -> wrapped.accept(val, (ArrayBindingSet) bs);
+		return (val, bs) -> {
+			if (bs instanceof ArrayBindingSet) {
+				wrapped.accept(val, (ArrayBindingSet) bs);
+			} else {
+				bs.addBinding(variableName, val);
+			}
+		};
 	}
 
 	@Override
