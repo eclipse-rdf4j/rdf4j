@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -40,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Coalesce;
@@ -144,6 +146,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.util.UUIDable;
 
 import com.google.common.base.Stopwatch;
@@ -933,9 +936,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (expr instanceof SameTerm) {
 			return new QueryValueEvaluationStepImplementation(this, expr, context);
 		} else if (expr instanceof Compare) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return prepare((Compare) expr, context);
 		} else if (expr instanceof MathExpr) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return prepare((MathExpr) expr, context);
 		} else if (expr instanceof In) {
 			return new QueryValueEvaluationStepImplementation(this, expr, context);
 		} else if (expr instanceof CompareAny) {
@@ -1594,6 +1597,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator()));
 	}
 
+	protected QueryValueEvaluationStep prepare(Compare node, QueryEvaluationContext context) {
+		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+				.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator())), context);
+	}
+
 	@Deprecated(forRemoval = true)
 	public Value evaluate(MathExpr node, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -1606,6 +1614,19 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		throw new ValueExprEvaluationException("Both arguments must be numeric literals");
+	}
+
+	private Value mathOperationApplier(MathExpr node, Value leftVal, Value rightVal) {
+		if (leftVal instanceof Literal && rightVal instanceof Literal) {
+			return MathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());
+		}
+
+		throw new ValueExprEvaluationException("Both arguments must be literals");
+	}
+
+	protected QueryValueEvaluationStep prepare(MathExpr node, QueryEvaluationContext context) {
+		return supplyBinaryValueEvaluation(node, (rightVal, leftVal) -> mathOperationApplier(node, leftVal, rightVal),
+				context);
 	}
 
 	@Deprecated(forRemoval = true)
@@ -1923,5 +1944,60 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Override
 	public void setTrackTime(boolean trackTime) {
 		this.trackTime = trackTime;
+	}
+
+	/**
+	 * Supply a QueryValueEvalationStep that will invoke the function (operator passed in). It will try to optimise
+	 * constant argument to be called only once per query run,
+	 * 
+	 * @param node      the node to evaluate
+	 * @param operation the function that wraps the operator.
+	 * @param context   in which the query is running.
+	 * @return a potential constant evaluation step.
+	 */
+	protected QueryValueEvaluationStep supplyBinaryValueEvaluation(BinaryValueOperator node,
+			BiFunction<Value, Value, Value> operation, QueryEvaluationContext context) {
+		QueryValueEvaluationStep leftStep = precompile(node.getLeftArg(), context);
+		QueryValueEvaluationStep rightStep = precompile(node.getRightArg(), context);
+		if (leftStep.isConstant() && rightStep.isConstant()) {
+			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
+			Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());
+			Value value = operation.apply(leftVal, rightVal);
+			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(value);
+		} else if (leftStep.isConstant()) {
+			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value rightVal = rightStep.evaluate(bindings);
+					return operation.apply(leftVal, rightVal);
+				}
+			};
+		} else if (rightStep.isConstant()) {
+			Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value leftVal = leftStep.evaluate(bindings);
+					Value result = operation.apply(leftVal, rightVal);
+					return result;
+				}
+			};
+		} else {
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value leftVal = leftStep.evaluate(bindings);
+					Value rightVal = rightStep.evaluate(bindings);
+					return operation.apply(leftVal, rightVal);
+				}
+			};
+		}
 	}
 }
