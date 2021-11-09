@@ -73,7 +73,7 @@ public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy 
 
 	@Override
 	protected QueryValueEvaluationStep prepare(MathExpr node, QueryEvaluationContext context) {
-		return supplyBinaryValueEvaluation(node, (rightVal, leftVal) -> mathOperationApplier(node, leftVal, rightVal),
+		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> mathOperationApplier(node, leftVal, rightVal),
 				context);
 	}
 }

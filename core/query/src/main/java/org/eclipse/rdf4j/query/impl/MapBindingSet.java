@@ -113,7 +113,5 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 	@Override
 	public void setBinding(Binding binding) {
 		bindings.put(binding.getName(), binding);
-
 	}
-
 }
