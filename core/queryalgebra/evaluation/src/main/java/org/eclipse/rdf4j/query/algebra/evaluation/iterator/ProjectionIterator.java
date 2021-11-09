@@ -51,33 +51,15 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		for (ProjectionElem pe : projectionElemList.getElements()) {
 			String sourceName = pe.getSourceName();
 			String targetName = pe.getTargetName();
-			BiConsumer<MutableBindingSet, BindingSet> next;
-			Function<BindingSet, Binding> getSource = context.getSetVariable(sourceName);
-			Function<BindingSet, Boolean> hasTarget = context.hasVariableSet(targetName);
-			BiConsumer<Value, MutableBindingSet> addTarget = context.addVariable(targetName);
-			if (!includeAllParentBindings) {
-				next = (resultBindings, sourceBindings) -> {
-					Binding targetBinding = getSource.apply(sourceBindings);
-					Value targetValue = null;
-					if (targetBinding != null) {
-						targetValue = targetBinding.getValue();
-					} else {
-						targetBinding = getSource.apply(parentBindings);
-						if (targetBinding != null)
-							targetValue = targetBinding.getValue();
-					}
-					if (targetValue != null && !hasTarget.apply(resultBindings)) {
-						addTarget.accept(targetValue, resultBindings);
-					}
-				};
-			} else {
-				next = (resultBindings, sourceBindings) -> {
-					Binding targetBinding = getSource.apply(sourceBindings);
-					if (targetBinding != null && !hasTarget.apply(resultBindings)) {
-						addTarget.accept(targetBinding.getValue(), resultBindings);
-					}
-				};
-			}
+			BiConsumer<MutableBindingSet, BindingSet> next = (resultBindings, sourceBindings) -> {
+				Value targetValue = sourceBindings.getValue(sourceName);
+				if (!includeAllParentBindings && targetValue == null) {
+					targetValue = parentBindings.getValue(sourceName);
+				}
+				if (targetValue != null) {
+					resultBindings.setBinding(targetName, targetValue);
+				}
+			};
 			consumer = andThen(consumer, next);
 		}
 		if (projectionElemList.getElements().isEmpty()) {
@@ -88,8 +70,9 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 		if (includeAllParentBindings) {
 			this.maker = () -> context.createBindingSet(parentBindings);
-		} else
+		} else {
 			this.maker = () -> context.createBindingSet();
+		}
 		this.projector = consumer;
 	}
 

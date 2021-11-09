@@ -86,10 +86,10 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 			subjects.setContextVar(contextVar);
 		}
 		precompile = evaluationStrategy.precompile(subjects, context);
-		setSubject = context.addVariable(subjectVar.getName());
-		setObject = context.addVariable(objVar.getName());
+		setSubject = context.addBinding(subjectVar.getName());
+		setObject = context.addBinding(objVar.getName());
 		if (contextVar != null) {
-			setContext = context.addVariable(contextVar.getName());
+			setContext = context.addBinding(contextVar.getName());
 		} else {
 			setContext = null;
 		}

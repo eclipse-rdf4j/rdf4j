@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -46,7 +45,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private final TripleSource tripleSource;
 	private final boolean emptyGraph;
 	private final Function<Value, Resource[]> contextSup;
-	private final BiConsumer<QueryBindingSet, Statement> converter;
+	private final BiConsumer<MutableBindingSet, Statement> converter;
+	private final QueryEvaluationContext context;
 
 	// We try to do as much work as possible in the constructor.
 	// With the aim of making the evaluate method as cheap as possible.
@@ -54,6 +54,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			TripleSource tripleSource) {
 		super();
 		this.statementPattern = statementPattern;
+		this.context = context;
 		this.tripleSource = tripleSource;
 		Set<IRI> graphs = null;
 		Dataset dataset = context.getDataset();
@@ -85,14 +86,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		if (var == null) {
 			return null;
 		} else
-			return context.addVariable(var.getName());
+			return context.addBinding(var.getName());
 	}
 
 	private Function<BindingSet, Boolean> makeIsVariableSet(Var var, QueryEvaluationContext context) {
 		if (var == null) {
 			return (bindings) -> false;
 		} else {
-			return context.hasVariableSet(var.getName());
+			return context.hasBinding(var.getName());
 		}
 	}
 
@@ -152,7 +153,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 
 		// Return an iterator that converts the statements to var bindings
-		return new ConvertStatmentToBindingSetIterator(stIter1, converter, bindings);
+		return new ConvertStatmentToBindingSetIterator(stIter1, converter, bindings, context);
 	}
 
 	/**
@@ -317,30 +318,32 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 */
 	private static final class ConvertStatmentToBindingSetIterator
 			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
-		private final BiConsumer<QueryBindingSet, Statement> action;
+		private final BiConsumer<MutableBindingSet, Statement> action;
 		private final BindingSet bindings;
+		private final QueryEvaluationContext context;
 
 		private ConvertStatmentToBindingSetIterator(
 				Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
-				BiConsumer<QueryBindingSet, Statement> action, BindingSet bindings) {
+				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
 			super(iter);
 			this.action = action;
 			this.bindings = bindings;
+			this.context = context;
 		}
 
 		@Override
 		protected BindingSet convert(Statement st) {
-			QueryBindingSet bindings = makeBindingSet(this.bindings);
+			MutableBindingSet bindings = makeBindingSet(this.bindings);
 			action.accept(bindings, st);
 			return bindings;
 		}
 
-		private QueryBindingSet makeBindingSet(BindingSet bindings) {
+		private MutableBindingSet makeBindingSet(BindingSet bindings) {
 
-			if (bindings.size() == 0) {
-				return new QueryBindingSet();
+			if (bindings.isEmpty()) {
+				return context.createBindingSet();
 			} else {
-				return new QueryBindingSet(bindings);
+				return context.createBindingSet(bindings);
 			}
 		}
 
@@ -352,14 +355,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
 	 * evaluate(bs).
 	 * 
-	 * @return a converter from statement into QueryBindingSet
+	 * @return a converter from statement into MutableBindingSet
 	 */
-	private BiConsumer<QueryBindingSet, Statement> makeConverter(QueryEvaluationContext context) {
+	private BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context) {
 		final Var subjVar = statementPattern.getSubjectVar();
 		final Var predVar = statementPattern.getPredicateVar();
 		final Var objVar = statementPattern.getObjectVar();
 		final Var conVar = statementPattern.getContextVar();
-		BiConsumer<QueryBindingSet, Statement> co = null;
+		BiConsumer<MutableBindingSet, Statement> co = null;
 
 		if (subjVar != null && !subjVar.isConstant()) {
 			Function<BindingSet, Boolean> subjectIsSet = makeIsVariableSet(subjVar, context);
@@ -397,7 +400,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return co;
 	}
 
-	private void addValueToBinding(QueryBindingSet result, Value value,
+	private void addValueToBinding(MutableBindingSet result, Value value,
 			Function<BindingSet, Boolean> varIsSet, BiConsumer<Value, MutableBindingSet> setVal) {
 		if (!varIsSet.apply(result)) {
 			setVal.accept(value, result);
@@ -411,8 +414,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return pred.and(and);
 	}
 
-	private static BiConsumer<QueryBindingSet, Statement> andThen(BiConsumer<QueryBindingSet, Statement> co,
-			BiConsumer<QueryBindingSet, Statement> and) {
+	private static BiConsumer<MutableBindingSet, Statement> andThen(BiConsumer<MutableBindingSet, Statement> co,
+			BiConsumer<MutableBindingSet, Statement> and) {
 		if (co == null)
 			return and;
 		return co.andThen(and);

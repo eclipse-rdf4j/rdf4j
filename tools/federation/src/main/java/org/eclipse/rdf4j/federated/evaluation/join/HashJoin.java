@@ -163,10 +163,10 @@ public class HashJoin extends JoinExecutorBase<BindingSet> {
 					// emit a merged binding set
 					MapBindingSet mergedBindings = new MapBindingSet();
 					for (Binding b : left) {
-						mergedBindings.addBinding(b);
+						mergedBindings.setBinding(b);
 					}
 					for (Binding b : right) {
-						mergedBindings.addBinding(b);
+						mergedBindings.setBinding(b);
 					}
 					res.add(mergedBindings);
 				}

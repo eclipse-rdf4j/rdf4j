@@ -47,7 +47,7 @@ public abstract class AbstractOperation implements Operation {
 
 	@Override
 	public void setBinding(String name, Value value) {
-		bindings.addBinding(name, value);
+		bindings.setBinding(name, value);
 	}
 
 	@Override

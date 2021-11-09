@@ -49,6 +49,7 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 	 */
 	@Override
 	public void addBinding(Binding binding) {
+		assert !bindings.containsKey(binding.getName()) : "variable already bound: " + binding.getName();
 		bindings.put(binding.getName(), binding);
 	}
 
@@ -102,6 +103,17 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 	@Override
 	public int size() {
 		return bindings.size();
+	}
+
+	@Override
+	public void setBinding(String name, Value value) {
+		bindings.put(name, new SimpleBinding(name, value));
+	}
+
+	@Override
+	public void setBinding(Binding binding) {
+		bindings.put(binding.getName(), binding);
+
 	}
 
 }

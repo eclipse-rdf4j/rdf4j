@@ -33,4 +33,8 @@ public interface MutableBindingSet extends BindingSet {
 	 * @param binding The binding to add to the binding set.
 	 */
 	public void addBinding(Binding binding);
+
+	public void setBinding(String name, Value value);
+
+	public void setBinding(Binding binding);
 }
