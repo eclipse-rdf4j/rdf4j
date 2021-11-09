@@ -67,6 +67,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 
 	}
 
+	@Deprecated(forRemoval = true)
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -87,22 +88,13 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunctionCall expr,
 			BindingSet bindings) throws QueryEvaluationException {
-		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
-				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
-
-		List<ValueExpr> args = expr.getArgs();
-
-		Value[] argValues = new Value[args.size()];
-		for (int i = 0; i < args.size(); i++) {
-			argValues[i] = evaluate(args.get(i), bindings);
-		}
-
-		return evaluate(func, expr.getResultVars(), bindings, tripleSource.getValueFactory(), argValues);
+		return precompile(expr).evaluate(bindings);
 	}
 
-	public QueryEvaluationStep prepare(TupleFunctionCall expr, QueryEvaluationContext context)
+	protected QueryEvaluationStep prepare(TupleFunctionCall expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
 				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
