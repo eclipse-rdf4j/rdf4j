@@ -8,12 +8,15 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -21,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
@@ -28,34 +32,52 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 * Constants *
 	 *-----------*/
 
-	private final BiConsumer<QueryBindingSet, BindingSet> projector;
+	private final BiConsumer<MutableBindingSet, BindingSet> projector;
 
-	private final Supplier<QueryBindingSet> maker;
+	private final Supplier<MutableBindingSet> maker;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			BindingSet parentBindings) throws QueryEvaluationException {
+			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
 		boolean isOuterProjection = determineOuterProjection(projection);
 		boolean includeAllParentBindings = !isOuterProjection;
 
-		BiConsumer<QueryBindingSet, BindingSet> consumer = null;
+		BiConsumer<MutableBindingSet, BindingSet> consumer = null;
 		for (ProjectionElem pe : projectionElemList.getElements()) {
 			String sourceName = pe.getSourceName();
 			String targetName = pe.getTargetName();
-			BiConsumer<QueryBindingSet, BindingSet> next = (resultBindings, sourceBindings) -> {
-				Value targetValue = sourceBindings.getValue(sourceName);
-				if (!includeAllParentBindings && targetValue == null) {
-					targetValue = parentBindings.getValue(sourceName);
-				}
-				if (targetValue != null) {
-					resultBindings.setBinding(targetName, targetValue);
-				}
-			};
+			BiConsumer<MutableBindingSet, BindingSet> next;
+			Function<BindingSet, Binding> getSource = context.getSetVariable(sourceName);
+			Function<BindingSet, Boolean> hasTarget = context.hasVariableSet(targetName);
+			BiConsumer<Value, MutableBindingSet> addTarget = context.addVariable(targetName);
+			if (!includeAllParentBindings) {
+				next = (resultBindings, sourceBindings) -> {
+					Binding targetBinding = getSource.apply(sourceBindings);
+					Value targetValue = null;
+					if (targetBinding != null) {
+						targetValue = targetBinding.getValue();
+					} else {
+						targetBinding = getSource.apply(parentBindings);
+						if (targetBinding != null)
+							targetValue = targetBinding.getValue();
+					}
+					if (targetValue != null && !hasTarget.apply(resultBindings)) {
+						addTarget.accept(targetValue, resultBindings);
+					}
+				};
+			} else {
+				next = (resultBindings, sourceBindings) -> {
+					Binding targetBinding = getSource.apply(sourceBindings);
+					if (targetBinding != null && !hasTarget.apply(resultBindings)) {
+						addTarget.accept(targetBinding.getValue(), resultBindings);
+					}
+				};
+			}
 			consumer = andThen(consumer, next);
 		}
 		if (projectionElemList.getElements().isEmpty()) {
@@ -65,14 +87,14 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		}
 
 		if (includeAllParentBindings) {
-			this.maker = () -> new QueryBindingSet(parentBindings);
+			this.maker = () -> context.createBindingSet(parentBindings);
 		} else
-			this.maker = () -> new QueryBindingSet();
+			this.maker = () -> context.createBindingSet();
 		this.projector = consumer;
 	}
 
-	private BiConsumer<QueryBindingSet, BindingSet> andThen(BiConsumer<QueryBindingSet, BindingSet> consumer,
-			BiConsumer<QueryBindingSet, BindingSet> next) {
+	private BiConsumer<MutableBindingSet, BindingSet> andThen(BiConsumer<MutableBindingSet, BindingSet> consumer,
+			BiConsumer<MutableBindingSet, BindingSet> next) {
 		if (consumer == null)
 			return next;
 		else
@@ -95,7 +117,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	@Override
 	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
-		QueryBindingSet qbs = maker.get();
+		MutableBindingSet qbs = maker.get();
 		projector.accept(qbs, sourceBindings);
 		return qbs;
 	}
