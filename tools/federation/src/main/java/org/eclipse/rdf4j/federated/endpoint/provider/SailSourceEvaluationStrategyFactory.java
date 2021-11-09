@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint.provider;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -20,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerFunctionalInterface;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -75,6 +77,22 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 		return new SailSourceEvaluationStrategy(delegateStrategy, dataset);
 	}
 
+	@Override
+	public void addOptimizer(QueryOptimizerFunctionalInterface queryOptimizerFunctionalInterface,
+			boolean beforeOtherQueryOptimizers) {
+		delegate.addOptimizer(queryOptimizerFunctionalInterface, beforeOtherQueryOptimizers);
+	}
+
+	@Override
+	public List<QueryOptimizerFunctionalInterface> getQueryOptimizersPre() {
+		return delegate.getQueryOptimizersPre();
+	}
+
+	@Override
+	public List<QueryOptimizerFunctionalInterface> getQueryOptimizersPost() {
+		return delegate.getQueryOptimizersPost();
+	}
+
 	/**
 	 * {@link EvaluationStrategy} that can handle {@link PrecompiledQueryNode} without prior optimization. All other
 	 * {@link TupleExpr} are handled in the respective delegate.
@@ -101,6 +119,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 		@Override
 		public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
 			delegate.setOptimizerPipeline(pipeline);
+		}
+
+		@Override
+		public QueryOptimizerPipeline getOptimizerPipeline() {
+			return delegate.getOptimizerPipeline();
 		}
 
 		@Override
@@ -134,6 +157,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 		public boolean isTrue(ValueExpr expr, BindingSet bindings)
 				throws ValueExprEvaluationException, QueryEvaluationException {
 			return delegate.isTrue(expr, bindings);
+		}
+
+		@Override
+		public void setTrackResultSize(boolean trackResultSize) {
+			delegate.setTrackResultSize(trackResultSize);
+		}
+
+		@Override
+		public void setTrackTime(boolean trackTime) {
+			delegate.setTrackTime(trackTime);
 		}
 
 		protected TupleExpr optimizePreparedQuery(PrecompiledQueryNode preparedQuery, BindingSet bindings) {
