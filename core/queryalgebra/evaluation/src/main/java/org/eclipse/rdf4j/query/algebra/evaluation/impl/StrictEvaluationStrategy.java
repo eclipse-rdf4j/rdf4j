@@ -536,7 +536,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
 		Consumer<MutableBindingSet> consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(node, this,
 				context);
-		return new ExtensionQueryEvaluationStep(arg, consumer);
+		return new ExtensionQueryEvaluationStep(arg, consumer, context);
 	}
 
 	protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context)
