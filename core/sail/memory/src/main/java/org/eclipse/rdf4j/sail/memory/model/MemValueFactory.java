@@ -102,14 +102,14 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See getMemValue() for description.
 	 */
 	public MemResource getMemResource(Resource resource) {
-		if (resource instanceof IRI) {
-			return getMemURI((IRI) resource);
-		} else if (resource instanceof BNode) {
-			return getMemBNode((BNode) resource);
-		} else if (resource instanceof Triple) {
-			return getMemTriple((Triple) resource);
-		} else if (resource == null) {
+		if (resource == null) {
 			return null;
+		} else if (resource.isIRI()) {
+			return getMemURI((IRI) resource);
+		} else if (resource.isBNode()) {
+			return getMemBNode((BNode) resource);
+		} else if (resource.isTriple()) {
+			return getMemTriple((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
 		}

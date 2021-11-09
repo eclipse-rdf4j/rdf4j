@@ -15,11 +15,21 @@ import java.util.TimerTask;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.SimpleMutableBinding;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailChangedEvent;
@@ -29,6 +39,8 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
+import org.eclipse.rdf4j.sail.memory.model.MemValue;
+import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,7 +109,7 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	private volatile long syncDelay = 0L;
 
 	/**
-	 * Semaphore used to synchronize concurrent access to {@link #syncWithLock()} .
+	 * Semaphore used to synchronize concurrent access to {@link #sync()} ()} .
 	 */
 	private final Object syncSemaphore = new Object();
 
@@ -201,6 +213,70 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
 		if (evalStratFactory == null) {
 			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());
+			evalStratFactory.addOptimizer((strategy, tripleSource, evaluationStatistics) -> {
+				return new QueryOptimizer() {
+					private final MemValueFactory vf = (MemValueFactory) tripleSource.getValueFactory();
+
+					@Override
+					public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+						if (bindings != null) {
+							for (Binding binding : bindings) {
+								if (binding instanceof SimpleMutableBinding) {
+									MemValue memValue = vf.getMemValue(binding.getValue());
+									if (memValue != null) {
+										((SimpleMutableBinding) binding).setValue(memValue);
+									}
+								}
+							}
+						}
+
+						tupleExpr.visit(new MemValueVisitor());
+					}
+
+					class MemValueVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+
+						@Override
+						public void meet(BindingSetAssignment node) throws RuntimeException {
+							for (BindingSet bindingSet : node.getBindingSets()) {
+								for (Binding binding : bindingSet) {
+									if (binding instanceof SimpleMutableBinding) {
+										MemValue memValue = vf.getMemValue(binding.getValue());
+										if (memValue != null) {
+											((SimpleMutableBinding) binding).setValue(memValue);
+										}
+									}
+								}
+							}
+							super.meet(node);
+
+						}
+
+						@Override
+						public void meet(ValueConstant node) throws RuntimeException {
+							if (node.getValue() != null) {
+								MemValue memValue = vf.getMemValue(node.getValue());
+								if (memValue != null) {
+									node.setValue(memValue);
+								}
+							}
+							super.meet(node);
+
+						}
+
+						@Override
+						public void meet(Var node) throws RuntimeException {
+							if (node.getValue() != null) {
+								MemValue memValue = vf.getMemValue(node.getValue());
+								if (memValue != null) {
+									node.setValue(memValue);
+								}
+							}
+							super.meet(node);
+						}
+
+					}
+				};
+			}, true);
 		}
 		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());
 		evalStratFactory.setTrackResultSize(isTrackResultSize());

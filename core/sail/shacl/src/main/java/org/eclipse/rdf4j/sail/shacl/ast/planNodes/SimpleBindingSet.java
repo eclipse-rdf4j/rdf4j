@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
+import org.eclipse.rdf4j.query.impl.SimpleMutableBinding;
 
 /**
  * A simple binding set tuned for the use case that the ShaclSail has.
@@ -34,7 +35,7 @@ class SimpleBindingSet extends AbstractBindingSet {
 		this.bindingNamesSet = Collections.unmodifiableSet(bindingNamesSet);
 
 		for (int i = 0; i < varNamesList.size(); i++) {
-			bindings[i] = new SimpleBinding(varNamesList.get(i), values.get(i));
+			bindings[i] = new SimpleMutableBinding(varNamesList.get(i), values.get(i));
 		}
 
 	}
