@@ -21,12 +21,19 @@ public interface QueryValueEvaluationStep {
 			throws ValueExprEvaluationException, QueryEvaluationException;
 
 	/**
+	 * If an value expression results in a constant then it may be executed once per query invocation. This can reduce
+	 * computation time significantly.
+	 * 
 	 * @return if this ValueExpresionStep will always return the same value
 	 */
 	default boolean isConstant() {
 		return false;
 	}
 
+	/**
+	 * A QueryValueEvalationStep that will return the same constant value throughout the query execution. As these
+	 * rather result just in a value we set the value at precompile time.
+	 */
 	public static class ConstantQueryValueEvaluationStep implements QueryValueEvaluationStep {
 		private final Value value;
 

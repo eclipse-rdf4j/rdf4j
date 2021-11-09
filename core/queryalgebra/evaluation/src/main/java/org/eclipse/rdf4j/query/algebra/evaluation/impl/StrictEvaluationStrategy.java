@@ -361,14 +361,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
-		return QueryEvaluationStep.wrap(qes, expr, (iter) -> {
+		return QueryEvaluationStep.wrap(qes, (iter) -> {
 			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
 			return new ResultSizeCountingIterator(iter, expr);
 		});
 	}
 
 	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
-		return QueryEvaluationStep.wrap(qes, expr, (iter) -> {
+		return QueryEvaluationStep.wrap(qes, (iter) -> {
 			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
 			return new TimedIterator(iter, expr);
 		});
@@ -1513,14 +1513,16 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return sharedValueOfNow;
 	}
 
-	public QueryValueEvaluationStep prepare(Now node, QueryEvaluationContext context) throws QueryEvaluationException {
-		return new QueryValueEvaluationStep() {
-
-			@Override
-			public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
-				return context.getNow();
-			}
-		};
+	/**
+	 * During the execution of a single query NOW() should always return the same result and is in practical terms a
+	 * constant during evaluation.
+	 * 
+	 * @param node    that represent the NOW() function
+	 * @param context that holds the shared now() of the query invocation
+	 * @return a constant value evaluation step
+	 */
+	protected QueryValueEvaluationStep prepare(Now node, QueryEvaluationContext context) {
+		return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(context.getNow());
 	}
 
 	public Value evaluate(SameTerm node, BindingSet bindings)
