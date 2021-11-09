@@ -14,7 +14,6 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -51,13 +50,15 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		for (ProjectionElem pe : projectionElemList.getElements()) {
 			String sourceName = pe.getSourceName();
 			String targetName = pe.getTargetName();
+			Function<BindingSet, Value> valueWithSourceName = context.getValue(sourceName);
+			BiConsumer<Value, MutableBindingSet> setTarget = context.setBinding(targetName);
 			BiConsumer<MutableBindingSet, BindingSet> next = (resultBindings, sourceBindings) -> {
-				Value targetValue = sourceBindings.getValue(sourceName);
+				Value targetValue = valueWithSourceName.apply(sourceBindings);
 				if (!includeAllParentBindings && targetValue == null) {
-					targetValue = parentBindings.getValue(sourceName);
+					targetValue = valueWithSourceName.apply(parentBindings);
 				}
 				if (targetValue != null) {
-					resultBindings.setBinding(targetName, targetValue);
+					setTarget.accept(targetValue, resultBindings);
 				}
 			};
 			consumer = andThen(consumer, next);

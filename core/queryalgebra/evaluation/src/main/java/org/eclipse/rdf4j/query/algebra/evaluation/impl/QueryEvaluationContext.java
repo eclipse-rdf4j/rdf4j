@@ -80,6 +80,17 @@ public interface QueryEvaluationContext {
 		return (bs) -> bs.getBinding(variableName);
 	}
 
+	public default Function<BindingSet, Value> getValue(String variableName) {
+		return (bs) -> {
+			Binding binding = getBinding(variableName).apply(bs);
+			if (binding == null) {
+				return null;
+			} else {
+				return binding.getValue();
+			}
+		};
+	}
+
 	public default BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
 		return (val, bs) -> bs.setBinding(variableName, val);
 	}
