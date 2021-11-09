@@ -98,6 +98,7 @@ import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -105,7 +106,6 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -902,7 +902,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (expr instanceof Lang) {
 			return new QueryValueEvaluationStepImplementation(this, expr, context);
 		} else if (expr instanceof LangMatches) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return prepare((LangMatches) expr, context);
 		} else if (expr instanceof Datatype) {
 			return new QueryValueEvaluationStepImplementation(this, expr, context);
 		} else if (expr instanceof Namespace) {
@@ -934,9 +934,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (expr instanceof Or) {
 			return new QueryValueEvaluationStepImplementation(this, expr, context);
 		} else if (expr instanceof Not) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return prepare((Not) expr, context);
 		} else if (expr instanceof SameTerm) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return prepare((SameTerm) expr, context);
 		} else if (expr instanceof Compare) {
 			return prepare((Compare) expr, context);
 		} else if (expr instanceof MathExpr) {
@@ -1341,6 +1341,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		Value langTagValue = evaluate(node.getLeftArg(), bindings);
 		Value langRangeValue = evaluate(node.getRightArg(), bindings);
 
+		return evaluateLangMatch(langTagValue, langRangeValue);
+	}
+
+	protected QueryValueEvaluationStep prepare(LangMatches node, QueryEvaluationContext context) {
+		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> evaluateLangMatch(leftVal, rightVal), context);
+	}
+
+	private Value evaluateLangMatch(Value langTagValue, Value langRangeValue) {
 		if (QueryEvaluationUtil.isSimpleLiteral(langTagValue) && QueryEvaluationUtil.isSimpleLiteral(langRangeValue)) {
 			String langTag = ((Literal) langTagValue).getLabel();
 			String langRange = ((Literal) langRangeValue).getLabel();
@@ -1351,7 +1359,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		throw new ValueExprEvaluationException();
-
 	}
 
 	/**
@@ -1476,7 +1483,55 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		return function.evaluate(tripleSource, argValues);
+	}
 
+	public QueryValueEvaluationStep prepare(FunctionCall node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		Function function = FunctionRegistry.getInstance()
+				.get(node.getURI())
+				.orElseThrow(() -> new QueryEvaluationException("Unknown function '" + node.getURI() + "'"));
+
+		// the NOW function is a special case as it needs to keep a shared
+		// return
+		// value for the duration of the query.
+		if (function instanceof Now) {
+			return prepare((Now) function, context);
+		}
+
+		List<ValueExpr> args = node.getArgs();
+
+		QueryValueEvaluationStep[] argSteps = new QueryValueEvaluationStep[args.size()];
+
+		boolean allConstant = true;
+		for (int i = 0; i < args.size(); i++) {
+			argSteps[i] = precompile(args.get(i), context);
+			if (!argSteps[i].isConstant())
+				allConstant = false;
+		}
+		if (allConstant) {
+			Value[] argValues = evaluateAllArguments(args, argSteps, EmptyBindingSet.getInstance());
+			Value res = function.evaluate(tripleSource, argValues);
+			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(res);
+		} else {
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value[] argValues = evaluateAllArguments(args, argSteps, bindings);
+					return function.evaluate(tripleSource, argValues);
+				}
+			};
+		}
+	}
+
+	private Value[] evaluateAllArguments(List<ValueExpr> args, QueryValueEvaluationStep[] argSteps,
+			BindingSet bindings) {
+		Value[] argValues = new Value[argSteps.length];
+		for (int i = 0; i < args.size(); i++) {
+			argValues[i] = argSteps[i].evaluate(bindings);
+		}
+		return argValues;
 	}
 
 	@Deprecated(forRemoval = true)
@@ -1538,6 +1593,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(!argBoolean);
 	}
 
+	protected QueryValueEvaluationStep prepare(Not node, QueryEvaluationContext context) {
+		return supplyUnaryValueEvaluation(node,
+				(v) -> BooleanLiteral.valueOf(!QueryEvaluationUtil.getEffectiveBooleanValue(v)), context);
+	}
+
 	@Deprecated(forRemoval = true)
 	public Value evaluate(Now node, BindingSet bindings) throws QueryEvaluationException {
 		if (sharedValueOfNow == null) {
@@ -1565,6 +1625,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
 		return BooleanLiteral.valueOf(leftVal != null && leftVal.equals(rightVal));
+	}
+
+	protected QueryValueEvaluationStep prepare(SameTerm node, QueryEvaluationContext context) {
+		return supplyBinaryValueEvaluation(node,
+				(leftVal, rightVal) -> BooleanLiteral.valueOf(leftVal != null && leftVal.equals(rightVal)), context);
 	}
 
 	@Deprecated(forRemoval = true)
@@ -1998,6 +2063,26 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					Value leftVal = leftStep.evaluate(bindings);
 					Value rightVal = rightStep.evaluate(bindings);
 					return operation.apply(leftVal, rightVal);
+				}
+			};
+		}
+	}
+
+	protected QueryValueEvaluationStep supplyUnaryValueEvaluation(UnaryValueOperator node,
+			java.util.function.Function<Value, Value> operation, QueryEvaluationContext context) {
+		QueryValueEvaluationStep argStep = precompile(node.getArg(), context);
+		if (argStep.isConstant()) {
+			Value argValue = argStep.evaluate(EmptyBindingSet.getInstance());
+
+			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(operation.apply(argValue));
+		} else {
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value argValue = argStep.evaluate(bindings);
+					return operation.apply(argValue);
 				}
 			};
 		}
