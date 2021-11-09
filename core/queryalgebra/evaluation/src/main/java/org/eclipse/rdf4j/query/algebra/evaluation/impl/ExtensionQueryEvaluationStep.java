@@ -14,10 +14,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 public final class ExtensionQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep arg;
 	private final Consumer<MutableBindingSet> consumer;
+	private final QueryEvaluationContext context;
 
-	ExtensionQueryEvaluationStep(QueryEvaluationStep arg, Consumer<MutableBindingSet> consumer) {
+	ExtensionQueryEvaluationStep(QueryEvaluationStep arg, Consumer<MutableBindingSet> consumer,
+			QueryEvaluationContext context) {
 		this.arg = arg;
 		this.consumer = consumer;
+		this.context = context;
 	}
 
 	@Override
@@ -31,6 +34,6 @@ public final class ExtensionQueryEvaluationStep implements QueryEvaluationStep {
 			// result in zero bindings.
 			result = new EmptyIteration<>();
 		}
-		return new ExtensionIterator(result, consumer);
+		return new ExtensionIterator(result, consumer, context);
 	}
 }

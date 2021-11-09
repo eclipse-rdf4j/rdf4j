@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -20,25 +21,27 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
-	private Consumer<MutableBindingSet> setter;
+	private final Consumer<MutableBindingSet> setter;
+	private final QueryEvaluationContext context;
 
 	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet, QueryEvaluationException> iter,
 			EvaluationStrategy strategy, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
+		this.context = context;
 		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy, context);
 	}
 
 	public ExtensionIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			Consumer<MutableBindingSet> setter) throws QueryEvaluationException {
+			Consumer<MutableBindingSet> setter, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		this.setter = setter;
+		this.context = context;
 	}
 
 	public static Consumer<MutableBindingSet> buildLambdaToEvaluateTheExpressions(Extension extension,
@@ -48,7 +51,8 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 			ValueExpr expr = extElem.getExpr();
 			if (!(expr instanceof AggregateOperator)) {
 				QueryValueEvaluationStep prepared = strategy.precompile(extElem.getExpr(), context);
-				consumer = andThen(consumer, (targetBindings) -> setValue(extElem.getName(), prepared, targetBindings));
+				BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(extElem.getName());
+				consumer = andThen(consumer, (targetBindings) -> setValue(setBinding, prepared, targetBindings));
 			}
 		}
 		if (consumer == null) {
@@ -59,7 +63,8 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 		return consumer;
 	}
 
-	private static void setValue(String extElem, QueryValueEvaluationStep prepared, MutableBindingSet targetBindings) {
+	private static void setValue(BiConsumer<Value, MutableBindingSet> setBinding, QueryValueEvaluationStep prepared,
+			MutableBindingSet targetBindings) {
 		try {
 			// we evaluate each extension element over the targetbindings, so that bindings from
 			// a previous extension element in this same extension can be used by other extension elements.
@@ -68,14 +73,14 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 			if (targetValue != null) {
 				// Potentially overwrites bindings from super
-				targetBindings.setBinding(extElem, targetValue);
+				setBinding.accept(targetValue, targetBindings);
 			}
 		} catch (ValueExprEvaluationException e) {
 			// silently ignore type errors in extension arguments. They should not cause the
 			// query to fail but result in no bindings for this solution
 			// see https://www.w3.org/TR/sparql11-query/#assignment
 			// use null as place holder for unbound variables that must remain so
-			targetBindings.setBinding(extElem, null);
+			setBinding.accept(null, targetBindings);
 		}
 	}
 
@@ -89,7 +94,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 	@Override
 	public BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
-		MutableBindingSet targetBindings = new QueryBindingSet(sourceBindings);
+		MutableBindingSet targetBindings = context.createBindingSet(sourceBindings);
 		setter.accept(targetBindings);
 		return targetBindings;
 	}
