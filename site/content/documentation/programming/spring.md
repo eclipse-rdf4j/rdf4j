@@ -418,11 +418,13 @@ Testing an application built with `rdf4j-spring` can be done at the DAO layer as
 applications will have more than one test classes.
 
 The common approach is to have a configuration for tests that is shared by all tests, and this configuration prepares
-the spring context with all the required facilities. A minimal, shared test configuration is the following:
+the spring context with all the required facilities. A minimal, shared test configuration is the following. Note that 
+it imports {{< javadoc "RDF4JTestConfig" "spring/test/RDF4JTestConfig.html">}}:
 
 ```java
 @TestConfiguration
 @EnableTransactionManagement
+@Import(RDF4JTestConfig.class)
 @ComponentScan("com.example.myapp.dao")
 public class TestConfig {
 
@@ -440,11 +442,7 @@ each test:
 ```java
 @ExtendWith(SpringExtension.class)
 @Transactional
-@ContextConfiguration(
-		classes = {
-				RDF4JConfig.class,
-				TestConfig.class,
-		})
+@ContextConfiguration(classes = { TestConfig.class })
 @TestPropertySource("classpath:application.properties")
 @TestPropertySource(
 		properties = {
