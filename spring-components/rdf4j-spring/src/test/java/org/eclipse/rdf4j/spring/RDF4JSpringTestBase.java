@@ -37,22 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @ExtendWith(SpringExtension.class)
 @Transactional
-@ContextConfiguration(
-		classes = {
-				RDF4JConfig.class,
-				TestConfig.class,
-				InMemoryRepositoryConfig.class,
-				RemoteRepositoryConfig.class,
-				PoolConfig.class,
-				ResultCacheConfig.class,
-				OperationCacheConfig.class,
-				OperationLogConfig.class,
-				OperationLogJmxConfig.class,
-				TxConfig.class,
-				UUIDSequenceConfig.class,
-				NoveltyCheckingUUIDSourceConfig.class,
-				SimpleRepositoryUUIDSourceConfig.class
-		})
+@ContextConfiguration(classes = { TestConfig.class })
 @TestPropertySource("classpath:application.properties")
 @TestPropertySource(
 		properties = {
