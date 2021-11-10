@@ -25,6 +25,7 @@ public class EX {
 	public static final IRI Painting = Values.iri(base, "Painting");
 	public static final IRI Picasso = Values.iri(base, "Picasso");
 	public static final IRI VanGogh = Values.iri(base, "VanGogh");
+	public static final IRI Rembrandt = Values.iri(base, "Rembrandt");
 	public static final IRI street = Values.iri(base, "street");
 	public static final IRI city = Values.iri(base, "city");
 	public static final IRI country = Values.iri(base, "country");
