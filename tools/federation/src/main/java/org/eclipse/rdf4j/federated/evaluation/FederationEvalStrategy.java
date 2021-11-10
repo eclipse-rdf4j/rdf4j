@@ -181,7 +181,13 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		// Clone the tuple expression to allow for more aggressive optimizations
-		TupleExpr query = new QueryRoot(expr.clone());
+		TupleExpr clone = expr.clone();
+		TupleExpr query;
+		if (clone instanceof QueryRoot) {
+			query = clone;
+		} else {
+			query = new QueryRoot(clone);
+		}
 
 		GenericInfoOptimizer info = new GenericInfoOptimizer(queryInfo);
 
