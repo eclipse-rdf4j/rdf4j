@@ -19,6 +19,7 @@
 		<module>federation</module>
 		<module>model</module>
 		<module>shacl</module>
+		<module>lmdb</module>
 		<module>lucene-api</module>
 		<module>lucene</module>
 		<module>solr</module>
