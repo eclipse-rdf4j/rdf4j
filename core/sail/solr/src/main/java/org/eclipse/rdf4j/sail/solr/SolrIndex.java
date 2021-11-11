@@ -315,6 +315,7 @@ public class SolrIndex extends AbstractSearchIndex {
 			boolean highlight) throws MalformedQueryException, IOException {
 		SolrQuery q = prepareQuery(propertyURI, new SolrQuery(query));
 		if (highlight) {
+			q.set("hl.method", "unified");
 			q.setHighlight(true);
 			String field = (propertyURI != null) ? SearchFields.getPropertyField(propertyURI) : "*";
 			q.addHighlightField(field);
