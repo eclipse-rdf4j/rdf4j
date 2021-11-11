@@ -176,13 +176,13 @@ class LmdbSailStore implements SailStore {
 	}
 
 	CloseableIteration<Resource, SailException> getContexts() throws IOException {
-		RecordIterator btreeIter = tripleStore.getAllTriplesSortedByContext(false);
+		RecordIterator records = tripleStore.getAllTriplesSortedByContext();
 		CloseableIteration<? extends Statement, SailException> stIter1;
-		if (btreeIter == null) {
+		if (records == null) {
 			// Iterator over all statements
 			stIter1 = createStatementIterator(null, null, null, true);
 		} else {
-			stIter1 = new LmdbStatementIterator(btreeIter, valueStore);
+			stIter1 = new LmdbStatementIterator(records, valueStore);
 		}
 
 		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<Statement, SailException>(
@@ -258,9 +258,8 @@ class LmdbSailStore implements SailStore {
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (int contextID : contextIDList) {
-			RecordIterator btreeIter = tripleStore.getTriples(subjID, predID, objID, contextID, explicit, false);
-
-			perContextIterList.add(new LmdbStatementIterator(btreeIter, valueStore));
+			RecordIterator records = tripleStore.getTriples(subjID, predID, objID, contextID, explicit, false);
+			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
 		}
 
 		if (perContextIterList.size() == 1) {

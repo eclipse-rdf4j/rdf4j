@@ -18,7 +18,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
@@ -31,6 +30,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
+import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
@@ -46,7 +46,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -82,35 +81,21 @@ class TripleStore implements Closeable {
 	 * Constants *
 	 *-----------*/
 
-	// 17 bytes are used to represent a triple:
+	// 16 bytes are used to represent a triple:
 	// byte 0-3 : subject
 	// byte 4-7 : predicate
 	// byte 8-11: object
 	// byte 12-15: context
-	// byte 16: additional flag(s)
-	static final int RECORD_LENGTH = 17;
+	static final int KEY_LENGTH = 16;
 	static final int SUBJ_IDX = 0;
 	static final int PRED_IDX = 4;
 	static final int OBJ_IDX = 8;
 	static final int CONTEXT_IDX = 12;
-	static final int FLAG_IDX = 16;
+
 	/**
 	 * Bit field indicating that a statement has been explicitly added (instead of being inferred).
 	 */
 	static final byte EXPLICIT_FLAG = (byte) 0x1; // 0000 0001
-	/**
-	 * Bit field indicating that a statement has been added in a (currently active) transaction.
-	 */
-	static final byte ADDED_FLAG = (byte) 0x2; // 0000 0010
-	/**
-	 * Bit field indicating that a statement has been removed in a (currently active) transaction.
-	 */
-	static final byte REMOVED_FLAG = (byte) 0x4; // 0000 0100
-	/**
-	 * Bit field indicating that the explicit flag has been toggled (from true to false, or vice versa) in a (currently
-	 * active) transaction.
-	 */
-	static final byte TOGGLE_EXPLICIT_FLAG = (byte) 0x8; // 0000 1000
 	/**
 	 * The default triple indexes.
 	 */
@@ -313,10 +298,7 @@ class TripleStore implements Closeable {
 			TripleIndex sourceIndex = indexes.get(0);
 			transaction(env, (stack, txn) -> {
 				MDBVal keyValue = MDBVal.callocStack(stack);
-				keyValue.mv_data(stack.malloc(RECORD_LENGTH));
-
 				MDBVal dataValue = MDBVal.callocStack(stack);
-				dataValue.mv_data(stack.bytes());
 
 				for (String fieldSeq : addedIndexSpecs) {
 					logger.debug("Initializing new index '{}'...", fieldSeq);
@@ -327,12 +309,10 @@ class TripleStore implements Closeable {
 						sourceIter[0] = new LmdbRecordIterator(sourceIndex.getDB(), new TxnRef(txn, Mode.NONE));
 
 						RecordIterator it = sourceIter[0];
-						byte[] value;
-						while ((value = it.next()) != null) {
-							ByteBuffer keyBuf = keyValue.mv_data();
-							keyBuf.rewind();
-							keyBuf.put(value);
-							keyBuf.flip();
+						Record record;
+						while ((record = it.next()) != null) {
+							keyValue.mv_data(record.key);
+							dataValue.mv_data(record.val);
 
 							mdb_put(txn, addedIndex.getDB(), keyValue, dataValue, 0);
 						}
@@ -414,26 +394,23 @@ class TripleStore implements Closeable {
 	/**
 	 * If an index exists by context - use it, otherwise return null.
 	 *
-	 * @param readTransaction
 	 * @return All triples sorted by context or null if no context index exists
 	 * @throws IOException
 	 */
-	public RecordIterator getAllTriplesSortedByContext(boolean readTransaction) throws IOException {
-		if (readTransaction) {
-			// Don't read removed statements
-			return getAllTriplesSortedByContext(0, TripleStore.REMOVED_FLAG);
-		} else {
-			// Don't read added statements
-			return getAllTriplesSortedByContext(0, TripleStore.ADDED_FLAG);
+	public RecordIterator getAllTriplesSortedByContext() throws IOException {
+		for (TripleIndex index : indexes) {
+			if (index.getFieldSeq()[0] == 'c') {
+				// found a context-first index
+				return getTriplesUsingIndex(-1, -1, -1, -1, index, false);
+			}
 		}
+
+		return null;
 	}
 
 	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean explicit,
 			boolean readTransaction) throws IOException {
-		int flags = 0;
-		int flagsMask = 0;
-
-		RecordIterator btreeIter = getTriples(subj, pred, obj, context, flags, flagsMask);
+		RecordIterator btreeIter = getTriples(subj, pred, obj, context);
 
 		if (readTransaction && explicit) {
 			// Filter implicit statements from the result
@@ -446,35 +423,23 @@ class TripleStore implements Closeable {
 		return btreeIter;
 	}
 
-	private RecordIterator getTriples(int subj, int pred, int obj, int context, int flags, int flagsMask)
-			throws IOException {
+	private RecordIterator getTriples(int subj, int pred, int obj, int context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
-		return getTriplesUsingIndex(subj, pred, obj, context, flags, flagsMask, index, doRangeSearch);
+		return getTriplesUsingIndex(subj, pred, obj, context, index, doRangeSearch);
 	}
 
-	private RecordIterator getAllTriplesSortedByContext(int flags, int flagsMask) throws IOException {
-		for (TripleIndex index : indexes) {
-			if (index.getFieldSeq()[0] == 'c') {
-				// found a context-first index
-				return getTriplesUsingIndex(-1, -1, -1, -1, flags, flagsMask, index, false);
-			}
-		}
-
-		return null;
-	}
-
-	private RecordIterator getTriplesUsingIndex(int subj, int pred, int obj, int context, int flags, int flagsMask,
-			TripleIndex index, boolean rangeSearch) {
-		byte[] searchKey = getSearchKey(subj, pred, obj, context, flags);
-		byte[] searchMask = getSearchMask(subj, pred, obj, context, flagsMask);
+	private RecordIterator getTriplesUsingIndex(int subj, int pred, int obj, int context, TripleIndex index,
+			boolean rangeSearch) {
+		byte[] searchKey = toSearchKey(subj, pred, obj, context);
+		byte[] searchMask = toSearchMask(subj, pred, obj, context);
 
 		TxnRef txnRef = getReadTxn();
 		txnRef.begin();
 		if (rangeSearch) {
 			// Use ranged search
-			byte[] minValue = getMinValue(subj, pred, obj, context);
-			byte[] maxValue = getMaxValue(subj, pred, obj, context);
+			byte[] minValue = getMinKey(subj, pred, obj, context);
+			byte[] maxValue = getMaxKey(subj, pred, obj, context);
 
 			return new LmdbRecordIterator(minValue, maxValue, index.tripleComparator, searchKey, searchMask,
 					index.getDB(), txnRef);
@@ -495,8 +460,8 @@ class TripleStore implements Closeable {
 			});
 		} else {
 			// TODO currently uses a scan to determine range size
-			byte[] minValue = getMinValue(subj, pred, obj, context);
-			byte[] maxValue = getMaxValue(subj, pred, obj, context);
+			byte[] minValue = getMinKey(subj, pred, obj, context);
+			byte[] maxValue = getMaxKey(subj, pred, obj, context);
 			ByteBuffer maxValueBuffer = ByteBuffer.wrap(maxValue);
 			return LmdbUtil.<Long>readTransaction(env, (stack, txn) -> {
 				long cursor = 0;
@@ -546,61 +511,35 @@ class TripleStore implements Closeable {
 		return bestIndex;
 	}
 
-	/*
-	 * public void clear() throws IOException { for (TripleIndex index : indexes) { index.clear(); } }
-	 */
-
-	public boolean storeTriple(int subj, int pred, int obj, int context) throws IOException {
-		return storeTriple(subj, pred, obj, context, true);
-	}
-
 	public boolean storeTriple(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
-		byte[] data = getData(subj, pred, obj, context, 0);
-		byte[] storedData = null;
+		byte[] key = toKey(subj, pred, obj, context);
+		Byte storedValue = null;
 
 		TripleIndex mainIndex = indexes.get(0);
-		long cursor = 0;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			try {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_cursor_open(writeTxn, mainIndex.getDB(), pp));
-				cursor = pp.get(0);
+			MDBVal keyVal = MDBVal.callocStack(stack), dataVal = MDBVal.callocStack(stack);
+			ByteBuffer keyBuf = stack.bytes(key);
+			keyVal.mv_data(keyBuf);
 
-				MDBVal keyVal = MDBVal.callocStack(stack), dataVal = MDBVal.callocStack(stack);
-				keyVal.mv_data(stack.bytes(data));
-
-				if (mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET) == 0) {
-					storedData = new byte[keyVal.mv_data().remaining()];
-					keyVal.mv_data().get(storedData);
-				}
-			} finally {
-				if (cursor != 0) {
-					mdb_cursor_close(cursor);
-				}
+			if (mdb_get(writeTxn, mainIndex.getDB(), keyVal, dataVal) == 0) {
+				storedValue = dataVal.mv_data().get(0);
 			}
-		}
 
-		if (explicit) {
-			data[FLAG_IDX] |= EXPLICIT_FLAG;
-		}
-
-		boolean stAdded = storedData == null;
-
-		if (storedData == null || !Arrays.equals(data, storedData)) {
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				MDBVal keyValue = MDBVal.callocStack(stack);
-				keyValue.mv_data(stack.bytes(data));
-
-				MDBVal dataValue = MDBVal.callocStack(stack);
-				dataValue.mv_data(stack.bytes());
+			boolean stAdded = storedValue == null;
+			byte newValue = 0;
+			if (explicit) {
+				newValue |= EXPLICIT_FLAG;
+			}
+			if (storedValue == null || newValue != storedValue) {
+				dataVal.mv_data(stack.bytes(newValue));
 
 				for (TripleIndex index : indexes) {
-					mdb_put(writeTxn, index.getDB(), keyValue, dataValue, 0);
+					mdb_put(writeTxn, index.getDB(), keyVal, dataVal, 0);
 				}
 			}
-		}
 
-		return stAdded;
+			return stAdded;
+		}
 	}
 
 	/**
@@ -632,7 +571,7 @@ class TripleStore implements Closeable {
 	 * @since 2.5.3
 	 */
 	public Map<Integer, Long> removeTriplesByContext(int subj, int pred, int obj, int context) throws IOException {
-		RecordIterator iter = getTriples(subj, pred, obj, context, 0, 0);
+		RecordIterator iter = getTriples(subj, pred, obj, context);
 		return removeTriples(iter);
 	}
 
@@ -669,9 +608,8 @@ class TripleStore implements Closeable {
 	 */
 	public Map<Integer, Long> removeTriplesByContext(int subj, int pred, int obj, int context, boolean explicit)
 			throws IOException {
-		byte flags = explicit ? EXPLICIT_FLAG : 0;
-		RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG);
-		return removeTriples(iter);
+		RecordIterator records = getTriples(subj, pred, obj, context, explicit, true);
+		return removeTriples(records);
 	}
 
 	private Map<Integer, Long> removeTriples(RecordIterator iter) throws IOException {
@@ -679,19 +617,22 @@ class TripleStore implements Closeable {
 
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyValue = MDBVal.callocStack(stack);
-			keyValue.mv_data(stack.malloc(RECORD_LENGTH));
+			ByteBuffer keyBuf = stack.malloc(KEY_LENGTH);
+			keyValue.mv_data(keyBuf);
 
-			byte[] data;
-			while ((data = iter.next()) != null) {
-				ByteBuffer keyBuf = keyValue.mv_data();
-				keyBuf.rewind();
-				keyBuf.put(data);
+			Record record;
+			while ((record = iter.next()) != null) {
+				// store key before deleting from db
+				keyBuf.put(record.key);
 				keyBuf.flip();
+
+				// extract context
+				int context = keyBuf.getInt(CONTEXT_IDX);
+
 				for (TripleIndex index : indexes) {
 					mdb_del(writeTxn, index.getDB(), keyValue, null);
 				}
 
-				int context = ByteArrayUtil.getInt(data, CONTEXT_IDX);
 				perContextCounts.merge(context, 1L, (c, one) -> c + one);
 			}
 		} finally {
@@ -732,24 +673,23 @@ class TripleStore implements Closeable {
 		endTransaction(false);
 	}
 
-	private byte[] getData(int subj, int pred, int obj, int context, int flags) {
-		byte[] data = new byte[RECORD_LENGTH];
+	private byte[] toKey(int subj, int pred, int obj, int context) {
+		byte[] key = new byte[KEY_LENGTH];
 
-		ByteArrayUtil.putInt(subj, data, SUBJ_IDX);
-		ByteArrayUtil.putInt(pred, data, PRED_IDX);
-		ByteArrayUtil.putInt(obj, data, OBJ_IDX);
-		ByteArrayUtil.putInt(context, data, CONTEXT_IDX);
-		data[FLAG_IDX] = (byte) flags;
+		ByteArrayUtil.putInt(subj, key, SUBJ_IDX);
+		ByteArrayUtil.putInt(pred, key, PRED_IDX);
+		ByteArrayUtil.putInt(obj, key, OBJ_IDX);
+		ByteArrayUtil.putInt(context, key, CONTEXT_IDX);
 
-		return data;
+		return key;
 	}
 
-	private byte[] getSearchKey(int subj, int pred, int obj, int context, int flags) {
-		return getData(subj, pred, obj, context, flags);
+	private byte[] toSearchKey(int subj, int pred, int obj, int context) {
+		return toKey(subj, pred, obj, context);
 	}
 
-	private byte[] getSearchMask(int subj, int pred, int obj, int context, int flags) {
-		byte[] mask = new byte[RECORD_LENGTH];
+	private byte[] toSearchMask(int subj, int pred, int obj, int context) {
+		byte[] mask = new byte[KEY_LENGTH];
 
 		if (subj != -1) {
 			ByteArrayUtil.putInt(0xffffffff, mask, SUBJ_IDX);
@@ -763,31 +703,28 @@ class TripleStore implements Closeable {
 		if (context != -1) {
 			ByteArrayUtil.putInt(0xffffffff, mask, CONTEXT_IDX);
 		}
-		mask[FLAG_IDX] = (byte) flags;
 
 		return mask;
 	}
 
-	private byte[] getMinValue(int subj, int pred, int obj, int context) {
-		byte[] minValue = new byte[RECORD_LENGTH];
+	private byte[] getMinKey(int subj, int pred, int obj, int context) {
+		byte[] minValue = new byte[KEY_LENGTH];
 
 		ByteArrayUtil.putInt((subj == -1 ? 0x00000000 : subj), minValue, SUBJ_IDX);
 		ByteArrayUtil.putInt((pred == -1 ? 0x00000000 : pred), minValue, PRED_IDX);
 		ByteArrayUtil.putInt((obj == -1 ? 0x00000000 : obj), minValue, OBJ_IDX);
 		ByteArrayUtil.putInt((context == -1 ? 0x00000000 : context), minValue, CONTEXT_IDX);
-		minValue[FLAG_IDX] = (byte) 0;
 
 		return minValue;
 	}
 
-	private byte[] getMaxValue(int subj, int pred, int obj, int context) {
-		byte[] maxValue = new byte[RECORD_LENGTH];
+	private byte[] getMaxKey(int subj, int pred, int obj, int context) {
+		byte[] maxValue = new byte[KEY_LENGTH];
 
 		ByteArrayUtil.putInt((subj == -1 ? 0xffffffff : subj), maxValue, SUBJ_IDX);
 		ByteArrayUtil.putInt((pred == -1 ? 0xffffffff : pred), maxValue, PRED_IDX);
 		ByteArrayUtil.putInt((obj == -1 ? 0xffffffff : obj), maxValue, OBJ_IDX);
 		ByteArrayUtil.putInt((context == -1 ? 0xffffffff : context), maxValue, CONTEXT_IDX);
-		maxValue[FLAG_IDX] = (byte) 0xff;
 
 		return maxValue;
 	}
@@ -827,22 +764,16 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public byte[] next() throws IOException {
-			byte[] result;
-
-			while ((result = wrappedIter.next()) != null) {
-				byte flags = result[TripleStore.FLAG_IDX];
+		public Record next() throws IOException {
+			Record record;
+			while ((record = wrappedIter.next()) != null) {
+				byte flags = record.val.get(0);
 				boolean explicit = (flags & TripleStore.EXPLICIT_FLAG) != 0;
-				boolean toggled = (flags & TripleStore.TOGGLE_EXPLICIT_FLAG) != 0;
-
-				if (explicit != toggled) {
-					// Statement is either explicit and hasn't been toggled, or vice
-					// versa
+				if (explicit) {
 					break;
 				}
 			}
-
-			return result;
+			return record;
 		}
 
 		@Override
@@ -860,20 +791,18 @@ class TripleStore implements Closeable {
 		}
 
 		@Override
-		public byte[] next() throws IOException {
-			byte[] result;
-
-			while ((result = wrappedIter.next()) != null) {
-				byte flags = result[TripleStore.FLAG_IDX];
+		public Record next() throws IOException {
+			Record record;
+			while ((record = wrappedIter.next()) != null) {
+				byte flags = record.val.get(0);
 				boolean explicit = (flags & TripleStore.EXPLICIT_FLAG) != 0;
-
 				if (!explicit) {
 					// Statement is implicit
 					break;
 				}
 			}
 
-			return result;
+			return record;
 		}
 
 		@Override

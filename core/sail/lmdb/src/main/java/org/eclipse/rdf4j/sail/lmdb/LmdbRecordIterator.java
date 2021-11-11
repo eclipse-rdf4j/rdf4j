@@ -17,6 +17,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Comparator;
 
 import org.lwjgl.PointerBuffer;
@@ -50,6 +51,8 @@ public class LmdbRecordIterator implements RecordIterator {
 
 	private int lastResult;
 
+	private boolean fetchNext = false;
+
 	public LmdbRecordIterator(int dbi, TxnRef txnRef) {
 		this(null, null, null, null, null, dbi, txnRef);
 	}
@@ -77,7 +80,11 @@ public class LmdbRecordIterator implements RecordIterator {
 	}
 
 	@Override
-	public byte[] next() throws IOException {
+	public Record next() throws IOException {
+		if (fetchNext) {
+			lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+			fetchNext = false;
+		}
 		while (lastResult == 0) {
 			if (maxKey != null && cmp.compare(keyData.mv_data(), maxKey) > 0) {
 				lastResult = MDB_NOTFOUND;
@@ -86,11 +93,13 @@ public class LmdbRecordIterator implements RecordIterator {
 				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 			} else {
 				// Matching value found
-				byte[] bytes = new byte[keyData.mv_data().remaining()];
-				keyData.mv_data().get(bytes);
+				Record record = new Record(keyData.mv_data(), valueData.mv_data());
+				record.key.order(ByteOrder.BIG_ENDIAN);
+				record.val.order(ByteOrder.BIG_ENDIAN);
+
 				// fetch next value
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-				return bytes;
+				fetchNext = true;
+				return record;
 			}
 		}
 		close();
@@ -118,7 +127,6 @@ public class LmdbRecordIterator implements RecordIterator {
 				return false;
 			}
 		}
-
 		return true;
 	}
 }

@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -50,23 +51,25 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 	@Override
 	public Statement getNextElement() throws SailException {
 		try {
-			byte[] nextValue = recordIt.next();
+			Record nextRecord = recordIt.next();
 
-			if (nextValue == null) {
+			if (nextRecord == null) {
 				return null;
 			}
 
-			int subjID = ByteArrayUtil.getInt(nextValue, TripleStore.SUBJ_IDX);
+			ByteBuffer key = nextRecord.key;
+
+			int subjID = key.getInt(TripleStore.SUBJ_IDX);
 			Resource subj = (Resource) valueStore.getValue(subjID);
 
-			int predID = ByteArrayUtil.getInt(nextValue, TripleStore.PRED_IDX);
+			int predID = key.getInt(TripleStore.PRED_IDX);
 			IRI pred = (IRI) valueStore.getValue(predID);
 
-			int objID = ByteArrayUtil.getInt(nextValue, TripleStore.OBJ_IDX);
+			int objID = key.getInt(TripleStore.OBJ_IDX);
 			Value obj = valueStore.getValue(objID);
 
 			Resource context = null;
-			int contextID = ByteArrayUtil.getInt(nextValue, TripleStore.CONTEXT_IDX);
+			int contextID = key.getInt(TripleStore.CONTEXT_IDX);
 			if (contextID != 0) {
 				context = (Resource) valueStore.getValue(contextID);
 			}
