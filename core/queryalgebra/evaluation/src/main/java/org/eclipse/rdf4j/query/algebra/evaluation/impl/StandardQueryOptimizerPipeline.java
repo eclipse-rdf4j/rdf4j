@@ -55,6 +55,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new SameTermFilterOptimizer(),
 				new UnionScopeChangeOptimizer(),
 				new QueryModelNormalizer(),
+				new ProjectionRemovealOptimizer(),
 				new QueryJoinOptimizer(evaluationStatistics),
 				new IterativeEvaluationOptimizer(),
 				new FilterOptimizer(),
