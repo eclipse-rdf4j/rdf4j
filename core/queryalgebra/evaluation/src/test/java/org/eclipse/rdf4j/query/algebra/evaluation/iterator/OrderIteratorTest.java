@@ -36,9 +36,8 @@ public class OrderIteratorTest extends TestCase {
 
 		int removeCount = 0;
 
-		@Override
-		public void setIterator(Iterator<? extends BindingSet> iter) {
-			super.setIterator(iter);
+		public IterationStub(Iterator<BindingSet> iterator) {
+			super(iterator);
 		}
 
 		@Override
@@ -185,8 +184,7 @@ public class OrderIteratorTest extends TestCase {
 	protected void setUp() throws Exception {
 		list = Arrays.asList(b3, b5, b2, b1, b4, b2);
 		cmp = new SizeComparator();
-		iteration = new IterationStub();
-		iteration.setIterator(list.iterator());
+		iteration = new IterationStub(list.iterator());
 		order = new OrderIterator(iteration, cmp);
 	}
 

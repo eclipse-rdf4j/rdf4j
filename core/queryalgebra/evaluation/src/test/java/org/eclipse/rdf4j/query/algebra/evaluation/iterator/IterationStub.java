@@ -28,11 +28,6 @@ class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluati
 	int removeCount = 0;
 
 	@Override
-	public void setIterator(Iterator<? extends BindingSet> iter) {
-		super.setIterator(iter);
-	}
-
-	@Override
 	public boolean hasNext() throws QueryEvaluationException {
 		hasNextCount++;
 		return super.hasNext();

@@ -11,18 +11,14 @@ import org.eclipse.rdf4j.common.lang.service.ServiceRegistry;
 
 public class TupleFunctionRegistry extends ServiceRegistry<String, TupleFunction> {
 
-	private static TupleFunctionRegistry defaultRegistry;
+	private final static TupleFunctionRegistry defaultRegistry = new TupleFunctionRegistry();
 
 	/**
 	 * Gets the default TupleFunctionRegistry.
 	 *
 	 * @return The default registry.
 	 */
-	public static synchronized TupleFunctionRegistry getInstance() {
-		if (defaultRegistry == null) {
-			defaultRegistry = new TupleFunctionRegistry();
-		}
-
+	public static TupleFunctionRegistry getInstance() {
 		return defaultRegistry;
 	}
 

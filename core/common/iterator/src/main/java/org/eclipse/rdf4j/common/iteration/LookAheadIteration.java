@@ -21,7 +21,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	 * Variables *
 	 *-----------*/
 
-	private volatile E nextElement;
+	private E nextElement;
 
 	/*--------------*
 	 * Constructors *
@@ -46,11 +46,8 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 		if (isClosed()) {
 			return false;
 		}
-		boolean result = (lookAhead() != null);
-		if (!result) {
-			close();
-		}
-		return result;
+
+		return lookAhead() != null;
 	}
 
 	@Override
@@ -64,7 +61,6 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 			nextElement = null;
 			return result;
 		} else {
-			close();
 			throw new NoSuchElementException();
 		}
 	}
@@ -76,15 +72,14 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	 * @throws X If there is an issue getting the next element or closing the iteration.
 	 */
 	private E lookAhead() throws X {
-		E checkElement = nextElement;
-		if (checkElement == null && !isClosed()) {
-			checkElement = nextElement = getNextElement();
+		if (nextElement == null) {
+			nextElement = getNextElement();
 
-			if (checkElement == null) {
+			if (nextElement == null) {
 				close();
 			}
 		}
-		return checkElement;
+		return nextElement;
 	}
 
 	/**

@@ -32,7 +32,7 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 	/**
 	 * The list of statements for which this MemLiteral is the object.
 	 */
-	transient private volatile MemStatementList objectStatements;
+	transient private final MemStatementList objectStatements = new MemStatementList();
 
 	/*--------------*
 	 * Constructors *
@@ -84,32 +84,25 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 
 	@Override
 	public boolean hasStatements() {
-		return objectStatements != null;
+		return !objectStatements.isEmpty();
 	}
 
 	@Override
 	public MemStatementList getObjectStatementList() {
-		if (objectStatements == null) {
-			return EMPTY_LIST;
-		} else {
-			return objectStatements;
-		}
+
+		return objectStatements;
+
 	}
 
 	@Override
 	public int getObjectStatementCount() {
-		if (objectStatements == null) {
-			return 0;
-		} else {
-			return objectStatements.size();
-		}
+
+		return objectStatements.size();
+
 	}
 
 	@Override
 	public void addObjectStatement(MemStatement st) {
-		if (objectStatements == null) {
-			objectStatements = new MemStatementList(1);
-		}
 
 		objectStatements.add(st);
 	}
@@ -118,19 +111,11 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 	public void removeObjectStatement(MemStatement st) {
 		objectStatements.remove(st);
 
-		if (objectStatements.isEmpty()) {
-			objectStatements = null;
-		}
 	}
 
 	@Override
 	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) {
-		if (objectStatements != null) {
-			objectStatements.cleanSnapshots(currentSnapshot);
+		objectStatements.cleanSnapshots(currentSnapshot);
 
-			if (objectStatements.isEmpty()) {
-				objectStatements = null;
-			}
-		}
 	}
 }
