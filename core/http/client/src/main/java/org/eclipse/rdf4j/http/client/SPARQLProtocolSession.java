@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
 import java.io.Writer;
+import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
@@ -351,16 +352,18 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 *------------------*/
 
 	public TupleQueryResult sendTupleQuery(QueryLanguage ql, String query, Dataset dataset, boolean includeInferred,
+			WeakReference<?> callerRef,
 			Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
 			UnauthorizedException, QueryInterruptedException {
-		return sendTupleQuery(ql, query, null, dataset, includeInferred, 0, bindings);
+		return sendTupleQuery(ql, query, null, dataset, includeInferred, 0, callerRef, bindings);
 	}
 
 	public TupleQueryResult sendTupleQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset,
-			boolean includeInferred, int maxQueryTime, Binding... bindings) throws IOException, RepositoryException,
+			boolean includeInferred, int maxQueryTime, WeakReference<?> callerRef, Binding... bindings)
+			throws IOException, RepositoryException,
 			MalformedQueryException, UnauthorizedException, QueryInterruptedException {
 		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
-		return getBackgroundTupleQueryResult(method);
+		return getBackgroundTupleQueryResult(method, callerRef);
 	}
 
 	public void sendTupleQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset, boolean includeInferred,
@@ -392,18 +395,20 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	}
 
 	public GraphQueryResult sendGraphQuery(QueryLanguage ql, String query, Dataset dataset, boolean includeInferred,
+			WeakReference<?> callerRef,
 			Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
 			UnauthorizedException, QueryInterruptedException {
-		return sendGraphQuery(ql, query, null, dataset, includeInferred, 0, bindings);
+		return sendGraphQuery(ql, query, null, dataset, includeInferred, 0, callerRef, bindings);
 	}
 
 	public GraphQueryResult sendGraphQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset,
-			boolean includeInferred, int maxQueryTime, Binding... bindings) throws IOException, RepositoryException,
+			boolean includeInferred, int maxQueryTime, WeakReference<?> callerRef, Binding... bindings)
+			throws IOException, RepositoryException,
 			MalformedQueryException, UnauthorizedException, QueryInterruptedException {
 		try {
 			HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,
 					bindings);
-			return getRDFBackground(method, false);
+			return getRDFBackground(method, false, callerRef);
 		} catch (RDFHandlerException e) {
 			// Found a bug in TupleQueryResultBuilder?
 			throw new RepositoryException(e);
@@ -634,7 +639,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Parse the response in a background thread. HTTP connections are dealt with in the {@link BackgroundTupleResult}
 	 * or (in the error-case) in this method.
 	 */
-	protected TupleQueryResult getBackgroundTupleQueryResult(HttpUriRequest method)
+	protected TupleQueryResult getBackgroundTupleQueryResult(HttpUriRequest method, WeakReference<?> callerRef)
 			throws RepositoryException, QueryInterruptedException, MalformedQueryException, IOException {
 
 		boolean submitted = false;
@@ -656,7 +661,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 					.orElseThrow(() -> new RepositoryException(
 							"Server responded with an unsupported file format: " + mimeType));
 			TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
-			tRes = background.parse(parser, response.getEntity().getContent());
+			tRes = background.parse(parser, response.getEntity().getContent(), callerRef);
 			submitted = true;
 			return tRes;
 		} finally {
@@ -764,7 +769,8 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Parse the response in a background thread. HTTP connections are dealt with in the {@link BackgroundGraphResult}
 	 * or (in the error-case) in this method.
 	 */
-	protected GraphQueryResult getRDFBackground(HttpUriRequest method, boolean requireContext)
+	protected GraphQueryResult getRDFBackground(HttpUriRequest method, boolean requireContext,
+			WeakReference<?> callerRef)
 			throws IOException, RDFHandlerException, RepositoryException, MalformedQueryException,
 			UnauthorizedException, QueryInterruptedException {
 
@@ -817,7 +823,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			}
 
 			String baseURI = method.getURI().toASCIIString();
-			gRes = background.parse(parser, entity.getContent(), charset, baseURI);
+			gRes = background.parse(parser, entity.getContent(), charset, baseURI, callerRef);
 			submitted = true;
 			return gRes;
 		} finally {

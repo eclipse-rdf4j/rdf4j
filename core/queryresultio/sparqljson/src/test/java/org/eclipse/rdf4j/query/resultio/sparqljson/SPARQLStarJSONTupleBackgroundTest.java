@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.resultio.sparqljson;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.ref.WeakReference;
 
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
@@ -41,6 +42,6 @@ public class SPARQLStarJSONTupleBackgroundTest extends AbstractQueryResultIOTupl
 	@Override
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in) throws IOException,
 			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
-		return QueryResultIO.parseTupleBackground(in, format);
+		return QueryResultIO.parseTupleBackground(in, format, new WeakReference<>(this));
 	}
 }

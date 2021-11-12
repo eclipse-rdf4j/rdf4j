@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.resultio;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.ref.WeakReference;
 import java.util.Optional;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -298,9 +299,10 @@ public class QueryResultIO {
 	 * @throws UnsupportedQueryResultFormatException
 	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
 	 */
-	public static TupleQueryResult parseTuple(InputStream in, QueryResultFormat format) throws IOException,
+	public static TupleQueryResult parseTuple(InputStream in, QueryResultFormat format,
+			WeakReference<?> callerReference) throws IOException,
 			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
-		return parseTupleInternal(in, format, false);
+		return parseTupleInternal(in, format, false, callerReference);
 	}
 
 	/**
@@ -319,18 +321,21 @@ public class QueryResultIO {
 	 * @throws UnsupportedQueryResultFormatException
 	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
 	 */
-	public static TupleQueryResult parseTupleBackground(InputStream in, QueryResultFormat format) throws IOException,
+	public static TupleQueryResult parseTupleBackground(InputStream in, QueryResultFormat format,
+			WeakReference<?> callerReference) throws IOException,
 			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
-		return parseTupleInternal(in, format, true);
+		return parseTupleInternal(in, format, true, callerReference);
 	}
 
 	private static TupleQueryResult parseTupleInternal(InputStream in, QueryResultFormat format,
-			boolean parseOnBackgroundThread) throws IOException, QueryResultParseException,
+			boolean parseOnBackgroundThread, WeakReference<?> callerReference)
+			throws IOException, QueryResultParseException,
 			TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
 		TupleQueryResultParser parser = createTupleParser(format);
 
 		if (parseOnBackgroundThread) {
-			BackgroundTupleResult result = new BackgroundTupleResult(new QueueCursor<>(new LinkedBlockingQueue<>(1)),
+			BackgroundTupleResult result = new BackgroundTupleResult(
+					new QueueCursor<>(new LinkedBlockingQueue<>(1), callerReference),
 					parser, in);
 			// Start a new thread in the background, which will be completed
 			// when the BackgroundTupleResult is either closed or interrupted

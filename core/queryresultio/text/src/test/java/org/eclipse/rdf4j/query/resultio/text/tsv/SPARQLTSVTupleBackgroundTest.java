@@ -14,6 +14,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.lang.ref.WeakReference;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
@@ -56,7 +57,7 @@ public class SPARQLTSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 	@Override
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in) throws IOException,
 			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
-		return QueryResultIO.parseTupleBackground(in, format);
+		return QueryResultIO.parseTupleBackground(in, format, new WeakReference<>(this));
 	}
 
 	@Test

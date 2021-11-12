@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
+import java.lang.ref.WeakReference;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -45,7 +46,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 
 	/* Variables */
 	protected volatile Thread evaluationThread;
-	protected FedXQueueCursor<T> rightQueue = FedXQueueCursor.create(1024);
+	protected FedXQueueCursor<T> rightQueue = FedXQueueCursor.create(1024, new WeakReference<>(this));
 	protected volatile CloseableIteration<T, QueryEvaluationException> rightIter;
 	protected volatile boolean finished = false;
 

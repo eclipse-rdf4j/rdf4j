@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query;
 
 import java.io.InputStream;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -214,9 +215,10 @@ public class QueryResults extends Iterations {
 	 * @param format  The {@link RDFFormat} of the RDF document.
 	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
 	 */
-	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format)
+	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format,
+			WeakReference<?> callerReference)
 			throws UnsupportedRDFormatException {
-		return parseGraphBackground(in, baseURI, Rio.createParser(format));
+		return parseGraphBackground(in, baseURI, Rio.createParser(format), callerReference);
 	}
 
 	/**
@@ -230,9 +232,11 @@ public class QueryResults extends Iterations {
 	 * @param parser  The {@link RDFParser}.
 	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
 	 */
-	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser) {
+	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser,
+			WeakReference<?> callerReference) {
 		RDFFormat format = parser.getRDFFormat();
-		BackgroundGraphResult result = new BackgroundGraphResult(new QueueCursor<>(new LinkedBlockingQueue<>(1)),
+		BackgroundGraphResult result = new BackgroundGraphResult(
+				new QueueCursor<>(new LinkedBlockingQueue<>(1), callerReference),
 				parser, in, format.getCharset(), baseURI);
 		boolean allGood = false;
 		try {

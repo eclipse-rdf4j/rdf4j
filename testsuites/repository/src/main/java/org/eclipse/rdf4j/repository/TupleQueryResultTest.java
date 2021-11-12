@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -17,6 +18,7 @@ import java.io.InputStream;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -157,6 +159,22 @@ public abstract class TupleQueryResultTest {
 		TupleQueryResult result = con.prepareTupleQuery(emptyResultQuery).evaluate();
 
 		try {
+			assertFalse("Query result should be empty", result.hasNext());
+		} finally {
+			result.close();
+		}
+	}
+
+	@Test
+	public void testCountMatchesAllSelect() throws Exception {
+		TupleQueryResult result = con.prepareTupleQuery("SELECT * WHERE {?s ?p ?o}").evaluate();
+		long size = con.size();
+		try {
+			for (int i = 0; i < size; i++) {
+				assertTrue(result.hasNext());
+				BindingSet next = result.next();
+				assertNotNull(next);
+			}
 			assertFalse("Query result should be empty", result.hasNext());
 		} finally {
 			result.close();
