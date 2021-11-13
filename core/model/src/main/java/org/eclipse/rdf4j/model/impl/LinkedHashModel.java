@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.PatternIterator;
 
 /**
- * Hash table based implementation of the <tt>{@link Model}</tt> interface.
+ * Hash table based implementation of the <var>{@link Model}</var> interface.
  * <p>
  * This implementation provides constant-time performance for filters using a single term, assuming the hash function
  * disperses the elements properly among the buckets. Each term is indexed using a {@link HashMap}. When multiple terms

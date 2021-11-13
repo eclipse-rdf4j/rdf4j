@@ -686,8 +686,8 @@ public abstract class SPARQLQueryTest extends TestCase {
 	protected static String getManifestName(Repository manifestRep, RepositoryConnection con, String manifestFileURL)
 			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
 		// Try to extract suite name from manifest file
-		TupleQuery manifestNameQuery = con.prepareTupleQuery(QueryLanguage.SERQL,
-				"SELECT ManifestName FROM {ManifestURL} rdfs:label {ManifestName}");
+		TupleQuery manifestNameQuery = con
+				.prepareTupleQuery("SELECT ?ManifestName WHERE { ?ManifestURL rdfs:label ?ManifestName .}");
 		manifestNameQuery.setBinding("ManifestURL", manifestRep.getValueFactory().createIRI(manifestFileURL));
 		TupleQueryResult manifestNames = manifestNameQuery.evaluate();
 		try {

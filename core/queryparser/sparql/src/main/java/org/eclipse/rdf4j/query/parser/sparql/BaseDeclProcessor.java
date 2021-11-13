@@ -35,12 +35,12 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 public class BaseDeclProcessor {
 
 	/**
-	 * Resolves relative URIs in the supplied query model using either the specified <tt>externalBaseURI</tt> or, if
-	 * this parameter is <tt>null</tt>, the base URI specified in the query model itself.
+	 * Resolves relative URIs in the supplied query model using either the specified <var>externalBaseURI</var> or, if
+	 * this parameter is <var>null</var>, the base URI specified in the query model itself.
 	 *
 	 * @param qc              The query model to resolve relative URIs in.
-	 * @param externalBaseURI The external base URI to use for resolving relative URIs, or <tt>null</tt> if the base URI
-	 *                        that is specified in the query model should be used.
+	 * @param externalBaseURI The external base URI to use for resolving relative URIs, or <var>null</var> if the base
+	 *                        URI that is specified in the query model should be used.
 	 * @throws IllegalArgumentException If an external base URI is specified that is not an absolute URI.
 	 * @throws MalformedQueryException  If the base URI specified in the query model is not an absolute URI.
 	 */

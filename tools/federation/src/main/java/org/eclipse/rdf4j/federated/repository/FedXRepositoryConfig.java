@@ -75,7 +75,7 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	/**
-	 * FedX schema namespace (<tt>http://rdf4j.org/config/federation#</tt>).
+	 * FedX schema namespace (<var>http://rdf4j.org/config/federation#</var>).
 	 */
 	public static final String NAMESPACE = FEDX.NAMESPACE;
 

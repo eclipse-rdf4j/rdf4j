@@ -61,7 +61,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Creates a new <tt>major.minor</tt> version number, e.g.<tt>1.0</tt>.
+	 * Creates a new <var>major.minor</var> version number, e.g.<var>1.0</var>.
 	 *
 	 * @param major major number
 	 * @param minor minor number
@@ -71,7 +71,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patch</tt> version number, e.g.<tt>1.0.1</tt>.
+	 * Creates a new <var>major.minor.patch</var> version number, e.g.<var>1.0.1</var>.
 	 *
 	 * @param major major number
 	 * @param minor minor number
@@ -82,7 +82,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Creates a new <tt>major.minor-modifier</tt> version number, e.g.<tt>1.0-beta1</tt>.
+	 * Creates a new <var>major.minor-modifier</var> version number, e.g.<var>1.0-beta1</var>.
 	 *
 	 * @param major    major number
 	 * @param minor    minor number
@@ -93,7 +93,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patch-modifier</tt> version number, e.g.<tt>1.0.1-SNAPSHOT</tt>.
+	 * Creates a new <var>major.minor.patch-modifier</var> version number, e.g.<var>1.0.1-SNAPSHOT</var>.
 	 *
 	 * @param major    major number
 	 * @param minor    minor number
@@ -105,7 +105,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	}
 
 	/**
-	 * Creates a new <tt>major.minor.patchMmilestone-modifier</tt> version number, e.g.<tt>1.0.1M1-SNAPSHOT</tt>.
+	 * Creates a new <var>major.minor.patchMmilestone-modifier</var> version number, e.g.<var>1.0.1M1-SNAPSHOT</var>.
 	 *
 	 * @param major     major number
 	 * @param minor     minor number
@@ -297,8 +297,8 @@ public class AppVersion implements Comparable<AppVersion> {
 	 * considered to be the "final" versions and come after other versions with a modifier or milestone.
 	 *
 	 * @param other
-	 * @return <tt>0</tt> if both versions are equal, a negative number if this version is older than <tt>other</tt>, or
-	 *         a positive number otherwise.
+	 * @return <var>0</var> if both versions are equal, a negative number if this version is older than
+	 *         <var>other</var>, or a positive number otherwise.
 	 */
 	@Override
 	public int compareTo(AppVersion other) {

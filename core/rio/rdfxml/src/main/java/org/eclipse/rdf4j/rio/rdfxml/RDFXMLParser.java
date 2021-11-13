@@ -55,7 +55,7 @@ import org.xml.sax.XMLReader;
  * <li>Set the RDFHandler.
  * <li>Optionally, set the ParseErrorListener and/or ParseLocationListener.
  * <li>Optionally, specify whether the parser should verify the data it parses and whether it should stop immediately
- * when it finds an error in the data (both default to <tt>true</tt>).
+ * when it finds an error in the data (both default to <var>true</var>).
  * <li>Call the parse method.
  * </ul>
  * Example code:
@@ -106,7 +106,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	private SAXFilter saxFilter;
 
 	/**
-	 * The base URI of the document. This variable is set when <tt>parse(inputStream, baseURI)</tt> is called and will
+	 * The base URI of the document. This variable is set when <var>parse(inputStream, baseURI)</var> is called and will
 	 * not be changed during parsing.
 	 */
 	private String documentURI;
@@ -141,7 +141,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	}
 
 	/**
-	 * Creates a new RDFXMLParser that will use the supplied <tt>ValueFactory</tt> to create RDF model objects.
+	 * Creates a new RDFXMLParser that will use the supplied <var>ValueFactory</var> to create RDF model objects.
 	 *
 	 * @param valueFactory A ValueFactory.
 	 */
@@ -163,8 +163,8 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	/**
 	 * Sets the parser in a mode to parse stand-alone RDF documents. In stand-alone RDF documents, the enclosing
-	 * <tt>rdf:RDF</tt> root element is optional if this root element contains just one element (e.g.
-	 * <tt>rdf:Description</tt>.
+	 * <var>rdf:RDF</var> root element is optional if this root element contains just one element (e.g.
+	 * <var>rdf:Description</var>.
 	 */
 	public void setParseStandAloneDocuments(boolean standAloneDocs) {
 		getParserConfig().set(XMLParserSettings.PARSE_STANDALONE_DOCUMENTS, standAloneDocs);
@@ -1065,7 +1065,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 		private IRI datatype;
 
 		/**
-		 * Flag indicating whether this PropertyElement has an attribute <tt>rdf:parseType="Collection"</tt>.
+		 * Flag indicating whether this PropertyElement has an attribute <var>rdf:parseType="Collection"</var>.
 		 */
 		private boolean parseCollection = false;
 

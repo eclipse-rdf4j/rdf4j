@@ -65,7 +65,7 @@ public class ZeroLengthPathIterationTest {
 	/**
 	 * Verify that evaluation of a {@link ZeroLengthPathIteration} does not discard input bindings.
 	 *
-	 * @see https://github.com/eclipse/rdf4j/issues/689
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/689">GH-689</a>
 	 */
 	@Test
 	public void testRetainInputBindings() {

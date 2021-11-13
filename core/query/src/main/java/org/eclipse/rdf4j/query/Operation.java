@@ -11,8 +11,8 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * An operation (e.g. a query or an update) on a repository that can be formulated in one of the supported query
- * languages (for example SeRQL or SPARQL). It allows one to predefine bindings in the operation to be able to reuse the
- * same operation with different bindings.
+ * languages (for example SPARQL). It allows one to predefine bindings in the operation to be able to reuse the same
+ * operation with different bindings.
  *
  * @author Jeen
  */
@@ -70,7 +70,7 @@ public interface Operation {
 	/**
 	 * Returns whether or not this operation will return inferred statements (if any are present in the repository).
 	 *
-	 * @return <tt>true</tt> if inferred statements will be returned, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if inferred statements will be returned, <var>false</var> otherwise.
 	 */
 	boolean getIncludeInferred();
 

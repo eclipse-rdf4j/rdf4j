@@ -197,7 +197,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each other
-	 * using operators like <tt>&lt;</tt> and <tt>&gt;</tt>.
+	 * using operators like <var>&lt;</var> and <var>&gt;</var>.
 	 *
 	 * @param datatype
 	 * @return true if the datatype is ordered
@@ -293,7 +293,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid decimal or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDecimal(String value) {
 		try {
@@ -308,7 +308,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid integer or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidInteger(String value) {
 		try {
@@ -323,7 +323,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid negative integer or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidNegativeInteger(String value) {
 		try {
@@ -338,7 +338,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid non-positive integer or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidNonPositiveInteger(String value) {
 		try {
@@ -353,7 +353,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid non-negative integer or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidNonNegativeInteger(String value) {
 		try {
@@ -368,7 +368,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid positive integer or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidPositiveInteger(String value) {
 		try {
@@ -383,7 +383,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid long or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidLong(String value) {
 		try {
@@ -398,7 +398,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid integer or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidInt(String value) {
 		try {
@@ -413,7 +413,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid short or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidShort(String value) {
 		try {
@@ -428,7 +428,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid byte or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidByte(String value) {
 		try {
@@ -443,7 +443,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid unsigned long or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidUnsignedLong(String value) {
 		try {
@@ -458,7 +458,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid unsigned int.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidUnsignedInt(String value) {
 		try {
@@ -473,7 +473,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid unsigned short or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidUnsignedShort(String value) {
 		try {
@@ -488,7 +488,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid unsigned byte or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidUnsignedByte(String value) {
 		try {
@@ -503,7 +503,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid float or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidFloat(String value) {
 		try {
@@ -518,7 +518,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid double or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDouble(String value) {
 		try {
@@ -533,7 +533,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid boolean or not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidBoolean(String value) {
 		try {
@@ -548,7 +548,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid duration.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDuration(String value) {
 		// voodoo regex for checking valid xsd:duration string. See
@@ -560,7 +560,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid day-time duration ot not.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDayTimeDuration(String value) {
 		return value.length() > 1 && P_DAYTIMEDURATION.matcher(value).matches();
@@ -570,7 +570,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid year-month duration.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidYearMonthDuration(String value) {
 		return value.length() > 1 && P_YEARMONTHDURATION.matcher(value).matches();
@@ -580,7 +580,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid date-time.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDateTime(String value) {
 		try {
@@ -596,7 +596,7 @@ public class XMLDatatypeUtil {
 	 * Verifies if the supplied lexical value is a valid date-timestamp.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDateTimeStamp(String value) {
 		try {
@@ -612,7 +612,7 @@ public class XMLDatatypeUtil {
 	 * Determines if the supplied value is a valid xsd:date string.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDate(String value) {
 		return P_DATE.matcher(value).matches() ? isValidCalendarValue(value) : false;
@@ -622,7 +622,7 @@ public class XMLDatatypeUtil {
 	 * Determines if the supplied value is a valid xsd:time string.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidTime(String value) {
 		return P_TIME.matcher(value).matches() ? isValidCalendarValue(value) : false;
@@ -632,7 +632,7 @@ public class XMLDatatypeUtil {
 	 * Determines if the supplied value is a valid xsd:gDay string.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGDay(String value) {
 		return P_GDAY.matcher(value).matches() ? isValidCalendarValue(value) : false;
@@ -642,7 +642,7 @@ public class XMLDatatypeUtil {
 	 * Determines if the supplied value is a valid xsd:gMonth string.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGMonth(String value) {
 		return P_GMONTH.matcher(value).matches() ? isValidCalendarValue(value) : false;
@@ -652,7 +652,7 @@ public class XMLDatatypeUtil {
 	 * Determines if the supplied value is a valid xsd:gMonthDay string.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGMonthDay(String value) {
 		return P_GMONTHDAY.matcher(value).matches() ? isValidCalendarValue(value) : false;
@@ -662,7 +662,7 @@ public class XMLDatatypeUtil {
 	 * Determines if the supplied value is a valid xsd:gYear string.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGYear(String value) {
 		return P_GYEAR.matcher(value).matches() ? isValidCalendarValue(value) : false;
@@ -672,7 +672,7 @@ public class XMLDatatypeUtil {
 	 * Determines if the supplied value is a valid xsd:gYearMonth string.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGYearMonth(String value) {
 		return P_GYEARMONTH.matcher(value).matches() ? isValidCalendarValue(value) : false;
@@ -683,7 +683,7 @@ public class XMLDatatypeUtil {
 	 * in the supplied string itself. It does not validate that the prefix is a declared and in-scope namespace prefix.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if valid, <tt>false</tt> otherwise
+	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidQName(String value) {
 
@@ -732,7 +732,7 @@ public class XMLDatatypeUtil {
 	 * in the IETF Standards Track.
 	 *
 	 * @param value
-	 * @return <tt>true</tt> if a valid IRI, <tt>false</tt> otherwise
+	 * @return <var>true</var> if a valid IRI, <var>false</var> otherwise
 	 */
 	public static boolean isValidAnyURI(String value) {
 		try {
@@ -835,9 +835,9 @@ public class XMLDatatypeUtil {
 	}
 
 	/**
-	 * Normalizes a boolean value to its canonical representation. More specifically, the values <tt>1</tt> and
-	 * <tt>0</tt> will be normalized to the canonical values <tt>true</tt> and <tt>false</tt>, respectively. Supplied
-	 * canonical values will remain as is.
+	 * Normalizes a boolean value to its canonical representation. More specifically, the values <var>1</var> and
+	 * <var>0</var> will be normalized to the canonical values <var>true</var> and <var>false</var>, respectively.
+	 * Supplied canonical values will remain as is.
 	 *
 	 * @param value The boolean value to normalize.
 	 * @return The normalized value.
@@ -858,12 +858,12 @@ public class XMLDatatypeUtil {
 	}
 
 	/**
-	 * Normalizes a decimal to its canonical representation. For example: <tt>120</tt> becomes <tt>120.0</tt>,
-	 * <tt>+.3</tt> becomes <tt>0.3</tt>, <tt>00012.45000</tt> becomes <tt>12.45</tt> and <tt>-.0</tt> becomes
-	 * <tt>0.0</tt>.
+	 * Normalizes a decimal to its canonical representation. For example: <var>120</var> becomes <var>120.0</var>,
+	 * <var>+.3</var> becomes <var>0.3</var>, <var>00012.45000</var> becomes <var>12.45</var> and <var>-.0</var> becomes
+	 * <var>0.0</var>.
 	 *
 	 * @param decimal The decimal to normalize.
-	 * @return The canonical representation of <tt>decimal</tt>.
+	 * @return The canonical representation of <var>decimal</var>.
 	 * @throws IllegalArgumentException If one of the supplied strings is not a legal decimal.
 	 */
 	public static String normalizeDecimal(String decimal) {
@@ -961,11 +961,11 @@ public class XMLDatatypeUtil {
 	}
 
 	/**
-	 * Normalizes an integer to its canonical representation. For example: <tt>+120</tt> becomes <tt>120</tt> and
-	 * <tt>00012</tt> becomes <tt>12</tt>.
+	 * Normalizes an integer to its canonical representation. For example: <var>+120</var> becomes <var>120</var> and
+	 * <var>00012</var> becomes <var>12</var>.
 	 *
 	 * @param value The value to normalize.
-	 * @return The canonical representation of <tt>value</tt>.
+	 * @return The canonical representation of <var>value</var>.
 	 * @throws IllegalArgumentException If the supplied value is not a legal integer.
 	 */
 	public static String normalizeInteger(String value) {
@@ -1125,7 +1125,7 @@ public class XMLDatatypeUtil {
 	 * Normalizes a float to its canonical representation.
 	 *
 	 * @param value The value to normalize.
-	 * @return The canonical representation of <tt>value</tt>.
+	 * @return The canonical representation of <var>value</var>.
 	 * @throws IllegalArgumentException If the supplied value is not a legal float.
 	 */
 	public static String normalizeFloat(String value) {
@@ -1136,7 +1136,7 @@ public class XMLDatatypeUtil {
 	 * Normalizes a double to its canonical representation.
 	 *
 	 * @param value The value to normalize.
-	 * @return The canonical representation of <tt>value</tt>.
+	 * @return The canonical representation of <var>value</var>.
 	 * @throws IllegalArgumentException If the supplied value is not a legal double.
 	 */
 	public static String normalizeDouble(String value) {
@@ -1147,7 +1147,7 @@ public class XMLDatatypeUtil {
 	 * Normalizes a floating point number to its canonical representation.
 	 *
 	 * @param value The value to normalize.
-	 * @return The canonical representation of <tt>value</tt>.
+	 * @return The canonical representation of <var>value</var>.
 	 * @throws IllegalArgumentException If the supplied value is not a legal floating point number.
 	 */
 	public static String normalizeFPNumber(String value) {
@@ -1162,7 +1162,7 @@ public class XMLDatatypeUtil {
 	 * @param maxMantissa A normalized decimal indicating the highest value that the mantissa may have.
 	 * @param minExponent A normalized integer indicating the lowest value that the exponent may have.
 	 * @param maxExponent A normalized integer indicating the highest value that the exponent may have.
-	 * @return The canonical representation of <tt>value</tt>.
+	 * @return The canonical representation of <var>value</var>.
 	 * @throws IllegalArgumentException If the supplied value is not a legal floating point lexical value.
 	 */
 	private static String normalizeFPNumber(String value, String minMantissa, String maxMantissa, String minExponent,
@@ -1323,7 +1323,7 @@ public class XMLDatatypeUtil {
 
 	/**
 	 * Replaces all occurences of #x9 (tab), #xA (line feed) and #xD (carriage return) with #x20 (space), as specified
-	 * for whiteSpace facet <tt>replace</tt>.
+	 * for whiteSpace facet <var>replace</var>.
 	 */
 	// private static String replaceWhiteSpace(String s) {
 	// s = StringUtil.gsub("\t", " ", s);
@@ -1335,7 +1335,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Replaces all contiguous sequences of #x9 (tab), #xA (line feed) and #xD (carriage return) with a single #x20
 	 * (space) character, and removes any leading and trailing whitespace characters, as specified for whiteSpace facet
-	 * <tt>collapse</tt>.
+	 * <var>collapse</var>.
 	 *
 	 * @param s
 	 * @return new string
@@ -1405,8 +1405,8 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param dec1
 	 * @param dec2
-	 * @return A negative number if <tt>dec1</tt> is smaller than <tt>dec2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>dec1</tt> is larger than <tt>dec2</tt>.
+	 * @return A negative number if <var>dec1</var> is smaller than <var>dec2</var>, <var>0</var> if they are equal, or
+	 *         positive (&gt;0) if <var>dec1</var> is larger than <var>dec2</var>.
 	 * @throws IllegalArgumentException If one of the supplied strings is not a legal decimal.
 	 */
 	public static int compareDecimals(String dec1, String dec2) {
@@ -1421,9 +1421,9 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param dec1
 	 * @param dec2
-	 * @return A negative number if <tt>dec1</tt> is smaller than <tt>dec2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>dec1</tt> is larger than <tt>dec2</tt>. The result is undefined when one or both
-	 *         of the arguments is not a canonical decimal.
+	 * @return A negative number if <var>dec1</var> is smaller than <var>dec2</var>, <var>0</var> if they are equal, or
+	 *         positive (&gt;0) if <var>dec1</var> is larger than <var>dec2</var>. The result is undefined when one or
+	 *         both of the arguments is not a canonical decimal.
 	 * @throws IllegalArgumentException If one of the supplied strings is not a legal decimal.
 	 */
 	public static int compareCanonicalDecimals(String dec1, String dec2) {
@@ -1481,8 +1481,8 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param int1
 	 * @param int2
-	 * @return A negative number if <tt>int1</tt> is smaller than <tt>int2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>int1</tt> is larger than <tt>int2</tt>.
+	 * @return A negative number if <var>int1</var> is smaller than <var>int2</var>, <var>0</var> if they are equal, or
+	 *         positive (&gt;0) if <var>int1</var> is larger than <var>int2</var>.
 	 * @throws IllegalArgumentException If one of the supplied strings is not a legal integer.
 	 */
 	public static int compareIntegers(String int1, String int2) {
@@ -1497,9 +1497,9 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param int1
 	 * @param int2
-	 * @return A negative number if <tt>int1</tt> is smaller than <tt>int2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>int1</tt> is larger than <tt>int2</tt>. The result is undefined when one or both
-	 *         of the arguments is not a canonical integer.
+	 * @return A negative number if <var>int1</var> is smaller than <var>int2</var>, <var>0</var> if they are equal, or
+	 *         positive (&gt;0) if <var>int1</var> is larger than <var>int2</var>. The result is undefined when one or
+	 *         both of the arguments is not a canonical integer.
 	 * @throws IllegalArgumentException If one of the supplied strings is not a legal integer.
 	 */
 	public static int compareCanonicalIntegers(String int1, String int2) {
@@ -1624,10 +1624,10 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param float1
 	 * @param float2
-	 * @return A negative number if <tt>float1</tt> is smaller than <tt>float2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>float1</tt> is larger than <tt>float2</tt>.
-	 * @throws IllegalArgumentException If one of the supplied strings is not a legal float or if <tt>NaN</tt> is
-	 *                                  compared to a float other than <tt>NaN</tt>.
+	 * @return A negative number if <var>float1</var> is smaller than <var>float2</var>, <var>0</var> if they are equal,
+	 *         or positive (&gt;0) if <var>float1</var> is larger than <var>float2</var>.
+	 * @throws IllegalArgumentException If one of the supplied strings is not a legal float or if <var>NaN</var> is
+	 *                                  compared to a float other than <var>NaN</var>.
 	 */
 	public static int compareFloats(String float1, String float2) {
 		float1 = normalizeFloat(float1);
@@ -1641,11 +1641,11 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param float1
 	 * @param float2
-	 * @return A negative number if <tt>float1</tt> is smaller than <tt>float2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>float1</tt> is larger than <tt>float2</tt>. The result is undefined when one or
-	 *         both of the arguments is not a canonical float.
-	 * @throws IllegalArgumentException If one of the supplied strings is not a legal float or if <tt>NaN</tt> is
-	 *                                  compared to a float other than <tt>NaN</tt>.
+	 * @return A negative number if <var>float1</var> is smaller than <var>float2</var>, <var>0</var> if they are equal,
+	 *         or positive (&gt;0) if <var>float1</var> is larger than <var>float2</var>. The result is undefined when
+	 *         one or both of the arguments is not a canonical float.
+	 * @throws IllegalArgumentException If one of the supplied strings is not a legal float or if <var>NaN</var> is
+	 *                                  compared to a float other than <var>NaN</var>.
 	 */
 	public static int compareCanonicalFloats(String float1, String float2) {
 		return compareCanonicalFPNumbers(float1, float2);
@@ -1656,10 +1656,10 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param double1
 	 * @param double2
-	 * @return A negative number if <tt>double1</tt> is smaller than <tt>double2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>double1</tt> is larger than <tt>double2</tt>.
-	 * @throws IllegalArgumentException If one of the supplied strings is not a legal double or if <tt>NaN</tt> is
-	 *                                  compared to a double other than <tt>NaN</tt>.
+	 * @return A negative number if <var>double1</var> is smaller than <var>double2</var>, <var>0</var> if they are
+	 *         equal, or positive (&gt;0) if <var>double1</var> is larger than <var>double2</var>.
+	 * @throws IllegalArgumentException If one of the supplied strings is not a legal double or if <var>NaN</var> is
+	 *                                  compared to a double other than <var>NaN</var>.
 	 */
 	public static int compareDoubles(String double1, String double2) {
 		double1 = normalizeDouble(double1);
@@ -1673,11 +1673,11 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param double1
 	 * @param double2
-	 * @return A negative number if <tt>double1</tt> is smaller than <tt>double2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>double1</tt> is larger than <tt>double2</tt>. The result is undefined when one or
-	 *         both of the arguments is not a canonical double.
-	 * @throws IllegalArgumentException If one of the supplied strings is not a legal double or if <tt>NaN</tt> is
-	 *                                  compared to a double other than <tt>NaN</tt>.
+	 * @return A negative number if <var>double1</var> is smaller than <var>double2</var>, <var>0</var> if they are
+	 *         equal, or positive (&gt;0) if <var>double1</var> is larger than <var>double2</var>. The result is
+	 *         undefined when one or both of the arguments is not a canonical double.
+	 * @throws IllegalArgumentException If one of the supplied strings is not a legal double or if <var>NaN</var> is
+	 *                                  compared to a double other than <var>NaN</var>.
 	 */
 	public static int compareCanonicalDoubles(String double1, String double2) {
 		return compareCanonicalFPNumbers(double1, double2);
@@ -1688,10 +1688,10 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param fp1
 	 * @param fp2
-	 * @return A negative number if <tt>float1</tt> is smaller than <tt>float2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>float1</tt> is larger than <tt>float2</tt>.
-	 * @throws IllegalArgumentException If one of the supplied strings is not a legal floating point number or if
-	 *                                  <tt>NaN</tt> is compared to a floating point number other than <tt>NaN</tt>.
+	 * @return A negative number if <var>float1</var> is smaller than <var>float2</var>, <var>0</var> if they are equal,
+	 *         or positive (&gt;0) if <var>float1</var> is larger than <var>float2</var>. &#64;throws
+	 *         IllegalArgumentException If one of the supplied strings is not a legal floating point number or if
+	 *         <var>NaN</var> is compared to a floating point number other than <var>NaN</var>.
 	 */
 	public static int compareFPNumbers(String fp1, String fp2) {
 		fp1 = normalizeFPNumber(fp1);
@@ -1705,11 +1705,11 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param float1
 	 * @param float2
-	 * @return A negative number if <tt>float1</tt> is smaller than <tt>float2</tt>, <tt>0</tt> if they are equal, or
-	 *         positive (&gt;0) if <tt>float1</tt> is larger than <tt>float2</tt>. The result is undefined when one or
-	 *         both of the arguments is not a canonical floating point number.
-	 * @throws IllegalArgumentException If one of the supplied strings is not a legal floating point number or if
-	 *                                  <tt>NaN</tt> is compared to a floating point number other than <tt>NaN</tt>.
+	 * @return A negative number if <var>float1</var> is smaller than <var>float2</var>, <var>0</var> if they are equal,
+	 *         or positive (&gt;0) if <var>float1</var> is larger than <var>float2</var>. The result is undefined when
+	 *         one or both of the arguments is not a canonical floating point number. &#64;throws
+	 *         IllegalArgumentException If one of the supplied strings is not a legal floating point number or if
+	 *         <var>NaN</var> is compared to a floating point number other than <var>NaN</var>.
 	 */
 	public static int compareCanonicalFPNumbers(String float1, String float2) {
 		// Handle special case NaN
@@ -1776,9 +1776,9 @@ public class XMLDatatypeUtil {
 	 *
 	 * @param value1 An xsd:dateTime value.
 	 * @param value2 An xsd:dateTime value.
-	 * @return <tt>-1</tt> if <tt>value1</tt> is before <tt>value2</tt> (i.e. if the dateTime object represented by
-	 *         value1 is before the dateTime object represented by value2), <tt>0</tt> if both are equal and <tt>1</tt>
-	 *         if <tt>value2</tt> is before <tt>value1</tt><br>
+	 * @return <var>-1</var> if <var>value1</var> is before <var>value2</var> (i.e. if the dateTime object represented
+	 *         by value1 is before the dateTime object represented by value2), <var>0</var> if both are equal and
+	 *         <var>1</var> if <var>value2</var> is before <var>value1</var><br>
 	 *         .
 	 */
 	public static int compareDateTime(String value1, String value2) {
@@ -1799,7 +1799,7 @@ public class XMLDatatypeUtil {
 	 * Parses the supplied xsd:boolean string and returns its value.
 	 *
 	 * @param s A string representation of an xsd:boolean value.
-	 * @return The <tt>boolean</tt> value represented by the supplied string argument.
+	 * @return The <var>boolean</var> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:boolean value.
 	 */
 	public static boolean parseBoolean(String s) {
@@ -1810,7 +1810,7 @@ public class XMLDatatypeUtil {
 	 * Parses the supplied xsd:byte string and returns its value.
 	 *
 	 * @param s A string representation of an xsd:byte value.
-	 * @return The <tt>byte</tt> value represented by the supplied string argument.
+	 * @return The <var>byte</var> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:byte value.
 	 */
 	public static byte parseByte(String s) {
@@ -1822,7 +1822,7 @@ public class XMLDatatypeUtil {
 	 * Parses the supplied xsd:short string and returns its value.
 	 *
 	 * @param s A string representation of an xsd:short value.
-	 * @return The <tt>short</tt> value represented by the supplied string argument.
+	 * @return The <var>short</var> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:short value.
 	 */
 	public static short parseShort(String s) {
@@ -1834,7 +1834,7 @@ public class XMLDatatypeUtil {
 	 * Parses the supplied xsd:int strings and returns its value.
 	 *
 	 * @param s A string representation of an xsd:int value.
-	 * @return The <tt>int</tt> value represented by the supplied string argument.
+	 * @return The <var>int</var> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:int value.
 	 */
 	public static int parseInt(String s) {
@@ -1846,7 +1846,7 @@ public class XMLDatatypeUtil {
 	 * Parses the supplied xsd:long string and returns its value.
 	 *
 	 * @param s A string representation of an xsd:long value.
-	 * @return The <tt>long</tt> value represented by the supplied string argument.
+	 * @return The <var>long</var> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:long value.
 	 */
 	public static long parseLong(String s) {
@@ -1858,7 +1858,7 @@ public class XMLDatatypeUtil {
 	 * Parses the supplied xsd:float string and returns its value.
 	 *
 	 * @param s A string representation of an xsd:float value.
-	 * @return The <tt>float</tt> value represented by the supplied string argument.
+	 * @return The <var>float</var> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:float value.
 	 */
 	public static float parseFloat(String s) {
@@ -1878,7 +1878,7 @@ public class XMLDatatypeUtil {
 	 * Parses the supplied xsd:double string and returns its value.
 	 *
 	 * @param s A string representation of an xsd:double value.
-	 * @return The <tt>double</tt> value represented by the supplied string argument.
+	 * @return The <var>double</var> value represented by the supplied string argument.
 	 * @throws NumberFormatException If the supplied string is not a valid xsd:double value.
 	 */
 	public static double parseDouble(String s) {

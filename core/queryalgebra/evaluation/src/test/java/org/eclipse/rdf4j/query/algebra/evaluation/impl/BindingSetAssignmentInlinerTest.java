@@ -149,7 +149,7 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 	}
 
 	/**
-	 * @see https://github.com/eclipse/rdf4j/issues/3091
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/3091">GH-3091</a>
 	 */
 	@Test
 	public void testOptimize_LeftJoinWithValuesInScope() {

@@ -18,10 +18,10 @@ import org.eclipse.rdf4j.model.Statement;
 @InternalUseOnly
 public class Stats {
 
-	private boolean emptyBeforeTransaction;
+	private Boolean emptyBeforeTransaction;
 	private boolean hasAdded;
 	private boolean hasRemoved;
-	private boolean emptyIncludingCurrentTransaction;
+	private Boolean emptyIncludingCurrentTransaction;
 
 	public void added(Statement statement) {
 		hasAdded = true;

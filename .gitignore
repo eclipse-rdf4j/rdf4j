@@ -42,3 +42,4 @@ tempElasticsearchDownload
 cache.db
 formatter-maven-cache.properties
 compliance/*/overlays
+docker/ignore

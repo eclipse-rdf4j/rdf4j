@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.junit.Test;
 
 /**
  * Tests to monitor QueryJoinOptimizer behaviour when cardinalities are below 1.

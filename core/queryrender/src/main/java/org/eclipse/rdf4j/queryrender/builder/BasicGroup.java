@@ -53,7 +53,7 @@ public class BasicGroup implements Group {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public int size() {
@@ -67,7 +67,7 @@ public class BasicGroup implements Group {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void addChild(Group theGroup) {
@@ -97,7 +97,7 @@ public class BasicGroup implements Group {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public boolean isOptional() {
@@ -105,7 +105,7 @@ public class BasicGroup implements Group {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public TupleExpr expr() {

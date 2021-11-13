@@ -268,7 +268,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 * {@link org.eclipse.rdf4j.repository.config.RepositoryFactory} to create the repository and initialize it.
 	 *
 	 * @param config The node representing the to-be-created repository in the configuration.
-	 * @return The created repository, or <tt>null</tt> if no such repository exists.
+	 * @return The created repository, or <var>null</var> if no such repository exists.
 	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration
 	 *                                   data.
 	 */

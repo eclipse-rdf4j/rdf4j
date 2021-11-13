@@ -13,8 +13,6 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockingIteration;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
@@ -22,6 +20,8 @@ import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -151,9 +151,9 @@ class MemorySailStore implements SailStore {
 
 	/**
 	 * Creates a StatementIterator that contains the statements matching the specified pattern of subject, predicate,
-	 * object, context. Inferred statements are excluded when <tt>explicitOnly</tt> is set to <tt>true</tt> . Statements
-	 * from the null context are excluded when <tt>namedContextsOnly</tt> is set to <tt>true</tt>. The returned
-	 * StatementIterator will assume the specified read mode.
+	 * object, context. Inferred statements are excluded when <var>explicitOnly</var> is set to <var>true</var> .
+	 * Statements from the null context are excluded when <var>namedContextsOnly</var> is set to <var>true</var>. The
+	 * returned StatementIterator will assume the specified read mode.
 	 */
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
 			Boolean explicit, int snapshot, Resource... contexts) {

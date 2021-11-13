@@ -57,7 +57,7 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	 *---------*/
 
 	/**
-	 * Registers a <tt>RepositoryInterceptor</tt> that will receive notifications of operations that are performed on
+	 * Registers a <var>RepositoryInterceptor</var> that will receive notifications of operations that are performed on
 	 * this repository.
 	 */
 	@Override
@@ -67,7 +67,7 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryInterceptor</tt> from this repository.
+	 * Removes a registered <var>RepositoryInterceptor</var> from this repository.
 	 */
 	@Override
 	public void removeRepositoryInterceptor(RepositoryInterceptor interceptor) {
@@ -76,7 +76,7 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	}
 
 	/**
-	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that are
+	 * Registers a <var>RepositoryConnectionInterceptor</var> that will receive notifications of operations that are
 	 * performed on any connections that are created by this repository.
 	 */
 	@Override
@@ -85,7 +85,7 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this repository.
+	 * Removes a registered <var>RepositoryConnectionInterceptor</var> from this repository.
 	 */
 	@Override
 	public void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {

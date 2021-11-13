@@ -35,19 +35,6 @@ public interface ValueFactory {
 	IRI createIRI(String iri);
 
 	/**
-	 * Creates a new URI from the supplied string-representation.
-	 *
-	 * @param uri A string-representation of a URI.
-	 * @return An object representing the URI.
-	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
-	 * @deprecated Use {{@link #createIRI(String)} instead.
-	 */
-	@Deprecated
-	default URI createURI(String uri) {
-		return createIRI(uri);
-	}
-
-	/**
 	 * Creates a new IRI from the supplied namespace and local name. Calling this method is funtionally equivalent to
 	 * calling {@link #createIRI(String) createIRI(namespace+localName)}, but allows the ValueFactory to reuse supplied
 	 * namespace and local name strings whenever possible. Note that the values returned by {@link IRI#getNamespace()}
@@ -59,20 +46,6 @@ public interface ValueFactory {
 	 *                                  IRI.
 	 */
 	IRI createIRI(String namespace, String localName);
-
-	/**
-	 * Creates a new URI from the supplied namespace and local name.
-	 *
-	 * @param namespace The IRI's namespace.
-	 * @param localName The IRI's local name.
-	 * @return An object representing the URI.
-	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) URI.
-	 * @deprecated Use {@link #createIRI(String, String)} instead.
-	 */
-	@Deprecated
-	default URI createURI(String namespace, String localName) {
-		return createIRI(namespace, localName);
-	}
 
 	/**
 	 * Creates a new bNode.
@@ -93,7 +66,7 @@ public interface ValueFactory {
 	 * Creates a new literal with the supplied label. The return value of {@link Literal#getDatatype()} for the returned
 	 * object must be <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a>.
 	 *
-	 * @param label The literal's label, must not be <tt>null</tt>.
+	 * @param label The literal's label, must not be <var>null</var>.
 	 */
 	Literal createLiteral(String label);
 
@@ -102,15 +75,15 @@ public interface ValueFactory {
 	 * {@link Literal#getDatatype()} for the returned object must be
 	 * <a href="http://www.w3.org/1999/02/22-rdf-syntax-ns#langString">{@code rdf:langString}</a>.
 	 *
-	 * @param label    The literal's label, must not be <tt>null</tt>.
-	 * @param language The literal's language attribute, must not be <tt>null</tt>.
+	 * @param label    The literal's label, must not be <var>null</var>.
+	 * @param language The literal's language attribute, must not be <var>null</var>.
 	 */
 	Literal createLiteral(String label, String language);
 
 	/**
 	 * Creates a new literal with the supplied label and datatype.
 	 *
-	 * @param label    The literal's label, must not be <tt>null</tt>.
+	 * @param label    The literal's label, must not be <var>null</var>.
 	 * @param datatype The literal's datatype. If it is null, the datatype
 	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to this
 	 *                 literal.
@@ -118,82 +91,68 @@ public interface ValueFactory {
 	Literal createLiteral(String label, IRI datatype);
 
 	/**
-	 * Creates a new literal with the supplied label and datatype.
-	 *
-	 * @param label    The literal's label.
-	 * @param datatype The literal's datatype. If it is null, the datatype
-	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to this
-	 *                 literal.
-	 * @deprecated Use {@link #createLiteral(String, IRI)} instead.
-	 */
-	@Deprecated
-	default Literal createLiteral(String label, URI datatype) {
-		return createLiteral(label, (IRI) datatype);
-	}
-
-	/**
-	 * Creates a new <tt>xsd:boolean</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:boolean</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:boolean</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:boolean</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(boolean value);
 
 	/**
-	 * Creates a new <tt>xsd:byte</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:byte</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:byte</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:byte</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(byte value);
 
 	/**
-	 * Creates a new <tt>xsd:short</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:short</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:short</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:short</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(short value);
 
 	/**
-	 * Creates a new <tt>xsd:int</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:int</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:int</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:int</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(int value);
 
 	/**
-	 * Creates a new <tt>xsd:long</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:long</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:long</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:long</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(long value);
 
 	/**
-	 * Creates a new <tt>xsd:float</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:float</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:float</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:float</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(float value);
 
 	/**
-	 * Creates a new <tt>xsd:double</tt>-typed literal representing the specified value.
+	 * Creates a new <var>xsd:double</var>-typed literal representing the specified value.
 	 *
 	 * @param value The value for the literal.
-	 * @return An <tt>xsd:double</tt>-typed literal for the specified value.
+	 * @return An <var>xsd:double</var>-typed literal for the specified value.
 	 */
 	Literal createLiteral(double value);
 
 	/**
-	 * Creates a new literal representing the specified bigDecimal that is typed as an <tt>xsd:Decimal</tt>.
+	 * Creates a new literal representing the specified bigDecimal that is typed as an <var>xsd:Decimal</var>.
 	 */
 	Literal createLiteral(BigDecimal bigDecimal);
 
 	/**
-	 * Creates a new literal representing the specified bigInteger that is typed as an <tt>xsd:Integer</tt>.
+	 * Creates a new literal representing the specified bigInteger that is typed as an <var>xsd:Integer</var>.
 	 */
 	Literal createLiteral(BigInteger bigInteger);
 
@@ -271,20 +230,6 @@ public interface ValueFactory {
 	Statement createStatement(Resource subject, IRI predicate, Value object);
 
 	/**
-	 * Creates a new statement with the supplied subject, predicate and object.
-	 *
-	 * @param subject   The statement's subject.
-	 * @param predicate The statement's predicate.
-	 * @param object    The statement's object.
-	 * @return The created statement.
-	 * @deprecated Use {@link #createStatement(Resource, IRI, Value)} instead.
-	 */
-	@Deprecated
-	default Statement createStatement(Resource subject, URI predicate, Value object) {
-		return createStatement(subject, (IRI) predicate, object);
-	}
-
-	/**
 	 * Creates a new statement with the supplied subject, predicate and object and associated context.
 	 *
 	 * @param subject   The statement's subject.
@@ -294,20 +239,6 @@ public interface ValueFactory {
 	 * @return The created statement.
 	 */
 	Statement createStatement(Resource subject, IRI predicate, Value object, Resource context);
-
-	/**
-	 * Creates a new statement with the supplied subject, predicate and object and associated context.
-	 *
-	 * @param subject   The statement's subject.
-	 * @param predicate The statement's predicate.
-	 * @param object    The statement's object.
-	 * @return The created statement.
-	 * @deprecated Use {@link #createStatement(Resource, IRI, Value, Resource)} instead.
-	 */
-	@Deprecated
-	default Statement createStatement(Resource subject, URI predicate, Value object, Resource context) {
-		return createStatement(subject, (IRI) predicate, object, context);
-	}
 
 	/**
 	 * Creates a new RDF-star triple with the supplied subject, predicate and object.

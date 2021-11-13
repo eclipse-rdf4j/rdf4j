@@ -19,6 +19,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALID
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT;
@@ -59,8 +60,9 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isSerializableValidation()).isTrue();
 		assertThat(shaclSailConfig.isEclipseRdf4jShaclExtensions()).isFalse();
 		assertThat(shaclSailConfig.isDashDataShapes()).isFalse();
-		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(-1);
-		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(-1);
+		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(1000000);
+		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(1000);
+		assertThat(shaclSailConfig.getTransactionalValidationLimit()).isEqualTo(500000);
 
 	}
 
@@ -87,6 +89,7 @@ public class ShaclSailConfigTest {
 
 		mb.add(VALIDATION_RESULTS_LIMIT_TOTAL, 100);
 		mb.add(VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, 3);
+		mb.add(TRANSACTIONAL_VALIDATION_LIMIT, 9);
 
 		shaclSailConfig.parse(mb.build(), implNode);
 
@@ -105,6 +108,7 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isDashDataShapes()).isTrue();
 		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(100);
 		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(3);
+		assertThat(shaclSailConfig.getTransactionalValidationLimit()).isEqualTo(9);
 
 	}
 
@@ -155,6 +159,7 @@ public class ShaclSailConfigTest {
 		assertTrue(m.contains(node, DASH_DATA_SHAPES, null));
 		assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_TOTAL, null));
 		assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, null));
+		assertTrue(m.contains(node, TRANSACTIONAL_VALIDATION_LIMIT, null));
 
 	}
 

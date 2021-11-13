@@ -12,7 +12,6 @@
 		<module>repository</module>
 		<module>rio</module>
 		<module>model</module>
-		<module>serql</module>
 		<module>sparql</module>
 		<module>shacl</module>
 		<module>lucene</module>
@@ -72,8 +71,8 @@
 		<profile>
 			<id>skipSlowTests</id>
 			<activation>
-				<!-- active on all Java 8 and higher builds by default -->
-				<jdk>[1.8,)</jdk>
+				<!-- active on all Java 11 and higher builds by default -->
+				<jdk>[11,)</jdk>
 			</activation>
 			<build>
 				<plugins>
@@ -89,23 +88,6 @@
 						<artifactId>maven-failsafe-plugin</artifactId>
 						<configuration>
 							<excludedGroups>slow</excludedGroups>
-						</configuration>
-					</plugin>
-				</plugins>
-			</build>
-		</profile>
-		<profile>
-			<id>jdk9</id>
-			<activation>
-				<jdk>[9,)</jdk>
-			</activation>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>org.apache.maven.plugins</groupId>
-						<artifactId>maven-failsafe-plugin</artifactId>
-						<configuration>
-							<forkCount>0</forkCount>
 						</configuration>
 					</plugin>
 				</plugins>

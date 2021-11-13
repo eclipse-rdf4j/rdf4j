@@ -12,9 +12,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.JarURLConnection;
 import java.net.URL;
+import java.nio.file.Files;
+import java.util.Objects;
 import java.util.jar.JarFile;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.io.ZipUtil;
 import org.eclipse.rdf4j.model.Resource;
@@ -59,7 +60,7 @@ public class SPARQL10ManifestTest {
 			if ("jar".equals(url.getProtocol())) {
 				// Extract manifest files to a temporary directory
 				try {
-					tmpDir = FileUtil.createTempDir("sparql-evaluation");
+					tmpDir = Files.createTempDirectory("sparql-evaluation").toFile();
 
 					JarURLConnection con = (JarURLConnection) url.openConnection();
 					JarFile jar = con.getJarFile();
@@ -102,11 +103,13 @@ public class SPARQL10ManifestTest {
 
 		addTurtle(con, new URL(manifestFile), manifestFile);
 
-		String query = "SELECT DISTINCT manifestFile FROM {x} rdf:first {manifestFile} "
-				+ "USING NAMESPACE mf = <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>, "
-				+ "  qt = <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>";
+		String query = ""
+				+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#>\n "
+				+ "PRFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#>"
+				+ "SELECT DISTINCT ?manifestFile\n"
+				+ "WHERE { ?x rdf:first ?manifestFile .} ";
 
-		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SERQL, query, manifestFile).evaluate();
+		TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile).evaluate();
 
 		while (manifestResults.hasNext()) {
 			BindingSet bindingSet = manifestResults.next();
@@ -124,7 +127,8 @@ public class SPARQL10ManifestTest {
 
 	static void addTurtle(RepositoryConnection con, URL url, String baseURI, Resource... contexts)
 			throws IOException, RepositoryException, RDFParseException, RDFHandlerException {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}

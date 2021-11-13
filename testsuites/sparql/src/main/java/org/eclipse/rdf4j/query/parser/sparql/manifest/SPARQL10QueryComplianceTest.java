@@ -24,7 +24,7 @@ import org.junit.runners.Parameterized;
  *
  * @author Jeen Broekstra
  *
- * @see https://www.w3.org/2009/sparql/docs/tests/
+ * @see <a href="https://www.w3.org/2009/sparql/docs/tests/">sparql docs test</a>
  */
 @RunWith(Parameterized.class)
 public abstract class SPARQL10QueryComplianceTest extends SPARQLQueryComplianceTest {

@@ -16,8 +16,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -54,7 +53,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
  *
  * @author Jeen Broekstra
  * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
- *      vocabulary</a>.
+ *      vocabulary</a>
  */
 public class RDFCollections {
 
@@ -79,7 +78,7 @@ public class RDFCollections {
 	 *         Collection added.
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 *      vocabulary</a>
 	 */
 	public static <C extends Collection<Statement>> C asRDF(Iterable<?> values, Resource head, C sink,
 			Resource... contexts) {
@@ -112,7 +111,7 @@ public class RDFCollections {
 	 *         Collection added.
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 *      vocabulary</a>
 	 *
 	 * @since 3.0
 	 */
@@ -139,7 +138,7 @@ public class RDFCollections {
 	 * @throws ModelException if a problem occurs reading the RDF Collection, for example if the Collection is not
 	 *                        well-formed.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 *      vocabulary</a>
 	 */
 	public static <C extends Collection<Value>> C asValues(final Model m, Resource head, C collection,
 			Resource... contexts) throws ModelException {
@@ -168,7 +167,7 @@ public class RDFCollections {
 	 *                 left out.
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 *      vocabulary</a>
 	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
 	 */
 	public static void consumeCollection(Iterable<?> values, Resource head, Consumer<Statement> consumer,
@@ -195,7 +194,7 @@ public class RDFCollections {
 	 *                 left out.
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 *      vocabulary</a>
 	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
 	 *
 	 * @since 3.0
@@ -241,7 +240,7 @@ public class RDFCollections {
 	 * @throws ModelException if a problem occurs reading the RDF Collection, for example if the Collection is not
 	 *                        well-formed.
 	 * @see <a href="http://www.w3.org/TR/rdf-schema/#ch_collectionvocab">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 *      vocabulary</a>
 	 */
 	public static void consumeValues(final Model m, Resource head, Consumer<Value> consumer, Resource... contexts)
 			throws ModelException {
@@ -324,7 +323,8 @@ public class RDFCollections {
 	public static <E extends RDF4JException> void extract(GetStatementOptional statementSupplier, Resource head,
 			Consumer<Statement> collectionConsumer, Function<String, Supplier<E>> exceptionSupplier,
 			Resource... contexts) throws E {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 		Objects.requireNonNull(head, "list head may not be null");
 		Objects.requireNonNull(collectionConsumer, "collection consumer may not be null");
 

@@ -1,4 +1,0 @@
-SELECT
-  S, xsd:string(O) as "O"
-FROM
-  {S} P {O} 

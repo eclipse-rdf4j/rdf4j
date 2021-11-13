@@ -1235,7 +1235,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * Determines whether the operand (a variable) contains a Resource.
 	 *
-	 * @return <tt>true</tt> if the operand contains a Resource, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the operand contains a Resource, <var>false</var> otherwise.
 	 */
 	public Value evaluate(IsResource node, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -1246,7 +1246,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * Determines whether the operand (a variable) contains a URI.
 	 *
-	 * @return <tt>true</tt> if the operand contains a URI, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the operand contains a URI, <var>false</var> otherwise.
 	 */
 	public Value evaluate(IsURI node, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -1257,7 +1257,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * Determines whether the operand (a variable) contains a BNode.
 	 *
-	 * @return <tt>true</tt> if the operand contains a BNode, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the operand contains a BNode, <var>false</var> otherwise.
 	 */
 	public Value evaluate(IsBNode node, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -1268,7 +1268,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * Determines whether the operand (a variable) contains a Literal.
 	 *
-	 * @return <tt>true</tt> if the operand contains a Literal, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the operand contains a Literal, <var>false</var> otherwise.
 	 */
 	public Value evaluate(IsLiteral node, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -1280,7 +1280,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * Determines whether the operand (a variable) contains a numeric datatyped literal, i.e. a literal with datatype
 	 * xsd:float, xsd:double, xsd:decimal, or a derived datatype of xsd:decimal.
 	 *
-	 * @return <tt>true</tt> if the operand contains a numeric datatyped literal, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the operand contains a numeric datatyped literal, <var>false</var> otherwise.
 	 */
 	public Value evaluate(IsNumeric node, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -1344,7 +1344,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * Determines whether the two operands match according to the <code>regex</code> operator.
 	 *
-	 * @return <tt>true</tt> if the operands match according to the <tt>regex</tt> operator, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the operands match according to the <var>regex</var> operator, <var>false</var>
+	 *         otherwise.
 	 */
 	public Value evaluate(Regex node, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -1425,7 +1426,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * a string comparison with the possible use of an asterisk (*) at the end and/or the start of the second operand to
 	 * indicate substring matching.
 	 *
-	 * @return <tt>true</tt> if the operands match according to the <tt>like</tt> operator, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the operands match according to the <var>like</var> operator, <var>false</var>
+	 *         otherwise.
 	 */
 	public Value evaluate(Like node, BindingSet bindings)
 			throws QueryEvaluationException {

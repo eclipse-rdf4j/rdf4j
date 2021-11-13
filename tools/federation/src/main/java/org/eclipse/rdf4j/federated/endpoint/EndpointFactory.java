@@ -65,7 +65,7 @@ public class EndpointFactory {
 	 *
 	 * @return an initialized {@link EndpointBase} containing the repository
 	 *
-	 * @throws Exception
+	 * @throws FedXException
 	 */
 	public static Endpoint loadSPARQLEndpoint(String name, String endpoint) throws FedXException {
 
@@ -200,7 +200,7 @@ public class EndpointFactory {
 	 *
 	 * @return an initialized endpoint containing the repository
 	 *
-	 * @throws Exception
+	 * @throws FedXException
 	 */
 	public static Endpoint loadNativeEndpoint(String name, File location) throws FedXException {
 
@@ -221,7 +221,7 @@ public class EndpointFactory {
 	 *
 	 * @return an initialized endpoint containing the repository
 	 *
-	 * @throws Exception
+	 * @throws FedXException
 	 */
 	public static Endpoint loadNativeEndpoint(File location) throws FedXException {
 		return loadNativeEndpoint("http://" + location.getName(), location);
@@ -241,8 +241,7 @@ public class EndpointFactory {
 	 *
 	 * @return a list of initialized endpoints, i.e. the federation members
 	 *
-	 * @throws IOException
-	 * @throws Exception
+	 * @throws FedXException
 	 */
 	public static List<Endpoint> loadFederationMembers(File dataConfig, File fedXBaseDir) throws FedXException {
 

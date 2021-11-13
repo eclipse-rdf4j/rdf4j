@@ -42,7 +42,7 @@ public class QueryEvaluationUtil {
 	 * </ul>
 	 *
 	 * @param value Some value.
-	 * @return The EBV of <tt>value</tt>.
+	 * @return The EBV of <var>value</var>.
 	 * @throws ValueExprEvaluationException In case the application of the EBV algorithm results in a type error.
 	 */
 	public static boolean getEffectiveBooleanValue(Value value) throws ValueExprEvaluationException {

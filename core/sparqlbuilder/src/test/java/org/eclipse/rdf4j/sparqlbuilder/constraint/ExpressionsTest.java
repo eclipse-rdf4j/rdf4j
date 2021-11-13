@@ -10,8 +10,12 @@ package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
 import static org.junit.Assert.assertEquals;
 
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
 
 public class ExpressionsTest {
 
@@ -56,4 +60,27 @@ public class ExpressionsTest {
 		assertEquals(expression.getQueryString(), "( 30 < ( 20 + ( 10 / 5 ) ) || 30 < 50 )");
 	}
 
+	@Test
+	public void test_BIND_fromOtherVariable() {
+		ExtendedVariable from = new ExtendedVariable("from");
+		ExtendedVariable to = new ExtendedVariable("to");
+		Assertions.assertEquals(
+				"BIND( ?from AS ?to )", Expressions.bind(from, to).getQueryString());
+	}
+
+	@Test
+	public void test_NOT_IN_twoIris() {
+		ExtendedVariable test = new ExtendedVariable("test");
+		Assertions.assertEquals(
+				"?test NOT IN ( <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, <http://www.w3.org/2000/01/rdf-schema#subClassOf> )",
+				Expressions.notIn(test, Rdf.iri(RDF.TYPE), Rdf.iri(RDFS.SUBCLASSOF))
+						.getQueryString());
+	}
+
+	@Test
+	public void test_IS_BLANK() {
+		ExtendedVariable test = new ExtendedVariable("test");
+		Assertions.assertEquals(
+				"isBLANK( ?test )", Expressions.isBlank(test).getQueryString());
+	}
 }

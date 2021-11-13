@@ -43,8 +43,8 @@ public class RDFHandlerWrapper implements RDFHandler {
 	 * for wrapping, the RDFHandlerWrapper forwards every method call to each of the supplied handler, in the order in
 	 * which the handlers are supplied.
 	 *
-	 * @param rdfHandlers One or more wrapped RDF handlers for this <tt>RDFHandlerWrapper</tt>, must not be
-	 *                    <tt>null</tt>.
+	 * @param rdfHandlers One or more wrapped RDF handlers for this <var>RDFHandlerWrapper</var>, must not be
+	 *                    <var>null</var>.
 	 */
 	public RDFHandlerWrapper(RDFHandler... rdfHandlers) {
 		this(new LinkedHashModelFactory(), rdfHandlers);
@@ -56,8 +56,8 @@ public class RDFHandlerWrapper implements RDFHandler {
 	 * which the handlers are supplied.
 	 *
 	 * @param modelFactory a {@link ModelFactory} that can be used for creating new empty {@link Model}s by the handler.
-	 * @param rdfHandlers  One or more wrapped RDF handlers for this <tt>RDFHandlerWrapper</tt>, must not be
-	 *                     <tt>null</tt>.
+	 * @param rdfHandlers  One or more wrapped RDF handlers for this <var>RDFHandlerWrapper</var>, must not be
+	 *                     <var>null</var>.
 	 */
 	public RDFHandlerWrapper(ModelFactory modelFactory, RDFHandler... rdfHandlers) {
 		assert rdfHandlers != null;

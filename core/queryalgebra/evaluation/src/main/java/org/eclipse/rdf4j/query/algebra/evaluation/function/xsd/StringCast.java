@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 
 /**
  * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
- * <tt>xsd:string</tt>.
+ * <var>xsd:string</var>.
  *
  * @author Arjohn Kampman
  * @author Jeen Broekstra

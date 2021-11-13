@@ -16,8 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -168,7 +168,7 @@ public abstract class AbstractSail implements Sail {
 	 * Checks whether the Sail has been initialized. Sails are initialized from {@link #initialize() initialization}
 	 * until {@link #shutDown() shutdown}.
 	 *
-	 * @return <tt>true</tt> if the Sail has been initialized, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the Sail has been initialized, <var>false</var> otherwise.
 	 */
 	protected boolean isInitialized() {
 		return initialized;

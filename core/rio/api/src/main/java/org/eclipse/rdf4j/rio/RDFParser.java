@@ -113,7 +113,7 @@ public interface RDFParser {
 	<T> RDFParser set(RioSetting<T> setting, T value);
 
 	/**
-	 * Sets whether the parser should verify the data it parses (default value is <tt>true</tt>).
+	 * Sets whether the parser should verify the data it parses (default value is <var>true</var>).
 	 *
 	 * @deprecated since 2.0. Use {@link #getParserConfig()} with {@link BasicParserSettings#FAIL_ON_UNKNOWN_DATATYPES},
 	 *             {@link BasicParserSettings#VERIFY_DATATYPE_VALUES}, and/or
@@ -123,13 +123,13 @@ public interface RDFParser {
 	void setVerifyData(boolean verifyData);
 
 	/**
-	 * Set whether the parser should preserve bnode identifiers specified in the source (default is <tt>false</tt>).
+	 * Set whether the parser should preserve bnode identifiers specified in the source (default is <var>false</var>).
 	 */
 	void setPreserveBNodeIDs(boolean preserveBNodeIDs);
 
 	/**
 	 * Sets whether the parser should stop immediately if it finds an error in the data (default value is
-	 * <tt>true</tt>).
+	 * <var>true</var>).
 	 *
 	 * @deprecated since 2.0. Use {@link #getParserConfig()} with {@link ParserConfig#addNonFatalError(RioSetting)} to
 	 *             select which errors will not always fail the parse prematurely.

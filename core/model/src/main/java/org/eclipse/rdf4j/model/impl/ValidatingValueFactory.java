@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -122,25 +121,6 @@ public class ValidatingValueFactory implements ValueFactory {
 	}
 
 	@Override
-	public URI createURI(String uri) {
-		return createIRI(uri);
-	}
-
-	@Override
-	public URI createURI(String namespace, String localName) {
-		return createIRI(namespace, localName);
-	}
-
-	@Override
-	public Literal createLiteral(String label, URI datatype) {
-		if (datatype instanceof IRI) {
-			return createLiteral(label, (IRI) datatype);
-		} else {
-			return createLiteral(label, createIRI(datatype.stringValue()));
-		}
-	}
-
-	@Override
 	public BNode createBNode() {
 		return delegate.createBNode();
 	}
@@ -222,16 +202,6 @@ public class ValidatingValueFactory implements ValueFactory {
 
 	@Override
 	public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
-		return delegate.createStatement(subject, predicate, object, context);
-	}
-
-	@Override
-	public Statement createStatement(Resource subject, URI predicate, Value object) {
-		return delegate.createStatement(subject, predicate, object);
-	}
-
-	@Override
-	public Statement createStatement(Resource subject, URI predicate, Value object, Resource context) {
 		return delegate.createStatement(subject, predicate, object, context);
 	}
 

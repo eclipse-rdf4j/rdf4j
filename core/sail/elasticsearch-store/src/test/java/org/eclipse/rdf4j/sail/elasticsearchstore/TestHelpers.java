@@ -9,72 +9,50 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Random;
+import java.net.URL;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
+import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
+import org.elasticsearch.common.settings.Settings.Builder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
-import pl.allegro.tech.embeddedelasticsearch.JavaHomeOption;
-import pl.allegro.tech.embeddedelasticsearch.PopularProperties;
-
 public class TestHelpers {
-
-	private final static Random random = new Random();
-	public static final String VERSION = "6.8.8";
 	public static final String CLUSTER = "cluster1";
-	public static final String ELASTICSEARCH_DOWNLOAD_DIRECTORY = "tempElasticsearchDownload";
 
 	private static final Logger logger = LoggerFactory.getLogger(TestHelpers.class);
 
-	public static EmbeddedElastic startElasticsearch(File installLocation) throws IOException, InterruptedException {
-
-		EmbeddedElastic embeddedElastic = EmbeddedElastic.builder()
-				.withElasticVersion(VERSION)
-				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, random.nextInt(10000) + 10000)
-				.withSetting(PopularProperties.HTTP_PORT, random.nextInt(10000) + 10000)
-				.withSetting(PopularProperties.CLUSTER_NAME, "cluster1")
-				.withInstallationDirectory(installLocation)
-				.withDownloadDirectory(new File("tempElasticsearchDownload"))
-//			.withPlugin("analysis-stempel")
-				.withStartTimeout(5, TimeUnit.MINUTES)
-				.build();
-
-		embeddedElastic.start();
-		logger.info("Elasticearch using transport port: " + embeddedElastic.getTransportTcpPort());
-		logger.info("Elasticearch using http port: " + embeddedElastic.getHttpPort());
-
-		return embeddedElastic;
-	}
-
-	public static void stopElasticsearch(EmbeddedElastic embeddedElastic, File installLocation) {
-		embeddedElastic.stop();
-
-		try {
-			FileUtils.deleteDirectory(installLocation);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	public static EmbeddedElastic startElasticsearch(File installLocation, String javaHomePath)
+	public static ElasticsearchClusterRunner startElasticsearch(File installLocation)
 			throws IOException, InterruptedException {
 
-		EmbeddedElastic embeddedElastic = EmbeddedElastic.builder()
-				.withElasticVersion(VERSION)
-				.withSetting(PopularProperties.TRANSPORT_TCP_PORT, random.nextInt(10000) + 10000)
-				.withSetting(PopularProperties.HTTP_PORT, random.nextInt(10000) + 10000)
-				.withSetting(PopularProperties.CLUSTER_NAME, CLUSTER)
-				.withInstallationDirectory(installLocation)
-				.withJavaHome(JavaHomeOption.path(javaHomePath))
-				.withDownloadDirectory(new File(ELASTICSEARCH_DOWNLOAD_DIRECTORY))
-//			.withPlugin("analysis-stempel")
-				.withStartTimeout(5, TimeUnit.MINUTES)
-				.build();
+		ElasticsearchClusterRunner runner = new ElasticsearchClusterRunner();
+		runner.onBuild(new ElasticsearchClusterRunner.Builder() {
+			@Override
+			public void build(int number, Builder settingsBuilder) {
+				// settingsBuilder.put("indices.breaker.total.limit", "1100m");
+			}
+		});
+		runner.build(ElasticsearchClusterRunner.newConfigs()
+				.numOfNode(1)
+				.basePath(installLocation.toString())
+				.clusterName(CLUSTER));
 
-		embeddedElastic.start();
-		return embeddedElastic;
+		runner.ensureYellow();
+
+		return runner;
+	}
+
+	public static int getPort(ElasticsearchClusterRunner runner) {
+		return runner.node().settings().getAsInt("transport.port", 9300);
+	}
+
+	public static void stopElasticsearch(ElasticsearchClusterRunner runner) {
+		try {
+			runner.close();
+		} catch (IOException ioe) {
+			logger.error("Error closing ES cluster", ioe);
+		}
+		runner.clean();
 	}
 }

@@ -81,12 +81,12 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 	/**
 	 * @param displayName
-	 * @param testURI2
-	 * @param name2
-	 * @param queryFileURL2
-	 * @param resultFileURL2
-	 * @param dataset2
-	 * @param ordered2
+	 * @param testURI
+	 * @param name
+	 * @param queryFileURL
+	 * @param resultFileURL
+	 * @param dataset
+	 * @param ordered
 	 */
 	public SPARQLQueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
 			String resultFileURL, Dataset dataset, boolean ordered) {

@@ -91,8 +91,8 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
-	 * Evaluate SPARQL or SERQL tuple query and send the output to a writer. If writer is null, the console will be used
-	 * for output.
+	 * Evaluate SPARQL tuple query and send the output to a writer. If writer is null, the console will be used for
+	 * output.
 	 *
 	 * @param queryLn     query language
 	 * @param queryString query string
@@ -138,7 +138,7 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
-	 * Evaluate SPARQL or SERQL graph query
+	 * Evaluate SPARQL graph query
 	 *
 	 * @param queryLn     query language
 	 * @param queryString query string
@@ -178,7 +178,7 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
-	 * Evaluate a boolean SPARQL or SERQL query
+	 * Evaluate a boolean SPARQL query
 	 *
 	 * @param queryLn     query language
 	 * @param queryString query string
@@ -208,7 +208,7 @@ public class TupleAndGraphQueryEvaluator {
 	}
 
 	/**
-	 * Execute a SPARQL or SERQL update
+	 * Execute a SPARQL update
 	 *
 	 * @param queryLn     query language
 	 * @param queryString query string

@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 
 /**
  * An exception thrown by some methods in Sail to indicate that a requested isolation level could not be fulfilled. Such

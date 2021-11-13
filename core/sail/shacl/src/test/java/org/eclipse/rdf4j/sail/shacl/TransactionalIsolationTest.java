@@ -16,8 +16,9 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.util.List;
 
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.api.Disabled;
@@ -275,7 +277,6 @@ public class TransactionalIsolationTest {
 		shaclSail.setSerializableValidation(true);
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
-		sailRepository.init();
 
 		SailRepositoryConnection connection1 = sailRepository.getConnection();
 		SailRepositoryConnection connection2 = sailRepository.getConnection();
@@ -412,6 +413,66 @@ public class TransactionalIsolationTest {
 				"        ] ."));
 
 		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+
+		connection1.commit();
+
+		try {
+			connection2.commit();
+		} catch (Throwable ignored) {
+		}
+
+		connection2.close();
+		connection1.close();
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.begin();
+			ValidationReport validationReport = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+
+			assertTrue(validationReport.conforms());
+
+			connection.commit();
+		}
+
+		sailRepository.shutDown();
+
+	}
+
+	@Test
+	public void testIsolation5() throws Throwable {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+
+		shaclSail.setSerializableValidation(true);
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			StringReader shaclRules = new StringReader(String.join("\n", "",
+					"@prefix ex: <http://example.com/ns#> .",
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+					"ex:PersonShape",
+					"        a sh:NodeShape  ;",
+					"        sh:targetClass ex:Person ;",
+					"        sh:property [",
+					"                sh:path ex:age ;",
+					"                sh:minCount 1 ;",
+					"        ] ."));
+
+			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			add(connection, "ex:steve ex:age 1 .");
+		}
+
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection1.begin(IsolationLevels.SNAPSHOT);
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+
+		connection2.begin(IsolationLevels.SNAPSHOT);
+
+		removeInTransaction(connection2, "ex:steve ex:age 1 .");
 
 		connection1.commit();
 
@@ -868,6 +929,60 @@ public class TransactionalIsolationTest {
 		}
 	}
 
+	@Test
+	public void testSerializableValidationAndTransactionalValidationLimit() throws Throwable {
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+
+		shaclSail.setSerializableValidation(true);
+		shaclSail.setTransactionalValidationLimit(0);
+
+		SailRepository sailRepository = new SailRepository(shaclSail);
+
+		SailRepositoryConnection connection1 = sailRepository.getConnection();
+		SailRepositoryConnection connection2 = sailRepository.getConnection();
+
+		connection2.begin(IsolationLevels.SNAPSHOT);
+
+		StringReader shaclRules = new StringReader(String.join("\n", "",
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+
+				"ex:PersonShape",
+				"        a sh:NodeShape  ;",
+				"        sh:targetClass ex:Person ;",
+				"        sh:property [",
+				"                sh:path ex:age ;",
+				"                sh:minCount 1 ;",
+				"        ] ."));
+
+		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		addInTransaction(connection2, "ex:steve ex:age 1 .");
+
+		connection1.begin(IsolationLevels.SNAPSHOT);
+
+		addInTransaction(connection1, "ex:steve a ex:Person .");
+
+		connection2.commit();
+		connection1.commit();
+
+		connection2.close();
+		connection1.close();
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.begin();
+			ValidationReport validationReport = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
+
+			assertTrue(validationReport.conforms());
+
+			connection.commit();
+		}
+
+		sailRepository.shutDown();
+
+	}
+
 	private void add(SailRepositoryConnection connection, String data) throws IOException {
 		data = String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
@@ -894,6 +1009,23 @@ public class TransactionalIsolationTest {
 
 		try {
 			connection.add(stringReader, "", RDFFormat.TURTLE);
+		} catch (IOException e) {
+			throw new IllegalStateException();
+		}
+	}
+
+	private void removeInTransaction(SailRepositoryConnection connection, String data) {
+		data = String.join("\n", "",
+				"@prefix ex: <http://example.com/ns#> .",
+				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+				data);
+
+		StringReader stringReader = new StringReader(data);
+
+		try {
+			Model parse = Rio.parse(stringReader, RDFFormat.TURTLE);
+			connection.remove(parse);
 		} catch (IOException e) {
 			throw new IllegalStateException();
 		}

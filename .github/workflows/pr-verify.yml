@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        jdk: [1.8, 15]
+        jdk: [11, 17]
     steps:
     - uses: actions/checkout@v1
     - name: Set up JDK
@@ -23,8 +23,10 @@ jobs:
           ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
+    - name: Check maven install
+      run: mvn -B clean install -DskipTests
     - name: Test
-      run: mvn -B clean test -P-formatting -DskipITs -Dmaven.javadoc.skip=true
+      run: mvn -B test -P-formatting -DskipITs -Dmaven.javadoc.skip=true
     - name: Print test failures
       if: failure()
       run: ./scripts/printTestResults.sh
@@ -42,14 +44,14 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: 1.8
+        java-version: 11
     - name: Cache local Maven repository
       uses: actions/cache@v2
       with:
         path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk1.8-maven-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
-          ${{ runner.os }}-jdk1.8-maven-
+          ${{ runner.os }}-jdk11-maven-
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
@@ -73,14 +75,14 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: 1.8
+        java-version: 11
     - name: Cache local Maven repository
       uses: actions/cache@v2
       with:
         path: ~/.m2/repository
-        key: ${{ runner.os }}-jdk1.8-maven-${{ hashFiles('**/pom.xml') }}
+        key: ${{ runner.os }}-jdk11-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
-          ${{ runner.os }}-jdk1.8-maven-
+          ${{ runner.os }}-jdk11-maven-
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build

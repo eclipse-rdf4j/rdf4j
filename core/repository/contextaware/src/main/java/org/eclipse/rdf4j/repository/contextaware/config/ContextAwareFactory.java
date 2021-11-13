@@ -36,7 +36,7 @@ public class ContextAwareFactory implements RepositoryFactory {
 	 *---------*/
 
 	/**
-	 * Returns the repository's type: <tt>openrdf:ContextAwareRepository</tt>.
+	 * Returns the repository's type: <var>openrdf:ContextAwareRepository</var>.
 	 */
 	@Override
 	public String getRepositoryType() {
