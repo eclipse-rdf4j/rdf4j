@@ -377,9 +377,9 @@ public class StatementsController extends AbstractController {
 		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request, Protocol.PRESERVE_BNODE_ID_PARAM_NAME,
 				false);
 
-		if (baseURI == null) {
-			baseURI = vf.createIRI("foo:bar");
-			logger.info("no base URI specified, using dummy '{}'", baseURI);
+		String baseURIString = null;
+		if (baseURI != null) {
+			baseURIString = baseURI.toString();
 		}
 
 		InputStream in = request.getInputStream();
@@ -393,7 +393,7 @@ public class StatementsController extends AbstractController {
 			if (replaceCurrent) {
 				repositoryCon.clear(contexts);
 			}
-			repositoryCon.add(in, baseURI.toString(), rdfFormat, contexts);
+			repositoryCon.add(in, baseURIString, rdfFormat, contexts);
 
 			repositoryCon.commit();
 
