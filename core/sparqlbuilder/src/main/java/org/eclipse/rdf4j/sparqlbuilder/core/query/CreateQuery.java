@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 /**
@@ -35,6 +38,10 @@ public class CreateQuery extends GraphManagementQuery<CreateQuery> {
 		this.graph = graph;
 
 		return this;
+	}
+
+	public CreateQuery graph(IRI graph) {
+		return graph(iri(graph));
 	}
 
 	@Override

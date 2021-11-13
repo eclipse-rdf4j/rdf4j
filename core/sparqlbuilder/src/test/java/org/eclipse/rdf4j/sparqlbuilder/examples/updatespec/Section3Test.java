@@ -120,7 +120,7 @@ public class Section3Test extends BaseExamples {
 
 		// DELETE { GRAPH <g1> { a b c } } INSERT { GRAPH <g1> { x y z } } USING <g1>
 		// WHERE { ... }
-		modify.with(null).delete(abc).from(g1).insert(xyz).into(g1).using(g1).where(examplePattern);
+		modify.with((Iri) null).delete(abc).from(g1).insert(xyz).into(g1).using(g1).where(examplePattern);
 		p("is considered equivalent to:");
 		p(modify);
 	}

@@ -8,7 +8,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 
 /**
  * A SPARQL Prefix declaration
@@ -23,6 +25,10 @@ public class Prefix implements QueryElement {
 	Prefix(String alias, Iri iri) {
 		this.label = alias;
 		this.iri = iri;
+	}
+
+	Prefix(String alias, IRI iri) {
+		this(alias, Rdf.iri(iri));
 	}
 
 	/**

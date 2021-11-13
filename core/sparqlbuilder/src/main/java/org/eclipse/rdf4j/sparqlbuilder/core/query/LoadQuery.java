@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
 import java.util.Optional;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
@@ -42,6 +45,17 @@ public class LoadQuery extends GraphManagementQuery<LoadQuery> {
 	}
 
 	/**
+	 * Specify which graph to load form
+	 *
+	 * @param from the IRI identifying the graph to load triples from
+	 *
+	 * @return this LoadQuery instance
+	 */
+	public LoadQuery from(IRI from) {
+		return from(iri(from));
+	}
+
+	/**
 	 * Specify which graph to load into, if not the default graph
 	 *
 	 * @param to the IRI identifying the graph to load into
@@ -52,6 +66,17 @@ public class LoadQuery extends GraphManagementQuery<LoadQuery> {
 		this.to = Optional.ofNullable(to);
 
 		return this;
+	}
+
+	/**
+	 * Specify which graph to load into, if not the default graph
+	 *
+	 * @param to the IRI identifying the graph to load into
+	 *
+	 * @return this LoadQuery instance
+	 */
+	public LoadQuery to(IRI to) {
+		return to(iri(to));
 	}
 
 	@Override

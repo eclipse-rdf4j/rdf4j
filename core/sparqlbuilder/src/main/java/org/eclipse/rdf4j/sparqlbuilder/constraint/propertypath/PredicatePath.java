@@ -10,6 +10,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 /**
@@ -21,6 +24,10 @@ public class PredicatePath implements PredicatePathOrInversePredicatePath {
 
 	public PredicatePath(Iri predicate) {
 		this.predicate = predicate;
+	}
+
+	public PredicatePath(IRI predicate) {
+		this(iri(predicate));
 	}
 
 	@Override

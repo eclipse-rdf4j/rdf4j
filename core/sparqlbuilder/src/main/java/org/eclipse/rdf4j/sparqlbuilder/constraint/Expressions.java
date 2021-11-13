@@ -224,6 +224,10 @@ public class Expressions {
 		return new CustomFunction(functionIri).addOperand(operands);
 	}
 
+	public static Expression<?> custom(IRI functionIri, Operand... operands) {
+		return new CustomFunction(functionIri).addOperand(operands);
+	}
+
 	/**
 	 * {@code operand IN (expression1, expression2...)}
 	 * 
@@ -630,7 +634,15 @@ public class Expressions {
 		return new PredicatePath(predicate);
 	}
 
+	public static PredicatePath p(IRI predicate) {
+		return new PredicatePath(predicate);
+	}
+
 	public static InversePredicatePath pInv(Iri predicate) {
+		return new InversePredicatePath(predicate);
+	}
+
+	public static InversePredicatePath pInv(IRI predicate) {
 		return new InversePredicatePath(predicate);
 	}
 
@@ -663,6 +675,10 @@ public class Expressions {
 	}
 
 	public static PropertyPathBuilder path(Iri property) {
+		return new EmptyPropertyPathBuilder().pred(property);
+	}
+
+	public static PropertyPathBuilder path(IRI property) {
 		return new EmptyPropertyPathBuilder().pred(property);
 	}
 

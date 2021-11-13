@@ -11,6 +11,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
@@ -32,6 +35,10 @@ public class EmptyPropertyPathBuilder {
 		}
 		this.negatedPropertySetBuilder = new NegatedPropertySetBuilder();
 		return negatedPropertySetBuilder;
+	}
+
+	public PropertyPathBuilder pred(IRI predicate) {
+		return pred(iri(predicate));
 	}
 
 	public PropertyPathBuilder pred(Iri predicate) {

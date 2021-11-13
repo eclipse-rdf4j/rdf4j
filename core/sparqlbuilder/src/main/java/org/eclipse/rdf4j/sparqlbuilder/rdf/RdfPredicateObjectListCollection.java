@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElementCollection;
 
 /**
@@ -35,6 +36,18 @@ public class RdfPredicateObjectListCollection extends QueryElementCollection<Rdf
 	 */
 	public RdfPredicateObjectListCollection andHas(RdfPredicate predicate, RdfObject... objects) {
 		return andHas(Rdf.predicateObjectList(predicate, objects));
+	}
+
+	/**
+	 * add predicate-object lists to this collection
+	 *
+	 * @param predicate the predicate of the predicate-object list to add
+	 * @param objects   the object or objects to add
+	 *
+	 * @return this instance
+	 */
+	public RdfPredicateObjectListCollection andHas(IRI predicate, RdfObject... objects) {
+		return andHas(Rdf.predicateObjectList(Rdf.iri(predicate), objects));
 	}
 
 	/**
