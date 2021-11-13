@@ -53,6 +53,10 @@ public class ContextStatement extends SimpleStatement {
 		return context;
 	}
 
+	public boolean exactSameContext(Resource context) {
+		return context == this.context;
+	}
+
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder(256);

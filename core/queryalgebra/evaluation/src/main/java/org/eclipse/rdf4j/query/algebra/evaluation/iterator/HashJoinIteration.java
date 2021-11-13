@@ -41,23 +41,15 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
-
-	private final CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
-
-	private volatile Iterator<BindingSet> scanList;
-
-	private volatile CloseableIteration<BindingSet, QueryEvaluationException> restIter;
-
-	private volatile Map<BindingSetHashKey, List<BindingSet>> hashTable;
-
 	protected final String[] joinAttributes;
-
-	private volatile BindingSet currentScanElem;
-
-	private volatile Iterator<BindingSet> hashTableValues;
-
+	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
 	private final boolean leftJoin;
+	private Iterator<BindingSet> scanList;
+	private CloseableIteration<BindingSet, QueryEvaluationException> restIter;
+	private Map<BindingSetHashKey, List<BindingSet>> hashTable;
+	private BindingSet currentScanElem;
+	private Iterator<BindingSet> hashTableValues;
 
 	/*--------------*
 	 * Constructors *
@@ -103,13 +95,9 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		Map<BindingSetHashKey, List<BindingSet>> nextHashTable = hashTable;
 		if (nextHashTable == null) {
-			synchronized (this) {
-				nextHashTable = hashTable;
-				if (nextHashTable == null) {
-					nextHashTable = hashTable = setupHashTable();
-				}
-			}
+			nextHashTable = hashTable = setupHashTable();
 		}
+
 		Iterator<BindingSet> nextHashTableValues = hashTableValues;
 
 		while (currentScanElem == null) {
@@ -311,7 +299,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			nextHashTable = new HashMap<>(initialSize);
 		} else {
 			List<BindingSet> l = (initialSize > 0) ? new ArrayList<>(initialSize) : null;
-			nextHashTable = Collections.<BindingSetHashKey, List<BindingSet>>singletonMap(BindingSetHashKey.EMPTY, l);
+			nextHashTable = Collections.singletonMap(BindingSetHashKey.EMPTY, l);
 		}
 		return nextHashTable;
 	}

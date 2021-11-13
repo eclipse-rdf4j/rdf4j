@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.common.lang.ObjectUtil;
 
 /**
  * A StatementIterator that can iterate over a list of Statement objects. This iterator compares Resource and Literal
@@ -49,18 +48,28 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	/**
 	 * Flag indicating whether this iterator should only return explicitly added statements or only return inferred
 	 * statements.
+	 *
+	 * If this has not been specified (null) and we should return both explicit and inferred statements, then the flag
+	 * below will be set to true.
 	 */
-	private final Boolean explicit;
+	private final boolean explicit;
+	private final boolean explicitNotSpecified;
 
 	/**
 	 * Indicates which snapshot should be iterated over.
 	 */
 	private final int snapshot;
+	private final boolean noIsolation;
 
 	/**
 	 * The index of the last statement that has been returned.
 	 */
 	private int statementIdx;
+
+	/**
+	 * True if there are no more elements to retrieve.
+	 */
+	private boolean exhausted;
 
 	/*--------------*
 	 * Constructors *
@@ -84,10 +93,16 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 		this.predicate = predicate;
 		this.object = object;
 		this.contexts = contexts;
-		this.explicit = explicit;
+		if (explicit == null) {
+			this.explicitNotSpecified = true;
+			this.explicit = false;
+		} else {
+			this.explicitNotSpecified = false;
+			this.explicit = explicit;
+		}
 		this.snapshot = snapshot;
-
-		this.statementIdx = -1;
+		this.noIsolation = snapshot < 0;
+		this.statementIdx = 0;
 	}
 
 	/*---------*
@@ -102,43 +117,47 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	 */
 	@Override
 	protected MemStatement getNextElement() {
-		statementIdx++;
+		while (!exhausted) {
+			// First getting the size to check if we are out-of-bounds is more expensive (cache wise) than having a
+			// method in MemStatementList that does this for us.
+			MemStatement statement = statementList.getIfExists(statementIdx++);
+			if (statement == null) {
+				exhausted = true;
+				break;
+			}
 
-		for (; statementIdx < statementList.size(); statementIdx++) {
-			MemStatement st = statementList.get(statementIdx);
+			// First check if we match the specified SPO, then check the context, then finally check the
+			// explicit/inferred and snapshot.
+			// Checking explicit/inferred and snapshot requires reading a volatile field, which is fairly slow and the
+			// reason we check this last.
 
-			if (isInSnapshot(st) && (subject == null || subject == st.getSubject())
-					&& (predicate == null || predicate == st.getPredicate())
-					&& (object == null || object == st.getObject())) {
-				// A matching statement has been found, check if it should be
-				// skipped due to explicitOnly, contexts and readMode requirements
-
-				if (contexts != null && contexts.length > 0) {
-					boolean matchingContext = false;
-					for (int i = 0; i < contexts.length && !matchingContext; i++) {
-						matchingContext = ObjectUtil.nullEquals(st.getContext(), contexts[i]);
-					}
-					if (!matchingContext) {
-						// statement does not appear in one of the specified contexts,
-						// skip it.
-						continue;
-					}
-				}
-
-				if (explicit != null && explicit != st.isExplicit()) {
-					// Explicit flag does not match
-					continue;
-				}
-
-				return st;
+			if ((statement.matchesSPO(subject, predicate, object)) && matchesContext(statement)
+					&& matchesExplicitAndSnapshot(statement)) {
+				return statement;
 			}
 		}
 
-		// No more matching statements.
 		return null;
 	}
 
-	private boolean isInSnapshot(MemStatement st) {
-		return snapshot < 0 || st.isInSnapshot(snapshot);
+	private boolean matchesContext(MemStatement statement) {
+		if (contexts != null && contexts.length > 0) {
+			for (MemResource context : contexts) {
+				if (statement.exactSameContext(context)) {
+					return true;
+				}
+			}
+			// if we get here there was no matching context
+			return false;
+		} else {
+			// there is no context to check so we can return this statement
+			return true;
+		}
 	}
+
+	private boolean matchesExplicitAndSnapshot(MemStatement st) {
+		return (explicitNotSpecified || explicit == st.isExplicit()) &&
+				(noIsolation || st.isInSnapshot(snapshot));
+	}
+
 }

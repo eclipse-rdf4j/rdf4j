@@ -36,7 +36,9 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	 */
 	public LimitedSizeSPARQLMinusIteration(Iteration<BindingSet, QueryEvaluationException> leftArg,
 			Iteration<BindingSet, QueryEvaluationException> rightArg, AtomicLong used, long maxSize) {
-		this(leftArg, rightArg, false, used, maxSize);
+		super(leftArg, rightArg);
+		this.used = used;
+		this.maxSize = maxSize;
 	}
 
 	/**
@@ -45,15 +47,15 @@ public class LimitedSizeSPARQLMinusIteration extends SPARQLMinusIteration<QueryE
 	 *
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
-	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
+	 * @param distinct This argument is ignored!
 	 * @param used     An atomic long used to monitor how many elements are in the set collections.
 	 * @param maxSize  Maximum size allowed by the sum of all collections used by the LimitedSizeQueryEvaluatlion.
 	 */
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public LimitedSizeSPARQLMinusIteration(Iteration<BindingSet, QueryEvaluationException> leftArg,
 			Iteration<BindingSet, QueryEvaluationException> rightArg, boolean distinct, AtomicLong used, long maxSize) {
-		super(leftArg, rightArg, distinct);
-		this.used = used;
-		this.maxSize = maxSize;
+		this(leftArg, rightArg, used, maxSize);
+
 	}
 
 	@Override

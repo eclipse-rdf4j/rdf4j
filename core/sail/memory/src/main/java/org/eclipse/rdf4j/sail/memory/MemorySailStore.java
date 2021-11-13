@@ -58,6 +58,9 @@ import org.slf4j.LoggerFactory;
  */
 class MemorySailStore implements SailStore {
 
+	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
+	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
+	public static final MemResource[] EMPTY_CONTEXT = new MemResource[0];
 	private final Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
 
 	/**
@@ -161,32 +164,32 @@ class MemorySailStore implements SailStore {
 		MemResource memSubj = valueFactory.getMemResource(subj);
 		if (subj != null && memSubj == null) {
 			// non-existent subject
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		}
 
 		MemIRI memPred = valueFactory.getMemURI(pred);
 		if (pred != null && memPred == null) {
 			// non-existent predicate
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		}
 
 		MemValue memObj = valueFactory.getMemValue(obj);
 		if (obj != null && memObj == null) {
 			// non-existent object
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		}
 
 		MemResource[] memContexts;
 		MemStatementList smallestList;
 
 		if (contexts.length == 0) {
-			memContexts = new MemResource[0];
+			memContexts = EMPTY_CONTEXT;
 			smallestList = statements;
 		} else if (contexts.length == 1 && contexts[0] != null) {
 			MemResource memContext = valueFactory.getMemResource(contexts[0]);
 			if (memContext == null) {
 				// non-existent context
-				return new EmptyIteration<>();
+				return EMPTY_ITERATION;
 			}
 
 			memContexts = new MemResource[] { memContext };
@@ -203,35 +206,69 @@ class MemorySailStore implements SailStore {
 
 			if (contextSet.isEmpty()) {
 				// no known contexts specified
-				return new EmptyIteration<>();
+				return EMPTY_ITERATION;
 			}
 
 			memContexts = contextSet.toArray(new MemResource[contextSet.size()]);
 			smallestList = statements;
 		}
 
-		if (memSubj != null) {
-			MemStatementList l = memSubj.getSubjectStatementList();
+		return getMemStatementIterator(memSubj, memPred, memObj, explicit, snapshot, memContexts,
+				smallestList);
+	}
+
+	private CloseableIteration<MemStatement, SailException> createStatementIterator(MemResource subj, MemIRI pred,
+			MemValue obj,
+			Boolean explicit, int snapshot, MemResource... contexts) {
+
+		MemResource[] memContexts;
+		MemStatementList smallestList;
+
+		if (contexts.length == 0) {
+			memContexts = EMPTY_CONTEXT;
+			smallestList = statements;
+		} else if (contexts.length == 1 && contexts[0] != null) {
+			memContexts = contexts;
+			smallestList = contexts[0].getContextStatementList();
+		} else {
+			memContexts = contexts;
+			smallestList = statements;
+		}
+
+		return getMemStatementIterator(subj, pred, obj, explicit, snapshot, memContexts, smallestList);
+	}
+
+	private CloseableIteration<MemStatement, SailException> getMemStatementIterator(MemResource subj, MemIRI pred,
+			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList statementList) {
+
+		MemStatementList smallestList = statementList;
+
+		if (subj != null) {
+			MemStatementList l = subj.getSubjectStatementList();
 			if (l.size() < smallestList.size()) {
 				smallestList = l;
 			}
 		}
 
-		if (memPred != null) {
-			MemStatementList l = memPred.getPredicateStatementList();
+		if (pred != null) {
+			MemStatementList l = pred.getPredicateStatementList();
 			if (l.size() < smallestList.size()) {
 				smallestList = l;
 			}
 		}
 
-		if (memObj != null) {
-			MemStatementList l = memObj.getObjectStatementList();
+		if (obj != null) {
+			MemStatementList l = obj.getObjectStatementList();
 			if (l.size() < smallestList.size()) {
 				smallestList = l;
 			}
 		}
 
-		return new MemStatementIterator<>(smallestList, memSubj, memPred, memObj, explicit, snapshot, memContexts);
+		if (smallestList.isEmpty()) {
+			return EMPTY_ITERATION;
+		}
+
+		return new MemStatementIterator<>(smallestList, subj, pred, obj, explicit, snapshot, memContexts);
 	}
 
 	/**
@@ -246,19 +283,19 @@ class MemorySailStore implements SailStore {
 
 		if (subj != null && memSubj == null) {
 			// non-existent subject
-			return new EmptyIteration<>();
+			return EMPTY_TRIPLE_ITERATION;
 		}
 
 		MemIRI memPred = valueFactory.getMemURI(pred);
 		if (pred != null && memPred == null) {
 			// non-existent predicate
-			return new EmptyIteration<>();
+			return EMPTY_TRIPLE_ITERATION;
 		}
 
 		MemValue memObj = valueFactory.getMemValue(obj);
 		if (obj != null && memObj == null) {
 			// non-existent object
-			return new EmptyIteration<>();
+			return EMPTY_TRIPLE_ITERATION;
 		}
 
 		// TODO there is no separate index for Triples, so for now we iterate over all statements to find matches.
@@ -738,9 +775,15 @@ class MemorySailStore implements SailStore {
 			Lock stLock = openStatementsReadLock();
 			try {
 				stIter1 = createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
-				stIter2 = new LockingIteration<Statement, SailException>(stLock, stIter1);
-				allGood = true;
-				return stIter2;
+				if (stIter1 instanceof EmptyIteration) {
+					stLock.release();
+					allGood = true;
+					return stIter1;
+				} else {
+					stIter2 = new LockingIteration<Statement, SailException>(stLock, stIter1);
+					allGood = true;
+					return stIter2;
+				}
 			} finally {
 				if (!allGood) {
 					try {

@@ -1,21 +1,29 @@
 package org.eclipse.rdf4j.sail.memory.benchmark;
 
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -42,16 +50,17 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Fork(value = 1, jvmArgs = { "-Xms4G", "-Xmx4G", "-XX:+UseSerialGC" })
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class MemoryBenchmark {
+public class LoadingBenchmark {
 
-	@Param({ "NONE", "READ_UNCOMMITTED", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
+	@Param({ "NONE", "SNAPSHOT", "SERIALIZABLE" })
 	public String isolationLevel;
 
-	private List<Statement> statementList = getStatements();
+	private static final List<Statement> statementList = getStatements();
+	private static final Model realData = getRealData();
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("MemoryBenchmark.load") // adapt to run other benchmark tests
+				.include("LoadingBenchmark.load") // adapt to run other benchmark tests
 				// .addProfiler("stack", "lines=20;period=1;top=20")
 				.forks(1)
 				.build();
@@ -65,15 +74,14 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public void load() {
+	public void loadSynthetic() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			connection.commit();
 		}
@@ -81,15 +89,29 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long size() {
+	public void loadRealData() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			realData.forEach(getStatementConsumer(connection));
+
+			connection.commit();
+		}
+
+	}
+
+	@Benchmark
+	public long loadSyntheticAndSize() {
+
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.initialize();
+
+		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+			connection.begin(IsolationLevels.valueOf(isolationLevel));
+			statementList.forEach(getStatementConsumer(connection));
 
 			connection.commit();
 
@@ -99,7 +121,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long duplicates() {
+	public long loadSyntheticWithDuplicates() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -107,15 +129,13 @@ public class MemoryBenchmark {
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			long count = 0;
 			for (int i = 0; i < 10; i++) {
@@ -130,7 +150,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long duplicatesFlush() {
+	public long loadSyntheticWithDuplicatesFlush() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -138,15 +158,13 @@ public class MemoryBenchmark {
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			connection.flush();
 
@@ -163,7 +181,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long duplicatesAndNewStatements() {
+	public long loadSyntheticWithDuplicatesAndNewStatements() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -171,15 +189,13 @@ public class MemoryBenchmark {
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			ValueFactory vf = memoryStore.getValueFactory();
 			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
@@ -197,7 +213,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long duplicatesAndNewStatementsGetFirst() {
+	public long loadSyntheticWithDuplicatesAndNewStatementsGetFirst() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -205,15 +221,13 @@ public class MemoryBenchmark {
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			ValueFactory vf = memoryStore.getValueFactory();
 			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
@@ -234,7 +248,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long singleTransactionGetFirstStatement() {
+	public long loadSyntheticSingleTransactionGetFirstStatement() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -242,8 +256,7 @@ public class MemoryBenchmark {
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			long count = 0;
 			for (int i = 0; i < 10; i++) {
@@ -261,7 +274,7 @@ public class MemoryBenchmark {
 	}
 
 	@Benchmark
-	public long duplicatesAndNewStatementsIteratorMatchesNothing() {
+	public long loadSyntheticWithDuplicatesAndNewStatementsIteratorMatchesNothing() {
 
 		MemoryStore memoryStore = new MemoryStore();
 		memoryStore.initialize();
@@ -269,15 +282,13 @@ public class MemoryBenchmark {
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			connection.commit();
 
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
+			statementList.forEach(getStatementConsumer(connection));
 
 			ValueFactory vf = memoryStore.getValueFactory();
 			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
@@ -312,7 +323,7 @@ public class MemoryBenchmark {
 
 		List<Statement> statementList = new ArrayList<>();
 
-		int size = 1000;
+		int size = 5000;
 		for (int i = 0; i < size; i++) {
 
 			IRI subject = vf.createIRI("http://ex/" + i);
@@ -329,4 +340,20 @@ public class MemoryBenchmark {
 		return statementList;
 	}
 
+	private static Model getRealData() {
+		try {
+			try (InputStream inputStream = new BufferedInputStream(LoadingBenchmark.class.getClassLoader()
+					.getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"))) {
+				return Rio.parse(inputStream, RDFFormat.TURTLE);
+			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		} catch (NullPointerException e) {
+			throw new RuntimeException("Could not load file: benchmarkFiles/datagovbe-valid.ttl", e);
+		}
+	}
+
+	private static Consumer<Statement> getStatementConsumer(SailConnection connection) {
+		return st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
+	}
 }

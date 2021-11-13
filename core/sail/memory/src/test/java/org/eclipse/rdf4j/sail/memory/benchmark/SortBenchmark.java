@@ -60,12 +60,12 @@ public class SortBenchmark {
 
 	private SailRepository repository;
 
-	private static final String query4;
+	private static final String query9;
 
 	static {
 		try {
 
-			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
+			query9 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query9.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -120,7 +120,7 @@ public class SortBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			try (Stream<BindingSet> stream = connection
-					.prepareTupleQuery(query4)
+					.prepareTupleQuery(query9)
 					.evaluate()
 					.stream()) {
 				return stream.limit(1).collect(Collectors.toList());

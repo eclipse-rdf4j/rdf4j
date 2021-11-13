@@ -142,4 +142,10 @@ public class MemStatement extends ContextStatement {
 			context.removeContextStatement(this);
 		}
 	}
+
+	public boolean matchesSPO(MemResource subject, MemIRI predicate, MemValue object) {
+		return (subject == null || exactSameSubject(subject)) &&
+				(predicate == null || exactSamePredicate(predicate)) &&
+				(object == null || exactSameObject(object));
+	}
 }

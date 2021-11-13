@@ -54,42 +54,4 @@ public abstract class AbstractStatement implements Statement {
 				+ ")";
 	}
 
-	static class GenericStatement extends AbstractStatement {
-
-		private static final long serialVersionUID = -4116676621136121342L;
-
-		private Resource subject;
-		private IRI predicate;
-		private Value object;
-		private Resource context;
-
-		GenericStatement(Resource subject, IRI predicate, Value object, Resource context) {
-			this.subject = subject;
-			this.predicate = predicate;
-			this.object = object;
-			this.context = context;
-		}
-
-		@Override
-		public Resource getSubject() {
-			return subject;
-		}
-
-		@Override
-		public IRI getPredicate() {
-			return predicate;
-		}
-
-		@Override
-		public Value getObject() {
-			return object;
-		}
-
-		@Override
-		public Resource getContext() {
-			return context;
-		}
-
-	}
-
 }
