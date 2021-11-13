@@ -60,15 +60,13 @@ if [[ ${M} == "" ]]; then
       echo "https://github.com/eclipse/rdf4j/milestone/${SHOULD_BE_NULL_IF_MILESTONE_IS_CLOSED}";
       exit 1;
   fi
-
 fi
 
 echo "Version: ${MVN_VERSION_RELEASE}";
 
-
 # first try to get the GITHUB_MILESTONE number from the closed milestones
 export GITHUB_MILESTONE
-GITHUB_MILESTONE=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse/rdf4j/milestones?state=closed&direction=desc | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
+GITHUB_MILESTONE=$(curl  -s -H "Accept: application/vnd.github.v3+json"  https://api.github.com/repos/eclipse/rdf4j/milestones?state=closed\&direction=desc | jq '.[] | select(.title == "'"${MVN_VERSION_RELEASE}"'") | .number')
 
 # then try to get the GITHUB_MILESTONE number from the open milestones (this should only be relevant for RDF4J Milestone builds).
 if  [[ ${GITHUB_MILESTONE} == "" ]]; then
