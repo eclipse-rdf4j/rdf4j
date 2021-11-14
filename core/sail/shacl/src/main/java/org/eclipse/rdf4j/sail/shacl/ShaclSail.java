@@ -388,7 +388,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 	synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
 		if (executorService[0] == null) {
-			executorService[0] = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2,
+			executorService[0] = Executors.newFixedThreadPool(200,
 					r -> {
 						Thread t = Executors.defaultThreadFactory().newThread(r);
 						// this thread pool does not need to stick around if the all other threads are done, because it

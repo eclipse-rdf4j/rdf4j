@@ -7,9 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
+
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerFunctionalInterface;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -41,6 +50,20 @@ public class StrictEvaluationStrategyFactory extends AbstractEvaluationStrategyF
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, dataset, serviceResolver,
 				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
 		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
+
+		QueryOptimizerPipeline optimizerPipeline = strategy.getOptimizerPipeline();
+
+		List<QueryOptimizer> collect = Stream.concat(
+				getQueryOptimizersPre().stream().map(i -> i.getOptimizer(strategy, tripleSource, evaluationStatistics)),
+				Stream.concat(
+						StreamSupport.stream(optimizerPipeline.getOptimizers().spliterator(), false),
+						getQueryOptimizersPost().stream()
+								.map(i -> i.getOptimizer(strategy, tripleSource, evaluationStatistics))
+				)
+		)
+				.collect(Collectors.toList());
+
+		strategy.setOptimizerPipeline(() -> collect);
 
 		return strategy;
 	}

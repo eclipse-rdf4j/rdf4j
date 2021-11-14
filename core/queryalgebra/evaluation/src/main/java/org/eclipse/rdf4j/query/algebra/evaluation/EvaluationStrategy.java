@@ -50,6 +50,14 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	void setOptimizerPipeline(QueryOptimizerPipeline pipeline);
 
 	/**
+	 * Get the {@link QueryOptimizerPipeline}.
+	 *
+	 * @see #optimize(TupleExpr, EvaluationStatistics, BindingSet)
+	 * @since 4.0
+	 */
+	QueryOptimizerPipeline getOptimizerPipeline();
+
+	/**
 	 * Execute the {@link QueryOptimizerPipeline} on the given {@link TupleExpr} to optimize its execution plan.
 	 *
 	 * @param expr                 the {@link TupleExpr} to optimize.

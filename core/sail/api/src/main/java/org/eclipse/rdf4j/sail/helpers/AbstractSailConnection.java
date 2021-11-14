@@ -7,17 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -39,6 +28,18 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
 /**
  * Abstract Class offering base functionality for SailConnection implementations.
  *
@@ -51,6 +52,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * Size of write queue before auto flushing changes within write operation
 	 */
 	private static final int BLOCK_SIZE = 1000;
+
+	// Used when registering an iterator when not in debug mode. Since we can't put nulls into the map.
+	private final static Throwable DUMMY_THROWABLE = new Throwable();
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractSailConnection.class);
 
@@ -84,7 +88,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 */
 	protected final ReentrantLock updateLock = new ReentrantLock();
 
-	private final Map<SailBaseIteration, Throwable> activeIterations = new IdentityHashMap<>();
+	private final Map<SailBaseIteration, Throwable> activeIterations = new ConcurrentHashMap<>();
 
 	/**
 	 * Statements that are currently being removed, but not yet realized, by an active operation.
@@ -103,9 +107,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private IsolationLevel transactionIsolationLevel;
 
-	private boolean pendingAdds;
+	private volatile boolean pendingAdds;
 
-	private boolean pendingRemovals;
+	private volatile boolean pendingRemovals;
 
 	/*--------------*
 	 * Constructors *
@@ -155,10 +159,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 
 		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(isolationLevel,
-				sailBase.getSupportedIsolationLevels());
+			sailBase.getSupportedIsolationLevels());
 		if (compatibleLevel == null) {
 			throw new UnknownSailTransactionStateException(
-					"Isolation level " + isolationLevel + " not compatible with this Sail");
+				"Isolation level " + isolationLevel + " not compatible with this Sail");
 		}
 		this.transactionIsolationLevel = compatibleLevel;
 
@@ -210,7 +214,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 					if (txnActive) {
 						logger.warn("Rolling back transaction due to connection close",
-								debugEnabled ? new Throwable() : null);
+							debugEnabled ? new Throwable() : null);
 						try {
 							// Use internal method to avoid deadlock: the public
 							// rollback method will try to obtain a connection lock
@@ -237,7 +241,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
-			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+																							 Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		flushPendingUpdates();
 		connectionLock.readLock().lock();
 		try {
@@ -286,17 +290,17 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
-			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+																					  Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		flushPendingUpdates();
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
 			boolean registered = false;
 			CloseableIteration<? extends Statement, SailException> iteration = getStatementsInternal(subj, pred, obj,
-					includeInferred, contexts);
+				includeInferred, contexts);
 			try {
 				CloseableIteration<? extends Statement, SailException> registeredIteration = registerIteration(
-						iteration);
+					iteration);
 				registered = true;
 				return registeredIteration;
 			} finally {
@@ -424,7 +428,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 					}
 				} else {
 					logger.warn("Cannot rollback transaction on connection because transaction is not active",
-							debugEnabled ? new Throwable() : null);
+						debugEnabled ? new Throwable() : null);
 				}
 			} finally {
 				updateLock.unlock();
@@ -439,8 +443,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (pendingRemovals()) {
 			flushPendingUpdates();
 		}
-		pendingAdds = true;
 		addStatement(null, subj, pred, obj, contexts);
+		pendingAdds = true;
 	}
 
 	@Override
@@ -448,8 +452,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (pendingAdds()) {
 			flushPendingUpdates();
 		}
-		pendingRemovals = true;
 		removeStatement(null, subj, pred, obj, contexts);
+		pendingRemovals = true;
 	}
 
 	@Override
@@ -473,7 +477,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 */
 	@Override
 	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (added) {
@@ -498,7 +502,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 */
 	@Override
 	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException {
+		throws SailException {
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (removed) {
@@ -708,16 +712,16 @@ public abstract class AbstractSailConnection implements SailConnection {
 		return new JavaLock(updateLock);
 	}
 
+
 	/**
 	 * Registers an iteration as active by wrapping it in a {@link SailBaseIteration} object and adding it to the list
 	 * of active iterations.
 	 */
 	protected <T, E extends Exception> CloseableIteration<T, E> registerIteration(CloseableIteration<T, E> iter) {
 		SailBaseIteration<T, E> result = new SailBaseIteration<>(iter, this);
-		Throwable stackTrace = debugEnabled ? new Throwable() : null;
-		synchronized (activeIterations) {
-			activeIterations.put(result, stackTrace);
-		}
+		Throwable stackTrace = debugEnabled ? new Throwable() : DUMMY_THROWABLE;
+		activeIterations.put(result, stackTrace);
+
 		return result;
 	}
 
@@ -725,21 +729,20 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * Called by {@link SailBaseIteration} to indicate that it has been closed.
 	 */
 	protected void iterationClosed(SailBaseIteration iter) {
-		synchronized (activeIterations) {
-			activeIterations.remove(iter);
-		}
+		activeIterations.remove(iter);
+
 	}
 
 	protected abstract void closeInternal() throws SailException;
 
 	protected abstract CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
-			TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
+		TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
 
 	protected abstract CloseableIteration<? extends Resource, SailException> getContextIDsInternal()
-			throws SailException;
+		throws SailException;
 
 	protected abstract CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj,
-			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException;
+																									IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException;
 
 	protected abstract long sizeInternal(Resource... contexts) throws SailException;
 
@@ -754,15 +757,15 @@ public abstract class AbstractSailConnection implements SailConnection {
 	protected abstract void rollbackInternal() throws SailException;
 
 	protected abstract void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException;
+		throws SailException;
 
 	protected abstract void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
-			throws SailException;
+		throws SailException;
 
 	protected abstract void clearInternal(Resource... contexts) throws SailException;
 
 	protected abstract CloseableIteration<? extends Namespace, SailException> getNamespacesInternal()
-			throws SailException;
+		throws SailException;
 
 	protected abstract String getNamespaceInternal(String prefix) throws SailException;
 
@@ -773,23 +776,16 @@ public abstract class AbstractSailConnection implements SailConnection {
 	protected abstract void clearNamespacesInternal() throws SailException;
 
 	protected boolean isActiveOperation() {
-		synchronized (activeIterations) {
-			return !activeIterations.isEmpty();
-		}
+		return !activeIterations.isEmpty();
+
 	}
 
 	private void forceCloseActiveOperations() throws SailException {
-		final Map<SailBaseIteration, Throwable> activeIterationsCopy;
+		List<SailException> toThrowExceptions = new ArrayList<>();
 
-		synchronized (activeIterations) {
-			// Copy the current contents of the map so that we don't have to
-			// synchronize on activeIterations. This prevents a potential
-			// deadlock with concurrent calls to connectionClosed()
-			activeIterationsCopy = new IdentityHashMap<>(activeIterations);
-			activeIterations.clear();
-		}
+		Map<SailBaseIteration, Throwable> activeIterationsCopy = new IdentityHashMap<>(activeIterations);
+		activeIterations.clear();
 
-		final List<SailException> toThrowExceptions = new ArrayList<>();
 
 		for (Map.Entry<SailBaseIteration, Throwable> entry : activeIterationsCopy.entrySet()) {
 			SailBaseIteration ci = entry.getKey();
@@ -798,7 +794,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			try {
 				if (creatorTrace != null) {
 					logger.warn("Forced closing of unclosed iteration that was created in:",
-							debugEnabled ? creatorTrace : null);
+						debugEnabled ? creatorTrace : null);
 				}
 				ci.close();
 			} catch (SailException e) {
@@ -818,12 +814,15 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 *
 	 * @throws SailException
 	 */
-	synchronized private void flushPendingUpdates() throws SailException {
-		if (!isActiveOperation()
-				|| isActive() && !getTransactionIsolation().isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
-			flush();
-			pendingAdds = false;
-			pendingRemovals = false;
+	private void flushPendingUpdates() throws SailException {
+		if (isActive() && (pendingAdds || pendingRemovals)) {
+			synchronized (this) {
+				if (isActive() && (pendingAdds || pendingRemovals)) {
+					pendingAdds = false;
+					pendingRemovals = false;
+					flush();
+				}
+			}
 		}
 	}
 

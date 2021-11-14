@@ -10,9 +10,11 @@ package org.eclipse.rdf4j.sail.memory.model;
 import java.lang.ref.WeakReference;
 import java.util.AbstractSet;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * An object registry that uses weak references to keep track of the stored objects. The registry can be used to
@@ -29,7 +31,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	/**
 	 * The hash map that is used to store the objects.
 	 */
-	private final Map<E, WeakReference<E>> objectMap = new WeakHashMap<>();
+	private final Map<E, WeakReference<E>> objectMap = new ConcurrentHashMap<>();
 
 	/*--------------*
 	 * Constructors *
@@ -64,6 +66,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	 * @return A stored object that is equal to the supplied key, or <var>null</var> if no such object was found.
 	 */
 	public E get(Object key) {
+		if (key == null)
+			return null;
+
 		WeakReference<E> weakRef = objectMap.get(key);
 
 		if (weakRef != null) {
@@ -90,6 +95,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	@Override
 	public boolean add(E object) {
+		if (object == null)
+			return false;
+
 		WeakReference<E> ref = new WeakReference<>(object);
 
 		ref = objectMap.put(object, ref);
@@ -106,6 +114,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	@Override
 	public boolean remove(Object o) {
+		if (o == null)
+			return false;
+
 		WeakReference<E> ref = objectMap.remove(o);
 		return ref != null && ref.get() != null;
 	}

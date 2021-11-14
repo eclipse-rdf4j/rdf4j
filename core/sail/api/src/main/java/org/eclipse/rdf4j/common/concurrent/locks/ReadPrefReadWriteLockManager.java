@@ -29,7 +29,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 * Creates a MultiReadSingleWriteLockManager.
 	 */
 	public ReadPrefReadWriteLockManager() {
-		super();
+		this(false);
 	}
 
 	/**
@@ -40,6 +40,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 */
 	public ReadPrefReadWriteLockManager(boolean trackLocks) {
 		super(trackLocks);
+		READ_PREFERENCE = 100;
 	}
 
 	/*
@@ -69,12 +70,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 * released.
 	 */
 	@Override
-	public synchronized Lock getReadLock() throws InterruptedException {
-		// Wait for the writer to finish
-		while (isWriterActive()) {
-			waitForActiveWriter();
-		}
-
+	public Lock getReadLock() throws InterruptedException {
 		return createReadLock();
 	}
 
@@ -103,13 +99,6 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 */
 	@Override
 	public Lock getWriteLock() throws InterruptedException {
-		while (true) {
-			Lock lock = tryWriteLock();
-			if (lock != null) {
-				return lock;
-			}
-			waitForActiveWriter();
-			waitForActiveReaders();
-		}
+		return createWriteLock();
 	}
 }

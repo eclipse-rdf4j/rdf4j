@@ -74,6 +74,11 @@ public class OrderComparatorTest {
 		}
 
 		@Override
+		public QueryOptimizerPipeline getOptimizerPipeline() {
+			return null;
+		}
+
+		@Override
 		public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
 			// TODO Auto-generated method stub
 			return null;

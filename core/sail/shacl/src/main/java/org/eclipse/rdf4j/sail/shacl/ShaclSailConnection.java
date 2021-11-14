@@ -145,20 +145,25 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		stats.setEmptyBeforeTransaction(isEmpty());
 
 		transactionSettings = getDefaultSettings(sail);
+		logger.debug("Default transactionSettings: {}", transactionSettings);
 
 		if (stats.wasEmptyBeforeTransaction() && !shouldUseSerializableValidation()) {
 			transactionSettings.switchToBulkValidation();
+			logger.debug("Optimize transactionSettings for bulk validation: {}", transactionSettings);
 		}
 
 		transactionSettings.applyTransactionSettings(getLocalTransactionSettings());
+		logger.debug("Final transactionSettings: {}", transactionSettings);
 
 		assert transactionSettings.parallelValidation != null;
 		assert transactionSettings.cacheSelectedNodes != null;
 		assert transactionSettings.validationApproach != null;
 
 		if (isBulkValidation() || !isValidationEnabled()) {
+			logger.debug("Not using connection listener.");
 			removeConnectionListener(this);
 		} else {
+			logger.debug("Using connection listener.");
 			addConnectionListener(this);
 		}
 
@@ -507,6 +512,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			if (isParallelValidation()) {
 
+				logger.debug("Validation is using multithreaded ExecutorService.");
+
 				validationResultIterators = callableStream
 						.map(this.sail::submitRunnableToExecutorService)
 						// Creating a list is needed to actually make things run multi-threaded, without this the
@@ -523,6 +530,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						.collect(Collectors.toList());
 
 			} else {
+				logger.debug("Validation is using current thread.");
 				validationResultIterators = callableStream.map(c -> {
 					try {
 						return c.call();

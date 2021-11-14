@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -197,6 +198,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	private QueryOptimizerPipeline pipeline;
 
+	private final static AtomicLong counter = new AtomicLong();
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -225,7 +228,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.pipeline = new StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics);
-		this.uuid = UUID.randomUUID();
+		this.uuid = UUID.nameUUIDFromBytes(("StrictEvaluationStrategy" + counter.incrementAndGet()).getBytes());
 		EvaluationStrategies.register(this);
 		this.trackResultSize = trackResultSize;
 	}
@@ -253,6 +256,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
 		Objects.requireNonNull(pipeline);
 		this.pipeline = pipeline;
+	}
+
+	@Override
+	public QueryOptimizerPipeline getOptimizerPipeline() {
+		return pipeline;
 	}
 
 	/**

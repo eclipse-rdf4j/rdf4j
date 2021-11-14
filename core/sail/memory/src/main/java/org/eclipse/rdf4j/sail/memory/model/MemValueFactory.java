@@ -102,14 +102,14 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See getMemValue() for description.
 	 */
 	public MemResource getMemResource(Resource resource) {
-		if (resource instanceof IRI) {
-			return getMemURI((IRI) resource);
-		} else if (resource instanceof BNode) {
-			return getMemBNode((BNode) resource);
-		} else if (resource instanceof Triple) {
-			return getMemTriple((Triple) resource);
-		} else if (resource == null) {
+		if (resource == null) {
 			return null;
+		} else if (resource.isIRI()) {
+			return getMemURI((IRI) resource);
+		} else if (resource.isBNode()) {
+			return getMemBNode((BNode) resource);
+		} else if (resource.isTriple()) {
+			return getMemTriple((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
 		}
@@ -118,29 +118,31 @@ public class MemValueFactory extends AbstractValueFactory {
 	/**
 	 * See getMemValue() for description.
 	 */
-	public synchronized MemIRI getMemURI(IRI uri) {
+	public MemIRI getMemURI(IRI uri) {
 		if (isOwnMemValue(uri)) {
 			return (MemIRI) uri;
 		} else {
 			return uriRegistry.get(uri);
+
 		}
 	}
 
 	/**
 	 * See getMemValue() for description.
 	 */
-	public synchronized MemBNode getMemBNode(BNode bnode) {
+	public MemBNode getMemBNode(BNode bnode) {
 		if (isOwnMemValue(bnode)) {
 			return (MemBNode) bnode;
 		} else {
 			return bnodeRegistry.get(bnode);
+
 		}
 	}
 
 	/**
 	 * See getMemValue() for description.
 	 */
-	public synchronized MemLiteral getMemLiteral(Literal literal) {
+	public MemLiteral getMemLiteral(Literal literal) {
 		if (isOwnMemValue(literal)) {
 			return (MemLiteral) literal;
 		} else {

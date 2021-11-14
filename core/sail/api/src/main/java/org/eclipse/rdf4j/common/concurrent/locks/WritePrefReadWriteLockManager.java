@@ -34,7 +34,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 	 * Creates a MultiReadSingleWriteLockManager.
 	 */
 	public WritePrefReadWriteLockManager() {
-		super();
+		this(false);
 	}
 
 	/**

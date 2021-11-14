@@ -124,45 +124,6 @@ public class NativeStoreBenchmark {
 
 	}
 
-	private void runBenchmark(File file, ShaclSail shaclSail, boolean singleTransaction,
-			TransactionSetting... transactionSettings) throws IOException {
-		SailRepository sailRepository = new SailRepository(shaclSail);
-
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-
-			if (singleTransaction) {
-				connection.begin(transactionSettings);
-				try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
-					connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-				}
-
-				try (InputStream inputStream = getFile("complexBenchmark/generated.ttl")) {
-					connection.add(inputStream, "", RDFFormat.TURTLE);
-				}
-				connection.commit();
-
-			} else {
-				connection.begin(transactionSettings);
-				try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
-					connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-				}
-
-				connection.commit();
-				connection.begin(transactionSettings);
-
-				try (InputStream inputStream = getFile("complexBenchmark/generated.ttl")) {
-					connection.add(inputStream, "", RDFFormat.TURTLE);
-				}
-				connection.commit();
-			}
-
-		}
-
-		sailRepository.shutDown();
-
-		FileUtils.deleteDirectory(file);
-	}
-
 	@Benchmark
 	public void nativeStore() throws IOException {
 
@@ -219,6 +180,45 @@ public class NativeStoreBenchmark {
 
 		sailRepository.shutDown();
 
+	}
+
+	private void runBenchmark(File file, ShaclSail shaclSail, boolean singleTransaction,
+			TransactionSetting... transactionSettings) throws IOException {
+		SailRepository sailRepository = new SailRepository(shaclSail);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+
+			if (singleTransaction) {
+				connection.begin(transactionSettings);
+				try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
+					connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+				}
+
+				try (InputStream inputStream = getFile("complexBenchmark/generated.ttl")) {
+					connection.add(inputStream, "", RDFFormat.TURTLE);
+				}
+				connection.commit();
+
+			} else {
+				connection.begin(transactionSettings);
+				try (InputStream inputStream = getFile("complexBenchmark/shacl.ttl")) {
+					connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+				}
+
+				connection.commit();
+				connection.begin(transactionSettings);
+
+				try (InputStream inputStream = getFile("complexBenchmark/generated.ttl")) {
+					connection.add(inputStream, "", RDFFormat.TURTLE);
+				}
+				connection.commit();
+			}
+
+		}
+
+		sailRepository.shutDown();
+
+		FileUtils.deleteDirectory(file);
 	}
 
 	private InputStream getFile(String s) {

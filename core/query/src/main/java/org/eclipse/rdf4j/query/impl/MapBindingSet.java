@@ -48,7 +48,7 @@ public class MapBindingSet extends AbstractBindingSet {
 	 * @param value The binding's value.
 	 */
 	public void addBinding(String name, Value value) {
-		addBinding(new SimpleBinding(name, value));
+		addBinding(new SimpleMutableBinding(name, value));
 	}
 
 	/**
