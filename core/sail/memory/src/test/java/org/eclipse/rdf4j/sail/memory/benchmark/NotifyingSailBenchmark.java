@@ -88,7 +88,7 @@ public class NotifyingSailBenchmark {
 		long count = 0;
 
 		Sail memoryStore = new TestNotifyingSail(new MemoryStore());
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (SailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));

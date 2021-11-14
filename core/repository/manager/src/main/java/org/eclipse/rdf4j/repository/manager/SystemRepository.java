@@ -104,8 +104,8 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
-		super.initialize();
+	public void init() throws RepositoryException {
+		super.init();
 
 		try (RepositoryConnection con = getConnection()) {
 			if (con.isEmpty()) {

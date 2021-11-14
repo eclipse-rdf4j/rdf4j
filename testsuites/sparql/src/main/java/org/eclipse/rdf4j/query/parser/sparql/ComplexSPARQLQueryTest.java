@@ -104,7 +104,6 @@ public abstract class ComplexSPARQLQueryTest {
 	public void setUp() throws Exception {
 		logger.debug("setting up test");
 		this.rep = newRepository();
-		rep.initialize();
 
 		f = rep.getValueFactory();
 		conn = rep.getConnection();

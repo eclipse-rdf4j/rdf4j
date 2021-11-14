@@ -154,13 +154,9 @@ public abstract class SPARQLQueryTest extends TestCase {
 
 	protected final Repository createRepository() throws Exception {
 		Repository repo = newRepository();
-		repo.initialize();
-		RepositoryConnection con = repo.getConnection();
-		try {
+		try (RepositoryConnection con = repo.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return repo;
 	}

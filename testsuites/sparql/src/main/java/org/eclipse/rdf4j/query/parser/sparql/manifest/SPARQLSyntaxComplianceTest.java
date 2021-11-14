@@ -193,7 +193,7 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 							dataBlockUpdate = true;
 
 							MemoryStore store = new MemoryStore();
-							store.initialize();
+							store.init();
 							NotifyingSailConnection conn = store.getConnection();
 							try {
 								conn.begin();

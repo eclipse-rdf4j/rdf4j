@@ -30,7 +30,6 @@ public class UtilTest {
 	@BeforeAll
 	public static void setupClass() {
 		repo = new SailRepository(new MemoryStore());
-		repo.initialize();
 	}
 
 	@AfterAll

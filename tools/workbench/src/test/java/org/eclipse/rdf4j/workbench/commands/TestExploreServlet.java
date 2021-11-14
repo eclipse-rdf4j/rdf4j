@@ -54,7 +54,6 @@ public class TestExploreServlet {
 	@Before
 	public void setUp() throws RepositoryException, MalformedQueryException, UpdateExecutionException {
 		Repository repo = new SailRepository(new MemoryStore());
-		repo.initialize();
 		connection = repo.getConnection();
 		servlet = new ExploreServlet();
 		ValueFactory factory = connection.getValueFactory();

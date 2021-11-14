@@ -120,18 +120,18 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
+	public void init() throws RepositoryException {
 		boolean denied = false;
 		if (activated) {
 			for (RepositoryInterceptor interceptor : interceptors) {
-				denied = interceptor.initialize(getDelegate());
+				denied = interceptor.init(getDelegate());
 				if (denied) {
 					break;
 				}
 			}
 		}
 		if (!denied) {
-			getDelegate().initialize();
+			getDelegate().init();
 		}
 	}
 

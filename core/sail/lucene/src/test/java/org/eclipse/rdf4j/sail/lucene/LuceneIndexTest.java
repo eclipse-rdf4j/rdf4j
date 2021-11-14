@@ -301,7 +301,6 @@ public class LuceneIndexTest {
 
 		// create a Repository wrapping the LuceneSail
 		SailRepository repository = new SailRepository(sail);
-		repository.initialize();
 
 		try ( // now add the statements through the repo
 				// add statements with context
@@ -353,7 +352,6 @@ public class LuceneIndexTest {
 
 		// create a Repository wrapping the LuceneSail
 		SailRepository repository = new SailRepository(sail);
-		repository.initialize();
 
 		try ( // now add the statements through the repo
 				// add statements with context

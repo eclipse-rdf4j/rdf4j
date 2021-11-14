@@ -57,16 +57,13 @@ public abstract class AbstractNTriplesParserTest {
 
 		// Add the manifest for W3C test cases to a repository and query it
 		Repository w3cRepository = new SailRepository(new MemoryStore());
-		w3cRepository.initialize();
-		RepositoryConnection w3cCon = w3cRepository.getConnection();
+		try (RepositoryConnection w3cCon = w3cRepository.getConnection()) {
+			InputStream inputStream = this.getClass().getResourceAsStream(TEST_W3C_MANIFEST_URL);
+			w3cCon.add(inputStream, TEST_W3C_MANIFEST_URI_BASE, RDFFormat.TURTLE);
 
-		InputStream inputStream = this.getClass().getResourceAsStream(TEST_W3C_MANIFEST_URL);
-		w3cCon.add(inputStream, TEST_W3C_MANIFEST_URI_BASE, RDFFormat.TURTLE);
-
-		parsePositiveNTriplesSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TEST_W3C_TEST_URI_BASE, w3cCon);
-		parseNegativeNTriplesSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TEST_W3C_TEST_URI_BASE, w3cCon);
-
-		w3cCon.close();
+			parsePositiveNTriplesSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TEST_W3C_TEST_URI_BASE, w3cCon);
+			parseNegativeNTriplesSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TEST_W3C_TEST_URI_BASE, w3cCon);
+		}
 		w3cRepository.shutDown();
 
 		return suite;

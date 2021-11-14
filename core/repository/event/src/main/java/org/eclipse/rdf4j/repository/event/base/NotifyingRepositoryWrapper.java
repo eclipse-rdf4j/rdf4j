@@ -127,12 +127,12 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
-		super.initialize();
+	public void init() throws RepositoryException {
+		super.init();
 
 		if (activated) {
 			for (RepositoryListener listener : listeners) {
-				listener.initialize(this);
+				listener.init(this);
 			}
 		}
 	}

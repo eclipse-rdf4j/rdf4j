@@ -117,12 +117,11 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		remoteRepositories = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
 			HTTPRepository r = new HTTPRepository(getRepositoryUrl(i));
-			r.initialize();
+			r.init();
 			remoteRepositories.add(r);
 		}
 
 		localRepository = new SailRepository(new MemoryStore());
-		localRepository.initialize();
 	}
 
 	/**

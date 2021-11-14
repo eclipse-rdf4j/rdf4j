@@ -62,7 +62,6 @@ public class LuceneIndexLocationTest {
 
 		repository = new SailRepository(lucene);
 		repository.setDataDir(dataDir);
-		repository.initialize();
 
 		try ( // create temporary transaction to load data
 				SailRepositoryConnection cnx = repository.getConnection()) {

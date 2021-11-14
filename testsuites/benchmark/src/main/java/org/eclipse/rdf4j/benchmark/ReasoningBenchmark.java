@@ -196,8 +196,6 @@ public class ReasoningBenchmark {
 
 	private SailRepository createSchema() throws IOException {
 		SailRepository schema = new SailRepository(new MemoryStore());
-		schema.initialize();
-
 		try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
 			schemaConnection.begin();
 			schemaConnection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);

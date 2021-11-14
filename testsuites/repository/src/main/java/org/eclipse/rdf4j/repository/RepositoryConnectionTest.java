@@ -267,7 +267,6 @@ public abstract class RepositoryConnectionTest {
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(alice, name, nameAlice, false));
 
 		Repository tempRep = createRepository();
-		tempRep.initialize();
 		try (RepositoryConnection con = tempRep.getConnection();) {
 
 			con.add(testCon.getStatements(null, null, null, false));

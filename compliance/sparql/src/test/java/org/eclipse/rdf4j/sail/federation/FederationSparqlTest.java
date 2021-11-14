@@ -27,7 +27,6 @@ public class FederationSparqlTest {
 		fed.addMember(repo1);
 		fed.addMember(repo2);
 		SailRepository repoFed = new SailRepository(fed);
-		repoFed.initialize();
 
 		try (RepositoryConnection conn = repo1.getConnection()) {
 			conn.add(getClass().getResource("/testcases-sparql-1.0-w3c/data-r2/algebra/var-scope-join-1.ttl"),

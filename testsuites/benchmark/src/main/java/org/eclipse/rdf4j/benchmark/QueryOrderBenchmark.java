@@ -75,7 +75,6 @@ public class QueryOrderBenchmark {
 	}
 
 	private void initialize() {
-		repository.initialize();
 		try (RepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			for (int i = 0; i < countk; i++) {

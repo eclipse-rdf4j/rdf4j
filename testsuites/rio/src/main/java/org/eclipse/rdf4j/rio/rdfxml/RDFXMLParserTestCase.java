@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -66,54 +65,50 @@ public abstract class RDFXMLParserTestCase {
 	public TestSuite createTestSuite() throws Exception {
 		// Create an RDF repository for the manifest data
 		Repository repository = new SailRepository(new MemoryStore());
-		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-
-		// Add W3C's manifest
-		URL w3cManifest = resolveURL(W3C_MANIFEST_FILE);
-		con.add(w3cManifest, base(W3C_MANIFEST_FILE), RDFFormat.RDFXML);
-
 		// Create test suite
 		TestSuite suite = new TestSuite(RDFXMLParserTestCase.class.getName());
 
-		// Add all positive parser tests
-		String query = ""
-				+ "PREFIX test: <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>"
-				+ " SELECT ?TESTCASE ?INPUT ?OUTPUT "
-				+ " WHERE { ?TESTCASE a test:PositiveParserTest; "
-				+ "                test:inputDocument ?INPUT; "
-				+ "                test:outputDocument ?OUTPUT; "
-				+ "                test:status \"APPROVED\" .} ";
+		try (RepositoryConnection con = repository.getConnection()) {
 
-		TupleQueryResult queryResult = con.prepareTupleQuery(query).evaluate();
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			String caseURI = bindingSet.getValue("TESTCASE").toString();
-			String inputURL = bindingSet.getValue("INPUT").toString();
-			String outputURL = bindingSet.getValue("OUTPUT").toString();
-			suite.addTest(new PositiveParserTest(caseURI, inputURL, outputURL));
+			// Add W3C's manifest
+			URL w3cManifest = resolveURL(W3C_MANIFEST_FILE);
+			con.add(w3cManifest, base(W3C_MANIFEST_FILE), RDFFormat.RDFXML);
+
+			// Add all positive parser tests
+			String query = ""
+					+ "PREFIX test: <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>"
+					+ " SELECT ?TESTCASE ?INPUT ?OUTPUT "
+					+ " WHERE { ?TESTCASE a test:PositiveParserTest; "
+					+ "                test:inputDocument ?INPUT; "
+					+ "                test:outputDocument ?OUTPUT; "
+					+ "                test:status \"APPROVED\" .} ";
+
+			try (var queryResult = con.prepareTupleQuery(query).evaluate()) {
+				while (queryResult.hasNext()) {
+					BindingSet bindingSet = queryResult.next();
+					String caseURI = bindingSet.getValue("TESTCASE").toString();
+					String inputURL = bindingSet.getValue("INPUT").toString();
+					String outputURL = bindingSet.getValue("OUTPUT").toString();
+					suite.addTest(new PositiveParserTest(caseURI, inputURL, outputURL));
+				}
+			}
+			// Add all negative parser tests
+			query = ""
+					+ "PREFIX test: <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>"
+					+ " SELECT ?TESTCASE ?INPUT ?OUTPUT "
+					+ " WHERE { ?TESTCASE a test:NegativeParserTest; "
+					+ "                test:inputDocument ?INPUT; "
+					+ "                test:outputDocument ?OUTPUT; "
+					+ "                test:status \"APPROVED\" .} ";
+			try (var queryResult = con.prepareTupleQuery(query).evaluate()) {
+				while (queryResult.hasNext()) {
+					BindingSet bindingSet = queryResult.next();
+					String caseURI = bindingSet.getValue("TESTCASE").toString();
+					String inputURL = bindingSet.getValue("INPUT").toString();
+					suite.addTest(new NegativeParserTest(caseURI, inputURL));
+				}
+			}
 		}
-
-		queryResult.close();
-
-		// Add all negative parser tests
-		query = ""
-				+ "PREFIX test: <http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#>"
-				+ " SELECT ?TESTCASE ?INPUT ?OUTPUT "
-				+ " WHERE { ?TESTCASE a test:NegativeParserTest; "
-				+ "                test:inputDocument ?INPUT; "
-				+ "                test:outputDocument ?OUTPUT; "
-				+ "                test:status \"APPROVED\" .} ";
-		queryResult = con.prepareTupleQuery(query).evaluate();
-		while (queryResult.hasNext()) {
-			BindingSet bindingSet = queryResult.next();
-			String caseURI = bindingSet.getValue("TESTCASE").toString();
-			String inputURL = bindingSet.getValue("INPUT").toString();
-			suite.addTest(new NegativeParserTest(caseURI, inputURL));
-		}
-
-		queryResult.close();
-		con.close();
 		repository.shutDown();
 
 		return suite;

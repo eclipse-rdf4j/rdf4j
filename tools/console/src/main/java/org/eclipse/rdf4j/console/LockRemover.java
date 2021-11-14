@@ -38,7 +38,7 @@ public class LockRemover {
 				.askProceed("WARNING: The lock from another process on this repository needs to be removed", true)) {
 			repo.shutDown();
 			lockRemoved = lockManager.revokeLock();
-			repo.initialize();
+			repo.init();
 		}
 		return lockRemoved;
 	}

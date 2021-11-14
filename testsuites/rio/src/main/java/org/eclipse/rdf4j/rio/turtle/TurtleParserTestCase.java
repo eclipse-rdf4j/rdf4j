@@ -80,22 +80,19 @@ public abstract class TurtleParserTestCase {
 
 		// Add the manifest for W3C test cases to a repository and query it
 		Repository w3cRepository = new SailRepository(new MemoryStore());
-		w3cRepository.initialize();
-		RepositoryConnection w3cCon = w3cRepository.getConnection();
+		try (RepositoryConnection w3cCon = w3cRepository.getConnection()) {
+			InputStream inputStream = this.getClass().getResourceAsStream(TEST_W3C_MANIFEST_URL);
+			w3cCon.add(inputStream, TEST_W3C_MANIFEST_URI_BASE, RDFFormat.TURTLE);
 
-		InputStream inputStream = this.getClass().getResourceAsStream(TEST_W3C_MANIFEST_URL);
-		w3cCon.add(inputStream, TEST_W3C_MANIFEST_URI_BASE, RDFFormat.TURTLE);
-
-		parsePositiveTurtleSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
-				w3cCon);
-		parseNegativeTurtleSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
-				w3cCon);
-		parsePositiveTurtleEvalTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
-				w3cCon);
-		parseNegativeTurtleEvalTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
-				w3cCon);
-
-		w3cCon.close();
+			parsePositiveTurtleSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
+					w3cCon);
+			parseNegativeTurtleSyntaxTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
+					w3cCon);
+			parsePositiveTurtleEvalTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
+					w3cCon);
+			parseNegativeTurtleEvalTests(suite, TEST_W3C_FILE_BASE_PATH, TESTS_W3C_BASE_URL, TEST_W3C_TEST_URI_BASE,
+					w3cCon);
+		}
 		w3cRepository.shutDown();
 
 		return suite;
