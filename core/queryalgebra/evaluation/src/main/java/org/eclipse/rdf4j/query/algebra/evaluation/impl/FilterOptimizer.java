@@ -11,6 +11,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -23,22 +24,36 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 /**
  * Optimizes a query model by pushing {@link Filter}s as far down in the model tree as possible.
+ * 
+ * @author Arjohn Kampman Then it optimizes a query model by merging adjacent {@link Filter}s. e.g. <code>
+ * SELECT * WHERE {
+ *  ?s ?p ?o .
+ *  FILTER(?o > 2) .
+ *  FILTER(?o < 4) .
+ *  } 
+ *  </code> may be merged into * ?s ?p ?o . FILTER(?o > 2 && ?o < 4) . } </code>
+ * 
+ *         This optimization allows for sharing evaluation costs in the future and removes an iterator. This is done as
+ *         a second step to not break the first optimization.
  *
- * @author Arjohn Kampman
+ * @author Jerven Bolleman
  */
 public class FilterOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new FilterFinder(tupleExpr));
+		tupleExpr.visit(new MergeFilterFinder());
 	}
 
 	/*--------------------------*
@@ -96,6 +111,14 @@ public class FilterOptimizer implements QueryOptimizer {
 				join.getRightArg().visit(this);
 			} else {
 				relocate(filter, join);
+			}
+		}
+
+		@Override
+		public void meet(StatementPattern sp) {
+			if (sp.getBindingNames().containsAll(filterVars)) {
+				// All required vars are bound by the left expr
+				relocate(filter, sp);
 			}
 		}
 
@@ -197,6 +220,32 @@ public class FilterOptimizer implements QueryOptimizer {
 				// Insert filter at the new location
 				newFilterArg.replaceWith(filter);
 				filter.setArg(newFilterArg);
+			}
+		}
+	}
+
+	/*--------------------------*
+	 * Inner class MergeFilterFinder *
+	 *--------------------------*/
+
+	protected static class MergeFilterFinder extends AbstractQueryModelVisitor<RuntimeException> {
+
+		public MergeFilterFinder() {
+
+		}
+
+		@Override
+		public void meet(Filter filter) {
+			super.meet(filter);
+			if (filter.getParentNode() instanceof Filter) {
+
+				Filter parentFilter = (Filter) filter.getParentNode();
+				QueryModelNode grandParent = parentFilter.getParentNode();
+				ValueExpr parentCondition = parentFilter.getCondition();
+				ValueExpr thisCondition = filter.getCondition();
+				And merge = new And(parentCondition, thisCondition);
+				filter.setCondition(merge);
+				grandParent.replaceChildNode(parentFilter, filter);
 			}
 		}
 	}
