@@ -112,13 +112,9 @@ public abstract class SparqlRegexTest {
 
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
-		repository.initialize();
-		RepositoryConnection con = repository.getConnection();
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
-		} finally {
-			con.close();
 		}
 		return repository;
 	}

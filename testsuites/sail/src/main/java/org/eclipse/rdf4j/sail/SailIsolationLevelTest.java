@@ -70,7 +70,7 @@ public abstract class SailIsolationLevelTest {
 	@Before
 	public void setUp() throws Exception {
 		store = createSail();
-		store.initialize();
+		store.init();
 		vf = store.getValueFactory();
 		failed = null;
 	}

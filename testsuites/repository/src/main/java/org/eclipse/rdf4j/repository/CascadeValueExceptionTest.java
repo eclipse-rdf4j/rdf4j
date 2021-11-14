@@ -158,7 +158,6 @@ public abstract class CascadeValueExceptionTest {
 
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
-		repository.initialize();
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.clear();
 			con.clearNamespaces();

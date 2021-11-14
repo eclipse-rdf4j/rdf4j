@@ -70,7 +70,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
+	public void init() throws RepositoryException {
 
 		if (getDelegate() != null) {
 			return;

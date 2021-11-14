@@ -111,8 +111,6 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	public void testUpdateInsertData() {
 
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
-		sail.initialize();
-
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
 			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
@@ -133,8 +131,6 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	public void testUpdateInsert() {
 
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
-		sail.initialize();
-
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
 			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
@@ -156,8 +152,6 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	public void testInsert() {
 
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
-		sail.initialize();
-
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
 			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");
@@ -179,8 +173,6 @@ public class SchemaCachingRDFSInferencerRDFSchemaMemoryRepositoryConnectionTest
 	public void testUpdateRemove() {
 
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
-		sail.initialize();
-
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 
 			IRI foo_s1 = connection.getValueFactory().createIRI("foo:s1");

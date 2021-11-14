@@ -351,7 +351,6 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		// create a Repository wrapping the LuceneSail
 		SailRepository repository = new SailRepository(sail);
-		repository.initialize();
 
 		// now add the statements through the repo
 		// add statements with context
@@ -403,7 +402,6 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		// create a Repository wrapping the LuceneSail
 		SailRepository repository = new SailRepository(sail);
-		repository.initialize();
 
 		// now add the statements through the repo
 		// add statements with context

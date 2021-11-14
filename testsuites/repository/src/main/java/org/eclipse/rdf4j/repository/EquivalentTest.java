@@ -204,7 +204,6 @@ public abstract class EquivalentTest {
 
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
-		repository.initialize();
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.begin();
 			con.clear();

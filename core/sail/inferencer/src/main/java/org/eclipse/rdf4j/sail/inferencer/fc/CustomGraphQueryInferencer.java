@@ -146,8 +146,8 @@ public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void initialize() throws SailException {
-		super.initialize();
+	public void init() throws SailException {
+		super.init();
 		try (InferencerConnection con = getConnection()) {
 			con.begin();
 			con.flushUpdates();

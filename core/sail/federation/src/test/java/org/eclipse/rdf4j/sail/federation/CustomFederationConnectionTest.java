@@ -54,7 +54,7 @@ public class CustomFederationConnectionTest {
 		SailRepository repository = new SailRepository(new MemoryStore());
 		federation.addMember(repository);
 
-		federation.initialize();
+		federation.init();
 		try {
 			try (SailConnection connection = federation.getConnection()) {
 				assertEquals("Should get size", 0, connection.size());
@@ -81,7 +81,7 @@ public class CustomFederationConnectionTest {
 
 		federation.addMember(repository);
 
-		federation.initialize();
+		federation.init();
 		try {
 			try (SailConnection connection = federation.getConnection()) {
 				connection.begin();

@@ -77,7 +77,7 @@ public class LoadingBenchmark {
 	public void loadSynthetic() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
@@ -92,7 +92,7 @@ public class LoadingBenchmark {
 	public void loadRealData() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
@@ -107,7 +107,7 @@ public class LoadingBenchmark {
 	public long loadSyntheticAndSize() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
@@ -124,7 +124,7 @@ public class LoadingBenchmark {
 	public long loadSyntheticWithDuplicates() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
@@ -153,7 +153,7 @@ public class LoadingBenchmark {
 	public long loadSyntheticWithDuplicatesFlush() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
@@ -184,7 +184,7 @@ public class LoadingBenchmark {
 	public long loadSyntheticWithDuplicatesAndNewStatements() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
@@ -216,7 +216,7 @@ public class LoadingBenchmark {
 	public long loadSyntheticWithDuplicatesAndNewStatementsGetFirst() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
@@ -251,7 +251,7 @@ public class LoadingBenchmark {
 	public long loadSyntheticSingleTransactionGetFirstStatement() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));
@@ -277,7 +277,7 @@ public class LoadingBenchmark {
 	public long loadSyntheticWithDuplicatesAndNewStatementsIteratorMatchesNothing() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.initialize();
+		memoryStore.init();
 
 		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 			connection.begin(IsolationLevels.valueOf(isolationLevel));

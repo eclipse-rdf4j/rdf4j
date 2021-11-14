@@ -60,11 +60,6 @@ public class RepositoryWrapper implements DelegatingRepository {
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
-		getDelegate().initialize();
-	}
-
-	@Override
 	public void shutDown() throws RepositoryException {
 		getDelegate().shutDown();
 	}
@@ -92,5 +87,10 @@ public class RepositoryWrapper implements DelegatingRepository {
 	@Override
 	public boolean isInitialized() {
 		return getDelegate().isInitialized();
+	}
+
+	@Override
+	public void init() throws RepositoryException {
+		getDelegate().init();
 	}
 }

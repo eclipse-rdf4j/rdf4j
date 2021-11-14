@@ -114,11 +114,9 @@ public class FederationQueryTest {
 	@Before
 	public void setUp() throws Exception {
 		SailRepository ref = new SailRepository(new MemoryStore());
-		ref.initialize();
 		reference = ref.getConnection();
 		Federation federation = new Federation();
 		SailRepository repo = new SailRepository(federation);
-		repo.initialize();
 		configure(federation);
 		con = repo.getConnection();
 	}
@@ -132,7 +130,6 @@ public class FederationQueryTest {
 
 	private Repository createMember(String memberID) throws RepositoryException, RDFParseException, IOException {
 		SailRepository member = new SailRepository(new MemoryStore());
-		member.initialize();
 		try (SailRepositoryConnection con = member.getConnection()) {
 			String resource = "testcases/federation-member-" + memberID + ".ttl";
 			con.add(classLoader.getResource(resource), "", RDFFormat.TURTLE);

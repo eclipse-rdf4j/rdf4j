@@ -129,7 +129,6 @@ public class W3cComplianceTest {
 
 		public Manifest(URL filename) {
 			SailRepository sailRepository = new SailRepository(new MemoryStore());
-			sailRepository.initialize();
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				connection.add(filename, filename.toString(), RDFFormat.TURTLE);
 			} catch (IOException e) {

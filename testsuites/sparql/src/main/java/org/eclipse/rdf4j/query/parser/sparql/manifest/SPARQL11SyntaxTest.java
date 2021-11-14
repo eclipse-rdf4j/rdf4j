@@ -137,7 +137,7 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 							dataBlockUpdate = true;
 
 							MemoryStore store = new MemoryStore();
-							store.initialize();
+							store.init();
 							NotifyingSailConnection conn = store.getConnection();
 							try {
 								conn.begin();
@@ -247,58 +247,55 @@ public abstract class SPARQL11SyntaxTest extends TestCase {
 
 		// Read manifest and create declared test cases
 		Repository manifestRep = new SailRepository(new MemoryStore());
-		manifestRep.initialize();
+		try (RepositoryConnection con = manifestRep.getConnection()) {
 
-		RepositoryConnection con = manifestRep.getConnection();
+			logger.debug("Loading manifest data");
+			URL manifest = new URL(manifestFile);
+			SPARQL11ManifestTest.addTurtle(con, manifest, manifestFile);
 
-		logger.debug("Loading manifest data");
-		URL manifest = new URL(manifestFile);
-		SPARQL11ManifestTest.addTurtle(con, manifest, manifestFile);
+			logger.info("Searching for sub-manifests");
+			List<String> subManifestList = new ArrayList<>();
 
-		logger.info("Searching for sub-manifests");
-		List<String> subManifestList = new ArrayList<>();
-
-		TupleQueryResult subManifests = con.prepareTupleQuery(QueryLanguage.SPARQL, SUBMANIFEST_QUERY).evaluate();
-		while (subManifests.hasNext()) {
-			BindingSet bindings = subManifests.next();
-			subManifestList.add(bindings.getValue("subManifest").toString());
-		}
-		subManifests.close();
-
-		logger.info("Found {} sub-manifests", subManifestList.size());
-
-		for (String subManifest : subManifestList) {
-			logger.info("Loading sub manifest {}", subManifest);
-			con.clear();
-
-			URL subManifestURL = new URL(subManifest);
-			SPARQL11ManifestTest.addTurtle(con, subManifestURL, subManifest);
-
-			TestSuite subSuite = new TestSuite(subManifest.substring(host.length()));
-
-			logger.info("Creating test cases for {}", subManifest);
-			TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SPARQL, TESTCASE_QUERY).evaluate();
-			while (tests.hasNext()) {
-				BindingSet bindingSet = tests.next();
-
-				String testURI = bindingSet.getValue("TestURI").toString();
-				String testName = bindingSet.getValue("Name").toString();
-				String testAction = bindingSet.getValue("Action").toString();
-
-				String type = bindingSet.getValue("Type").toString();
-				boolean positiveTest = type
-						.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
-						|| type.equals(
-								"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
-
-				subSuite.addTest(factory.createSPARQLSyntaxTest(testURI, testName, testAction, positiveTest));
+			TupleQueryResult subManifests = con.prepareTupleQuery(QueryLanguage.SPARQL, SUBMANIFEST_QUERY).evaluate();
+			while (subManifests.hasNext()) {
+				BindingSet bindings = subManifests.next();
+				subManifestList.add(bindings.getValue("subManifest").toString());
 			}
-			tests.close();
+			subManifests.close();
 
-			suite.addTest(subSuite);
+			logger.info("Found {} sub-manifests", subManifestList.size());
+
+			for (String subManifest : subManifestList) {
+				logger.info("Loading sub manifest {}", subManifest);
+				con.clear();
+
+				URL subManifestURL = new URL(subManifest);
+				SPARQL11ManifestTest.addTurtle(con, subManifestURL, subManifest);
+
+				TestSuite subSuite = new TestSuite(subManifest.substring(host.length()));
+
+				logger.info("Creating test cases for {}", subManifest);
+				TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SPARQL, TESTCASE_QUERY).evaluate();
+				while (tests.hasNext()) {
+					BindingSet bindingSet = tests.next();
+
+					String testURI = bindingSet.getValue("TestURI").toString();
+					String testName = bindingSet.getValue("Name").toString();
+					String testAction = bindingSet.getValue("Action").toString();
+
+					String type = bindingSet.getValue("Type").toString();
+					boolean positiveTest = type
+							.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
+							|| type.equals(
+									"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
+
+					subSuite.addTest(factory.createSPARQLSyntaxTest(testURI, testName, testAction, positiveTest));
+				}
+				tests.close();
+
+				suite.addTest(subSuite);
+			}
 		}
-
-		con.close();
 		manifestRep.shutDown();
 
 		logger.info("Added {} tests to suite ", suite.countTestCases());

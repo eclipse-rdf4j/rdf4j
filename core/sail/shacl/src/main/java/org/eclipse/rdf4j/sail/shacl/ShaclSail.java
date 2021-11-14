@@ -328,13 +328,13 @@ public class ShaclSail extends NotifyingSailWrapper {
 	private final AtomicBoolean initialized = new AtomicBoolean(false);
 
 	@Override
-	public void initialize() throws SailException {
+	public void init() throws SailException {
 		if (!initialized.compareAndSet(false, true)) {
 			// already initialized
 			return;
 		}
 
-		super.initialize();
+		super.init();
 
 		if (shapesRepo != null) {
 			shapesRepo.shutDown();

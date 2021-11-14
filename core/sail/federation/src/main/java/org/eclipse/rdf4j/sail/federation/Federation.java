@@ -250,17 +250,11 @@ public class Federation implements Sail, Executor, FederatedServiceResolverClien
 		}
 	}
 
-	@Deprecated
-	@Override
-	public void initialize() throws SailException {
-		init();
-	}
-
 	@Override
 	public void init() throws SailException {
 		for (Repository member : members) {
 			try {
-				member.initialize();
+				member.init();
 			} catch (RepositoryException e) {
 				throw new SailException(e);
 			}

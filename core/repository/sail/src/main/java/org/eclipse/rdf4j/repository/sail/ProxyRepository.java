@@ -141,7 +141,7 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 		if (resolver == null) {
 			throw new RepositoryException("Expected RepositoryResolver to be set.");
 		}
-		getProxiedRepository().initialize();
+		getProxiedRepository().init();
 	}
 
 	@Override
