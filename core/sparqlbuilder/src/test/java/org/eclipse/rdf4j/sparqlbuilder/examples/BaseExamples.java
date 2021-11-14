@@ -19,6 +19,9 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.SelectQuery;
+import org.hamcrest.BaseMatcher;
+import org.hamcrest.Description;
+import org.hamcrest.Matcher;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestName;
@@ -81,5 +84,63 @@ public class BaseExamples {
 
 		p(Stream.of(Arrays.copyOfRange(tokens, 1, tokens.length))
 				.collect(Collectors.joining(".", tokens[0].toUpperCase() + " ", ":")));
+	}
+
+	private String toLowerRemoveWhitespace(String s) {
+		if (s == null) {
+			return null;
+		}
+		return s.toLowerCase().replaceAll("[\n\\s]", "");
+	}
+
+	protected Matcher<? super String> stringEqualsIgnoreCaseAndWhitespace(String compareTo) {
+		final String compareToConverted = toLowerRemoveWhitespace(compareTo);
+		return new BaseMatcher<String>() {
+			private String aroundString = null;
+
+			@Override
+			public boolean matches(Object item) {
+				if (!(item instanceof String)) {
+					return false;
+				}
+				String itemConverted = toLowerRemoveWhitespace((String) item);
+				if (itemConverted == null) {
+					return compareToConverted == null;
+				}
+				if (!itemConverted.equals(compareToConverted)) {
+					aroundString = getFirstDifference(compareToConverted, itemConverted, 20);
+					return false;
+				}
+				return true;
+			}
+
+			@Override
+			public void describeTo(Description description) {
+				description.appendText(
+						"To match the following String after lowercasing, removal of newlines and whitespaces:\n");
+				description.appendText(compareTo);
+				description.appendText("\nHint:Found a difference around '" + aroundString + "'\n");
+			}
+		};
+	}
+
+	private String getFirstDifference(String s1, String s2, int length) {
+		int minLength = Math.min(s1.length(), s2.length());
+		int pos = 0;
+		while (s1.charAt(pos) == s2.charAt(pos) && pos < minLength) {
+			pos++;
+		}
+		if (pos == minLength) {
+			if (s1.length() == s2.length()) {
+				return "[no difference found]";
+			} else if (s1.length() < s2.length()) {
+				return s2.substring(pos);
+			}
+			return s1.substring(pos);
+		}
+		if (s1.length() > s2.length()) {
+			return s1.substring(pos, Math.min(s1.length(), pos + length));
+		}
+		return s2.substring(pos, Math.min(s2.length(), pos + length));
 	}
 }
