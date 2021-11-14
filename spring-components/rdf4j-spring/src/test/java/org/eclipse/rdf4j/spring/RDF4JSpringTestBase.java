@@ -1,12 +1,10 @@
-/*
- * ******************************************************************************
- *  * Copyright (c) 2021 Eclipse RDF4J contributors.
- *  * All rights reserved. This program and the accompanying materials
- *  * are made available under the terms of the Eclipse Distribution License v1.0
- *  * which accompanies this distribution, and is available at
- *  * http://www.eclipse.org/org/documents/edl-v10.php.
- *  ******************************************************************************
- */
+/*******************************************************************************
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.spring;
 
@@ -39,22 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @ExtendWith(SpringExtension.class)
 @Transactional
-@ContextConfiguration(
-		classes = {
-				RDF4JConfig.class,
-				TestConfig.class,
-				InMemoryRepositoryConfig.class,
-				RemoteRepositoryConfig.class,
-				PoolConfig.class,
-				ResultCacheConfig.class,
-				OperationCacheConfig.class,
-				OperationLogConfig.class,
-				OperationLogJmxConfig.class,
-				TxConfig.class,
-				UUIDSequenceConfig.class,
-				NoveltyCheckingUUIDSourceConfig.class,
-				SimpleRepositoryUUIDSourceConfig.class
-		})
+@ContextConfiguration(classes = { TestConfig.class })
 @TestPropertySource("classpath:application.properties")
 @TestPropertySource(
 		properties = {
