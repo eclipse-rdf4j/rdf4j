@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2019 Eclipse RDF4J contributors.
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -32,9 +32,13 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * WHERE {?s ?p ?o }
  * </code> Does as the statement pattern has one more variable in use than the projection.
  * 
+ * Note: this optimiser should run after optimisations ran that depend on Projections. e.g.
+ * 
+ * @see UnionScopeChangeOptimizer
+ * 
  * @author Jerven Bolleman
  */
-public class ProjectionRemovealOptimizer implements QueryOptimizer {
+public class ProjectionRemovalOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
