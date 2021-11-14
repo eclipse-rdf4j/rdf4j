@@ -40,10 +40,6 @@ import org.slf4j.LoggerFactory;
 @Deprecated
 public class SystemRepository extends NotifyingRepositoryWrapper {
 
-	/*-----------*
-	 * Constants *
-	 *-----------*/
-
 	private static final String CONFIG_SYSTEM_TTL = "org/eclipse/rdf4j/repository/config/system.ttl";
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
@@ -56,10 +52,6 @@ public class SystemRepository extends NotifyingRepositoryWrapper {
 	public static final String TITLE = "System configuration repository";
 
 	public static final String REPOSITORY_TYPE = "openrdf:SystemRepository";
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	public SystemRepository(File systemDir) throws RepositoryException {
 		super();
