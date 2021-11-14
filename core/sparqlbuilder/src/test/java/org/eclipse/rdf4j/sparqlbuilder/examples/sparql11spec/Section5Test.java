@@ -52,7 +52,6 @@ public class Section5Test extends BaseExamples {
 
 	@Test
 	public void example_5_2_1() {
-		p(and());
 		Variable x = var("x");
 		query.select(x);
 		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(

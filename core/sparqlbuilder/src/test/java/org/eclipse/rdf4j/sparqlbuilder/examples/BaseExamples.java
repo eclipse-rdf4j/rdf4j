@@ -59,31 +59,10 @@ public class BaseExamples {
 	@Before
 	public void before() {
 		resetQuery();
-		printTestHeader();
-	}
-
-	protected void p() {
-		p(query);
-	}
-
-	protected void p(QueryElement... qe) {
-		p(Arrays.stream(qe).map(QueryElement::getQueryString).collect(Collectors.joining(" ;\n\n")));
-	}
-
-	protected void p(String s) {
-		System.out.println(s);
 	}
 
 	protected void resetQuery() {
 		query = Queries.SELECT();
-	}
-
-	private void printTestHeader() {
-		String name = testName.getMethodName();
-		String[] tokens = name.split("_");
-
-		p(Stream.of(Arrays.copyOfRange(tokens, 1, tokens.length))
-				.collect(Collectors.joining(".", tokens[0].toUpperCase() + " ", ":")));
 	}
 
 	private String toLowerRemoveWhitespace(String s) {
@@ -128,7 +107,7 @@ public class BaseExamples {
 	private String getFirstDifference(String expected, String actual, int length) {
 		int minLength = Math.min(expected.length(), actual.length());
 		int pos = 0;
-		while (expected.charAt(pos) == actual.charAt(pos) && pos < minLength) {
+		while (expected.charAt(pos) == actual.charAt(pos) && pos < minLength - 1) {
 			pos++;
 		}
 		if (pos == minLength) {

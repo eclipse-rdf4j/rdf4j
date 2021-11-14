@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.StringLiteral;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
+import org.junit.Assert;
 import org.junit.Test;
 
 public class Section4Test extends BaseExamples {
@@ -34,28 +35,33 @@ public class Section4Test extends BaseExamples {
 
 		// [ :p "v" ] .
 		PropertiesBlankNode bnode = Rdf.bNode(defPrefix.iri("p"), Rdf.literalOf("v"));
-		p(bnode.toTp());
+		Assert.assertThat(bnode.toTp().getQueryString(), stringEqualsIgnoreCaseAndWhitespace("[ :p \"v\"] ."));
 
 		// [] :p "v" .
 		TriplePattern tp = Rdf.bNode().has(defPrefix.iri("p"), Rdf.literalOf("v"));
-		p(tp);
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace("[] :p \"v\" ."));
 
 		// [ :p "v" ] :q "w" .
 		tp = bnode.has(defPrefix.iri("q"), Rdf.literalOf("w"));
-		p(tp);
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace("[ :p \"v\" ] :q \"w\" ."));
 
 		// :x :q [ :p "v" ] .
 		tp = defPrefix.iri("x").has(defPrefix.iri("q"), bnode);
-		p(tp);
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(":x :q [ :p \"v\" ] ."));
 
 		RdfBlankNode labelledNode = Rdf.bNode("b57");
-		p(defPrefix.iri("x").has(defPrefix.iri("q"), labelledNode));
-		p(labelledNode.has(defPrefix.iri("p"), "v"));
+		tp = defPrefix.iri("x").has(defPrefix.iri("q"), labelledNode);
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(":x :q _:b57 ."));
+		tp = labelledNode.has(defPrefix.iri("p"), "v");
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace("_:b57 :p \"v\". "));
 
 		// [ foaf:name ?name ;
 		// foaf:mbox <mailto:alice@example.org> ]
 		bnode = Rdf.bNode(foaf.iri("name"), name).andHas(foaf.iri("mbox"), iri("mailto:alice@example.org"));
-		p(bnode);
+		Assert.assertThat(bnode.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"[ foaf:name ?name ;"
+						+ "foaf:mbox <mailto:alice@example.org> ]"
+		));
 	}
 
 	@Test
@@ -63,7 +69,10 @@ public class Section4Test extends BaseExamples {
 		Variable mbox = SparqlBuilder.var("mbox");
 
 		TriplePattern tp = GraphPatterns.tp(x, foaf.iri("name"), name).andHas(foaf.iri("mbox"), mbox);
-		p(tp);
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"    ?x  foaf:name  ?name ;\n"
+						+ "        foaf:mbox  ?mbox ."
+		));
 	}
 
 	@Test
@@ -73,11 +82,15 @@ public class Section4Test extends BaseExamples {
 		Iri nick = foaf.iri("nick");
 		StringLiteral aliceNick = Rdf.literalOf("Alice"), alice_Nick = Rdf.literalOf("Alice_");
 
-		TriplePattern tp = GraphPatterns.tp(x, nick, alice_Nick, aliceNick);
-		p(tp);
+		TriplePattern tp = GraphPatterns.tp(x, nick, aliceNick, alice_Nick);
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"?x foaf:nick  \"Alice\" , \"Alice_\" ."
+		));
 
-		tp = x.has(nick, aliceNick, alice_Nick).andHas(foaf.iri("name"), name);
-		p(tp);
+		tp = x.has(foaf.iri("name"), name).andHas(nick, aliceNick, alice_Nick);
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"?x  foaf:name ?name ; foaf:nick  \"Alice\" , \"Alice_\" ."
+		));
 	}
 
 	@Test
@@ -85,9 +98,13 @@ public class Section4Test extends BaseExamples {
 		Prefix defPrefix = SparqlBuilder.prefix(iri(DC_NS));
 
 		// isA() is a shortcut method to create triples using the "a" keyword
-		p(SparqlBuilder.var("x").isA(defPrefix.iri("Class1")));
+		TriplePattern tp = SparqlBuilder.var("x").isA(defPrefix.iri("Class1"));
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace("?x  a  :Class1 ."));
 
 		// the isA predicate is a static member of RdfPredicate
-		p(Rdf.bNode(RdfPredicate.a, defPrefix.iri("appClass")).has(defPrefix.iri("p"), "v"));
+		tp = Rdf.bNode(RdfPredicate.a, defPrefix.iri("appClass")).has(defPrefix.iri("p"), "v");
+		Assert.assertThat(tp.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"  [ a :appClass ] :p \"v\" ."
+		));
 	}
 }

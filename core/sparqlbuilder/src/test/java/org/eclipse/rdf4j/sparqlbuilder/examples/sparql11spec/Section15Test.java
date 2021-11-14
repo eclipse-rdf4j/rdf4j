@@ -91,7 +91,7 @@ public class Section15Test extends BaseExamples {
 
 	@Test
 	public void example_15_3_2() {
-		p("REDUCED not yet implemented");
+		System.err.println("REDUCED not yet implemented");
 	}
 
 	@Test
