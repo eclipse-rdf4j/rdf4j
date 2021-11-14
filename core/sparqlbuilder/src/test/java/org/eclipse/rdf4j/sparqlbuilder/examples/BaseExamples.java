@@ -93,8 +93,8 @@ public class BaseExamples {
 		return s.toLowerCase().replaceAll("[\n\\s]", "");
 	}
 
-	protected Matcher<? super String> stringEqualsIgnoreCaseAndWhitespace(String compareTo) {
-		final String compareToConverted = toLowerRemoveWhitespace(compareTo);
+	protected Matcher<? super String> stringEqualsIgnoreCaseAndWhitespace(String expected) {
+		final String expectedConverted = toLowerRemoveWhitespace(expected);
 		return new BaseMatcher<String>() {
 			private String aroundString = null;
 
@@ -105,10 +105,10 @@ public class BaseExamples {
 				}
 				String itemConverted = toLowerRemoveWhitespace((String) item);
 				if (itemConverted == null) {
-					return compareToConverted == null;
+					return expectedConverted == null;
 				}
-				if (!itemConverted.equals(compareToConverted)) {
-					aroundString = getFirstDifference(compareToConverted, itemConverted, 20);
+				if (!itemConverted.equals(expectedConverted)) {
+					aroundString = getFirstDifference(expectedConverted, itemConverted, 20);
 					return false;
 				}
 				return true;
@@ -117,30 +117,31 @@ public class BaseExamples {
 			@Override
 			public void describeTo(Description description) {
 				description.appendText(
-						"To match the following String after lowercasing, removal of newlines and whitespaces:\n");
-				description.appendText(compareTo);
-				description.appendText("\nHint:Found a difference around '" + aroundString + "'\n");
+						"To match the following String after lowercasing, removal of newlines and whitespaces.\n");
+				description.appendText("\nHint: first difference: " + aroundString + "\n");
+				description.appendText(
+						"Expected: was \"" + expected.replaceAll("\n", "\\\\n").replaceAll("\\s+", " ") + "\"");
 			}
 		};
 	}
 
-	private String getFirstDifference(String s1, String s2, int length) {
-		int minLength = Math.min(s1.length(), s2.length());
+	private String getFirstDifference(String expected, String actual, int length) {
+		int minLength = Math.min(expected.length(), actual.length());
 		int pos = 0;
-		while (s1.charAt(pos) == s2.charAt(pos) && pos < minLength) {
+		while (expected.charAt(pos) == actual.charAt(pos) && pos < minLength) {
 			pos++;
 		}
 		if (pos == minLength) {
-			if (s1.length() == s2.length()) {
+			if (expected.length() == actual.length()) {
 				return "[no difference found]";
-			} else if (s1.length() < s2.length()) {
-				return s2.substring(pos);
+			} else if (expected.length() < actual.length()) {
+				return String.format("expected string ends, actual continues: '%s'", actual.substring(pos));
 			}
-			return s1.substring(pos);
+			return String.format("actual string ends, expected continues:'%s'", expected.substring(pos));
 		}
-		if (s1.length() > s2.length()) {
-			return s1.substring(pos, Math.min(s1.length(), pos + length));
-		}
-		return s2.substring(pos, Math.min(s2.length(), pos + length));
+
+		String expectedDiff = expected.substring(pos, Math.min(expected.length(), pos + length));
+		String actualDiff = actual.substring(pos, Math.min(actual.length(), pos + length));
+		return String.format("\nexpected: '%s',\nactual :  '%s'", expectedDiff, actualDiff);
 	}
 }
