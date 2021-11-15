@@ -9,7 +9,10 @@
 package org.eclipse.rdf4j.spring.domain.dao;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.eclipse.rdf4j.spring.domain.model.Painting.*;
+import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_ARTIST_ID;
+import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_ID;
+import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_LABEL;
+import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_TECHNIQUE;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;

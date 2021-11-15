@@ -8,7 +8,11 @@
 
 package org.eclipse.rdf4j.spring.util;
 
-import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.*;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toBoolean;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toBooleanMaybe;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toBooleanOptional;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toIRI;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toIRIMaybe;
 
 import java.util.Map;
 import java.util.Objects;

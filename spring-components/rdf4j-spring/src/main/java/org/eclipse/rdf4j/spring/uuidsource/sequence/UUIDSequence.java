@@ -11,7 +11,11 @@ package org.eclipse.rdf4j.spring.uuidsource.sequence;
 import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRI;
 
 import java.lang.invoke.MethodHandles;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Queue;
+import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 

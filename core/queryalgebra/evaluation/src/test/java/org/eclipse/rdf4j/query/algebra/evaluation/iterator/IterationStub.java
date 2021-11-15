@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.io.Serializable;
-import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.query.BindingSet;

@@ -11,9 +11,6 @@ package org.eclipse.rdf4j.spring.demo.service;
 import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.toSet;
 
-import static org.eclipse.rdf4j.spring.demo.model.EX.Artist;
-import static org.eclipse.rdf4j.spring.demo.model.EX.Painting;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,7 +22,6 @@ import org.eclipse.rdf4j.spring.demo.model.Artist;
 import org.eclipse.rdf4j.spring.demo.model.Painting;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**

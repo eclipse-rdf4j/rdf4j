@@ -14,7 +14,11 @@ import static org.eclipse.rdf4j.spring.dao.exception.mapper.ExceptionMapper.mapE
 import static org.eclipse.rdf4j.spring.dao.support.operation.OperationUtils.require;
 
 import java.lang.invoke.MethodHandles;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collector;

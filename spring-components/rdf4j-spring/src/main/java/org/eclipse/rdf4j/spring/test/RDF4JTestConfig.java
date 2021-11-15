@@ -18,7 +18,6 @@ import org.eclipse.rdf4j.spring.repository.remote.RemoteRepositoryConfig;
 import org.eclipse.rdf4j.spring.resultcache.ResultCacheConfig;
 import org.eclipse.rdf4j.spring.tx.TxConfig;
 import org.eclipse.rdf4j.spring.uuidsource.noveltychecking.NoveltyCheckingUUIDSourceConfig;
-import org.eclipse.rdf4j.spring.uuidsource.predictable.PredictableUUIDSource;
 import org.eclipse.rdf4j.spring.uuidsource.predictable.PredictableUUIDSourceConfig;
 import org.eclipse.rdf4j.spring.uuidsource.sequence.UUIDSequenceConfig;
 import org.eclipse.rdf4j.spring.uuidsource.simple.SimpleRepositoryUUIDSourceConfig;

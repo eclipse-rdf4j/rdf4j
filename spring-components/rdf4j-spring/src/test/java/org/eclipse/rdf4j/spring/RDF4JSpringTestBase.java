@@ -8,18 +8,7 @@
 
 package org.eclipse.rdf4j.spring;
 
-import org.eclipse.rdf4j.spring.operationcache.OperationCacheConfig;
-import org.eclipse.rdf4j.spring.operationlog.OperationLogConfig;
-import org.eclipse.rdf4j.spring.operationlog.log.jmx.OperationLogJmxConfig;
-import org.eclipse.rdf4j.spring.pool.PoolConfig;
-import org.eclipse.rdf4j.spring.repository.inmemory.InMemoryRepositoryConfig;
-import org.eclipse.rdf4j.spring.repository.remote.RemoteRepositoryConfig;
-import org.eclipse.rdf4j.spring.resultcache.ResultCacheConfig;
 import org.eclipse.rdf4j.spring.support.DataInserter;
-import org.eclipse.rdf4j.spring.tx.TxConfig;
-import org.eclipse.rdf4j.spring.uuidsource.noveltychecking.NoveltyCheckingUUIDSourceConfig;
-import org.eclipse.rdf4j.spring.uuidsource.sequence.UUIDSequenceConfig;
-import org.eclipse.rdf4j.spring.uuidsource.simple.SimpleRepositoryUUIDSourceConfig;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;

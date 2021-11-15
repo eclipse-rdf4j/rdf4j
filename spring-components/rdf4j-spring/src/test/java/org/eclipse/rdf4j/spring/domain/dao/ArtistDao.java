@@ -9,13 +9,14 @@
 package org.eclipse.rdf4j.spring.domain.dao;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.eclipse.rdf4j.spring.domain.model.Artist.*;
+import static org.eclipse.rdf4j.spring.domain.model.Artist.ARTIST_FIRST_NAME;
+import static org.eclipse.rdf4j.spring.domain.model.Artist.ARTIST_ID;
+import static org.eclipse.rdf4j.spring.domain.model.Artist.ARTIST_LAST_NAME;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;

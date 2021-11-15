@@ -8,7 +8,11 @@
 
 package org.eclipse.rdf4j.spring.operationlog;
 
-import org.eclipse.rdf4j.query.*;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.spring.operationlog.log.OperationLog;
 import org.eclipse.rdf4j.spring.support.query.DelegatingTupleQuery;
 

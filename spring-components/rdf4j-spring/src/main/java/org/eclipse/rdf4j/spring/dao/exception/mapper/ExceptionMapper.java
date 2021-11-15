@@ -8,10 +8,7 @@
 
 package org.eclipse.rdf4j.spring.dao.exception.mapper;
 
-import org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException;
-import org.eclipse.rdf4j.spring.dao.exception.RDF4JDaoException;
 import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
-import org.eclipse.rdf4j.spring.dao.exception.UnexpectedResultException;
 
 /**
  * @since 4.0.0
