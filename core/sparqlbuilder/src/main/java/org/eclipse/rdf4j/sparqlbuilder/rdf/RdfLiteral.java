@@ -98,7 +98,7 @@ public abstract class RdfLiteral<T> implements RdfValue {
 		@Override
 		public String getQueryString() {
 			StringBuilder literal = new StringBuilder();
-			String escaped = SparqlBuilderUtils.escape(value);
+			String escaped = SparqlBuilderUtils.getEscapedString(value);
 			literal.append(SparqlBuilderUtils.getQuotedString(escaped));
 			SparqlBuilderUtils.appendQueryElementIfPresent(dataType, literal, DATATYPE_SPECIFIER, null);
 			SparqlBuilderUtils.appendStringIfPresent(languageTag, literal, LANG_TAG_SPECIFIER, null);

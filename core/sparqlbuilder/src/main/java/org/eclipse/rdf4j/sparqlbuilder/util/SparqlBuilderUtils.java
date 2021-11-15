@@ -8,11 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.util;
 
-import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
-
-import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
+import java.util.Optional;
+
+import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 
 /**
  * Utility functions for the SparqlBuilder
@@ -104,7 +104,7 @@ public class SparqlBuilderUtils {
 	 * @param value The String to escape
 	 * @return the escaped String
 	 */
-	public static String escape(String value) {
+	public static String getEscapedString(String value) {
 		if (value == null) {
 			return null;
 		}
