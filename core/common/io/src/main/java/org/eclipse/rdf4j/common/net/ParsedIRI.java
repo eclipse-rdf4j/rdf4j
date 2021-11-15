@@ -213,27 +213,24 @@ public class ParsedIRI implements Cloneable, Serializable {
 		try {
 			return new ParsedIRI(str);
 		} catch (URISyntaxException x) {
-			try {
-				int problem = x.getIndex();
-				StringBuilder sb = new StringBuilder(str);
-				while (true) {
-					int end = sb.offsetByCodePoints(problem, 1);
-					String decoded = sb.substring(problem, end);
-					String encoded = " ".equals(decoded) ? "%20" : URLEncoder.encode(decoded, "UTF-8");
-					sb.replace(problem, end, encoded);
-					try {
-						return new ParsedIRI(sb.toString());
-					} catch (URISyntaxException ex) {
-						if (ex.getIndex() <= problem) {
-							throw new IllegalArgumentException(x.getMessage(), x);
-						} else {
-							problem = ex.getIndex();
-						}
+			int problem = x.getIndex();
+			StringBuilder sb = new StringBuilder(str);
+			while (true) {
+				int end = sb.offsetByCodePoints(problem, 1);
+				String decoded = sb.substring(problem, end);
+				String encoded = " ".equals(decoded) ? "%20" : URLEncoder.encode(decoded, StandardCharsets.UTF_8);
+				sb.replace(problem, end, encoded);
+				try {
+					return new ParsedIRI(sb.toString());
+				} catch (URISyntaxException ex) {
+					if (ex.getIndex() <= problem) {
+						throw new IllegalArgumentException(x.getMessage(), x);
+					} else {
+						problem = ex.getIndex();
 					}
 				}
-			} catch (UnsupportedEncodingException ex) {
-				throw new IllegalStateException(ex);
 			}
+
 		}
 	}
 
@@ -1161,19 +1158,13 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private String pctDecode(String encoded) {
-		try {
-			return URLDecoder.decode(encoded, "UTF-8");
-		} catch (UnsupportedEncodingException e) {
-			throw new IllegalStateException(e);
-		}
+		return URLDecoder.decode(encoded, StandardCharsets.UTF_8);
+
 	}
 
 	private String pctEncode(int chr) {
-		try {
-			return URLEncoder.encode(new String(Character.toChars(chr)), "UTF-8");
-		} catch (UnsupportedEncodingException e) {
-			throw new IllegalStateException(e);
-		}
+		return URLEncoder.encode(new String(Character.toChars(chr)), StandardCharsets.UTF_8);
+
 	}
 
 	/**

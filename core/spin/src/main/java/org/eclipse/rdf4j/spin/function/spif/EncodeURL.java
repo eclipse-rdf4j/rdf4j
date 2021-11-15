@@ -9,6 +9,9 @@ package org.eclipse.rdf4j.spin.function.spif;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -36,10 +39,12 @@ public class EncodeURL implements Function {
 			throw new ValueExprEvaluationException("Second argument must be a string");
 		}
 		Literal s = (Literal) args[0];
-		String encoding = (args.length == 2) ? ((Literal) args[1]).getLabel() : "UTF-8";
+
 		try {
+			Charset encoding = (args.length == 2) ? Charset.forName(((Literal) args[1]).getLabel())
+					: StandardCharsets.UTF_8;
 			return valueFactory.createLiteral(URLEncoder.encode(s.getLabel(), encoding));
-		} catch (UnsupportedEncodingException e) {
+		} catch (UnsupportedCharsetException e) {
 			throw new ValueExprEvaluationException(e);
 		}
 	}

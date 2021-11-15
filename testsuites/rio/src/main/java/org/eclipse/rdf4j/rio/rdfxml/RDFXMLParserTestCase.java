@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -272,7 +273,8 @@ public abstract class RDFXMLParserTestCase {
 			if (RDF.XMLLITERAL.equals(datatype)) {
 				// Canonicalize the literal value
 				try {
-					value = new String(c14n.canonicalize(value.getBytes("UTF-8")), "UTF-8");
+					value = new String(c14n.canonicalize(value.getBytes(StandardCharsets.UTF_8)),
+							StandardCharsets.UTF_8);
 				} catch (UnsupportedEncodingException e) {
 					throw new RuntimeException(e);
 				} catch (CanonicalizationException | SAXException e) {

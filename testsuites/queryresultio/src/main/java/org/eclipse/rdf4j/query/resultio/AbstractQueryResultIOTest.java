@@ -18,6 +18,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -222,7 +223,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		QueryResults.report(input, writer);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		TupleQueryResult output = parseTupleInternal(format, in);
@@ -241,7 +242,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		QueryResults.report(input, writer);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		TupleQueryResult output = parseTupleInternal(format, in);
@@ -264,7 +265,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		QueryResults.report(input, writer);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		TupleQueryResult output = parseTupleInternal(format, in);
@@ -295,7 +296,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		QueryResults.report(input, writer);
 
-		String result = out.toString("UTF-8");
+		String result = out.toString(StandardCharsets.UTF_8);
 
 		// System.out.println("output: " + result);
 
@@ -332,7 +333,7 @@ public abstract class AbstractQueryResultIOTest {
 
 			QueryResults.report(input, writer);
 
-			String result = out.toString("UTF-8");
+			String result = out.toString(StandardCharsets.UTF_8);
 
 			// System.out.println("output: " + result);
 
@@ -344,7 +345,7 @@ public abstract class AbstractQueryResultIOTest {
 			// JSON object containing the correct results
 			result = result.substring(callback.length() + 1, result.length() - 2);
 
-			ByteArrayInputStream in = new ByteArrayInputStream(result.getBytes("UTF-8"));
+			ByteArrayInputStream in = new ByteArrayInputStream(result.getBytes(StandardCharsets.UTF_8));
 			TupleQueryResult output = parseTupleInternal(format, in);
 
 			assertQueryResultsEqual(expected, output);
@@ -358,7 +359,7 @@ public abstract class AbstractQueryResultIOTest {
 		QueryResultIO.writeTuple(input, format, out);
 		input.close();
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		TupleQueryResult output = parseTupleInternal(format, in);
@@ -374,7 +375,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleStylesheet(stylesheetUrl);
 		QueryResults.report(input, writer);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		TupleQueryResult output = parseTupleInternal(format, in);
@@ -392,7 +393,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		QueryResults.report(input, writer);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		TupleQueryResult output = parseTupleInternal(format, in);
@@ -421,7 +422,7 @@ public abstract class AbstractQueryResultIOTest {
 		}
 		writer.endQueryResult();
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		TupleQueryResult output = parseTupleInternal(format, in);
@@ -512,7 +513,7 @@ public abstract class AbstractQueryResultIOTest {
 		// Test for handling when handler is not set
 		writer.handleBoolean(input);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		TupleQueryResultParser parser = QueryResultIO.createTupleParser(format);
@@ -545,7 +546,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		writer.handleBoolean(input);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		boolean output = QueryResultIO.parseBoolean(in, format);
@@ -591,7 +592,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		writer.handleBoolean(input);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		boolean output = QueryResultIO.parseBoolean(in, format);
@@ -610,7 +611,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		writer.handleBoolean(input);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		boolean output = QueryResultIO.parseBoolean(in, format);
@@ -633,7 +634,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		writer.handleBoolean(input);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		boolean output = QueryResultIO.parseBoolean(in, format);
@@ -649,7 +650,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleStylesheet(stylesheetUrl);
 		writer.handleBoolean(input);
 
-		// System.out.println("output: " + out.toString("UTF-8"));
+		// System.out.println("output: " + out.toString(StandardCharsets.UTF_8));
 
 		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
 		boolean output = QueryResultIO.parseBoolean(in, format);

@@ -544,7 +544,7 @@ public class ParsedIRITest {
 			out.write(Character.toUpperCase(high));
 			out.write(Character.toUpperCase(low));
 		}
-		return new String(out.toByteArray(), "UTF-8");
+		return new String(out.toByteArray(), StandardCharsets.UTF_8);
 	}
 
 	@Test

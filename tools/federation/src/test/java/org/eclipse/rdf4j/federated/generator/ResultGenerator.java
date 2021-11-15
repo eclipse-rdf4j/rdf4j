@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.federated.SPARQLBaseTest;
@@ -116,7 +117,7 @@ public class ResultGenerator {
 	private String readQueryString(String queryFile) throws RepositoryException, IOException {
 		InputStream stream = SPARQLBaseTest.class.getResourceAsStream(queryFile);
 		try {
-			return IOUtil.readString(new InputStreamReader(stream, "UTF-8"));
+			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
 		} finally {
 			stream.close();
 		}

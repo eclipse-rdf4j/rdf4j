@@ -24,6 +24,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Reader;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -313,7 +314,8 @@ public abstract class RepositoryConnectionTest {
 	@Test
 	public void testAddReader() throws Exception {
 		try (Reader defaultGraph = new InputStreamReader(
-				RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "default-graph.ttl"), "UTF-8");) {
+				RepositoryConnectionTest.class.getResourceAsStream(TEST_DIR_PREFIX + "default-graph.ttl"),
+				StandardCharsets.UTF_8);) {
 			testCon.add(defaultGraph, "", RDFFormat.TURTLE);
 		}
 		assertTrue(NEWLY_ADDED, testCon.hasStatement(null, publisher, nameBob, false));
@@ -322,14 +324,14 @@ public abstract class RepositoryConnectionTest {
 		// add file graph1.ttl to context1
 		try (InputStream graph1Stream = RepositoryConnectionTest.class
 				.getResourceAsStream(TEST_DIR_PREFIX + "graph1.ttl");
-				Reader graph1 = new InputStreamReader(graph1Stream, "UTF-8");) {
+				Reader graph1 = new InputStreamReader(graph1Stream, StandardCharsets.UTF_8);) {
 			testCon.add(graph1, "", RDFFormat.TURTLE, context1);
 		}
 
 		// add file graph2.ttl to context2
 		try (InputStream graph2Stream = RepositoryConnectionTest.class
 				.getResourceAsStream(TEST_DIR_PREFIX + "graph2.ttl");
-				Reader graph2 = new InputStreamReader(graph2Stream, "UTF-8");) {
+				Reader graph2 = new InputStreamReader(graph2Stream, StandardCharsets.UTF_8);) {
 			testCon.add(graph2, "", RDFFormat.TURTLE, context2);
 		}
 		assertTrue("alice should be known in the store", testCon.hasStatement(null, name, nameAlice, false));

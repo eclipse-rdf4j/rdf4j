@@ -14,6 +14,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -194,7 +195,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	}
 
 	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
-		return new File(URLDecoder.decode(rdf.getFile(), "UTF-8"));
+		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));
 	}
 
 	private void service(final String repoID, final HttpServletRequest req, final HttpServletResponse resp)
