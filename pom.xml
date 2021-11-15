@@ -336,7 +336,7 @@
 		<jackson.version>2.11.4</jackson.version>
 		<jsonldjava.version>0.13.3</jsonldjava.version>
 		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
-		<jaxb.version>2.3.1</jaxb.version>
+		<jaxb.version>2.3.3</jaxb.version>
 		<lucene.version>8.5.1</lucene.version>
 		<solr.version>8.4.1</solr.version>
 		<elasticsearch.version>7.8.1</elasticsearch.version>
