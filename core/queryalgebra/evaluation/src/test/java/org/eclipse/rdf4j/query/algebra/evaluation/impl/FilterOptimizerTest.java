@@ -39,7 +39,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	@Test
 	public void merge() {
 		String expectedQuery = "SELECT * WHERE {?s ?p ?o . FILTER(?o > 2 && ?o <4) }";
-		String query = "SELECT * WHERE {?s ?p ?o . FILTER(?o > 2) .FILTER(?o <4) }";
+		String query = "SELECT * WHERE {?s ?p ?o . FILTER(?o > 2) . FILTER(?o <4) }";
 
 		testOptimizer(expectedQuery, query);
 	}
@@ -59,6 +59,26 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		TupleExpr expected = new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
 				new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2")));
 		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2  . FILTER(?o > '2'^^xsd:int)  . FILTER(?o2 < '4'^^xsd:int) }";
+
+		testOptimizer(expected, query);
+	}
+
+	@Test
+	public void deMerge() {
+		Var s = new Var("s");
+		Var p = new Var("p");
+		Var o = new Var("o");
+		Var o2 = new Var("o2");
+		ValueConstant two = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(2));
+		ValueConstant four = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(4));
+		Compare oSmallerThanTwo = new Compare(o, two, CompareOp.GT);
+		Filter spo = new Filter(new StatementPattern(s, p, o), oSmallerThanTwo);
+		Compare o2SmallerThanFour = new Compare(o2, four, CompareOp.LT);
+		Filter spo2 = new Filter(new StatementPattern(s, p, o2), o2SmallerThanFour);
+		TupleExpr expected = new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
+				new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2")));
+
+		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2  . FILTER(?o > '2'^^xsd:int && ?o2 < '4'^^xsd:int) }";
 
 		testOptimizer(expected, query);
 	}
