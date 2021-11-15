@@ -25,4 +25,55 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 
 		return this;
 	}
+
+	public String replaceInQuery(String queryString) {
+
+		StringBuilder sb = new StringBuilder();
+		int pos = 0;
+		int lastPos = 0;
+		while (pos != -1 && pos < queryString.length()) {
+			pos = queryString.indexOf('<', pos);
+			if (pos == -1) {
+				break;
+			}
+			if (pos >= queryString.length() - 1) {
+				break;
+			}
+			sb.append(queryString, lastPos, pos);
+			Prefix matchingPrefix = findMatchingPrefix(queryString, pos + 1);
+			if (matchingPrefix != null) {
+				int posOfClosingBracket = queryString.indexOf('>', pos);
+				if (posOfClosingBracket > -1) {
+					int replacementLength = matchingPrefix.getIri().getQueryString().length() - 2; // subtract 2 for '<'
+																									// and '>'
+					sb
+							.append(matchingPrefix.getLabel())
+							.append(":")
+							.append(queryString, pos + 1 + replacementLength, posOfClosingBracket);
+					pos = posOfClosingBracket + 1;
+				}
+			}
+			lastPos = pos;
+		}
+		if (pos == -1) {
+			sb.append(queryString.substring(lastPos));
+		}
+		return sb.toString();
+	}
+
+	/**
+	 * Returns the longest prefix that is found starting at position <code>pos</code> in the <code>queryString</code>
+	 * 
+	 * @param queryString the query string
+	 * @param pos         the position at which to start looking
+	 * @return the longest prefixIri that matches fully (no tie-break for duplicates)
+	 */
+	private Prefix findMatchingPrefix(String queryString, int pos) {
+		return elements
+				.stream()
+				.filter(p -> queryString.startsWith(
+						p.getIri().getQueryString().substring(1, p.getIri().getQueryString().length() - 1), pos))
+				.reduce((r, l) -> r.getIri().getQueryString().length() > l.getIri().getQueryString().length() ? r : l)
+				.orElse(null);
+	}
 }
