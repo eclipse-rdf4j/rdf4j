@@ -766,6 +766,11 @@ public class TurtleParser extends AbstractRDFParser {
 
 			appendCodepoint(sb, c);
 
+			if (c == '\n') {
+				lineNumber++;
+				reportLocation();
+			}
+
 			if (c == '\\') {
 				// This escapes the next character, which might be a '"'
 				c = readCodePoint();
