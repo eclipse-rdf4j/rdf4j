@@ -659,8 +659,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * Commits any changes done to the LuceneIndex since the last commit. The semantics is synchronous to
-	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rollbacked whenever the LuceneSailConnection is
-	 * committed/rollbacked.
+	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rolled back whenever the LuceneSailConnection
+	 * is committed/rolled back.
 	 */
 	@Override
 	public synchronized void commit() throws IOException {
@@ -677,32 +677,14 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	// //////////////////////////////// Methods for querying the index
 
 	/**
-	 * Parse the passed query. To be removed, no longer used.
-	 *
-	 * @param query string
-	 * @return the parsed query
-	 * @throws MalformedQueryException when the parsing brakes
-	 */
-	@Override
-	@Deprecated
-	protected SearchQuery parseQuery(String query, IRI propertyURI) throws MalformedQueryException {
-		Query q;
-		try {
-			q = getQueryParser(propertyURI).parse(query);
-		} catch (ParseException e) {
-			throw new MalformedQueryException(e);
-		}
-		return new LuceneQuery(q, this);
-	}
-
-	/**
 	 * Parse the passed query.
 	 *
 	 * @param subject
-	 * @param query     string
+	 * @param query       string
+	 * @param propertyURI
 	 * @param highlight
 	 * @return the parsed query
-	 * @throws MalformedQueryException when the parsing brakes
+	 * @throws MalformedQueryException when the parsing breaks
 	 * @throws IOException
 	 */
 	@Override
@@ -886,22 +868,6 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		return snippet;
 	}
 
-	// /**
-	// * Parses an id-string used for a context filed (a serialized resource)
-	// back to a resource.
-	// * <b>CAN RETURN NULL</b>
-	// * Inverse method of {@link #getResourceID(Resource)}
-	// * @param idString
-	// * @return null if the passed idString was the {@link #CONTEXT_NULL}
-	// constant
-	// */
-	// private Resource getContextResource(String idString) {
-	// if (CONTEXT_NULL.equals(idString))
-	// return null;
-	// else
-	// return getResource(idString);
-	// }
-
 	/**
 	 * Evaluates the given query only for the given resource.
 	 *
@@ -958,89 +924,21 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 */
 	@Override
 	public synchronized void clearContexts(Resource... contexts) throws IOException {
-
-		// logger.warn("Clearing contexts operation did not change the index:
-		// contexts are not indexed at the moment");
-
 		logger.debug("deleting contexts: {}", Arrays.toString(contexts));
 		// these resources have to be read from the underlying rdf store
 		// and their triples have to be added to the luceneindex after deletion
 		// of
 		// documents
-		// HashSet<Resource> resourcesToUpdate = new HashSet<Resource>();
 
 		// remove all contexts passed
 		for (Resource context : contexts) {
 			// attention: context can be NULL!
 			String contextString = SearchFields.getContextID(context);
 			Term contextTerm = new Term(SearchFields.CONTEXT_FIELD_NAME, contextString);
-			// IndexReader reader = getIndexReader();
-
-			// now check all documents, and remember the URI of the resources
-			// that were in multiple contexts
-			// TermDocs termDocs = reader.termDocs(contextTerm);
-			// try {
-			// while (termDocs.next()) {
-			// Document document = readDocument(reader, termDocs.doc());
-			// // does this document have any other contexts?
-			// Field[] fields = document.getFields(CONTEXT_FIELD_NAME);
-			// for (Field f : fields)
-			// {
-			// if
-			// (!contextString.equals(f.stringValue())&&!f.stringValue().equals("null"))
-			// // there is another context
-			// {
-			// logger.debug("test new contexts: {}", f.stringValue());
-			// // is it in the also contexts (lucky us if it is)
-			// Resource otherContextOfDocument =
-			// getContextResource(f.stringValue()); // can return null
-			// boolean isAlsoDeleted = false;
-			// for (Resource c: contexts){
-			// if (c==null) {
-			// if (otherContextOfDocument == null)
-			// isAlsoDeleted = true;
-			// } else
-			// if (c.equals(otherContextOfDocument))
-			// isAlsoDeleted = true;
-			// }
-			// // the otherContextOfDocument is now eihter marked for deletion
-			// or
-			// not
-			// if (!isAlsoDeleted) {
-			// // get ID of document
-			// Resource r = getResource(document);
-			// resourcesToUpdate.add(r);
-			// }
-			// }
-			// }
-			// }
-			// } finally {
-			// termDocs.close();
-			// }
 
 			// now delete all documents from the deleted context
 			getIndexWriter().deleteDocuments(contextTerm);
 		}
-
-		// now add those again, that had other contexts also.
-		// SailConnection con = sail.getConnection();
-		// try {
-		// // for each resource, add all
-		// for (Resource resource : resourcesToUpdate) {
-		// logger.debug("re-adding resource {}", resource);
-		// ArrayList<Statement> toAdd = new ArrayList<Statement>();
-		// CloseableIteration<? extends Statement, SailException> it =
-		// con.getStatements(resource, null, null, false);
-		// while (it.hasNext()) {
-		// Statement s = it.next();
-		// toAdd.add(s);
-		// }
-		// addDocument(resource, toAdd);
-		// }
-		// } finally {
-		// con.close();
-		// }
-
 	}
 
 	/**

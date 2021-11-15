@@ -28,19 +28,7 @@ public interface SearchIndex {
 
 	void initialize(Properties parameters) throws Exception;
 
-	/**
-	 * To be removed from interface, prefer {@link #evaluate(SearchQueryEvaluator query)}.
-	 */
-	@Deprecated
-	Collection<BindingSet> evaluate(QuerySpec query) throws SailException;
-
 	Collection<BindingSet> evaluate(SearchQueryEvaluator query) throws SailException;
-
-	@Deprecated
-	void beginReading() throws IOException;
-
-	@Deprecated
-	void endReading() throws IOException;
 
 	void shutDown() throws IOException;
 
@@ -70,8 +58,8 @@ public interface SearchIndex {
 
 	/**
 	 * Commits any changes done to the LuceneIndex since the last commit.The semantics is synchronous to
-	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rollbacked whenever the LuceneSailConnection is
-	 * committed/rollbacked.
+	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rolled back whenever the LuceneSailConnection
+	 * is committed/rolled back.
 	 *
 	 * @throws IOException
 	 */
@@ -93,6 +81,7 @@ public interface SearchIndex {
 	 * block.
 	 *
 	 * @param statement
+	 * @throws java.io.IOException
 	 */
 	void removeStatement(Statement statement) throws IOException;
 
