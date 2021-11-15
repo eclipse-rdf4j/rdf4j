@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
-import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
-
 import java.util.Optional;
+
+import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
  * Denotes an RDF literal

@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.util;
 
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 
