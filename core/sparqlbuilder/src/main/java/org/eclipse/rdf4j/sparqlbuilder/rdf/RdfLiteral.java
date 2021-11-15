@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
+
+import java.util.Optional;
 
 /**
  * Denotes an RDF literal
@@ -98,13 +98,8 @@ public abstract class RdfLiteral<T> implements RdfValue {
 		@Override
 		public String getQueryString() {
 			StringBuilder literal = new StringBuilder();
-
-			if (value.contains("'") || value.contains("\"")) {
-				literal.append(SparqlBuilderUtils.getLongQuotedString(value));
-			} else {
-				literal.append(SparqlBuilderUtils.getQuotedString(value));
-			}
-
+			String escaped = SparqlBuilderUtils.escape(value);
+			literal.append(SparqlBuilderUtils.getQuotedString(escaped));
 			SparqlBuilderUtils.appendQueryElementIfPresent(dataType, literal, DATATYPE_SPECIFIER, null);
 			SparqlBuilderUtils.appendStringIfPresent(languageTag, literal, LANG_TAG_SPECIFIER, null);
 

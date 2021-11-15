@@ -8,11 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.util;
 
+import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
+
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
-
-import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 
 /**
  * Utility functions for the SparqlBuilder
@@ -92,5 +92,30 @@ public class SparqlBuilderUtils {
 		es.append(close);
 
 		return es.toString();
+	}
+
+	/**
+	 * Escape the specified String value according to the SPARQL 1.1 Spec
+	 * https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#grammarEscapes
+	 *
+	 * Note that there is no special handling for Codepoint escape sequences as described by
+	 * https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#codepointEscape
+	 *
+	 * @param value The String to escape
+	 * @return the escaped String
+	 */
+	public static String escape(String value) {
+		if (value == null) {
+			return null;
+		}
+		return value
+				.replace("\\", "\\\\")
+				.replace("\n", "\\n")
+				.replace("\t", "\\t")
+				.replace("\b", "\\b")
+				.replace("\r", "\\r")
+				.replace("\f", "\\f")
+				.replace("\"", "\\\"")
+				.replace("'", "\\'");
 	}
 }
