@@ -92,135 +92,21 @@ public class ComplexLargeBenchmark {
 		}
 	}
 
-	private SailRepository repository;
 
-	@Setup(Level.Invocation)
+	@Setup(Level.Trial)
 	public void setUp() throws InterruptedException {
 
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.WARN);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 
-		try {
-			repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
-
-//			((ShaclSail) repository.getSail()).disableValidation();
-//
-//			try (SailRepositoryConnection connection = repository.getConnection()) {
-//				connection.begin(IsolationLevels.NONE);
-//				connection.add(data);
-//				connection.commit();
-//			}
-//
-//			((ShaclSail) repository.getSail()).enableValidation();
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
 
 		System.gc();
 		Thread.sleep(100);
 	}
 
-	@TearDown(Level.Invocation)
+	@TearDown(Level.Trial)
 	public void teardown() {
-		if (repository != null) {
-			repository.shutDown();
-		}
-	}
-
-	@Benchmark
-	public void shaclParallelCacheTwoTransactionPreloaded() {
-
-		((ShaclSail) repository.getSail()).setParallelValidation(true);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction1).execute();
-			connection.commit();
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction2).execute();
-			connection.commit();
-
-		}
-
-	}
-
-	@Benchmark
-	public void shaclNothingToValidateTransactionsPreloaded() {
-
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.add(connection.getValueFactory().createBNode(), RDFS.LABEL,
-					connection.getValueFactory().createLiteral(""));
-			connection.commit();
-
-		}
-
-	}
-
-	@Benchmark
-	public void shaclParallelTwoTransactionPreloaded() {
-
-		((ShaclSail) repository.getSail()).setParallelValidation(true);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction1).execute();
-			connection.commit();
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction2).execute();
-			connection.commit();
-
-		}
-
-	}
-
-	@Benchmark
-	public void shaclCacheTwoTransactionPreloaded() {
-
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction1).execute();
-			connection.commit();
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction2).execute();
-			connection.commit();
-
-		}
-
-	}
-
-	@Benchmark
-	public void shaclTwoTransactionPreloaded() {
-
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction1).execute();
-			connection.commit();
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction2).execute();
-			connection.commit();
-
-		}
-
 	}
 
 	@Benchmark
@@ -549,74 +435,6 @@ public class ComplexLargeBenchmark {
 			throw new RuntimeException(e);
 		} finally {
 			FileUtils.deleteDirectory(file);
-
-		}
-
-	}
-
-	@Benchmark
-	public void shaclParallelCacheDeletionPreloaded() {
-
-		((ShaclSail) repository.getSail()).setParallelValidation(true);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-		((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction3).execute();
-			connection.commit();
-
-		}
-
-	}
-
-	@Benchmark
-	public void shaclParallelCacheUpdatePreloaded() {
-
-		((ShaclSail) repository.getSail()).setParallelValidation(true);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-		((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction4).execute();
-			connection.commit();
-
-		}
-
-	}
-
-	@Benchmark
-	public void shaclCacheDeletionPreloaded() {
-
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-		((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction3).execute();
-			connection.commit();
-
-		}
-
-	}
-
-	@Benchmark
-	public void shaclCacheUpdatePreloaded() {
-
-		((ShaclSail) repository.getSail()).setParallelValidation(false);
-		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-		((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.prepareUpdate(transaction4).execute();
-			connection.commit();
 
 		}
 

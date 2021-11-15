@@ -393,7 +393,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
-		flush();
 		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
