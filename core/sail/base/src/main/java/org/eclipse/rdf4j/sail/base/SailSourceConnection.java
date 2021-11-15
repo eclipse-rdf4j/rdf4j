@@ -208,7 +208,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
-		flush();
+//		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		if (cloneTupleExpression) {

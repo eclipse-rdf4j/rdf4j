@@ -227,10 +227,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
-		this.pipeline = new StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics);
-		this.uuid = UUID.nameUUIDFromBytes(("StrictEvaluationStrategy" + counter.incrementAndGet()).getBytes());
-		EvaluationStrategies.register(this);
+		this.uuid = null;
+//		EvaluationStrategies.register(this);
 		this.trackResultSize = trackResultSize;
+		this.pipeline = new StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics);
+
 	}
 
 	/*---------*

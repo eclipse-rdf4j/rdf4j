@@ -7,8 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -47,25 +48,52 @@ public class StrictEvaluationStrategyFactory extends AbstractEvaluationStrategyF
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
+
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, dataset, serviceResolver,
 				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
+
 		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
 
-		QueryOptimizerPipeline optimizerPipeline = strategy.getOptimizerPipeline();
+		if (!getQueryOptimizersPre().isEmpty() || !getQueryOptimizersPost().isEmpty()) {
 
-		List<QueryOptimizer> collect = Stream.concat(
-				getQueryOptimizersPre().stream().map(i -> i.getOptimizer(strategy, tripleSource, evaluationStatistics)),
-				Stream.concat(
-						StreamSupport.stream(optimizerPipeline.getOptimizers().spliterator(), false),
-						getQueryOptimizersPost().stream()
-								.map(i -> i.getOptimizer(strategy, tripleSource, evaluationStatistics))
-				)
-		)
-				.collect(Collectors.toList());
+			Iterable<QueryOptimizer> optimizers = strategy.getOptimizerPipeline().getOptimizers();
+			List<QueryOptimizer> queryOptimizersPre = getQueryOptimizersPre().stream()
+					.map(i -> i.getOptimizer(strategy, tripleSource, evaluationStatistics))
+					.collect(Collectors.toList());
+			List<QueryOptimizer> queryOptimizersPost = getQueryOptimizersPost().stream()
+					.map(i -> i.getOptimizer(strategy, tripleSource, evaluationStatistics))
+					.collect(Collectors.toList());
 
-		strategy.setOptimizerPipeline(() -> collect);
+			strategy.setOptimizerPipeline(() -> () -> new Iterator<>() {
+
+				final Iterator<QueryOptimizer> preIterator = queryOptimizersPre.iterator();
+				final Iterator<QueryOptimizer> iterator = optimizers.iterator();
+				final Iterator<QueryOptimizer> postIterator = queryOptimizersPost.iterator();
+
+				@Override
+				public boolean hasNext() {
+					return preIterator.hasNext() || iterator.hasNext() || postIterator.hasNext();
+				}
+
+				@Override
+				public QueryOptimizer next() {
+					if (preIterator.hasNext()) {
+						return preIterator.next();
+					}
+					if (iterator.hasNext()) {
+						return iterator.next();
+					}
+					if (postIterator.hasNext()) {
+						return postIterator.next();
+					}
+					throw new NoSuchElementException();
+				}
+			});
+
+		}
 
 		return strategy;
+
 	}
 
 }

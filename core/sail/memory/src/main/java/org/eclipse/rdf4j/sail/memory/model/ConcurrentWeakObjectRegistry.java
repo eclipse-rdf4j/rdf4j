@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * another data structure, reducing memory usage. The objects that are being stored should properly implement the
  * {@link Object#equals} and {@link Object#hashCode} methods.
  */
-public class WeakObjectRegistry<E> extends AbstractSet<E> {
+public class ConcurrentWeakObjectRegistry<E> extends AbstractSet<E> {
 
 	/*-----------*
 	 * Variables *
@@ -31,7 +31,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	/**
 	 * The hash map that is used to store the objects.
 	 */
-	private final Map<E, WeakReference<E>> objectMap = new WeakHashMap<>();
+	private final Map<E, WeakReference<E>> objectMap = new ConcurrentHashMap<>();
 
 	/*--------------*
 	 * Constructors *
@@ -40,7 +40,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	/**
 	 * Constructs a new, empty object registry.
 	 */
-	public WeakObjectRegistry() {
+	public ConcurrentWeakObjectRegistry() {
 		super();
 	}
 
@@ -50,7 +50,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	 * @param c The collection whose elements are to be placed into this object registry.
 	 * @throws NullPointerException If the specified collection is null.
 	 */
-	public WeakObjectRegistry(Collection<? extends E> c) {
+	public ConcurrentWeakObjectRegistry(Collection<? extends E> c) {
 		this();
 		addAll(c);
 	}
@@ -66,8 +66,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	 * @return A stored object that is equal to the supplied key, or <var>null</var> if no such object was found.
 	 */
 	public E get(Object key) {
-		if (key == null)
+		if (key == null) {
 			return null;
+		}
 
 		WeakReference<E> weakRef = objectMap.get(key);
 
@@ -95,8 +96,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	@Override
 	public boolean add(E object) {
-		if (object == null)
+		if (object == null) {
 			return false;
+		}
 
 		WeakReference<E> ref = new WeakReference<>(object);
 
@@ -112,10 +114,37 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		return true;
 	}
 
+	public E addIfAbsent(E object) {
+		if (object == null) {
+			return null;
+		}
+
+		WeakReference<E> ret = objectMap.putIfAbsent(object, new WeakReference<>(object));
+
+		if (ret != null) {
+			return ret.get();
+		}
+		return null;
+	}
+
+	public E getOrAdd(E object) {
+		if (object == null) {
+			return null;
+		}
+
+		WeakReference<E> ret = objectMap.putIfAbsent(object, new WeakReference<>(object));
+
+		if (ret != null) {
+			return ret.get();
+		}
+		return object;
+	}
+
 	@Override
 	public boolean remove(Object o) {
-		if (o == null)
+		if (o == null) {
 			return false;
+		}
 
 		WeakReference<E> ref = objectMap.remove(o);
 		return ref != null && ref.get() != null;

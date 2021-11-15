@@ -40,7 +40,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 */
 	public ReadPrefReadWriteLockManager(boolean trackLocks) {
 		super(trackLocks);
-		READ_PREFERENCE = 100;
+		READ_PREFERENCE = 1;
 	}
 
 	/*
