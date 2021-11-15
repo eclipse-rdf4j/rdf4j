@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.datatype;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.*;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
@@ -93,6 +93,22 @@ public class QueryWithPrefixesTest extends BaseExamples {
 				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name\n"
 						+ "WHERE { ?x foaf:account / foaf:mbox ?name . }\n",
+				query.getQueryString());
+	}
+
+	@Test
+	public void testSelectQuery1PrefixWithAngledBracket() {
+		Variable x = var("x"), name = var("name");
+		query = Queries
+				.SELECT(name)
+				.prefix(FOAF.NS)
+				.where(x.has(FOAF.NAME, name)
+						.filter(lt(strlen(name), 10)));
+		Assert.assertEquals(
+				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+						+ "SELECT ?name\n"
+						+ "WHERE { ?x foaf:name ?name .\n"
+						+ "FILTER ( STRLEN( ?name ) < 10 ) }\n",
 				query.getQueryString());
 	}
 }

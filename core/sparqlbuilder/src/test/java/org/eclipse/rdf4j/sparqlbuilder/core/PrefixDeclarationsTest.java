@@ -1,0 +1,73 @@
+/*******************************************************************************
+ Copyright (c) 2021 Eclipse RDF4J contributors.
+ All rights reserved. This program and the accompanying materials
+ are made available under the terms of the Eclipse Distribution License v1.0
+ which accompanies this distribution, and is available at
+ http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
+package org.eclipse.rdf4j.sparqlbuilder.core;
+
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+import org.junit.Assert;
+import org.junit.Test;
+
+public class PrefixDeclarationsTest {
+	@Test
+	public void testReplaceInQuery_nothing() {
+		PrefixDeclarations pd = new PrefixDeclarations();
+		pd.addPrefix(new Prefix("label", Rdf.iri("http://example.org/ns#")));
+		Assert.assertEquals("nothing to replace",
+				pd.replaceInQuery("nothing to replace"));
+	}
+
+	@Test
+	public void testReplaceInQuery_justTheNamespace() {
+		PrefixDeclarations pd = new PrefixDeclarations();
+		pd.addPrefix(new Prefix("label", Rdf.iri("http://example.org/ns#")));
+		Assert.assertEquals("label: to replace",
+				pd.replaceInQuery("<http://example.org/ns#> to replace"));
+	}
+
+	@Test
+	public void testReplaceInQuery_atStart() {
+		PrefixDeclarations pd = new PrefixDeclarations();
+		pd.addPrefix(new Prefix("label", Rdf.iri("http://example.org/ns#")));
+		Assert.assertEquals("label:local to replace",
+				pd.replaceInQuery("<http://example.org/ns#local> to replace"));
+	}
+
+	@Test
+	public void testReplaceInQuery_atEnd() {
+		PrefixDeclarations pd = new PrefixDeclarations();
+		pd.addPrefix(new Prefix("label", Rdf.iri("http://example.org/ns#")));
+		Assert.assertEquals("replace label:local",
+				pd.replaceInQuery("replace <http://example.org/ns#local>"));
+	}
+
+	@Test
+	public void testReplaceInQuery_middle() {
+		PrefixDeclarations pd = new PrefixDeclarations();
+		pd.addPrefix(new Prefix("label", Rdf.iri("http://example.org/ns#")));
+		Assert.assertEquals("replace label:local in the middle",
+				pd.replaceInQuery("replace <http://example.org/ns#local> in the middle"));
+	}
+
+	@Test
+	public void testReplaceInQuery_middle_with_angled_brackets() {
+		PrefixDeclarations pd = new PrefixDeclarations();
+		pd.addPrefix(new Prefix("label", Rdf.iri("http://example.org/ns#")));
+		Assert.assertEquals("<replace <> <label:local> <in> the middle",
+				pd.replaceInQuery("<replace <> <<http://example.org/ns#local>> <in> the middle"));
+	}
+
+	@Test
+	public void testReplaceInQuery_multiple_long_shared_substring() {
+		PrefixDeclarations pd = new PrefixDeclarations();
+		pd.addPrefix(new Prefix("label", Rdf.iri("http://example.org/ns#")));
+		pd.addPrefix(new Prefix("label2", Rdf.iri("http://example.org/ns2#")));
+		Assert.assertEquals("<replace <> <label:local> <in> the middle followed by label2:local",
+				pd.replaceInQuery(
+						"<replace <> <<http://example.org/ns#local>> <in> the middle followed by <http://example.org/ns2#local>"));
+	}
+}

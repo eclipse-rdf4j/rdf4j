@@ -32,7 +32,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 		int pos = 0;
 		int lastPos = 0;
 		while (pos != -1 && pos < queryString.length()) {
-			pos = queryString.indexOf('<', pos);
+			pos = queryString.indexOf('<', lastPos);
 			if (pos == -1) {
 				break;
 			}
@@ -52,6 +52,9 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 							.append(queryString, pos + 1 + replacementLength, posOfClosingBracket);
 					pos = posOfClosingBracket + 1;
 				}
+			} else {
+				sb.append('<');
+				pos++;
 			}
 			lastPos = pos;
 		}
