@@ -95,8 +95,8 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>javax.xml.bind</groupId>
-			<artifactId>jaxb-api</artifactId>
+			<groupId>jakarta.xml.bind</groupId>
+			<artifactId>jakarta.xml.bind-api</artifactId>
 			<version>${jaxb.version}</version>
 			<scope>test</scope>
 		</dependency>
