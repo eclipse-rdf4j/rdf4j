@@ -8,7 +8,9 @@
 
 package org.eclipse.rdf4j.spring.tx;
 
-import static org.springframework.transaction.TransactionDefinition.*;
+import static org.springframework.transaction.TransactionDefinition.ISOLATION_DEFAULT;
+import static org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRED;
+import static org.springframework.transaction.TransactionDefinition.TIMEOUT_DEFAULT;
 
 import java.util.function.Function;
 

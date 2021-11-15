@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
-import java.util.NoSuchElementException;
-
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 

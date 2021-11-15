@@ -10,7 +10,13 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder;
 
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.*;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.p;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pAlt;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pGroup;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pOneOrMore;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pSeq;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pZeroOrMore;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pZeroOrOne;
 
 import java.util.Objects;
 import java.util.function.BiFunction;

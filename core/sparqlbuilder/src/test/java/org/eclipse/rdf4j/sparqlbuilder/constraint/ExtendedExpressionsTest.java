@@ -10,13 +10,6 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-
 /**
  * @since 4.0.0
  * @author Florian Kleedorfer

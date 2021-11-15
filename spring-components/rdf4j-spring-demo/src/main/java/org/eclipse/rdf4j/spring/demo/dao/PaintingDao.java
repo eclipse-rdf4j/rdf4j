@@ -9,7 +9,10 @@
 package org.eclipse.rdf4j.spring.demo.dao;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.eclipse.rdf4j.spring.demo.model.Painting.*;
+import static org.eclipse.rdf4j.spring.demo.model.Painting.PAINTING_ARTIST_ID;
+import static org.eclipse.rdf4j.spring.demo.model.Painting.PAINTING_ID;
+import static org.eclipse.rdf4j.spring.demo.model.Painting.PAINTING_LABEL;
+import static org.eclipse.rdf4j.spring.demo.model.Painting.PAINTING_TECHNIQUE;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -19,7 +22,6 @@ import org.eclipse.rdf4j.spring.dao.RDF4JDao;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
-import org.eclipse.rdf4j.spring.demo.model.Artist;
 import org.eclipse.rdf4j.spring.demo.model.EX;
 import org.eclipse.rdf4j.spring.demo.model.Painting;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;

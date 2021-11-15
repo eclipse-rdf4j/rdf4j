@@ -11,7 +11,9 @@ package org.eclipse.rdf4j.spring.demo.dao;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.bound;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.not;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-import static org.eclipse.rdf4j.spring.demo.model.Artist.*;
+import static org.eclipse.rdf4j.spring.demo.model.Artist.ARTIST_FIRST_NAME;
+import static org.eclipse.rdf4j.spring.demo.model.Artist.ARTIST_ID;
+import static org.eclipse.rdf4j.spring.demo.model.Artist.ARTIST_LAST_NAME;
 
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -19,7 +21,6 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryResultUtil;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
