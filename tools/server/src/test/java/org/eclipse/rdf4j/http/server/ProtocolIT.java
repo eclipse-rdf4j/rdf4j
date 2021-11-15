@@ -20,6 +20,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -30,7 +31,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.Charsets;
 import org.apache.http.HttpEntity;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
@@ -203,7 +203,7 @@ public class ProtocolIT {
 		List<NameValuePair> nvps = new ArrayList<>();
 		nvps.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
 		nvps.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, "1"));
-		UrlEncodedFormEntity entity = new UrlEncodedFormEntity(nvps, Charsets.UTF_8);
+		UrlEncodedFormEntity entity = new UrlEncodedFormEntity(nvps, StandardCharsets.UTF_8);
 
 		post.setEntity(entity);
 
@@ -221,7 +221,7 @@ public class ProtocolIT {
 	public void testContentTypeForGraphQuery1_GET() throws Exception {
 		String query = "DESCRIBE <foo:bar>";
 		String location = TestServer.REPOSITORY_URL;
-		location += "?query=" + URLEncoder.encode(query, "UTF-8");
+		location += "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
 
 		URL url = new URL(location);
 
@@ -263,7 +263,7 @@ public class ProtocolIT {
 	public void testContentTypeForGraphQuery2_GET() throws Exception {
 		String query = "DESCRIBE <foo:bar>";
 		String location = TestServer.REPOSITORY_URL;
-		location += "?query=" + URLEncoder.encode(query, "UTF-8");
+		location += "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
 
 		URL url = new URL(location);
 
@@ -292,7 +292,7 @@ public class ProtocolIT {
 	public void testQueryResponse_HEAD() throws Exception {
 		String query = "DESCRIBE <foo:bar>";
 		String location = TestServer.REPOSITORY_URL;
-		location += "?query=" + URLEncoder.encode(query, "UTF-8");
+		location += "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
 
 		URL url = new URL(location);
 
@@ -333,7 +333,7 @@ public class ProtocolIT {
 	public void testUpdateResponse_HEAD() throws Exception {
 		String query = "INSERT DATA { <foo:foo> <foo:bar> \"foo\". } ";
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
-		location += "?update=" + URLEncoder.encode(query, "UTF-8");
+		location += "?update=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
 
 		URL url = new URL(location);
 
@@ -483,7 +483,7 @@ public class ProtocolIT {
 			}
 
 			try (CSVReader reader = new CSVReader(
-					new InputStreamReader(conn.getInputStream(), Charset.forName("UTF-8")))) {
+					new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
 				String[] headerRow = reader.readNext();
 
 				if (headerRow == null) {
@@ -518,7 +518,7 @@ public class ProtocolIT {
 		conn.setRequestMethod("PUT");
 		conn.setDoOutput(true);
 
-		try (InputStream dataStream = new ByteArrayInputStream(namespace.getBytes("UTF-8"))) {
+		try (InputStream dataStream = new ByteArrayInputStream(namespace.getBytes(StandardCharsets.UTF_8))) {
 			OutputStream connOut = conn.getOutputStream();
 
 			try {
@@ -611,7 +611,7 @@ public class ProtocolIT {
 	}
 
 	private TupleQueryResult evaluateTupleQuery(String location, String query, QueryLanguage queryLn) throws Exception {
-		location += "?query=" + URLEncoder.encode(query, "UTF-8") + "&queryLn=" + queryLn.getName();
+		location += "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8) + "&queryLn=" + queryLn.getName();
 
 		URL url = new URL(location);
 

@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.queryrender.sparql.experimental;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -33,7 +34,7 @@ import com.google.common.collect.Sets;
 
 /**
  * Tests for the {@link SparqlQueryRenderer}.
- * 
+ *
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
@@ -53,7 +54,7 @@ public class SparqlQueryRendererTest {
 
 	private String loadClasspathResourceAsUtf8String(String resourceFile) throws Exception {
 		BufferedReader reader = new BufferedReader(
-				new InputStreamReader(this.getClass().getResourceAsStream(resourceFile), "UTF-8"));
+				new InputStreamReader(this.getClass().getResourceAsStream(resourceFile), StandardCharsets.UTF_8));
 		StringBuilder textBuilder = new StringBuilder();
 		String line;
 		while ((line = reader.readLine()) != null) {
@@ -301,7 +302,7 @@ public class SparqlQueryRendererTest {
 
 	/**
 	 * Multiple prefix declarations: fails with RDF4J parser
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	// @Test
@@ -1314,7 +1315,7 @@ public class SparqlQueryRendererTest {
 	 * FIXME: RDF4J now provides scope change info in the algebra tree string representation, and the renderer component
 	 * does not always produce exactly the same scopes (due to differences in curly braces etc.). In almost all cases
 	 * this makes no difference for the semantics of the query (just performance).
-	 * 
+	 *
 	 * see https://metaphacts.atlassian.net/browse/ID-1860
 	 */
 	private String stripScopeChange(String input) {

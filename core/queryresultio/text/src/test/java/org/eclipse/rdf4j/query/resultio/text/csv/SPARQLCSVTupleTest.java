@@ -12,6 +12,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -65,7 +66,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		writer.handleLinks(Arrays.<String>asList());
 		QueryResults.report(createTupleNoBindingSets(), writer);
 
-		assertEquals("\r\n", out.toString("UTF-8").replaceAll("\\S+", ""));
+		assertEquals("\r\n", out.toString(StandardCharsets.UTF_8).replaceAll("\\S+", ""));
 	}
 
 	@Test
@@ -78,7 +79,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		writer.handleLinks(Arrays.<String>asList());
 		QueryResults.report(createTupleNoBindingSets(), writer);
 
-		assertRegex("a,b,c(\r\n)?", out.toString("UTF-8"));
+		assertRegex("a,b,c(\r\n)?", out.toString(StandardCharsets.UTF_8));
 	}
 
 	@Test
@@ -91,13 +92,13 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		writer.handleLinks(Arrays.<String>asList());
 		QueryResults.report(createTupleSingleVarMultipleBindingSets(), writer);
 
-		System.out.println(out.toString("UTF-8"));
+		System.out.println(out.toString(StandardCharsets.UTF_8));
 		assertRegex("a\r\n" + "foo:bar\r\n" + "2.0(E0)?\r\n" + "_:bnode3\r\n" + "''single-quoted string\r\n"
 				+ "\"\"\"\"\"double-quoted string\"\r\n" + "space at the end         \r\n"
 				+ "space at the end         \r\n" + "\"\"\"\"\"double-quoted string with no datatype\"\r\n"
 				+ "\"newline at the end \n\"(\r\n)?"
 				+ "urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjdHlwZT4gPHVybjpiPj4-(\r\n)?",
-				out.toString("UTF-8"));
+				out.toString(StandardCharsets.UTF_8));
 	}
 
 	@Test
@@ -114,7 +115,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 				+ "http://example.org/test/ns/bindingA,http://example.com/other/ns/bindingB,\"http://example.com/other/ns/binding,C\"\r\n"
 				+ "\"string with newline at the end       \n\",string with space at the end         ,    \r\n"
 				+ "''single-quoted string,\"\"\"\"\"double-quoted string\",\t\tunencoded tab characters followed by encoded \t\t(\r\n)?",
-				out.toString("UTF-8"));
+				out.toString(StandardCharsets.UTF_8));
 	}
 
 	private void assertRegex(String pattern, String actual) {

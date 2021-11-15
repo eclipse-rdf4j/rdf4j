@@ -12,6 +12,7 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
@@ -71,19 +72,19 @@ public class ComplexLargeBenchmark {
 			transaction1 = IOUtils.toString(
 					ComplexLargeBenchmark.class.getClassLoader()
 							.getResourceAsStream("complexBenchmark/transaction1.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 			transaction2 = IOUtils.toString(
 					ComplexLargeBenchmark.class.getClassLoader()
 							.getResourceAsStream("complexBenchmark/transaction2.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 			transaction3 = IOUtils.toString(
 					ComplexLargeBenchmark.class.getClassLoader()
 							.getResourceAsStream("complexBenchmark/transaction3.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 			transaction4 = IOUtils.toString(
 					ComplexLargeBenchmark.class.getClassLoader()
 							.getResourceAsStream("complexBenchmark/transaction4.qr"),
-					"utf-8");
+					StandardCharsets.UTF_8);
 
 		} catch (IOException e) {
 			throw new RuntimeException();
