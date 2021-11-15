@@ -20,13 +20,13 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 
 	private volatile ValueStoreRevision revision;
 
-	private volatile int internalID;
+	private volatile long internalID;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
-	protected LmdbIRI(ValueStoreRevision revision, int internalID) {
+	protected LmdbIRI(ValueStoreRevision revision, long internalID) {
 		super();
 		setInternalID(internalID, revision);
 	}
@@ -35,7 +35,7 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 		this(revision, uri, UNKNOWN_ID);
 	}
 
-	public LmdbIRI(ValueStoreRevision revision, String uri, int internalID) {
+	public LmdbIRI(ValueStoreRevision revision, String uri, long internalID) {
 		super(uri);
 		setInternalID(internalID, revision);
 	}
@@ -44,7 +44,7 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 		this(revision, namespace + localname);
 	}
 
-	public LmdbIRI(ValueStoreRevision revision, String namespace, String localname, int internalID) {
+	public LmdbIRI(ValueStoreRevision revision, String namespace, String localname, long internalID) {
 		this(revision, namespace + localname, internalID);
 	}
 
@@ -53,7 +53,7 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 	 *---------*/
 
 	@Override
-	public void setInternalID(int internalID, ValueStoreRevision revision) {
+	public void setInternalID(long internalID, ValueStoreRevision revision) {
 		this.internalID = internalID;
 		this.revision = revision;
 	}
@@ -64,7 +64,7 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 	}
 
 	@Override
-	public int getInternalID() {
+	public long getInternalID() {
 		return internalID;
 	}
 

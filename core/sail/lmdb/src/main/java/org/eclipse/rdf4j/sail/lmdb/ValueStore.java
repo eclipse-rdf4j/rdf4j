@@ -130,20 +130,20 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
 	 */
-	private final ConcurrentCache<Integer, LmdbValue> valueCache;
+	private final ConcurrentCache<Long, LmdbValue> valueCache;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
-	private final ConcurrentCache<LmdbValue, Integer> valueIDCache;
+	private final ConcurrentCache<LmdbValue, Long> valueIDCache;
 	/**
 	 * A simple cache containing the [NAMESPACE_CACHE_SIZE] most-recently used namespaces stored by their ID.
 	 */
-	private final ConcurrentCache<Integer, String> namespaceCache;
+	private final ConcurrentCache<Long, String> namespaceCache;
 	/**
 	 * A simple cache containing the [NAMESPACE_ID_CACHE_SIZE] most-recently used namespace-IDs stored by their
 	 * namespace.
 	 */
-	private final ConcurrentCache<String, Integer> namespaceIDCache;
+	private final ConcurrentCache<String, Long> namespaceIDCache;
 	/**
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
@@ -160,10 +160,6 @@ class ValueStore extends AbstractValueFactory {
 	 * The next ID that is associated with a stored value
 	 */
 	private long nextId;
-	/**
-	 * A key to store the next ID within the database
-	 */
-	private byte[] nextIdKey = "__NEXT_ID\u0000".getBytes(StandardCharsets.UTF_8);
 
 	/*--------------*
 	 * Constructors *
@@ -202,9 +198,7 @@ class ValueStore extends AbstractValueFactory {
 				MDBVal valueData = MDBVal.callocStack(stack);
 				if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0 &&
 						mdb_cursor_get(cursor, keyData, valueData, MDB_PREV) == 0) {
-					byte[] value = new byte[keyData.mv_data().remaining()];
-					keyData.mv_data().get(value);
-					nextId = data2id(value) + 1;
+					nextId = data2id(keyData.mv_data()) + 1;
 				} else {
 					nextId = 1;
 				}
@@ -272,19 +266,19 @@ class ValueStore extends AbstractValueFactory {
 				.array();
 	}
 
-	protected byte[] id2data(long id) {
-		return ByteBuffer.wrap(new byte[1 + Long.BYTES])
-				.order(BYTE_ORDER)
-				.put(ID_KEY)
-				.putLong(id)
-				.array();
+	protected ByteBuffer idBuffer(MemoryStack stack) {
+		return stack.malloc(2 + Long.BYTES);
 	}
 
-	protected int data2id(byte[] idData) {
-		ByteBuffer bb = ByteBuffer.wrap(idData).order(BYTE_ORDER);
+	protected void id2data(ByteBuffer bb, long id) {
+		bb.put(ID_KEY);
+		Varint.writeUnsigned(bb, id);
+	}
+
+	protected long data2id(ByteBuffer bb) {
 		// skip id marker
 		bb.get();
-		return (int) bb.getLong();
+		return Varint.readUnsigned(bb);
 	}
 
 	/**
@@ -307,10 +301,13 @@ class ValueStore extends AbstractValueFactory {
 		return lockManager.getReadLock();
 	}
 
-	protected byte[] getData(int id) throws IOException {
+	protected byte[] getData(long id) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			MDBVal keyData = MDBVal.callocStack(stack);
-			keyData.mv_data(stack.bytes(id2data(id)));
+			ByteBuffer idBuffer = idBuffer(stack);
+			id2data(idBuffer, id);
+			idBuffer.flip();
+			keyData.mv_data(idBuffer);
 			MDBVal valueData = MDBVal.callocStack(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == 0) {
 				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
@@ -328,9 +325,9 @@ class ValueStore extends AbstractValueFactory {
 	 * @return The value for the ID, or <tt>null</tt> no such value could be found.
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public LmdbValue getValue(int id) throws IOException {
+	public LmdbValue getValue(long id) throws IOException {
 		// Check value cache
-		Integer cacheID = id;
+		Long cacheID = id;
 		LmdbValue resultValue = valueCache.get(cacheID);
 
 		if (resultValue == null) {
@@ -347,16 +344,14 @@ class ValueStore extends AbstractValueFactory {
 		return resultValue;
 	}
 
-	private int findId(byte[] data) throws IOException {
+	private long findId(byte[] data) throws IOException {
 		Long id = LmdbUtil.<Long>readTransaction(env, (stack, txn) -> {
 			if (data.length < mdb_env_get_maxkeysize(env)) {
 				MDBVal keyData = MDBVal.callocStack(stack);
 				keyData.mv_data(stack.bytes(data));
 				MDBVal valueData = MDBVal.callocStack(stack);
 				if (mdb_get(txn, dbi, keyData, valueData) == 0) {
-					byte[] valueBytes = new byte[valueData.mv_data().remaining()];
-					valueData.mv_data().get(valueBytes);
-					return (long) data2id(valueBytes);
+					return data2id(valueData.mv_data());
 				}
 			} else {
 				ByteBuffer dataBb = ByteBuffer.wrap(data);
@@ -385,9 +380,7 @@ class ValueStore extends AbstractValueFactory {
 							}
 
 							if (valueData.mv_data().compareTo(dataBb) == 0) {
-								byte[] idBytes = new byte[keyData.mv_data().remaining()];
-								keyData.mv_data().get(idBytes);
-								return (long) data2id(idBytes);
+								return data2id(keyData.mv_data());
 							}
 						} while (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == 0);
 					}
@@ -399,7 +392,7 @@ class ValueStore extends AbstractValueFactory {
 			}
 			return null;
 		});
-		return id != null ? id.intValue() : LmdbValue.UNKNOWN_ID;
+		return id != null ? id : LmdbValue.UNKNOWN_ID;
 	}
 
 	<T> T writeTransaction(Transaction<T> transaction) throws IOException {
@@ -412,13 +405,16 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private void storeId(int id, byte[] data) throws IOException {
+	private void storeId(long id, byte[] data) throws IOException {
 		this.<Long>writeTransaction((stack, txn) -> {
 			if (data.length < mdb_env_get_maxkeysize(env)) {
 				MDBVal dataVal = MDBVal.callocStack(stack);
 				dataVal.mv_data(stack.bytes(data));
 				MDBVal idVal = MDBVal.callocStack(stack);
-				idVal.mv_data(stack.bytes(id2data(id)));
+				ByteBuffer idBuffer = idBuffer(stack);
+				id2data(idBuffer, id);
+				idBuffer.flip();
+				idVal.mv_data(idBuffer);
 
 				mdb_put(txn, dbi, dataVal, idVal, 0);
 				mdb_put(txn, dbi, idVal, dataVal, 0);
@@ -457,11 +453,13 @@ class ValueStore extends AbstractValueFactory {
 				}
 
 				hashBb.putLong(1 + Long.BYTES, hashNr);
-				byte[] idData = id2data(id);
 				keyData = MDBVal.callocStack(stack);
 				keyData.mv_data(stack.bytes(hashAndNr));
 				valueData = MDBVal.callocStack(stack);
-				valueData.mv_data(stack.bytes(idData));
+				ByteBuffer idBuffer = idBuffer(stack);
+				id2data(idBuffer, id);
+				idBuffer.flip();
+				valueData.mv_data(idBuffer);
 				mdb_put(txn, dbi, keyData, valueData, 0);
 
 				MDBVal realValueData = MDBVal.callocStack(stack);
@@ -497,7 +495,7 @@ class ValueStore extends AbstractValueFactory {
 	 * @return The ID for the specified value, or {@link LmdbValue#UNKNOWN_ID} if no such ID could be found.
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public int getID(Value value) throws IOException {
+	public long getID(Value value) throws IOException {
 		// Try to get the internal ID from the value itself
 		boolean isOwnValue = isOwnValue(value);
 
@@ -505,7 +503,7 @@ class ValueStore extends AbstractValueFactory {
 			LmdbValue lmdbValue = (LmdbValue) value;
 
 			if (revisionIsCurrent(lmdbValue)) {
-				int id = lmdbValue.getInternalID();
+				long id = lmdbValue.getInternalID();
 
 				if (id != LmdbValue.UNKNOWN_ID) {
 					return id;
@@ -514,10 +512,10 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		// Check cache
-		Integer cachedID = valueIDCache.get(value);
+		Long cachedID = valueIDCache.get(value);
 
 		if (cachedID != null) {
-			int id = cachedID.intValue();
+			long id = cachedID;
 
 			if (isOwnValue) {
 				// Store id in value for fast access in any consecutive calls
@@ -534,7 +532,7 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		if (data != null) {
-			int id = findId(data);
+			long id = findId(data);
 
 			if (id != LmdbValue.UNKNOWN_ID) {
 				if (isOwnValue) {
@@ -593,15 +591,15 @@ class ValueStore extends AbstractValueFactory {
 	 * @return The ID that has been assigned to the value.
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public int storeValue(Value value) throws IOException {
-		int id = getID(value);
+	public long storeValue(Value value) throws IOException {
+		long id = getID(value);
 
 		if (id == LmdbValue.UNKNOWN_ID) {
 			// Unable to get internal ID in a cheap way, just store it in the data
 			// store which will handle duplicates
 			byte[] valueData = value2data(value, true);
 
-			id = (int) nextId();
+			id = nextId();
 			storeId(id, valueData);
 
 			LmdbValue nv = isOwnValue(value) ? (LmdbValue) value : getLmdbValue(value);
@@ -754,7 +752,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] uri2data(IRI uri, boolean create) throws IOException {
-		int nsID = getNamespaceID(uri.getNamespace(), create);
+		long nsID = getNamespaceID(uri.getNamespace(), create);
 
 		if (nsID == -1) {
 			// Unknown namespace means unknown URI
@@ -765,10 +763,10 @@ class ValueStore extends AbstractValueFactory {
 		byte[] localNameData = uri.getLocalName().getBytes(StandardCharsets.UTF_8);
 
 		// Combine parts in a single byte array
-		byte[] uriData = new byte[5 + localNameData.length];
+		byte[] uriData = new byte[1 + Long.BYTES + localNameData.length];
 		uriData[0] = URI_VALUE;
-		ByteArrayUtil.putInt(nsID, uriData, 1);
-		ByteArrayUtil.put(localNameData, uriData, 5);
+		ByteArrayUtil.putLong(nsID, uriData, 1);
+		ByteArrayUtil.put(localNameData, uriData, 1 + Long.BYTES);
 
 		return uriData;
 	}
@@ -798,7 +796,7 @@ class ValueStore extends AbstractValueFactory {
 	private byte[] literal2data(String label, Optional<String> lang, IRI dt, boolean create)
 			throws IOException, UnsupportedEncodingException {
 		// Get datatype ID
-		int datatypeID = LmdbValue.UNKNOWN_ID;
+		long datatypeID = LmdbValue.UNKNOWN_ID;
 
 		if (create) {
 			datatypeID = storeValue(dt);
@@ -823,14 +821,14 @@ class ValueStore extends AbstractValueFactory {
 		byte[] labelData = label.getBytes(StandardCharsets.UTF_8);
 
 		// Combine parts in a single byte array
-		byte[] literalData = new byte[6 + langDataLength + labelData.length];
+		byte[] literalData = new byte[2 + Long.BYTES + langDataLength + labelData.length];
 		literalData[0] = LITERAL_VALUE;
-		ByteArrayUtil.putInt(datatypeID, literalData, 1);
-		literalData[5] = (byte) langDataLength;
+		ByteArrayUtil.putLong(datatypeID, literalData, 1);
+		literalData[9] = (byte) langDataLength;
 		if (langData != null) {
-			ByteArrayUtil.put(langData, literalData, 6);
+			ByteArrayUtil.put(langData, literalData, 10);
 		}
-		ByteArrayUtil.put(labelData, literalData, 6 + langDataLength);
+		ByteArrayUtil.put(labelData, literalData, 10 + langDataLength);
 
 		return literalData;
 	}
@@ -839,7 +837,7 @@ class ValueStore extends AbstractValueFactory {
 		return data[0] != URI_VALUE && data[0] != BNODE_VALUE && data[0] != LITERAL_VALUE;
 	}
 
-	private LmdbValue data2value(int id, byte[] data) throws IOException {
+	private LmdbValue data2value(long id, byte[] data) throws IOException {
 		switch (data[0]) {
 		case URI_VALUE:
 			return data2uri(id, data);
@@ -852,23 +850,22 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private LmdbIRI data2uri(int id, byte[] data) throws IOException {
-		int nsID = ByteArrayUtil.getInt(data, 1);
+	private LmdbIRI data2uri(long id, byte[] data) throws IOException {
+		long nsID = ByteArrayUtil.getLong(data, 1);
 		String namespace = getNamespace(nsID);
-
-		String localName = new String(data, 5, data.length - 5, StandardCharsets.UTF_8);
+		String localName = new String(data, 1 + Long.BYTES, data.length - 1 - Long.BYTES, StandardCharsets.UTF_8);
 
 		return new LmdbIRI(revision, namespace, localName, id);
 	}
 
-	private LmdbBNode data2bnode(int id, byte[] data) throws IOException {
+	private LmdbBNode data2bnode(long id, byte[] data) throws IOException {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 		return new LmdbBNode(revision, nodeID, id);
 	}
 
-	private LmdbLiteral data2literal(int id, byte[] data) throws IOException {
+	private LmdbLiteral data2literal(long id, byte[] data) throws IOException {
 		// Get datatype
-		int datatypeID = ByteArrayUtil.getInt(data, 1);
+		long datatypeID = ByteArrayUtil.getLong(data, 1);
 		IRI datatype = null;
 		if (datatypeID != LmdbValue.UNKNOWN_ID) {
 			datatype = (IRI) getValue(datatypeID);
@@ -876,13 +873,13 @@ class ValueStore extends AbstractValueFactory {
 
 		// Get language tag
 		String lang = null;
-		int langLength = data[5];
+		int langLength = data[9];
 		if (langLength > 0) {
-			lang = new String(data, 6, langLength, StandardCharsets.UTF_8);
+			lang = new String(data, 10, langLength, StandardCharsets.UTF_8);
 		}
 
 		// Get label
-		String label = new String(data, 6 + langLength, data.length - 6 - langLength, StandardCharsets.UTF_8);
+		String label = new String(data, 10 + langLength, data.length - 10 - langLength, StandardCharsets.UTF_8);
 
 		if (lang != null) {
 			return new LmdbLiteral(revision, label, lang, id);
@@ -897,17 +894,17 @@ class ValueStore extends AbstractValueFactory {
 		return new String(data, StandardCharsets.UTF_8);
 	}
 
-	private int getNamespaceID(String namespace, boolean create) throws IOException {
-		Integer cacheID = namespaceIDCache.get(namespace);
+	private long getNamespaceID(String namespace, boolean create) throws IOException {
+		Long cacheID = namespaceIDCache.get(namespace);
 		if (cacheID != null) {
 			return cacheID;
 		}
 
 		byte[] namespaceData = namespace.getBytes(StandardCharsets.UTF_8);
 
-		int id = findId(namespaceData);
+		long id = findId(namespaceData);
 		if (id == LmdbValue.UNKNOWN_ID && create) {
-			id = (int) nextId();
+			id = nextId();
 			storeId(id, namespaceData);
 		}
 
@@ -922,14 +919,17 @@ class ValueStore extends AbstractValueFactory {
 	 * Methods from interface ValueFactory *
 	 *-------------------------------------*/
 
-	private String getNamespace(int id) throws IOException {
-		Integer cacheID = id;
+	private String getNamespace(long id) throws IOException {
+		Long cacheID = id;
 		String namespace = namespaceCache.get(cacheID);
 
 		if (namespace == null) {
 			namespace = readTransaction(env, (stack, txn) -> {
 				MDBVal keyData = MDBVal.callocStack(stack);
-				keyData.mv_data(stack.bytes(id2data(id)));
+				ByteBuffer idBuffer = idBuffer(stack);
+				id2data(idBuffer, id);
+				idBuffer.flip();
+				keyData.mv_data(idBuffer);
 				MDBVal valueData = MDBVal.callocStack(stack);
 				if (mdb_get(txn, dbi, keyData, valueData) == 0) {
 					byte[] valueBytes = new byte[valueData.mv_data().remaining()];

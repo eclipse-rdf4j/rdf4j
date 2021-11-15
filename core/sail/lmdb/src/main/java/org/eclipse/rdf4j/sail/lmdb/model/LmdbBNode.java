@@ -24,13 +24,13 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 
 	private volatile ValueStoreRevision revision;
 
-	private volatile int internalID;
+	private volatile long internalID;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
-	protected LmdbBNode(ValueStoreRevision revision, int internalID) {
+	protected LmdbBNode(ValueStoreRevision revision, long internalID) {
 		super();
 		setInternalID(internalID, revision);
 	}
@@ -39,7 +39,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		this(revision, nodeID, UNKNOWN_ID);
 	}
 
-	public LmdbBNode(ValueStoreRevision revision, String nodeID, int internalID) {
+	public LmdbBNode(ValueStoreRevision revision, String nodeID, long internalID) {
 		super(nodeID);
 		setInternalID(internalID, revision);
 	}
@@ -49,7 +49,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	 *---------*/
 
 	@Override
-	public void setInternalID(int internalID, ValueStoreRevision revision) {
+	public void setInternalID(long internalID, ValueStoreRevision revision) {
 		this.internalID = internalID;
 		this.revision = revision;
 	}
@@ -60,7 +60,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	}
 
 	@Override
-	public int getInternalID() {
+	public long getInternalID() {
 		return internalID;
 	}
 

@@ -32,6 +32,8 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 
 	private final ValueStore valueStore;
 
+	private final long[] quad = new long[4];
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -58,18 +60,19 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 			}
 
 			ByteBuffer key = nextRecord.key;
+			Varint.readGroupUnsigned(key, quad);
 
-			int subjID = key.getInt(TripleStore.SUBJ_IDX);
+			long subjID = quad[TripleStore.SUBJ_IDX];
 			Resource subj = (Resource) valueStore.getValue(subjID);
 
-			int predID = key.getInt(TripleStore.PRED_IDX);
+			long predID = quad[TripleStore.PRED_IDX];
 			IRI pred = (IRI) valueStore.getValue(predID);
 
-			int objID = key.getInt(TripleStore.OBJ_IDX);
+			long objID = quad[TripleStore.OBJ_IDX];
 			Value obj = valueStore.getValue(objID);
 
 			Resource context = null;
-			int contextID = key.getInt(TripleStore.CONTEXT_IDX);
+			long contextID = quad[TripleStore.CONTEXT_IDX];
 			if (contextID != 0) {
 				context = (Resource) valueStore.getValue(contextID);
 			}

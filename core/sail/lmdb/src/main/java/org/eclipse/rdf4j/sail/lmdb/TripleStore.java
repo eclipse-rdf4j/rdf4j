@@ -10,6 +10,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
+import static org.eclipse.rdf4j.sail.lmdb.Varint.calcGroupLengthUnsigned4;
+import static org.eclipse.rdf4j.sail.lmdb.Varint.readGroupElementUnsigned;
+import static org.eclipse.rdf4j.sail.lmdb.Varint.writeGroupUnsigned4;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -55,7 +58,6 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
 
-import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnRef.Mode;
 import org.lwjgl.PointerBuffer;
@@ -81,16 +83,13 @@ class TripleStore implements Closeable {
 	 * Constants *
 	 *-----------*/
 
-	// 16 bytes are used to represent a triple:
-	// byte 0-3 : subject
-	// byte 4-7 : predicate
-	// byte 8-11: object
-	// byte 12-15: context
-	static final int KEY_LENGTH = 16;
+	// triples are represented by 4 varints for subject, predicate, object and context
 	static final int SUBJ_IDX = 0;
-	static final int PRED_IDX = 4;
-	static final int OBJ_IDX = 8;
-	static final int CONTEXT_IDX = 12;
+	static final int PRED_IDX = 1;
+	static final int OBJ_IDX = 2;
+	static final int CONTEXT_IDX = 3;
+
+	static final int MAX_KEY_LENGTH = 2 + 4 * 8;
 
 	/**
 	 * Bit field indicating that a statement has been explicitly added (instead of being inferred).
@@ -127,7 +126,7 @@ class TripleStore implements Closeable {
 	 * Variables *
 	 *-----------*/
 	private static final Logger logger = LoggerFactory.getLogger(TripleStore.class);
-	private static final byte[] EMPTY = new byte[0];
+
 	/**
 	 * The directory that is used to store the index files.
 	 */
@@ -306,7 +305,8 @@ class TripleStore implements Closeable {
 					TripleIndex addedIndex = new TripleIndex(fieldSeq);
 					RecordIterator[] sourceIter = { null };
 					try {
-						sourceIter[0] = new LmdbRecordIterator(sourceIndex.getDB(), new TxnRef(txn, Mode.NONE));
+						sourceIter[0] = new LmdbRecordIterator(false, -1, -1, -1, -1,
+								null, sourceIndex.getDB(), new TxnRef(txn, Mode.NONE));
 
 						RecordIterator it = sourceIter[0];
 						Record record;
@@ -408,48 +408,36 @@ class TripleStore implements Closeable {
 		return null;
 	}
 
-	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean explicit,
+	public RecordIterator getTriples(long subj, long pred, long obj, long context, boolean explicit,
 			boolean readTransaction) throws IOException {
-		RecordIterator btreeIter = getTriples(subj, pred, obj, context);
+		RecordIterator recordIt = getTriples(subj, pred, obj, context);
 
 		if (readTransaction && explicit) {
 			// Filter implicit statements from the result
-			btreeIter = new ExplicitStatementFilter(btreeIter);
+			recordIt = new ExplicitStatementFilter(recordIt);
 		} else if (!explicit) {
 			// Filter out explicit statements from the result
-			btreeIter = new ImplicitStatementFilter(btreeIter);
+			recordIt = new ImplicitStatementFilter(recordIt);
 		}
 
-		return btreeIter;
+		return recordIt;
 	}
 
-	private RecordIterator getTriples(int subj, int pred, int obj, int context) throws IOException {
+	private RecordIterator getTriples(long subj, long pred, long obj, long context) {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return getTriplesUsingIndex(subj, pred, obj, context, index, doRangeSearch);
 	}
 
-	private RecordIterator getTriplesUsingIndex(int subj, int pred, int obj, int context, TripleIndex index,
-			boolean rangeSearch) {
-		byte[] searchKey = toSearchKey(subj, pred, obj, context);
-		byte[] searchMask = toSearchMask(subj, pred, obj, context);
-
+	private RecordIterator getTriplesUsingIndex(long subj, long pred, long obj, long context,
+			TripleIndex index, boolean rangeSearch) {
 		TxnRef txnRef = getReadTxn();
 		txnRef.begin();
-		if (rangeSearch) {
-			// Use ranged search
-			byte[] minValue = getMinKey(subj, pred, obj, context);
-			byte[] maxValue = getMaxKey(subj, pred, obj, context);
-
-			return new LmdbRecordIterator(minValue, maxValue, index.tripleComparator, searchKey, searchMask,
-					index.getDB(), txnRef);
-		} else {
-			// Use sequential scan
-			return new LmdbRecordIterator(null, null, null, searchKey, searchMask, index.getDB(), txnRef);
-		}
+		return new LmdbRecordIterator(rangeSearch, subj, pred, obj, context, index.tripleComparator, index.getDB(),
+				txnRef);
 	}
 
-	protected double cardinality(int subj, int pred, int obj, int context) throws IOException {
+	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 
 		if (index.getPatternScore(subj, pred, obj, context) == 0) {
@@ -496,7 +484,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	protected TripleIndex getBestIndex(int subj, int pred, int obj, int context) {
+	protected TripleIndex getBestIndex(long subj, long pred, long obj, long context) {
 		int bestScore = -1;
 		TripleIndex bestIndex = null;
 
@@ -511,14 +499,15 @@ class TripleStore implements Closeable {
 		return bestIndex;
 	}
 
-	public boolean storeTriple(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
-		byte[] key = toKey(subj, pred, obj, context);
+	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
 		Byte storedValue = null;
 
 		TripleIndex mainIndex = indexes.get(0);
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.callocStack(stack), dataVal = MDBVal.callocStack(stack);
-			ByteBuffer keyBuf = stack.bytes(key);
+			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
+			toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
 			if (mdb_get(writeTxn, mainIndex.getDB(), keyVal, dataVal) == 0) {
@@ -543,23 +532,6 @@ class TripleStore implements Closeable {
 	}
 
 	/**
-	 * Remove triples
-	 *
-	 * @param subj    The subject for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param pred    The predicate for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param obj     The object for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param context The context for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @return The number of triples that were removed.
-	 * @throws IOException
-	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int)} instead.
-	 */
-	@Deprecated
-	public int removeTriples(int subj, int pred, int obj, int context) throws IOException {
-		Map<Integer, Long> countPerContext = removeTriplesByContext(subj, pred, obj, context);
-		return (int) countPerContext.values().stream().mapToLong(Long::longValue).sum();
-	}
-
-	/**
 	 * Remove triples by context
 	 *
 	 * @param subj    The subject for the pattern, or <tt>-1</tt> for a wildcard.
@@ -568,31 +540,10 @@ class TripleStore implements Closeable {
 	 * @param context The context for the pattern, or <tt>-1</tt> for a wildcard.
 	 * @return A mapping of each modified context to the number of statements removed in that context.
 	 * @throws IOException
-	 * @since 2.5.3
 	 */
-	public Map<Integer, Long> removeTriplesByContext(int subj, int pred, int obj, int context) throws IOException {
+	public Map<Long, Long> removeTriplesByContext(int subj, int pred, int obj, int context) throws IOException {
 		RecordIterator iter = getTriples(subj, pred, obj, context);
 		return removeTriples(iter);
-	}
-
-	/**
-	 * Remove triples
-	 *
-	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param context  The context for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
-	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
-	 *                 the pattern.
-	 * @return The number of triples that were removed.
-	 * @throws IOException
-	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int, boolean)} instead.
-	 */
-	@Deprecated
-	public int removeTriples(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
-		Map<Integer, Long> countPerContext = removeTriplesByContext(subj, pred, obj, context, explicit);
-		return (int) countPerContext.values().stream().mapToLong(Long::longValue).sum();
 	}
 
 	/**
@@ -606,29 +557,29 @@ class TripleStore implements Closeable {
 	 * @return A mapping of each modified context to the number of statements removed in that context.
 	 * @throws IOException
 	 */
-	public Map<Integer, Long> removeTriplesByContext(int subj, int pred, int obj, int context, boolean explicit)
+	public Map<Long, Long> removeTriplesByContext(long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
 		RecordIterator records = getTriples(subj, pred, obj, context, explicit, true);
 		return removeTriples(records);
 	}
 
-	private Map<Integer, Long> removeTriples(RecordIterator iter) throws IOException {
-		final Map<Integer, Long> perContextCounts = new HashMap<>();
+	private Map<Long, Long> removeTriples(RecordIterator iter) throws IOException {
+		final Map<Long, Long> perContextCounts = new HashMap<>();
 
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyValue = MDBVal.callocStack(stack);
-			ByteBuffer keyBuf = stack.malloc(KEY_LENGTH);
+			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 			keyValue.mv_data(keyBuf);
 
 			Record record;
 			while ((record = iter.next()) != null) {
 				// store key before deleting from db
+				keyBuf.clear();
 				keyBuf.put(record.key);
 				keyBuf.flip();
 
 				// extract context
-				int context = keyBuf.getInt(CONTEXT_IDX);
-
+				long context = readGroupElementUnsigned(keyBuf, CONTEXT_IDX);
 				for (TripleIndex index : indexes) {
 					mdb_del(writeTxn, index.getDB(), keyValue, null);
 				}
@@ -673,59 +624,33 @@ class TripleStore implements Closeable {
 		endTransaction(false);
 	}
 
-	private byte[] toKey(int subj, int pred, int obj, int context) {
-		byte[] key = new byte[KEY_LENGTH];
-
-		ByteArrayUtil.putInt(subj, key, SUBJ_IDX);
-		ByteArrayUtil.putInt(pred, key, PRED_IDX);
-		ByteArrayUtil.putInt(obj, key, OBJ_IDX);
-		ByteArrayUtil.putInt(context, key, CONTEXT_IDX);
-
-		return key;
+	static void toSearchKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
 	}
 
-	private byte[] toSearchKey(int subj, int pred, int obj, int context) {
-		return toKey(subj, pred, obj, context);
+	static void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+		writeGroupUnsigned4(bb, subj, pred, obj, context);
 	}
 
-	private byte[] toSearchMask(int subj, int pred, int obj, int context) {
-		byte[] mask = new byte[KEY_LENGTH];
-
-		if (subj != -1) {
-			ByteArrayUtil.putInt(0xffffffff, mask, SUBJ_IDX);
-		}
-		if (pred != -1) {
-			ByteArrayUtil.putInt(0xffffffff, mask, PRED_IDX);
-		}
-		if (obj != -1) {
-			ByteArrayUtil.putInt(0xffffffff, mask, OBJ_IDX);
-		}
-		if (context != -1) {
-			ByteArrayUtil.putInt(0xffffffff, mask, CONTEXT_IDX);
-		}
-
-		return mask;
-	}
-
-	private byte[] getMinKey(int subj, int pred, int obj, int context) {
-		byte[] minValue = new byte[KEY_LENGTH];
-
-		ByteArrayUtil.putInt((subj == -1 ? 0x00000000 : subj), minValue, SUBJ_IDX);
-		ByteArrayUtil.putInt((pred == -1 ? 0x00000000 : pred), minValue, PRED_IDX);
-		ByteArrayUtil.putInt((obj == -1 ? 0x00000000 : obj), minValue, OBJ_IDX);
-		ByteArrayUtil.putInt((context == -1 ? 0x00000000 : context), minValue, CONTEXT_IDX);
-
+	static byte[] getMinKey(long subj, long pred, long obj, long context) {
+		subj = subj <= 0 ? 0 : subj;
+		pred = pred <= 0 ? 0 : pred;
+		obj = obj <= 0 ? 0 : obj;
+		context = context <= 0 ? 0 : context;
+		byte[] minValue = new byte[calcGroupLengthUnsigned4(subj, pred, obj, context)];
+		ByteBuffer bb = ByteBuffer.wrap(minValue);
+		writeGroupUnsigned4(bb, subj, pred, obj, context);
 		return minValue;
 	}
 
-	private byte[] getMaxKey(int subj, int pred, int obj, int context) {
-		byte[] maxValue = new byte[KEY_LENGTH];
-
-		ByteArrayUtil.putInt((subj == -1 ? 0xffffffff : subj), maxValue, SUBJ_IDX);
-		ByteArrayUtil.putInt((pred == -1 ? 0xffffffff : pred), maxValue, PRED_IDX);
-		ByteArrayUtil.putInt((obj == -1 ? 0xffffffff : obj), maxValue, OBJ_IDX);
-		ByteArrayUtil.putInt((context == -1 ? 0xffffffff : context), maxValue, CONTEXT_IDX);
-
+	static byte[] getMaxKey(long subj, long pred, long obj, long context) {
+		subj = subj <= 0 ? Long.MAX_VALUE : subj;
+		pred = pred <= 0 ? Long.MAX_VALUE : pred;
+		obj = obj <= 0 ? Long.MAX_VALUE : obj;
+		context = context <= 0 ? Long.MAX_VALUE : context;
+		byte[] maxValue = new byte[calcGroupLengthUnsigned4(subj, pred, obj, context)];
+		ByteBuffer bb = ByteBuffer.wrap(maxValue);
+		writeGroupUnsigned4(bb, subj, pred, obj, context);
 		return maxValue;
 	}
 
@@ -818,17 +743,21 @@ class TripleStore implements Closeable {
 	private static class TripleComparator implements Comparator<ByteBuffer> {
 
 		private final char[] fieldSeq;
+		private Comparator<ByteBuffer> delegate;
 
 		public TripleComparator(String fieldSeq) {
 			this.fieldSeq = fieldSeq.toCharArray();
+			this.delegate = new Varint.GroupComparator(getIndexes(this.fieldSeq));
 		}
 
 		public char[] getFieldSeq() {
 			return fieldSeq;
 		}
 
-		public int compare(ByteBuffer key1, ByteBuffer key2) {
-			for (char field : fieldSeq) {
+		protected int[] getIndexes(char[] fieldSeq) {
+			int[] indexes = new int[fieldSeq.length];
+			for (int i = 0; i < fieldSeq.length; i++) {
+				char field = fieldSeq[i];
 				int fieldIdx;
 				switch (field) {
 				case 's':
@@ -847,23 +776,14 @@ class TripleStore implements Closeable {
 					throw new IllegalArgumentException(
 							"invalid character '" + field + "' in field sequence: " + new String(fieldSeq));
 				}
-
-				int diff = compareRegion(key1, fieldIdx, key2, fieldIdx, 4);
-
-				if (diff != 0) {
-					return diff;
-				}
+				indexes[i] = fieldIdx;
 			}
-
-			return 0;
+			return indexes;
 		}
 
-		int compareRegion(ByteBuffer array1, int startIdx1, ByteBuffer array2, int startIdx2, int length) {
-			int result = 0;
-			for (int i = 0; result == 0 && i < length; i++) {
-				result = (array1.get(startIdx1 + i) & 0xff) - (array2.get(startIdx2 + i) & 0xff);
-			}
-			return result;
+		@Override
+		public int compare(ByteBuffer buffer1, ByteBuffer buffer2) {
+			return delegate.compare(buffer1, buffer2);
 		}
 	}
 
@@ -901,7 +821,7 @@ class TripleStore implements Closeable {
 		 * The higher the score, the better the index is suited for matching the pattern. Lowest score is 0, which means
 		 * that the index will perform a sequential scan.
 		 */
-		public int getPatternScore(int subj, int pred, int obj, int context) {
+		public int getPatternScore(long subj, long pred, long obj, long context) {
 			int score = 0;
 
 			for (char field : tripleComparator.getFieldSeq()) {

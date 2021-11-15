@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Comparator;
 
+import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
@@ -37,11 +38,9 @@ public class LmdbRecordIterator implements RecordIterator {
 
 	private final ByteBuffer maxKey;
 
+	private final GroupMatcher groupMatcher;
+
 	private final Comparator<ByteBuffer> cmp;
-
-	private final byte[] searchKey;
-
-	private final byte[] searchMask;
 
 	private final TxnRef txnRef;
 
@@ -53,16 +52,26 @@ public class LmdbRecordIterator implements RecordIterator {
 
 	private boolean fetchNext = false;
 
-	public LmdbRecordIterator(int dbi, TxnRef txnRef) {
-		this(null, null, null, null, null, dbi, txnRef);
-	}
-
-	public LmdbRecordIterator(byte[] minKey, byte[] maxKey, Comparator<ByteBuffer> cmp,
-			byte[] searchKey, byte[] searchMask, int dbi, TxnRef txnRef) {
-		this.maxKey = maxKey == null ? null : ByteBuffer.wrap(maxKey);
+	public LmdbRecordIterator(boolean rangeSearch, long subj, long pred, long obj, long context,
+			Comparator<ByteBuffer> cmp, int dbi, TxnRef txnRef) {
+		byte[] minKey;
+		if (rangeSearch) {
+			minKey = TripleStore.getMinKey(subj, pred, obj, context);
+			this.maxKey = ByteBuffer.wrap(TripleStore.getMaxKey(subj, pred, obj, context));
+		} else {
+			minKey = null;
+			this.maxKey = null;
+		}
+		boolean matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
+		if (matchValues) {
+			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
+			TripleStore.toSearchKey(bb, subj, pred, obj, context);
+			bb.flip();
+			this.groupMatcher = new GroupMatcher(bb, subj > 0, pred > 0, obj > 0, context >= 0, false);
+		} else {
+			this.groupMatcher = null;
+		}
 		this.cmp = cmp;
-		this.searchKey = searchKey;
-		this.searchMask = searchMask;
 		this.txnRef = txnRef;
 
 		PointerBuffer pp = stack.mallocPointer(1);
@@ -88,7 +97,7 @@ public class LmdbRecordIterator implements RecordIterator {
 		while (lastResult == 0) {
 			if (maxKey != null && cmp.compare(keyData.mv_data(), maxKey) > 0) {
 				lastResult = MDB_NOTFOUND;
-			} else if (searchKey != null && !matchesPattern(keyData.mv_data(), searchMask, searchKey)) {
+			} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
 				// value doesn't match search key/mask, fetch next value
 				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 			} else {
@@ -119,14 +128,5 @@ public class LmdbRecordIterator implements RecordIterator {
 				closed = true;
 			}
 		}
-	}
-
-	boolean matchesPattern(ByteBuffer value, byte[] mask, byte[] pattern) {
-		for (int i = 0; i < value.limit(); i++) {
-			if (((value.get(i) ^ pattern[i]) & mask[i]) != 0) {
-				return false;
-			}
-		}
-		return true;
 	}
 }

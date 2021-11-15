@@ -152,7 +152,7 @@ class LmdbSailStore implements SailStore {
 		return new LmdbSailSource(false);
 	}
 
-	List<Integer> getContextIDs(Resource... contexts) throws IOException {
+	List<Long> getContextIDs(Resource... contexts) throws IOException {
 		assert contexts.length > 0 : "contexts must not be empty";
 
 		// Filter duplicates
@@ -160,12 +160,12 @@ class LmdbSailStore implements SailStore {
 		Collections.addAll(contextSet, contexts);
 
 		// Fetch IDs, filtering unknown resources from the result
-		List<Integer> contextIDs = new ArrayList<>(contextSet.size());
+		List<Long> contextIDs = new ArrayList<>(contextSet.size());
 		for (Resource context : contextSet) {
 			if (context == null) {
-				contextIDs.add(0);
+				contextIDs.add(0L);
 			} else {
-				int contextID = valueStore.getID(context);
+				long contextID = valueStore.getID(context);
 				if (contextID != LmdbValue.UNKNOWN_ID) {
 					contextIDs.add(contextID);
 				}
@@ -213,7 +213,7 @@ class LmdbSailStore implements SailStore {
 	 */
 	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
 			boolean explicit, Resource... contexts) throws IOException {
-		int subjID = LmdbValue.UNKNOWN_ID;
+		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getID(subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
@@ -221,7 +221,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		int predID = LmdbValue.UNKNOWN_ID;
+		long predID = LmdbValue.UNKNOWN_ID;
 		if (pred != null) {
 			predID = valueStore.getID(pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
@@ -229,7 +229,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		int objID = LmdbValue.UNKNOWN_ID;
+		long objID = LmdbValue.UNKNOWN_ID;
 		if (obj != null) {
 			objID = valueStore.getID(obj);
 
@@ -238,15 +238,15 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		List<Integer> contextIDList = new ArrayList<>(contexts.length);
+		List<Long> contextIDList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
 			contextIDList.add(LmdbValue.UNKNOWN_ID);
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
-					contextIDList.add(0);
+					contextIDList.add(0L);
 				} else {
-					int contextID = valueStore.getID(context);
+					long contextID = valueStore.getID(context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {
 						contextIDList.add(contextID);
@@ -257,7 +257,7 @@ class LmdbSailStore implements SailStore {
 
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
 
-		for (int contextID : contextIDList) {
+		for (long contextID : contextIDList) {
 			RecordIterator records = tripleStore.getTriples(subjID, predID, objID, contextID, explicit, false);
 			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
 		}
@@ -426,16 +426,16 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
-				int subjID = valueStore.storeValue(subj);
-				int predID = valueStore.storeValue(pred);
-				int objID = valueStore.storeValue(obj);
+				long subjID = valueStore.storeValue(subj);
+				long predID = valueStore.storeValue(pred);
+				long objID = valueStore.storeValue(obj);
 
 				if (contexts.length == 0) {
 					contexts = new Resource[] { null };
 				}
 
 				for (Resource context : contexts) {
-					int contextID = 0;
+					long contextID = 0;
 					if (context != null) {
 						contextID = valueStore.storeValue(context);
 					}
@@ -466,21 +466,21 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				startTriplestoreTransaction();
-				int subjID = LmdbValue.UNKNOWN_ID;
+				long subjID = LmdbValue.UNKNOWN_ID;
 				if (subj != null) {
 					subjID = valueStore.getID(subj);
 					if (subjID == LmdbValue.UNKNOWN_ID) {
 						return 0;
 					}
 				}
-				int predID = LmdbValue.UNKNOWN_ID;
+				long predID = LmdbValue.UNKNOWN_ID;
 				if (pred != null) {
 					predID = valueStore.getID(pred);
 					if (predID == LmdbValue.UNKNOWN_ID) {
 						return 0;
 					}
 				}
-				int objID = LmdbValue.UNKNOWN_ID;
+				long objID = LmdbValue.UNKNOWN_ID;
 				if (obj != null) {
 					objID = valueStore.getID(obj);
 					if (objID == LmdbValue.UNKNOWN_ID) {
@@ -488,7 +488,7 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 
-				final int[] contextIds = new int[contexts.length == 0 ? 1 : contexts.length];
+				final long[] contextIds = new long[contexts.length == 0 ? 1 : contexts.length];
 				if (contexts.length == 0) { // remove from all contexts
 					contextIds[0] = LmdbValue.UNKNOWN_ID;
 				} else {
@@ -497,20 +497,21 @@ class LmdbSailStore implements SailStore {
 						if (context == null) {
 							contextIds[i] = 0;
 						} else {
-							int id = valueStore.getID(context);
+							long id = valueStore.getID(context);
 							// unknown_id cannot be used (would result in removal from all contexts)
-							contextIds[i] = (id != LmdbValue.UNKNOWN_ID) ? id : Integer.MIN_VALUE;
+							// TODO check if Long.MAX_VALUE is correct here
+							contextIds[i] = (id != LmdbValue.UNKNOWN_ID) ? id : Long.MAX_VALUE;
 						}
 					}
 				}
 
 				long removeCount = 0;
-				for (int contextId : contextIds) {
-					Map<Integer, Long> result = tripleStore.removeTriplesByContext(subjID, predID, objID, contextId,
+				for (long contextId : contextIds) {
+					Map<Long, Long> result = tripleStore.removeTriplesByContext(subjID, predID, objID, contextId,
 							explicit);
 
-					for (Entry<Integer, Long> entry : result.entrySet()) {
-						Integer entryContextId = entry.getKey();
+					for (Entry<Long, Long> entry : result.entrySet()) {
+						Long entryContextId = entry.getKey();
 						if (entryContextId > 0) {
 							Resource modifiedContext = (Resource) valueStore.getValue(entryContextId);
 							contextStore.decrementBy(modifiedContext, entry.getValue());

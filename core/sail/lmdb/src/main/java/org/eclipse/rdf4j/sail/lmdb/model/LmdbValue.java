@@ -12,19 +12,19 @@ import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
 public interface LmdbValue extends Value {
 
-	int UNKNOWN_ID = -1;
+	long UNKNOWN_ID = -1;
 
 	/**
 	 * Sets the ID that is used for this value in a specific revision of the value store.
 	 */
-	void setInternalID(int id, ValueStoreRevision revision);
+	void setInternalID(long id, ValueStoreRevision revision);
 
 	/**
 	 * Gets the ID that is used in the lmdb store for this Value.
 	 *
 	 * @return The value's ID, or {@link #UNKNOWN_ID} if not yet set.
 	 */
-	int getInternalID();
+	long getInternalID();
 
 	/**
 	 * Gets the revision of the value store that created this value. The value's internal ID is only valid when it's

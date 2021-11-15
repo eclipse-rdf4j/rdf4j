@@ -25,13 +25,13 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 
 	private volatile ValueStoreRevision revision;
 
-	private volatile int internalID;
+	private volatile long internalID;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
-	protected LmdbLiteral(ValueStoreRevision revision, int internalID) {
+	protected LmdbLiteral(ValueStoreRevision revision, long internalID) {
 		super();
 		setInternalID(internalID, revision);
 	}
@@ -40,7 +40,7 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 		this(revision, label, UNKNOWN_ID);
 	}
 
-	public LmdbLiteral(ValueStoreRevision revision, String label, int internalID) {
+	public LmdbLiteral(ValueStoreRevision revision, String label, long internalID) {
 		super(label);
 		setInternalID(internalID, revision);
 	}
@@ -49,7 +49,7 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 		this(revision, label, lang, UNKNOWN_ID);
 	}
 
-	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, int internalID) {
+	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, long internalID) {
 		super(label, lang);
 		setInternalID(internalID, revision);
 	}
@@ -58,7 +58,7 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 		this(revision, label, datatype, UNKNOWN_ID);
 	}
 
-	public LmdbLiteral(ValueStoreRevision revision, String label, IRI datatype, int internalID) {
+	public LmdbLiteral(ValueStoreRevision revision, String label, IRI datatype, long internalID) {
 		super(label, datatype);
 		setInternalID(internalID, revision);
 	}
@@ -68,7 +68,7 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 	 *---------*/
 
 	@Override
-	public void setInternalID(int internalID, ValueStoreRevision revision) {
+	public void setInternalID(long internalID, ValueStoreRevision revision) {
 		this.internalID = internalID;
 		this.revision = revision;
 	}
@@ -79,7 +79,7 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 	}
 
 	@Override
-	public int getInternalID() {
+	public long getInternalID() {
 		return internalID;
 	}
 
