@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.COALESCE
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.AlternativePath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
