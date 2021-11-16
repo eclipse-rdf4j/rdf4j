@@ -22,9 +22,9 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @ComponentScan("org.eclipse.rdf4j.spring.demo.*")
 public class TestConfig {
 
-    @Bean
-    DataInserter getDataInserter() {
-        return new DataInserter();
-    }
+	@Bean
+	DataInserter getDataInserter() {
+		return new DataInserter();
+	}
 
 }
