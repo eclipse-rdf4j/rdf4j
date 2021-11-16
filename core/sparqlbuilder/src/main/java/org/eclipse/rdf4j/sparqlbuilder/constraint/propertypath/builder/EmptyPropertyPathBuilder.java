@@ -28,6 +28,9 @@ public class EmptyPropertyPathBuilder {
 	public EmptyPropertyPathBuilder() {
 	}
 
+	/**
+	 * Start a path that will be enclosed with <code>`! (` and `)`</code>.
+	 */
 	public NegatedPropertySetBuilder negProp() {
 		if (this.propertyPathBuilder != null || this.negatedPropertySetBuilder != null) {
 			throw new IllegalStateException(
@@ -37,10 +40,16 @@ public class EmptyPropertyPathBuilder {
 		return negatedPropertySetBuilder;
 	}
 
+	/**
+	 * Start the path with <code>predicate</code>.
+	 */
 	public PropertyPathBuilder pred(IRI predicate) {
 		return pred(iri(predicate));
 	}
 
+	/**
+	 * Start the path with <code>predicate</code>.
+	 */
 	public PropertyPathBuilder pred(Iri predicate) {
 		if (this.propertyPathBuilder != null || this.negatedPropertySetBuilder != null) {
 			throw new IllegalStateException(
