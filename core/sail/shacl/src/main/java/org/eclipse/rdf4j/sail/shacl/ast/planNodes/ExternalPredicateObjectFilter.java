@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
 /**
  * @author Håvard Ottestad
@@ -79,7 +78,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 						if (matches) {
 							next = temp;
 						} else {
-							if (GlobalValidationExecutionLogging.loggingEnabled) {
+							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(depth(),
 										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
 												+ ":IgnoredAsNotMatching",
@@ -91,7 +90,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 						if (!matches) {
 							next = temp;
 						} else {
-							if (GlobalValidationExecutionLogging.loggingEnabled) {
+							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(depth(),
 										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
 												+ ":IgnoredAsMatching",

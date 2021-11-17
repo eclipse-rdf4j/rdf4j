@@ -415,7 +415,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		return new ConnectionsGroup(new VerySimpleRdfsBackwardsChainingConnection(this, rdfsSubClassOfReasoner),
 				previousStateConnection, addedStatements, removedStatements, stats,
-				this::getRdfsSubClassOfReasoner, transactionSettings, sail.experimentalSparqlValidation);
+				this::getRdfsSubClassOfReasoner, transactionSettings, sail.sparqlValidation);
 	}
 
 	private ValidationReport performValidation(List<Shape> shapes, boolean validateEntireBaseSail,
@@ -440,11 +440,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.map(shapePlanNodeTuple -> () -> {
 
 						PlanNode planNode = shapePlanNodeTuple.getPlanNode();
-						ValidationExecutionLogger validationExecutionLogger = null;
-						if (GlobalValidationExecutionLogging.loggingEnabled) {
-							validationExecutionLogger = new ValidationExecutionLogger();
-							planNode.receiveLogger(validationExecutionLogger);
-						}
+						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger(
+								sail.isGlobalLogValidationExecution());
+
+						planNode.receiveLogger(validationExecutionLogger);
 
 						// Important to start measuring time before we call .iterator() since the initialisation of the
 						// iterator will already do a lot of work if there is for instance a Sort in the pipeline
@@ -455,7 +454,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							before = System.currentTimeMillis();
 						}
 
-						if (GlobalValidationExecutionLogging.loggingEnabled) {
+						if (validationExecutionLogger.isEnabled()) {
 							logger.info("Start execution of plan:\n{}\n", shapePlanNodeTuple.getShape().toString());
 						}
 
@@ -468,7 +467,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								validationResults = new ValidationResultIterator(iterator,
 										sail.getEffectiveValidationResultsLimitPerConstraint());
 							} finally {
-								if (validationExecutionLogger != null) {
+								if (validationExecutionLogger.isEnabled()) {
 									validationExecutionLogger.flush();
 								}
 							}
@@ -479,7 +478,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 										shapePlanNodeTuple.getShape().toString());
 							}
 
-							if (GlobalValidationExecutionLogging.loggingEnabled) {
+							if (validationExecutionLogger.isEnabled()) {
 								logger.info("Finished execution of plan:\n{}\n",
 										shapePlanNodeTuple.getShape().toString());
 
@@ -802,7 +801,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(
 						new VerySimpleRdfsBackwardsChainingConnection(serializableConnection, rdfsSubClassOfReasoner),
 						previousStateSerializableConnection, addedStatements, removedStatements, stats,
-						this::getRdfsSubClassOfReasoner, transactionSettings, sail.experimentalSparqlValidation)) {
+						this::getRdfsSubClassOfReasoner, transactionSettings, sail.sparqlValidation)) {
 
 					connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);
 					// actually force a transaction to start

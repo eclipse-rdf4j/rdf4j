@@ -27,8 +27,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Håvard Ottestad
@@ -36,11 +35,6 @@ import org.junit.Test;
 public class TruncatedValidationReportTest {
 
 	private static final int NUMBER_OF_FAILURES = 5000;
-
-	@BeforeClass
-	public static void beforeClass() {
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	@Test
 	public void testTotal() throws IOException {

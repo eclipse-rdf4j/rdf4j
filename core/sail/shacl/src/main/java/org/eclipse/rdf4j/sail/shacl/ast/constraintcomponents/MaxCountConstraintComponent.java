@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -34,7 +35,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 
 public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
-	long maxCount;
+	private final long maxCount;
 
 	public MaxCountConstraintComponent(long maxCount) {
 		this.maxCount = maxCount;
@@ -83,17 +84,35 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 		mergeNode = Unique.getInstance(new TrimToTarget(mergeNode), false);
 
-		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
-				mergeNode,
-				connectionsGroup.getBaseConnection(),
-				getTargetChain().getPath()
-						.get()
-						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-				false,
-				null,
-				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-		);
+		PlanNode relevantTargetsWithPath;
+
+		if (maxCount >= 0) {
+			relevantTargetsWithPath = new BulkedExternalInnerJoin(
+					mergeNode,
+					connectionsGroup.getBaseConnection(),
+					getTargetChain().getPath()
+							.get()
+							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
+									new StatementMatcher.Variable("c"),
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
+					false,
+					null,
+					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
+			);
+		} else {
+			relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
+					mergeNode,
+					connectionsGroup.getBaseConnection(),
+					getTargetChain().getPath()
+							.get()
+							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
+									new StatementMatcher.Variable("c"),
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
+					false,
+					null,
+					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
+			);
+		}
 
 		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count > maxCount);
 
@@ -139,7 +158,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 			query += pathQuery;
 
-		} else {
+		} else if (maxCount > 0) {
 
 			StringBuilder paths = new StringBuilder();
 			String valuePrefix = "value_";

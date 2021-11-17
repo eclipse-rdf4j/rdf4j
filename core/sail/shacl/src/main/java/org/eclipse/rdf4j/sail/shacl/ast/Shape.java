@@ -370,7 +370,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		if (validationApproach == ValidationApproach.SPARQL) {
-			if (connectionsGroup.isExperimentalSparqlValidation()
+			if (connectionsGroup.isSparqlValidation()
 					&& Shape.this.getOptimalBulkValidationApproach() == ValidationApproach.SPARQL) {
 				logger.debug("Use validation approach {} for shape {}", validationApproach, this);
 				return Shape.this.generateSparqlValidationQuery(connectionsGroup, logValidationPlans, false, false,

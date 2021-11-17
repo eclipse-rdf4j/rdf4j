@@ -6,7 +6,7 @@ import java.util.List;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.OrConstraintComponent;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class TargetChainTest {
 

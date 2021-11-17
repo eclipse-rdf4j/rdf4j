@@ -204,7 +204,7 @@ public class ValidationQuery {
 	}
 
 	// used for sh:deactivated
-	static class Deactivated extends ValidationQuery {
+	public static class Deactivated extends ValidationQuery {
 
 		private static final Deactivated instance = new Deactivated();
 

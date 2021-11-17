@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
  */
 public class MockConsumePlanNode {
 
-	private static final ValidationExecutionLogger VALIDATION_EXECUTION_LOGGER = new ValidationExecutionLogger();
+	private final ValidationExecutionLogger VALIDATION_EXECUTION_LOGGER = new ValidationExecutionLogger(true);
 	PlanNode innerNode;
 
 	public MockConsumePlanNode(PlanNode innerNode) {

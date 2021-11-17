@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -40,7 +41,7 @@ public class Utils {
 		sail.init();
 		sail.disableValidation();
 		Model shapes;
-		try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
+		try (InputStream shapesData = getResourceAsStream(resourceName)) {
 			shapes = Rio.parse(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 		try (SailConnection conn = sail.getConnection()) {
@@ -54,9 +55,23 @@ public class Utils {
 
 	}
 
+	public static void loadShapeData(ShaclSail sail, Model shapes) throws IOException {
+		sail.init();
+		sail.disableValidation();
+		try (SailConnection conn = sail.getConnection()) {
+			conn.begin(IsolationLevels.NONE);
+			for (Statement st : shapes) {
+				conn.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), RDF4J.SHACL_SHAPE_GRAPH);
+			}
+			conn.commit();
+		}
+		sail.enableValidation();
+
+	}
+
 	public static void loadShapeData(SailRepository repo, String resourceName) throws IOException {
 
-		try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
+		try (InputStream shapesData = getResourceAsStream(resourceName)) {
 
 			try (RepositoryConnection conn = repo.getConnection()) {
 				conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
@@ -64,6 +79,22 @@ public class Utils {
 				conn.commit();
 			}
 		}
+	}
+
+	public static void loadShapeData(SailRepository repo, Model shapes) {
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+			conn.add(shapes, RDF4J.SHACL_SHAPE_GRAPH);
+			conn.commit();
+		}
+	}
+
+	private static InputStream getResourceAsStream(String resourceName) {
+		InputStream resourceAsStream = Utils.class.getClassLoader().getResourceAsStream(resourceName);
+		if (resourceAsStream != null) {
+			return new BufferedInputStream(resourceAsStream);
+		}
+		return null;
 	}
 
 	public static void loadShapeData(SailRepository repo, URL resourceName)
@@ -117,7 +148,7 @@ public class Utils {
 
 	public static void loadInitialData(SailRepository repo, String resourceName) throws IOException {
 
-		try (InputStream initialData = Utils.class.getClassLoader().getResourceAsStream(resourceName)) {
+		try (InputStream initialData = getResourceAsStream(resourceName)) {
 			if (initialData == null) {
 				return;
 			}
@@ -146,7 +177,7 @@ public class Utils {
 		}
 
 		public static IRI createIri() {
-			return SimpleValueFactory.getInstance().createIRI(ns + UUID.randomUUID().toString());
+			return SimpleValueFactory.getInstance().createIRI(ns + UUID.randomUUID());
 		}
 	}
 }

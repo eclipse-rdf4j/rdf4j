@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import static junit.framework.TestCase.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,8 +27,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
+@Isolated
 public class SerializableTest {
 
 	@Test
@@ -119,7 +122,7 @@ public class SerializableTest {
 
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void serializableParallelValidation() throws Throwable {
 
 		SailRepository repo = Utils
@@ -139,11 +142,17 @@ public class SerializableTest {
 							.getResource("test-cases/complex/targetShapeAndQualifiedShape/invalid/case1/query1.rq"),
 					StandardCharsets.UTF_8)).execute();
 
-			connection.commit();
-		} catch (RepositoryException e) {
-			throw e.getCause();
+			assertThrows(ShaclSailValidationException.class, () -> {
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
+
+		} finally {
+			repo.shutDown();
 		}
-		repo.shutDown();
 
 	}
 

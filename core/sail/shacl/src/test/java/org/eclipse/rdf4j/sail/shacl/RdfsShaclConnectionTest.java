@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class RdfsShaclConnectionTest {
 
@@ -41,7 +41,6 @@ public class RdfsShaclConnectionTest {
 	public void testHasStatement() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setIgnoreNoShapesLoadedException(true);
 		shaclSail.init();
 
 		fill(shaclSail);
@@ -62,7 +61,6 @@ public class RdfsShaclConnectionTest {
 	public void testGetStatement() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setIgnoreNoShapesLoadedException(true);
 		shaclSail.init();
 
 		fill(shaclSail);
@@ -106,7 +104,6 @@ public class RdfsShaclConnectionTest {
 	public void testGetStatementNoDuplicates() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setIgnoreNoShapesLoadedException(true);
 		shaclSail.init();
 
 		fill(shaclSail);

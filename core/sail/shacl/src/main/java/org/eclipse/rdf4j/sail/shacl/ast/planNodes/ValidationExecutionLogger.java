@@ -19,6 +19,12 @@ public class ValidationExecutionLogger {
 
 	private static final boolean groupedLogging = true;
 
+	private final boolean enabled;
+
+	public ValidationExecutionLogger(boolean enabled) {
+		this.enabled = enabled;
+	}
+
 	void log(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id, String message) {
 		LogStatement logStatement = new LogStatement(depth, name, tuple, planNode, id, message);
 		if (groupedLogging) {
@@ -54,6 +60,9 @@ public class ValidationExecutionLogger {
 		}
 	}
 
+	public boolean isEnabled() {
+		return enabled;
+	}
 }
 
 class LogStatement {

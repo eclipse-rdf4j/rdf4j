@@ -39,8 +39,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
-		model.add(subject, SHACL.MIN_COUNT,
-				literal(BigInteger.valueOf(minCount)));
+		model.add(subject, SHACL.MIN_COUNT, literal(BigInteger.valueOf(minCount)));
 	}
 
 	@Override
@@ -51,6 +50,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
+
+		if (minCount <= 0) {
+			return EmptyNode.getInstance();
+		}
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
@@ -102,6 +105,9 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+		if (minCount <= 0) {
+			return ValidationQuery.Deactivated.getInstance();
+		}
 
 		String targetVarPrefix = "target_";
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
