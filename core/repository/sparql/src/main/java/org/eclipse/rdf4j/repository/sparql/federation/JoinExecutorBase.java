@@ -96,7 +96,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	}
 
 	public void done() {
-		; // no-op
+		// no-op
 	}
 
 	public void toss(Exception e) {
@@ -143,7 +143,9 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 						toCloseRightIter.close();
 					}
 				} finally {
-					leftIter.close();
+					if (leftIter != null) {
+						leftIter.close();
+					}
 				}
 			}
 		}
