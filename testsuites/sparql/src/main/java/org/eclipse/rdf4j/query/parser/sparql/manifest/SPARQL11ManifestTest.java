@@ -91,14 +91,15 @@ public class SPARQL11ManifestTest {
 					+ "SELECT DISTINCT ?manifestFile "
 					+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
 
-			TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile)
-					.evaluate();
+			try (TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile)
+					.evaluate()) {
 
-			for (BindingSet bindingSet : manifestResults) {
-				String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
+				for (BindingSet bindingSet : manifestResults) {
+					String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
 
-				if (includeSubManifest(subManifestFile, excludedSubdirs)) {
-					suite.addTest(SPARQLQueryTest.suite(subManifestFile, factory, approvedTestsOnly));
+					if (includeSubManifest(subManifestFile, excludedSubdirs)) {
+						suite.addTest(SPARQLQueryTest.suite(subManifestFile, factory, approvedTestsOnly));
+					}
 				}
 			}
 		}
@@ -152,14 +153,15 @@ public class SPARQL11ManifestTest {
 					+ "SELECT DISTINCT ?manifestFile "
 					+ "WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   ";
 
-			TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile)
-					.evaluate();
+			try (TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile)
+					.evaluate()) {
 
-			for (BindingSet bindingSet : manifestResults) {
-				String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
+				for (BindingSet bindingSet : manifestResults) {
+					String subManifestFile = bindingSet.getValue("manifestFile").stringValue();
 
-				if (includeSubManifest(subManifestFile, excludedSubdirs)) {
-					suite.addTest(SPARQLUpdateConformanceTest.suite(subManifestFile, factory, approvedTestsOnly));
+					if (includeSubManifest(subManifestFile, excludedSubdirs)) {
+						suite.addTest(SPARQLUpdateConformanceTest.suite(subManifestFile, factory, approvedTestsOnly));
+					}
 				}
 			}
 		}
@@ -201,9 +203,7 @@ public class SPARQL11ManifestTest {
 			baseURI = url.toExternalForm();
 		}
 
-		InputStream in = url.openStream();
-
-		try {
+		try (InputStream in = url.openStream()) {
 			Objects.requireNonNull(contexts,
 					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 			final ValueFactory vf = con.getRepository().getValueFactory();
@@ -229,8 +229,6 @@ public class SPARQL11ManifestTest {
 			} catch (RuntimeException e) {
 				con.rollback();
 			}
-		} finally {
-			in.close();
 		}
 	}
 }

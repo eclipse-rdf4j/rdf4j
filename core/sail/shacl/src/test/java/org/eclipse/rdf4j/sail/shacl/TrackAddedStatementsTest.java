@@ -410,14 +410,12 @@ public class TrackAddedStatementsTest {
 	}
 
 	private static long size(SailConnection connection) {
-		try {
+		try (connection) {
 			return connection.getStatements(null, null, null, true)
 					.stream()
 					.map(Object::toString)
 //					.peek(logger::info)
 					.count();
-		} finally {
-			connection.close();
 		}
 	}
 

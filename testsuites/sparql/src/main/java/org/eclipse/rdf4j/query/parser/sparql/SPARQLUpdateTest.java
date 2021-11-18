@@ -584,8 +584,7 @@ public abstract class SPARQLUpdateTest {
 			assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
 			assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
 
-			RepositoryConnection con2 = rep.getConnection();
-			try {
+			try (RepositoryConnection con2 = rep.getConnection()) {
 				// update should not yet be visible to separate connection
 				assertFalse(con2.hasStatement(bob, RDFS.LABEL, f.createLiteral("Bob"), true));
 				assertFalse(con2.hasStatement(alice, RDFS.LABEL, f.createLiteral("Alice"), true));
@@ -601,8 +600,6 @@ public abstract class SPARQLUpdateTest {
 
 				assertFalse(con2.hasStatement(bob, FOAF.NAME, f.createLiteral("Bob"), true));
 				assertFalse(con2.hasStatement(alice, FOAF.NAME, f.createLiteral("Alice"), true));
-			} finally {
-				con2.close();
 			}
 		} catch (Exception e) {
 			if (con.isActive()) {
@@ -1780,11 +1777,8 @@ public abstract class SPARQLUpdateTest {
 
 	protected void loadDataset(String datasetFile) throws RDFParseException, RepositoryException, IOException {
 		logger.debug("loading dataset...");
-		InputStream dataset = SPARQLUpdateTest.class.getResourceAsStream(datasetFile);
-		try {
+		try (InputStream dataset = SPARQLUpdateTest.class.getResourceAsStream(datasetFile)) {
 			con.add(dataset, "", RDFFormat.TRIG);
-		} finally {
-			dataset.close();
 		}
 		logger.debug("dataset loaded.");
 	}

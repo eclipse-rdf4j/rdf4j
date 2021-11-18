@@ -159,16 +159,19 @@ public class ProtocolIT {
 		String query = "DESCRIBE <monkey:pod>";
 		String location = TestServer.REPOSITORY_URL;
 
-		CloseableHttpClient httpclient = HttpClients.createDefault();
-		HttpPost post = new HttpPost(location);
-		HttpEntity entity = new StringEntity(query, ContentType.create(Protocol.SPARQL_QUERY_MIME_TYPE));
-		post.setEntity(entity);
+		try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
+			HttpPost post = new HttpPost(location);
+			HttpEntity entity = new StringEntity(query, ContentType.create(Protocol.SPARQL_QUERY_MIME_TYPE));
+			post.setEntity(entity);
 
-		CloseableHttpResponse response = httpclient.execute(post);
+			try (CloseableHttpResponse response = httpclient.execute(post)) {
+				System.out.println("Query Direct POST Status: " + response.getStatusLine());
+				int statusCode = response.getStatusLine().getStatusCode();
+				assertEquals(true, statusCode >= 200 && statusCode < 400);
+			}
 
-		System.out.println("Query Direct POST Status: " + response.getStatusLine());
-		int statusCode = response.getStatusLine().getStatusCode();
-		assertEquals(true, statusCode >= 200 && statusCode < 400);
+		}
+
 	}
 
 	/**
@@ -179,16 +182,19 @@ public class ProtocolIT {
 		String query = "delete where { <monkey:pod> ?p ?o }";
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
 
-		CloseableHttpClient httpclient = HttpClients.createDefault();
-		HttpPost post = new HttpPost(location);
-		HttpEntity entity = new StringEntity(query, ContentType.create(Protocol.SPARQL_UPDATE_MIME_TYPE));
-		post.setEntity(entity);
+		try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
+			HttpPost post = new HttpPost(location);
+			HttpEntity entity = new StringEntity(query, ContentType.create(Protocol.SPARQL_UPDATE_MIME_TYPE));
+			post.setEntity(entity);
 
-		CloseableHttpResponse response = httpclient.execute(post);
+			try (CloseableHttpResponse response = httpclient.execute(post)) {
+				System.out.println("Update Direct Post Status: " + response.getStatusLine());
+				int statusCode = response.getStatusLine().getStatusCode();
+				assertEquals(true, statusCode >= 200 && statusCode < 400);
+			}
 
-		System.out.println("Update Direct Post Status: " + response.getStatusLine());
-		int statusCode = response.getStatusLine().getStatusCode();
-		assertEquals(true, statusCode >= 200 && statusCode < 400);
+		}
+
 	}
 
 	/**
@@ -198,20 +204,22 @@ public class ProtocolIT {
 	public void testUpdateForm_POST() throws Exception {
 		String update = "delete where { <monkey:pod> ?p ?o . }";
 		String location = Protocol.getStatementsLocation(TestServer.REPOSITORY_URL);
-		CloseableHttpClient httpclient = HttpClients.createDefault();
-		HttpPost post = new HttpPost(location);
-		List<NameValuePair> nvps = new ArrayList<>();
-		nvps.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
-		nvps.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, "1"));
-		UrlEncodedFormEntity entity = new UrlEncodedFormEntity(nvps, StandardCharsets.UTF_8);
+		try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
+			HttpPost post = new HttpPost(location);
+			List<NameValuePair> nvps = new ArrayList<>();
+			nvps.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));
+			nvps.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, "1"));
+			UrlEncodedFormEntity entity = new UrlEncodedFormEntity(nvps, StandardCharsets.UTF_8);
 
-		post.setEntity(entity);
+			post.setEntity(entity);
 
-		CloseableHttpResponse response = httpclient.execute(post);
+			try (CloseableHttpResponse response = httpclient.execute(post)) {
 
-		System.out.println("Update Form Post Status: " + response.getStatusLine());
-		int statusCode = response.getStatusLine().getStatusCode();
-		assertEquals(true, statusCode >= 200 && statusCode < 400);
+				System.out.println("Update Form Post Status: " + response.getStatusLine());
+				int statusCode = response.getStatusLine().getStatusCode();
+				assertEquals(true, statusCode >= 200 && statusCode < 400);
+			}
+		}
 	}
 
 	/**
@@ -519,12 +527,9 @@ public class ProtocolIT {
 		conn.setDoOutput(true);
 
 		try (InputStream dataStream = new ByteArrayInputStream(namespace.getBytes(StandardCharsets.UTF_8))) {
-			OutputStream connOut = conn.getOutputStream();
 
-			try {
+			try (OutputStream connOut = conn.getOutputStream()) {
 				IOUtil.transfer(dataStream, connOut);
-			} finally {
-				connOut.close();
 			}
 		}
 
@@ -572,12 +577,9 @@ public class ProtocolIT {
 		conn.setRequestProperty("Content-Type", dataFormat.getDefaultMIMEType());
 
 		try (InputStream dataStream = ProtocolIT.class.getResourceAsStream(file)) {
-			OutputStream connOut = conn.getOutputStream();
 
-			try {
+			try (OutputStream connOut = conn.getOutputStream()) {
 				IOUtil.transfer(dataStream, connOut);
-			} finally {
-				connOut.close();
 			}
 		}
 

@@ -124,10 +124,12 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 	@SuppressWarnings("unchecked")
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Union union, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException>[] iters = new CloseableIteration[2];
-		iters[0] = evaluate(union.getLeftArg(), bindings);
-		iters[1] = evaluate(union.getRightArg(), bindings);
-		return new UnionIteration<>(iters);
+
+		return new UnionIteration<>(
+				evaluate(union.getLeftArg(), bindings),
+				evaluate(union.getRightArg(), bindings)
+		);
+
 	}
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> evaluate(OwnedTupleExpr expr, BindingSet bindings)

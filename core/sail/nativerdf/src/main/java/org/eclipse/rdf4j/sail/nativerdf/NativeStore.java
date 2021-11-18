@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Comparator;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
@@ -344,10 +345,13 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			File dataDir = getDataDir();
 			if (dataDir != null) {
 				try {
-					Files.walk(dataDir.toPath())
-							.map(Path::toFile)
-							.sorted(Comparator.reverseOrder()) // delete files before directory
-							.forEach(File::delete);
+					try (Stream<Path> walk = Files.walk(dataDir.toPath())) {
+						walk
+								.map(Path::toFile)
+								.sorted(Comparator.reverseOrder()) // delete files before directory
+								.forEach(File::delete);
+					}
+
 				} catch (IOException ioe) {
 					logger.error("Could not delete temp file " + dataDir);
 				}

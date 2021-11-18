@@ -295,35 +295,39 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 
 						SimpleDataset dataset = null;
 						namedGraphsQuery.setBinding("graphDef", action);
-						TupleQueryResult inputNamedGraphsResult = namedGraphsQuery.evaluate();
+						HashMap<String, IRI> inputNamedGraphs;
+						try (TupleQueryResult inputNamedGraphsResult = namedGraphsQuery.evaluate()) {
 
-						HashMap<String, IRI> inputNamedGraphs = new HashMap<>();
+							inputNamedGraphs = new HashMap<>();
 
-						if (inputNamedGraphsResult.hasNext()) {
-							while (inputNamedGraphsResult.hasNext()) {
-								BindingSet graphBindings = inputNamedGraphsResult.next();
-								IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
-								String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel"))
-										.getLabel();
-								logger.debug(" adding named graph : {}", namedGraphLabel);
-								inputNamedGraphs.put(namedGraphLabel, namedGraphData);
+							if (inputNamedGraphsResult.hasNext()) {
+								while (inputNamedGraphsResult.hasNext()) {
+									BindingSet graphBindings = inputNamedGraphsResult.next();
+									IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
+									String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel"))
+											.getLabel();
+									logger.debug(" adding named graph : {}", namedGraphLabel);
+									inputNamedGraphs.put(namedGraphLabel, namedGraphData);
+								}
 							}
 						}
 
 						// Query result named graphs
 						namedGraphsQuery.setBinding("graphDef", testResult);
-						TupleQueryResult resultNamedGraphsResult = namedGraphsQuery.evaluate();
+						HashMap<String, IRI> resultNamedGraphs;
+						try (TupleQueryResult resultNamedGraphsResult = namedGraphsQuery.evaluate()) {
 
-						HashMap<String, IRI> resultNamedGraphs = new HashMap<>();
+							resultNamedGraphs = new HashMap<>();
 
-						if (resultNamedGraphsResult.hasNext()) {
-							while (resultNamedGraphsResult.hasNext()) {
-								BindingSet graphBindings = resultNamedGraphsResult.next();
-								IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
-								String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel"))
-										.getLabel();
-								logger.debug(" adding named graph : {}", namedGraphLabel);
-								resultNamedGraphs.put(namedGraphLabel, namedGraphData);
+							if (resultNamedGraphsResult.hasNext()) {
+								while (resultNamedGraphsResult.hasNext()) {
+									BindingSet graphBindings = resultNamedGraphsResult.next();
+									IRI namedGraphData = (IRI) graphBindings.getValue("namedGraphData");
+									String namedGraphLabel = ((Literal) graphBindings.getValue("namedGraphLabel"))
+											.getLabel();
+									logger.debug(" adding named graph : {}", namedGraphLabel);
+									resultNamedGraphs.put(namedGraphLabel, namedGraphData);
+								}
 							}
 						}
 
@@ -384,11 +388,8 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 	}
 
 	private String readUpdateString() throws IOException {
-		InputStream stream = new URL(requestFile).openStream();
-		try {
+		try (InputStream stream = new URL(requestFile).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 }

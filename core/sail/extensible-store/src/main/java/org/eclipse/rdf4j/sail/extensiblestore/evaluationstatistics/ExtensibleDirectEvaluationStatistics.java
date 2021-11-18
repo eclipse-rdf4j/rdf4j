@@ -38,22 +38,23 @@ public class ExtensibleDirectEvaluationStatistics extends ExtensibleEvaluationSt
 		@Override
 		protected double getCardinality(StatementPattern sp) {
 
-			SailDataset dataset = extensibleSailStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+			try (SailDataset dataset = extensibleSailStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
 
-			Resource subject = (Resource) sp.getSubjectVar().getValue();
-			IRI predicate = (IRI) sp.getPredicateVar().getValue();
-			Value object = sp.getObjectVar().getValue();
+				Resource subject = (Resource) sp.getSubjectVar().getValue();
+				IRI predicate = (IRI) sp.getPredicateVar().getValue();
+				Value object = sp.getObjectVar().getValue();
 
-			if (sp.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS) {
-				try (Stream<? extends Statement> stream = Iterations
-						.stream(dataset.getStatements(subject, predicate, object))) {
-					return stream.count();
-				}
-			} else {
-				Resource[] context = new Resource[] { (Resource) sp.getContextVar().getValue() };
-				try (Stream<? extends Statement> stream = Iterations
-						.stream(dataset.getStatements(subject, predicate, object, context))) {
-					return stream.count();
+				if (sp.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS) {
+					try (Stream<? extends Statement> stream = Iterations
+							.stream(dataset.getStatements(subject, predicate, object))) {
+						return stream.count();
+					}
+				} else {
+					Resource[] context = new Resource[] { (Resource) sp.getContextVar().getValue() };
+					try (Stream<? extends Statement> stream = Iterations
+							.stream(dataset.getStatements(subject, predicate, object, context))) {
+						return stream.count();
+					}
 				}
 			}
 

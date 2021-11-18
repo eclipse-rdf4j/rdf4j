@@ -65,21 +65,21 @@ public class GroupIteratorTest {
 	public void testAvgEmptySet() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("avg", new Avg(new Var("a"))));
-		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
-
-		assertThat(gi.next().getBinding("avg").getValue())
-				.describedAs("AVG on empty set should result in 0")
-				.isEqualTo(vf.createLiteral("0", XSD.INTEGER));
+		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance())) {
+			assertThat(gi.next().getBinding("avg").getValue())
+					.describedAs("AVG on empty set should result in 0")
+					.isEqualTo(vf.createLiteral("0", XSD.INTEGER));
+		}
 	}
 
 	@Test
 	public void testMaxEmptySet_DefaultGroup() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("max", new Max(new Var("a"))));
-		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
-
-		assertThat(gi.hasNext()).isTrue();
-		assertThat(gi.next().size()).isEqualTo(0);
+		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance())) {
+			assertThat(gi.hasNext()).isTrue();
+			assertThat(gi.next().size()).isEqualTo(0);
+		}
 	}
 
 	@Test
@@ -88,66 +88,66 @@ public class GroupIteratorTest {
 		group.addGroupElement(new GroupElem("max", new Max(new Var("a"))));
 		group.addGroupBindingName("x"); // we are grouping by variable x
 
-		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
-
-		assertThat(gi.hasNext()).isFalse();
+		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance())) {
+			assertThat(gi.hasNext()).isFalse();
+		}
 	}
 
 	@Test
 	public void testMinEmptySet() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("min", new Min(new Var("a"))));
-		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
-
-		assertThat(gi.hasNext()).isTrue();
-		assertThat(gi.next().size()).isEqualTo(0);
+		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance())) {
+			assertThat(gi.hasNext()).isTrue();
+			assertThat(gi.next().size()).isEqualTo(0);
+		}
 	}
 
 	@Test
 	public void testSampleEmptySet() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("sample", new Sample(new Var("a"))));
-		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
-
-		assertThat(gi.hasNext()).isTrue();
-		assertThat(gi.next().size()).isEqualTo(0);
+		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance())) {
+			assertThat(gi.hasNext()).isTrue();
+			assertThat(gi.next().size()).isEqualTo(0);
+		}
 	}
 
 	@Test
 	public void testGroupConcatEmptySet() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("groupconcat", new GroupConcat(new Var("a"))));
-		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
-
-		assertThat(gi.next().getBinding("groupconcat").getValue())
-				.describedAs("GROUP_CONCAT on empty set should result in empty string")
-				.isEqualTo(vf.createLiteral(""));
+		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance())) {
+			assertThat(gi.next().getBinding("groupconcat").getValue())
+					.describedAs("GROUP_CONCAT on empty set should result in empty string")
+					.isEqualTo(vf.createLiteral(""));
+		}
 	}
 
 	@Test
 	public void testAvgNotZero() throws QueryEvaluationException {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("avg", new Avg(new Var("a"))));
-		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
-
-		assertThat(gi.next().getBinding("avg").getValue()).isEqualTo(vf.createLiteral("5", XSD.DECIMAL));
+		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance())) {
+			assertThat(gi.next().getBinding("avg").getValue()).isEqualTo(vf.createLiteral("5", XSD.DECIMAL));
+		}
 	}
 
 	@Test
 	public void testCountNotZero() throws QueryEvaluationException {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("count", new Count(new Var("a"))));
-		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
-
-		assertThat(gi.next().getBinding("count").getValue()).isEqualTo(vf.createLiteral("9", XSD.INTEGER));
+		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance())) {
+			assertThat(gi.next().getBinding("count").getValue()).isEqualTo(vf.createLiteral("9", XSD.INTEGER));
+		}
 	}
 
 	@Test
 	public void testSumNotZero() throws QueryEvaluationException {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("sum", new Sum(new Var("a"))));
-		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
-
-		assertThat(gi.next().getBinding("sum").getValue()).isEqualTo(vf.createLiteral("45", XSD.INTEGER));
+		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance())) {
+			assertThat(gi.next().getBinding("sum").getValue()).isEqualTo(vf.createLiteral("45", XSD.INTEGER));
+		}
 	}
 }

@@ -53,7 +53,7 @@ public class SailRepositoryConnectionTest {
 		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		TupleQuery query = (TupleQuery) subject.prepareQuery("SELECT * WHERE { ?s ?p ?o }");
-		query.evaluate();
+		query.evaluate().close();
 		// check that evaluation is still called, and not with an empty TupleExpr
 		verify(sailConnection).evaluate(any(TupleExpr.class), any(), any(), anyBoolean());
 	}
@@ -66,7 +66,7 @@ public class SailRepositoryConnectionTest {
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		GraphQuery query = (GraphQuery) subject.prepareQuery("CONSTRUCT WHERE { ?s ?p ?o }");
-		query.evaluate();
+		query.evaluate().close();
 		// check that the TupleExpr implementation created by the underlying sail was passed to the evaluation
 		verify(sailConnection).evaluate(eq(expr), any(), any(), anyBoolean());
 	}
@@ -78,7 +78,7 @@ public class SailRepositoryConnectionTest {
 		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		TupleQuery query = subject.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
-		query.evaluate();
+		query.evaluate().close();
 		// check that evaluation is still called, and not with an empty TupleExpr
 		verify(sailConnection).evaluate(any(TupleExpr.class), any(), any(), anyBoolean());
 	}
@@ -91,7 +91,7 @@ public class SailRepositoryConnectionTest {
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		TupleQuery query = subject.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
-		query.evaluate();
+		query.evaluate().close();
 		// check that the TupleExpr implementation created by the underlying sail was passed to the evaluation
 		verify(sailConnection).evaluate(eq(expr), any(), any(), anyBoolean());
 	}
@@ -103,7 +103,7 @@ public class SailRepositoryConnectionTest {
 		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		GraphQuery query = subject.prepareGraphQuery("CONSTRUCT WHERE { ?s ?p ?o }");
-		query.evaluate();
+		query.evaluate().close();
 		// check that evaluation is still called, and not with an empty TupleExpr
 		verify(sailConnection).evaluate(any(TupleExpr.class), any(), any(), anyBoolean());
 	}
@@ -116,7 +116,7 @@ public class SailRepositoryConnectionTest {
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		GraphQuery query = subject.prepareGraphQuery("CONSTRUCT WHERE { ?s ?p ?o }");
-		query.evaluate();
+		query.evaluate().close();
 		// check that the TupleExpr implementation created by the underlying sail was passed to the evaluation
 		verify(sailConnection).evaluate(eq(expr), any(), any(), anyBoolean());
 	}

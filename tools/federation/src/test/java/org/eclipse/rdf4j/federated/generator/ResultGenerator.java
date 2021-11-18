@@ -82,10 +82,10 @@ public class ResultGenerator {
 		String q = readQueryString(baseDir + queryFile + ".rq");
 
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q);
-		TupleQueryResult res = query.evaluate();
-
-		while (res.hasNext()) {
-			System.out.println(res.next());
+		try (TupleQueryResult res = query.evaluate()) {
+			while (res.hasNext()) {
+				System.out.println(res.next());
+			}
 		}
 	}
 
@@ -115,11 +115,8 @@ public class ResultGenerator {
 	 * @throws IOException
 	 */
 	private String readQueryString(String queryFile) throws RepositoryException, IOException {
-		InputStream stream = SPARQLBaseTest.class.getResourceAsStream(queryFile);
-		try {
+		try (InputStream stream = SPARQLBaseTest.class.getResourceAsStream(queryFile)) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 

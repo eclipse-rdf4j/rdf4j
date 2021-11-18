@@ -41,8 +41,9 @@ public class FederationSparqlTest {
 		boolean hasResults;
 		try (RepositoryConnection conn = repoFed.getConnection()) {
 			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			TupleQueryResult tqr = tq.evaluate();
-			hasResults = tqr.hasNext();
+			try (TupleQueryResult tqr = tq.evaluate()) {
+				hasResults = tqr.hasNext();
+			}
 		}
 		assertFalse(hasResults);
 	}

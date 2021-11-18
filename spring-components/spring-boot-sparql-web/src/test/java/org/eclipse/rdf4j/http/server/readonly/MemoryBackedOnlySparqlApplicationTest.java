@@ -66,14 +66,12 @@ public class MemoryBackedOnlySparqlApplicationTest {
 		rep.init();
 		String query = "SELECT * WHERE { ?s ?p ?o }";
 		ParsedQuery parseQuery = new SPARQLParser().parseQuery(query, null);
-		SPARQLProtocolSession session = rep.createSPARQLProtocolSession();
-		try {
+		try (SPARQLProtocolSession session = rep.createSPARQLProtocolSession()) {
 			TupleQueryResult sendTupleQuery = session.sendTupleQuery(QueryLanguage.SPARQL, query, null, false);
 			while (sendTupleQuery.hasNext()) {
 				assertNotNull(sendTupleQuery.next());
 			}
 		} finally {
-			session.close();
 			rep.shutDown();
 		}
 	}

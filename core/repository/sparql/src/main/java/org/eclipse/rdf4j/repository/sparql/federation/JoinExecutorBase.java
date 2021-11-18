@@ -143,10 +143,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 						toCloseRightIter.close();
 					}
 				} finally {
-					CloseableIteration<T, QueryEvaluationException> toCloseLeftIter = leftIter;
-					if (toCloseLeftIter != null) {
-						toCloseLeftIter.close();
-					}
+					leftIter.close();
 				}
 			}
 		}

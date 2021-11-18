@@ -33,20 +33,21 @@ public class ElasticsearchSailTest extends ESIntegTestCase {
 	@Override
 	public void setUp() throws Exception {
 		super.setUp();
-		TransportClient client = (TransportClient) internalCluster().transportClient();
-		delegateTest = new AbstractLuceneSailTest() {
+		try (TransportClient client = (TransportClient) internalCluster().transportClient()) {
+			delegateTest = new AbstractLuceneSailTest() {
 
-			@Override
-			protected void configure(LuceneSail sail) {
-				sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
-				sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
-						client.settings().get("cluster.name"));
-				sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
-				sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
-				sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
-				sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
-			}
-		};
+				@Override
+				protected void configure(LuceneSail sail) {
+					sail.setParameter(ElasticsearchIndex.TRANSPORT_KEY, client.transportAddresses().get(0).toString());
+					sail.setParameter(ElasticsearchIndex.ELASTICSEARCH_KEY_PREFIX + "cluster.name",
+							client.settings().get("cluster.name"));
+					sail.setParameter(ElasticsearchIndex.INDEX_NAME_KEY, ElasticsearchTestUtils.getNextTestIndexName());
+					sail.setParameter(LuceneSail.INDEX_CLASS_KEY, ElasticsearchIndex.class.getName());
+					sail.setParameter(ElasticsearchIndex.WAIT_FOR_STATUS_KEY, "green");
+					sail.setParameter(ElasticsearchIndex.WAIT_FOR_NODES_KEY, ">=1");
+				}
+			};
+		}
 		delegateTest.setUp();
 	}
 

@@ -181,8 +181,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		Optional<QueryResultFormat> tqrFormat = QueryResultIO.getParserFormatForFileName(resultFileURL);
 
 		if (tqrFormat.isPresent()) {
-			InputStream in = new URL(resultFileURL).openStream();
-			try {
+			try (InputStream in = new URL(resultFileURL).openStream()) {
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat.get());
 				parser.setValueFactory(getDataRepository().getValueFactory());
 
@@ -191,8 +190,6 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 				parser.parseQueryResult(in);
 				return qrBuilder.getQueryResult();
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult();
@@ -205,11 +202,8 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 				.getFileFormatForFileName(resultFileURL);
 
 		if (bqrFormat.isPresent()) {
-			InputStream in = new URL(resultFileURL).openStream();
-			try {
+			try (InputStream in = new URL(resultFileURL).openStream()) {
 				return QueryResultIO.parseBoolean(in, bqrFormat.get());
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult();
@@ -229,11 +223,8 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		Set<Statement> result = new LinkedHashSet<>();
 		parser.setRDFHandler(new StatementCollector(result));
 
-		InputStream in = new URL(resultFileURL).openStream();
-		try {
+		try (InputStream in = new URL(resultFileURL).openStream()) {
 			parser.parse(in, resultFileURL);
-		} finally {
-			in.close();
 		}
 
 		return result;

@@ -42,8 +42,10 @@ public class CustomFunctionEvaluationTest {
 		try (RepositoryConnection conn = rep.getConnection()) {
 			conn.add(new StringReader(data), "", RDFFormat.TURTLE);
 
-			TupleQueryResult result = conn.prepareTupleQuery(query).evaluate();
-			BindingSet bs = result.next();
+			BindingSet bs;
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				bs = result.next();
+			}
 			assertThat(bs.getValue("result").stringValue()).isEqualTo("related to ex:s2, ex:s3");
 		}
 

@@ -127,9 +127,13 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 	@Override
 	public void tearDown() throws Exception {
 		try {
-			index.shutDown();
+			client.close();
 		} finally {
-			super.tearDown();
+			try {
+				index.shutDown();
+			} finally {
+				super.tearDown();
+			}
 		}
 	}
 

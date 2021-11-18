@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -148,15 +149,8 @@ class SailSourceModel extends AbstractModel {
 	public synchronized int size() {
 		if (size < 0) {
 			try {
-				CloseableIteration<? extends Statement, SailException> iter;
-				iter = dataset().getStatements(null, null, null);
-				try {
-					while (iter.hasNext()) {
-						iter.next();
-						size++;
-					}
-				} finally {
-					iter.close();
+				try (Stream<? extends Statement> stream = dataset().getStatements(null, null, null).stream()) {
+					size += stream.count();
 				}
 			} catch (SailException e) {
 				throw new ModelException(e);
@@ -281,15 +275,12 @@ class SailSourceModel extends AbstractModel {
 		try {
 			if (contains(subj, pred, obj, contexts)) {
 				size = -1;
-				CloseableIteration<? extends Statement, SailException> stmts;
-				stmts = dataset().getStatements(subj, pred, obj, contexts);
-				try {
+				try (CloseableIteration<? extends Statement, SailException> stmts = dataset().getStatements(subj, pred,
+						obj, contexts)) {
 					while (stmts.hasNext()) {
 						Statement st = stmts.next();
 						sink().deprecate(st);
 					}
-				} finally {
-					stmts.close();
 				}
 				return true;
 			}
@@ -319,9 +310,8 @@ class SailSourceModel extends AbstractModel {
 			public int size() {
 				if (subj == null && pred == null && obj == null) {
 					try {
-						CloseableIteration<? extends Statement, SailException> iter;
-						iter = dataset().getStatements(null, null, null);
-						try {
+						try (CloseableIteration<? extends Statement, SailException> iter = dataset().getStatements(null,
+								null, null)) {
 							long size = 0;
 							while (iter.hasNext()) {
 								iter.next();
@@ -330,8 +320,6 @@ class SailSourceModel extends AbstractModel {
 								}
 							}
 							return (int) size;
-						} finally {
-							iter.close();
 						}
 					} catch (SailException e) {
 						throw new ModelException(e);
@@ -361,15 +349,12 @@ class SailSourceModel extends AbstractModel {
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		try {
-			CloseableIteration<? extends Statement, SailException> stmts;
-			stmts = dataset().getStatements(subj, pred, obj, contexts);
-			try {
+			try (CloseableIteration<? extends Statement, SailException> stmts = dataset().getStatements(subj, pred, obj,
+					contexts)) {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
 					sink().deprecate(st);
 				}
-			} finally {
-				stmts.close();
 			}
 			size = -1;
 		} catch (SailException e) {

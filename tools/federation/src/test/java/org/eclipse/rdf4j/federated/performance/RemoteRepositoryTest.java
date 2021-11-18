@@ -85,19 +85,10 @@ public class RemoteRepositoryTest {
 	private static List<IRI> retrieveInstances(RepositoryConnection conn, IRI type) throws Exception {
 
 		List<IRI> res = new ArrayList<>();
-		RepositoryResult<Statement> qres = null;
-		try {
-			qres = conn.getStatements(null, RDF.TYPE, type, false);
+		try (RepositoryResult<Statement> qres = conn.getStatements(null, RDF.TYPE, type, false)) {
 			while (qres.hasNext() && res.size() < MAX_INSTANCES) {
 				Statement next = qres.next();
 				res.add((IRI) next.getObject());
-			}
-		} finally {
-			try {
-				if (qres != null) {
-					qres.close();
-				}
-			} catch (Exception ignore) {
 			}
 		}
 		return res;
@@ -108,19 +99,13 @@ public class RemoteRepositoryTest {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
 				"SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
 
-		TupleQueryResult res = null;
-		try {
-			res = query.evaluate();
+		try (TupleQueryResult res = query.evaluate()) {
 			int count = 0;
 			while (res.hasNext()) {
 				res.next();
 				count++;
 			}
 			return count;
-		} finally {
-			if (res != null) {
-				res.close();
-			}
 		}
 	}
 }

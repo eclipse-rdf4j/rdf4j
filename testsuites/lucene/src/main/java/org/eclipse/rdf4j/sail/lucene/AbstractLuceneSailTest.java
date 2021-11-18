@@ -802,14 +802,15 @@ public abstract class AbstractLuceneSailTest {
 			TupleQuery query = connection.prepareTupleQuery(QUERY_STRING);
 			query.setBinding("Subject", SUBJECT_1);
 			query.setBinding("Query", vf.createLiteral("one"));
-			TupleQueryResult result = query.evaluate();
+			try (TupleQueryResult result = query.evaluate()) {
 
-			// check that this subject and only this subject is returned
-			assertTrue(result.hasNext());
-			BindingSet bindings = result.next();
-			assertEquals(SUBJECT_1, (IRI) bindings.getValue("Subject"));
-			assertNotNull(bindings.getValue("Score"));
-			assertFalse(result.hasNext());
+				// check that this subject and only this subject is returned
+				assertTrue(result.hasNext());
+				BindingSet bindings = result.next();
+				assertEquals(SUBJECT_1, (IRI) bindings.getValue("Subject"));
+				assertNotNull(bindings.getValue("Score"));
+				assertFalse(result.hasNext());
+			}
 		}
 	}
 

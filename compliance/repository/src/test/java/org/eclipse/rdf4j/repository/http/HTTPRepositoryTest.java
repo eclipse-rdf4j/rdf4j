@@ -70,21 +70,22 @@ public class HTTPRepositoryTest extends RepositoryTest {
 			}
 			conn.commit();
 
-			final TupleQuery main = conn.prepareTupleQuery(mainQueryStr);
-			final TupleQueryResult mainResult = main.evaluate();
-			while (mainResult.hasNext()) {
-				final BindingSet current = mainResult.next();
-				final IRI u = (IRI) current.getValue("property");
+			TupleQuery main = conn.prepareTupleQuery(mainQueryStr);
+			try (TupleQueryResult mainResult = main.evaluate()) {
+				while (mainResult.hasNext()) {
+					final BindingSet current = mainResult.next();
+					final IRI u = (IRI) current.getValue("property");
 
-				final TupleQuery subQuery = conn.prepareTupleQuery(subQueryStr);
-				subQuery.setBinding("property", u);
-				try (final TupleQueryResult sqResult = subQuery.evaluate()) {
-					final Set<IRI> rangesSparql = sqResult.stream()
-							.map(bs -> bs.getValue("range"))
-							.filter(Value::isIRI)
-							.map(v -> (IRI) v)
-							.collect(Collectors.toSet());
-					assertThat(rangesSparql).hasSize(1);
+					TupleQuery subQuery = conn.prepareTupleQuery(subQueryStr);
+					subQuery.setBinding("property", u);
+					try (TupleQueryResult sqResult = subQuery.evaluate()) {
+						Set<IRI> rangesSparql = sqResult.stream()
+								.map(bs -> bs.getValue("range"))
+								.filter(Value::isIRI)
+								.map(v -> (IRI) v)
+								.collect(Collectors.toSet());
+						assertThat(rangesSparql).hasSize(1);
+					}
 				}
 			}
 		}

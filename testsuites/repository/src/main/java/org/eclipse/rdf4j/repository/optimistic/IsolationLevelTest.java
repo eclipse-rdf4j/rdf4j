@@ -82,10 +82,8 @@ public class IsolationLevelTest {
 		} catch (UnknownTransactionStateException e) {
 			return false;
 		} finally {
-			try {
+			try (con) {
 				con.rollback();
-			} finally {
-				con.close();
 			}
 		}
 	}
@@ -335,8 +333,7 @@ public class IsolationLevelTest {
 		final CountDownLatch changed = new CountDownLatch(1);
 		Thread writer = new Thread(() -> {
 			try {
-				RepositoryConnection write = store.getConnection();
-				try {
+				try (RepositoryConnection write = store.getConnection()) {
 					start.countDown();
 					start.await();
 					write.begin(level);
@@ -350,8 +347,6 @@ public class IsolationLevelTest {
 					insertTestStatement(write, 2);
 					write.commit();
 					changed.countDown();
-				} finally {
-					write.close();
 				}
 			} catch (Throwable e) {
 				fail("Writer failed", e);

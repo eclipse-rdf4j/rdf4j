@@ -61,20 +61,28 @@ public class SPARQLRepositoryTest {
 			}
 		});
 
-		assertThat(rep.createSPARQLProtocolSession().getPreferredTupleQueryResultFormat()).isEqualTo(customPreferred);
+		try (SPARQLProtocolSession sparqlProtocolSession = rep.createSPARQLProtocolSession()) {
+			assertThat(sparqlProtocolSession.getPreferredTupleQueryResultFormat()).isEqualTo(customPreferred);
+		}
 	}
 
 	public void testPassThroughEnabled() throws Exception {
 		SPARQLRepository rep = new SPARQLRepository(endpointUrl);
 		assertThat(rep.getPassThroughEnabled()).isNull();
-		assertThat(rep.createSPARQLProtocolSession()).isNotNull();
+		try (SPARQLProtocolSession sparqlProtocolSession = rep.createSPARQLProtocolSession()) {
+			assertThat(sparqlProtocolSession).isNotNull();
+		}
 
 		rep.setPassThroughEnabled(true);
 		assertThat(rep.getPassThroughEnabled()).isTrue();
-		assertThat(rep.createSPARQLProtocolSession().isPassThroughEnabled()).isTrue();
+		try (SPARQLProtocolSession sparqlProtocolSession = rep.createSPARQLProtocolSession()) {
+			assertThat(sparqlProtocolSession.isPassThroughEnabled()).isTrue();
+		}
 
 		rep.setPassThroughEnabled(false);
 		assertThat(rep.getPassThroughEnabled()).isFalse();
-		assertThat(rep.createSPARQLProtocolSession().isPassThroughEnabled()).isFalse();
+		try (SPARQLProtocolSession sparqlProtocolSession = rep.createSPARQLProtocolSession()) {
+			assertThat(sparqlProtocolSession.isPassThroughEnabled()).isFalse();
+		}
 	}
 }

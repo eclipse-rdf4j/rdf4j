@@ -275,10 +275,8 @@ public class IOUtil {
 	 */
 	public static Properties readProperties(InputStream in, Properties defaults) throws IOException {
 		Properties result = new Properties(defaults);
-		try {
+		try (in) {
 			result.load(in);
-		} finally {
-			in.close();
 		}
 		return result;
 	}
@@ -315,10 +313,8 @@ public class IOUtil {
 			props = all;
 		}
 
-		try {
+		try (out) {
 			props.store(out, null);
-		} finally {
-			out.close();
 		}
 	}
 
@@ -335,10 +331,8 @@ public class IOUtil {
 		try {
 			transfer(in, out);
 		} finally {
-			try {
+			try (out) {
 				out.flush();
-			} finally {
-				out.close();
 			}
 		}
 	}
@@ -497,7 +491,7 @@ public class IOUtil {
 	 * </p>
 	 * <p>
 	 * The table below shows a few examples of decimals encoded both as a 32-bit integer and as variable length binary:
-	 * 
+	 *
 	 * <pre>
 	 * {@code
 	 * decimal |           32-bit integer            |          variable length binary
@@ -545,7 +539,7 @@ public class IOUtil {
 
 	/**
 	 * Read an variable length integer. See {@link #writeVarInt(OutputStream, int)} for encoding details.
-	 * 
+	 *
 	 * @param in The {@link InputStream} to read from.
 	 * @return The integer read.
 	 * @throws IOException If an error occurred while reading the integer.

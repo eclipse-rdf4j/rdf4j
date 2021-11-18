@@ -133,10 +133,8 @@ public class ResourceUtil {
 		InputStream in = ResourceUtil.getInputStream(resourceName);
 
 		if (in != null) {
-			try {
+			try (in) {
 				result = IOUtil.readString(in);
-			} finally {
-				in.close();
 			}
 		}
 

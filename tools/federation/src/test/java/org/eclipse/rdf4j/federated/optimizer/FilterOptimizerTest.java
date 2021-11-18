@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FedXFactory;
@@ -351,8 +352,12 @@ public class FilterOptimizerTest {
 		List<BindingSet> expected;
 		try (RepositoryConnection connection = federatedRepository.getConnection();
 				RepositoryConnection standardConn = standardRepository.getConnection()) {
-			actual = connection.prepareTupleQuery(query).evaluate().stream().collect(Collectors.toList());
-			expected = standardConn.prepareTupleQuery(query).evaluate().stream().collect(Collectors.toList());
+			try (Stream<BindingSet> stream = connection.prepareTupleQuery(query).evaluate().stream()) {
+				actual = stream.collect(Collectors.toList());
+			}
+			try (Stream<BindingSet> stream = standardConn.prepareTupleQuery(query).evaluate().stream()) {
+				expected = stream.collect(Collectors.toList());
+			}
 		}
 		assertEquals(expected.size(), actual.size());
 		assertTrue(actual.containsAll(expected));

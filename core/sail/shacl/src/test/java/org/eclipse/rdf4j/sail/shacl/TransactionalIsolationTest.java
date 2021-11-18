@@ -230,10 +230,8 @@ public class TransactionalIsolationTest {
 		SailRepository sailRepository = new SailRepository(shaclSail);
 		sailRepository.init();
 
-		SailRepositoryConnection connection1 = sailRepository.getConnection();
-		SailRepositoryConnection connection2 = sailRepository.getConnection();
-
-		try {
+		try (SailRepositoryConnection connection1 = sailRepository.getConnection();
+				SailRepositoryConnection connection2 = sailRepository.getConnection()) {
 
 			connection2.begin();
 
@@ -262,8 +260,6 @@ public class TransactionalIsolationTest {
 			}
 
 		} finally {
-			connection2.close();
-			connection1.close();
 			sailRepository.shutDown();
 
 		}

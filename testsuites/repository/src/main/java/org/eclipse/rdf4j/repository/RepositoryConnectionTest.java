@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -1593,12 +1594,7 @@ public abstract class RepositoryConnectionTest {
 		xcal.setTimezone(OFFSET);
 		TupleQuery query = testCon.prepareTupleQuery(QueryLanguage.SPARQL, SELECT_BY_DATE);
 		query.setBinding("date", vf.createLiteral(xcal));
-		TupleQueryResult result = query.evaluate();
-		List<BindingSet> list = new ArrayList<>();
-		while (result.hasNext()) {
-			list.add(result.next());
-		}
-		assertThat(list).hasSize(7);
+		assertThat(query.evaluate().stream().count()).isEqualTo(7);
 	}
 
 	@Test
@@ -1727,24 +1723,21 @@ public abstract class RepositoryConnectionTest {
 		SimpleDataset dataset = new SimpleDataset();
 		dataset.addDefaultGraph(defaultGraph);
 		qry.setDataset(dataset);
-		TupleQueryResult result = qry.evaluate();
-		try {
+		try (TupleQueryResult result = qry.evaluate()) {
 			int count = 0;
 			while (result.hasNext()) {
 				result.next();
 				count++;
 			}
 			return count;
-		} finally {
-			result.close();
 		}
 	}
 
 	private int getTotalStatementCount(RepositoryConnection connection) throws RepositoryException {
-		CloseableIteration<? extends Statement, RepositoryException> iter = connection.getStatements(null, null, null,
-				true);
 
-		try {
+		try (CloseableIteration<? extends Statement, RepositoryException> iter = connection.getStatements(null, null,
+				null,
+				true)) {
 			int size = 0;
 
 			while (iter.hasNext()) {
@@ -1753,8 +1746,6 @@ public abstract class RepositoryConnectionTest {
 			}
 
 			return size;
-		} finally {
-			iter.close();
 		}
 	}
 

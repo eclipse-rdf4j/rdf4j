@@ -982,10 +982,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	private static boolean isDeleted(IndexReader reader, int docId) {
 		if (reader.hasDeletions()) {
-			List<LeafReaderContext> leaves = reader.leaves();
-			int size = leaves.size();
-			for (int i = 0; i < size; i++) {
-				Bits liveDocs = leaves.get(i).reader().getLiveDocs();
+			for (LeafReaderContext leaf : reader.leaves()) {
+				Bits liveDocs = leaf.reader().getLiveDocs();
 				if (docId < liveDocs.length()) {
 					boolean isDeleted = !liveDocs.get(docId);
 					if (isDeleted) {
@@ -993,10 +991,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 					}
 				}
 			}
-			return false;
-		} else {
-			return false;
 		}
+		return false;
 	}
 
 	private static Document readDocument(IndexReader reader, int docId, Set<String> fieldsToLoad) throws IOException {

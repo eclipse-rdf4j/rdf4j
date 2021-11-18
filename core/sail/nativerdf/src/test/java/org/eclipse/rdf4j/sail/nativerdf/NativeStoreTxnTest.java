@@ -16,6 +16,8 @@ import static org.junit.Assert.assertNull;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.model.IRI;
@@ -87,8 +89,9 @@ public class NativeStoreTxnTest {
 		Assert.assertEquals(15, repoDir.listFiles().length);
 
 		// make sure there is no txncacheXXX.dat file
-		Assert.assertFalse(Files.list(repoDir.getAbsoluteFile().toPath())
-				.anyMatch(file -> file.toFile().getName().matches("txncache[0-9]+.*dat")));
+		try (Stream<Path> list = Files.list(repoDir.getAbsoluteFile().toPath())) {
+			Assert.assertFalse(list.anyMatch(file -> file.toFile().getName().matches("txncache[0-9]+.*dat")));
+		}
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			Assert.assertEquals(1, conn.size());
