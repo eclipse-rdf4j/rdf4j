@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
@@ -56,6 +57,10 @@ public interface RdfBlankNode extends RdfResource {
 			andHas(predicate, objects);
 		}
 
+		PropertiesBlankNode(IRI predicate, RdfObject... objects) {
+			andHas(predicate, objects);
+		}
+
 		/**
 		 * Using the predicate-object and object list mechanisms, expand this blank node's pattern to include triples
 		 * consisting of this blank node as the subject, and the given predicate and object(s)
@@ -73,6 +78,23 @@ public interface RdfBlankNode extends RdfResource {
 			predicateObjectLists.andHas(predicate, objects);
 
 			return this;
+		}
+
+		/**
+		 * Using the predicate-object and object list mechanisms, expand this blank node's pattern to include triples
+		 * consisting of this blank node as the subject, and the given predicate and object(s)
+		 *
+		 * @param predicate the predicate of the triple to add
+		 * @param objects   the object or objects of the triple to add
+		 *
+		 * @return this blank node
+		 *
+		 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#predObjLists"> Predicate-Object
+		 *      Lists</a>
+		 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#objLists"> Object Lists</a>
+		 */
+		public PropertiesBlankNode andHas(IRI predicate, RdfObject... objects) {
+			return andHas(Rdf.iri(predicate), objects);
 		}
 
 		/**

@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.core.StandardQueryElementCollection;
 
 /**
@@ -20,6 +21,10 @@ public class RdfPredicateObjectList extends StandardQueryElementCollection<RdfOb
 		super(predicate.getQueryString(), ", ");
 		printNameIfEmpty(false);
 		and(objects);
+	}
+
+	RdfPredicateObjectList(IRI predicate, RdfObject... objects) {
+		this(Rdf.iri(predicate), objects);
 	}
 
 	/**

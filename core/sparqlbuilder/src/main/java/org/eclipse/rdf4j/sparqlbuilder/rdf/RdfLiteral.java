@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
 import java.util.Optional;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
@@ -78,6 +81,10 @@ public abstract class RdfLiteral<T> implements RdfValue {
 			ofType(dataType);
 		}
 
+		StringLiteral(String stringValue, IRI dataType) {
+			this(stringValue, iri(dataType));
+		}
+
 		StringLiteral(String stringValue, String languageTag) {
 			super(stringValue);
 			ofLanguage(languageTag);
@@ -87,6 +94,10 @@ public abstract class RdfLiteral<T> implements RdfValue {
 			this.dataType = Optional.ofNullable(dataType);
 
 			return this;
+		}
+
+		public StringLiteral ofType(IRI dataType) {
+			return ofType(iri(dataType));
 		}
 
 		public StringLiteral ofLanguage(String languageTag) {

@@ -10,18 +10,14 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder;
 
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.p;
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pAlt;
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pGroup;
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pOneOrMore;
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pSeq;
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pZeroOrMore;
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.pZeroOrOne;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.*;
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
@@ -43,7 +39,15 @@ public class PropertyPathBuilder {
 		this.head = p(predicate);
 	}
 
+	PropertyPathBuilder(IRI predicate) {
+		this(iri(predicate));
+	}
+
 	public static PropertyPathBuilder of(Iri predicate) {
+		return new PropertyPathBuilder(predicate);
+	}
+
+	public static PropertyPathBuilder of(IRI predicate) {
 		return new PropertyPathBuilder(predicate);
 	}
 
@@ -68,6 +72,10 @@ public class PropertyPathBuilder {
 		return then(p(predicate));
 	}
 
+	public PropertyPathBuilder then(IRI predicate) {
+		return then(iri(predicate));
+	}
+
 	public PropertyPathBuilder then(PropertyPath path) {
 		Objects.requireNonNull(head);
 		head = pSeq(head, path);
@@ -90,6 +98,10 @@ public class PropertyPathBuilder {
 
 	public PropertyPathBuilder or(Iri predicate) {
 		return or(p(predicate));
+	}
+
+	public PropertyPathBuilder or(IRI predicate) {
+		return or(iri(predicate));
 	}
 
 	public PropertyPathBuilder or(PropertyPath path) {

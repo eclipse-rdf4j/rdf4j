@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.COALESCE
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.AlternativePath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
@@ -221,6 +222,10 @@ public class Expressions {
 	}
 
 	public static Expression<?> custom(Iri functionIri, Operand... operands) {
+		return new CustomFunction(functionIri).addOperand(operands);
+	}
+
+	public static Expression<?> custom(IRI functionIri, Operand... operands) {
 		return new CustomFunction(functionIri).addOperand(operands);
 	}
 
@@ -630,7 +635,15 @@ public class Expressions {
 		return new PredicatePath(predicate);
 	}
 
+	public static PredicatePath p(IRI predicate) {
+		return new PredicatePath(predicate);
+	}
+
 	public static InversePredicatePath pInv(Iri predicate) {
+		return new InversePredicatePath(predicate);
+	}
+
+	public static InversePredicatePath pInv(IRI predicate) {
 		return new InversePredicatePath(predicate);
 	}
 
@@ -663,6 +676,10 @@ public class Expressions {
 	}
 
 	public static PropertyPathBuilder path(Iri property) {
+		return new EmptyPropertyPathBuilder().pred(property);
+	}
+
+	public static PropertyPathBuilder path(IRI property) {
 		return new EmptyPropertyPathBuilder().pred(property);
 	}
 

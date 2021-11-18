@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 /**
@@ -35,6 +36,12 @@ public class Dataset extends StandardQueryElementCollection<From> {
 	 * @return this
 	 */
 	public Dataset from(Iri... iris) {
+		addElements(SparqlBuilder::from, iris);
+
+		return this;
+	}
+
+	public Dataset from(IRI... iris) {
 		addElements(SparqlBuilder::from, iris);
 
 		return this;
