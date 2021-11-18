@@ -53,7 +53,6 @@ public class PropertyPathBuilder {
 		return new PropertyPathBuilder(predicate);
 	}
 
-
 	public static PropertyPathBuilder of(IRI predicate) {
 		return new PropertyPathBuilder(predicate);
 	}
