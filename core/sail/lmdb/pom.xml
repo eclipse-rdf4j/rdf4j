@@ -10,7 +10,7 @@
 	<name>RDF4J: LmdbStore</name>
 	<description>Sail implementation that stores data to disk using LMDB.</description>
 	<properties>
-		<lwjgl.version>3.2.3</lwjgl.version>
+		<lwjgl.version>3.3.0</lwjgl.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -22,6 +22,12 @@
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-lmdb</artifactId>
 			<classifier>natives-linux</classifier>
+			<version>${lwjgl.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-macos-arm64</classifier>
 			<version>${lwjgl.version}</version>
 		</dependency>
 		<dependency>
@@ -46,6 +52,12 @@
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl</artifactId>
 			<classifier>natives-macos</classifier>
+			<version>${lwjgl.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-macos-arm64</classifier>
 			<version>${lwjgl.version}</version>
 		</dependency>
 		<dependency>
