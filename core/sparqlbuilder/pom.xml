@@ -15,5 +15,10 @@
 			<artifactId>rdf4j-model</artifactId>
 			<version>${project.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-rio-turtle</artifactId>
+			<version>${project.version}</version>
+		</dependency>
 	</dependencies>
 </project>

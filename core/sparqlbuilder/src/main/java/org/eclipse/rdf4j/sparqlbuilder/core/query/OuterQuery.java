@@ -115,7 +115,7 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 		SparqlBuilderUtils.appendAndNewlineIfPresent(prefixes, query);
 		String queryString = super.getQueryString();
 		if (prefixes.isPresent()) {
-			queryString = prefixes.get().replaceInQuery(queryString);
+			queryString = prefixes.get().replacePrefixesInQuery(queryString);
 		}
 		query.append(queryString);
 

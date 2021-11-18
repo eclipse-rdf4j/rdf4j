@@ -126,7 +126,7 @@ abstract class UpdateQuery<T extends UpdateQuery<T>> implements QueryElement {
 
 		String queryString = getQueryActionString();
 		if (prefixes.isPresent()) {
-			queryString = prefixes.get().replaceInQuery(queryString);
+			queryString = prefixes.get().replacePrefixesInQuery(queryString);
 		}
 		query.append(queryString);
 

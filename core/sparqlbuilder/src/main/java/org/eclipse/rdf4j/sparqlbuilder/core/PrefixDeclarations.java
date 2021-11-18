@@ -8,6 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
+import java.util.function.Function;
+import java.util.stream.Stream;
+
+import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
+
 /**
  * A collection of SPARQL Prefix declarations
  *
@@ -26,13 +31,44 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 		return this;
 	}
 
-	public String replaceInQuery(String queryString) {
-
+	/**
+	 * Replaces all occurrences of all declared namespaces with their prefix labels in the specified query string.
+	 *
+	 * For example, if the <code>foaf:</code> prefix is declared with {@link PrefixDeclarations}, the query
+	 * 
+	 * <pre>
+	 * SELECT ?name WHERE {
+	 *   ?x &lt;http://xmlns.com/foaf/0.1/name&gt; ?name .
+	 * }
+	 * </pre>
+	 * 
+	 * is transformed to
+	 * 
+	 * <pre>
+	 * SELECT ?name WHERE {
+	 *   ?x foaf:name ?name .
+	 * }
+	 * </pre>
+	 *
+	 *
+	 * Rules applied:
+	 * <ul>
+	 * <li>The longest matching namespace wins (if one namespace is a substring of another)</li>
+	 * <li>No replacement if the namespace occurs in a string, i.e., within <code>"</code> or <code>'''</code></li>
+	 * <li>Only replace if the continuation of the match is a
+	 * <a href="https://www.w3.org/TR/sparql11-query/#rPN_LOCAL">local name</a> (</li>
+	 * </ul>
+	 * 
+	 * @param queryString the query string
+	 * @return the query string, namespaces replaced with prefix label
+	 */
+	public String replacePrefixesInQuery(String queryString) {
+		boolean isInsideDoubleQuotes = false, isInsideMultlineQuotes = false, isInsideString = false;
 		StringBuilder sb = new StringBuilder();
 		int pos = 0;
 		int lastPos = 0;
 		while (pos != -1 && pos < queryString.length()) {
-			pos = queryString.indexOf('<', lastPos);
+			pos = findNextRelevantIndex(queryString, lastPos);
 			if (pos == -1) {
 				break;
 			}
@@ -40,21 +76,71 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 				break;
 			}
 			sb.append(queryString, lastPos, pos);
-			Prefix matchingPrefix = findMatchingPrefix(queryString, pos + 1);
-			if (matchingPrefix != null) {
-				int posOfClosingBracket = queryString.indexOf('>', pos);
-				if (posOfClosingBracket > -1) {
-					int replacementLength = matchingPrefix.getIri().getQueryString().length() - 2; // subtract 2 for '<'
-																									// and '>'
-					sb
-							.append(matchingPrefix.getLabel())
-							.append(":")
-							.append(queryString, pos + 1 + replacementLength, posOfClosingBracket);
-					pos = posOfClosingBracket + 1;
+			if (isInsideString) {
+				if (isEscapeChar(queryString, pos)) {
+					sb.append(queryString, pos, pos + 2);
+					pos = pos + 2;
+					lastPos = pos;
+					continue;
+				}
+				if (isInsideDoubleQuotes && isDoubleQuote(queryString, pos)) {
+					sb.append(queryString, pos, pos + 1);
+					isInsideString = false;
+					isInsideDoubleQuotes = false;
+					pos++;
+					lastPos = pos;
+					continue;
+				}
+				if (isInsideMultlineQuotes && isMultilineQuote(queryString, pos)) {
+					sb.append(queryString, pos, pos + 3);
+					isInsideString = false;
+					isInsideMultlineQuotes = false;
+					pos = pos + 3;
+					lastPos = pos;
+					continue;
 				}
 			} else {
-				sb.append('<');
+				if (isDoubleQuote(queryString, pos)) {
+					sb.append(queryString, pos, pos + 1);
+					isInsideString = true;
+					isInsideDoubleQuotes = true;
+					pos++;
+					lastPos = pos;
+					continue;
+				}
+				if (isMultilineQuote(queryString, pos)) {
+					sb.append(queryString, pos, pos + 3);
+					isInsideString = true;
+					isInsideMultlineQuotes = true;
+					pos = pos + 3;
+					lastPos = pos;
+					continue;
+				}
+			}
+			if (isInsideString) {
+				sb.append(queryString, pos, pos + 1);
 				pos++;
+				lastPos = pos;
+				continue;
+			}
+			if (isOpeningAngledBracket(queryString, pos)) { // test not necessary but makes code more readable
+				Prefix matchingPrefix = findMatchingPrefix(queryString, pos + 1);
+				if (matchingPrefix != null) {
+					int posOfClosingBracket = queryString.indexOf('>', pos);
+					if (posOfClosingBracket > -1) {
+						int replacementLength = matchingPrefix.getIri().getQueryString().length() - 2; // subtract 2 for
+																										// '<'
+						// and '>'
+						sb
+								.append(matchingPrefix.getLabel())
+								.append(":")
+								.append(queryString, pos + 1 + replacementLength, posOfClosingBracket);
+						pos = posOfClosingBracket + 1;
+					}
+				} else {
+					sb.append('<');
+					pos++;
+				}
 			}
 			lastPos = pos;
 		}
@@ -62,6 +148,38 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 			sb.append(queryString.substring(lastPos));
 		}
 		return sb.toString();
+	}
+
+	private boolean isOpeningAngledBracket(String queryString, int pos) {
+		return queryString.charAt(pos) == '<';
+	}
+
+	private boolean isMultilineQuote(String queryString, int pos) {
+		return queryString.startsWith("'''", pos);
+	}
+
+	private boolean isEscapeChar(String queryString, int pos) {
+		return queryString.charAt(pos) == '\\';
+	}
+
+	private boolean isDoubleQuote(String queryString, int pos) {
+		return queryString.charAt(pos) == '"';
+	}
+
+	private int findNextRelevantIndex(String queryString, int lastPos) {
+		int[] mins = new int[] {
+				queryString.indexOf('<', lastPos),
+				queryString.indexOf('\\', lastPos),
+				queryString.indexOf('"', lastPos),
+				queryString.indexOf("'''", lastPos)
+		};
+		int min = Integer.MAX_VALUE;
+		for (int i = 0; i < mins.length; i++) {
+			if (mins[i] >= 0) {
+				min = Math.min(min, mins[i]);
+			}
+		}
+		return min == Integer.MAX_VALUE ? -1 : min;
 	}
 
 	/**
@@ -74,9 +192,34 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 	private Prefix findMatchingPrefix(String queryString, int pos) {
 		return elements
 				.stream()
-				.filter(p -> queryString.startsWith(
-						p.getIri().getQueryString().substring(1, p.getIri().getQueryString().length() - 1), pos))
+				.filter(p -> queryString.startsWith(getIRIStringFromPrefix(p), pos))
+				.filter(p -> isContinuationALocalName(
+						queryString.substring(pos + p.getIri().getQueryString().length() - 2)))
 				.reduce((r, l) -> r.getIri().getQueryString().length() > l.getIri().getQueryString().length() ? r : l)
 				.orElse(null);
+	}
+
+	private boolean isContinuationALocalName(String continuation) {
+		String localNameCandiate = continuation.substring(0, findNextWhitespace(continuation));
+		return TurtleUtil.isPN_LOCAL(localNameCandiate);
+	}
+
+	private int findNextWhitespace(String continuation) {
+		int i = 0;
+		while (i < continuation.length()) {
+			char cur = continuation.charAt(i);
+			if (Character.isWhitespace(cur)) {
+				break;
+			}
+			if ('>' == cur) {
+				break;
+			}
+			i++;
+		}
+		return i;
+	}
+
+	private String getIRIStringFromPrefix(Prefix p) {
+		return p.getIri().getQueryString().substring(1, p.getIri().getQueryString().length() - 1);
 	}
 }
