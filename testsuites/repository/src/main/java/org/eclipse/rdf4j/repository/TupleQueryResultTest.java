@@ -233,8 +233,8 @@ public abstract class TupleQueryResultTest {
 				TupleQuery tupleQuery = repCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 
 				// see if open results hangs test
-				try (TupleQueryResult result = tupleQuery.evaluate()) {
-				}
+				// DO NOT CLOSE THIS
+				tupleQuery.evaluate();
 			}
 		}
 	}
