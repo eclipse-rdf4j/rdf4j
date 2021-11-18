@@ -376,7 +376,7 @@ public class ProtocolIT {
 		int limitCount = 1000;
 		int limitPrefix = 50;
 
-		Random prng = new Random();
+		Random prng = new Random(234235434);
 		// String repositoryLocation =
 		// Protocol.getRepositoryLocation("http://localhost:8080/openrdf-sesame",
 		// "Test-NativeStore");
@@ -431,7 +431,7 @@ public class ProtocolIT {
 		int limitCount = 1000;
 		int limitPrefix = 50;
 
-		Random prng = new Random();
+		Random prng = new Random(234542434);
 
 		// String repositoryLocation =
 		// Protocol.getRepositoryLocation("http://localhost:8080/openrdf-sesame",

@@ -141,7 +141,7 @@ public class NotifyingSailBenchmark {
 	}
 
 	private static List<Statement> getStatements() {
-		Random random = new Random();
+		Random random = new Random(43256523);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
 

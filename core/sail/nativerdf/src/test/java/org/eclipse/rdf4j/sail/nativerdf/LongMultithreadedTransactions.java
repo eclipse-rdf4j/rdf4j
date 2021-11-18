@@ -33,22 +33,22 @@ public class LongMultithreadedTransactions {
 
 		NotifyingSail baseSail = getBaseSail();
 
-		Random r = new Random();
+		Random random = new Random(6424235);
 
 		IntStream.range(0, 10000).parallel().forEach(i -> {
 
 			try (SailConnection connection = baseSail.getConnection()) {
 
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
+				executeATransaction(vf, random, i, connection);
+				executeATransaction(vf, random, i, connection);
+				executeATransaction(vf, random, i, connection);
+				executeATransaction(vf, random, i, connection);
+				executeATransaction(vf, random, i, connection);
+				executeATransaction(vf, random, i, connection);
+				executeATransaction(vf, random, i, connection);
+				executeATransaction(vf, random, i, connection);
+				executeATransaction(vf, random, i, connection);
+				executeATransaction(vf, random, i, connection);
 
 			}
 
@@ -63,8 +63,6 @@ public class LongMultithreadedTransactions {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		NotifyingSail baseSail = getBaseSail();
-
-		Random r = new Random();
 
 		try (NotifyingSailConnection connection0 = baseSail.getConnection()) {
 			try (NotifyingSailConnection connection1 = baseSail.getConnection()) {
