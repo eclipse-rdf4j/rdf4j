@@ -460,12 +460,17 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 
 	@Override
 	protected void commitInternal() throws SailException {
-		try (SailSource toCloseInferredBranch = includeInferredBranch) {
-			explicitOnlyBranch = null;
-			inferredOnlyBranch = null;
-			includeInferredBranch = null;
+		SailSource toCloseInferredBranch = includeInferredBranch;
+		explicitOnlyBranch = null;
+		inferredOnlyBranch = null;
+		includeInferredBranch = null;
+		try {
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.flush();
+			}
+		} finally {
+			if (toCloseInferredBranch != null) {
+				toCloseInferredBranch.close();
 			}
 		}
 	}
@@ -481,6 +486,7 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			inferredOnlyDataset = null;
 			SailSink toCloseInferredSink = inferredOnlySink;
 			inferredOnlySink = null;
+			SailSource toCloseIncludeInferredBranch = includeInferredBranch;
 			includeInferredBranch = null;
 			explicitOnlyBranch = null;
 			inferredOnlyBranch = null;
@@ -514,9 +520,13 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 										toCloseInferredDataset.close();
 									}
 								} finally {
-									try (SailSource toCloseIncludeInferredBranch = includeInferredBranch) {
+									try {
 										if (toCloseInferredSink != null) {
 											toCloseInferredSink.close();
+										}
+									} finally {
+										if (toCloseIncludeInferredBranch != null) {
+											toCloseIncludeInferredBranch.close();
 										}
 									}
 								}
@@ -628,7 +638,13 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 										explicit.close();
 									}
 								} finally {
-									try (SailDataset toCloseDataset = datasets.remove(op)) {
+									SailDataset toCloseDataset = null;
+									try {
+										toCloseDataset = datasets.remove(op);
+									} finally {
+										if (toCloseDataset != null) {
+											toCloseDataset.close();
+										}
 									}
 								}
 							}
