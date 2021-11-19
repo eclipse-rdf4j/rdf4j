@@ -204,8 +204,8 @@ public final class Varint {
 		byte dDesc = descriptor(d);
 		byte eDesc = descriptor(e);
 
-		short desc = (short) ((eDesc << 12) | (dDesc << 9) | (cDesc << 6) | (bDesc << 3) |
-				aDesc);
+		short desc = (short) ((aDesc << 12) | (bDesc << 9) | (cDesc << 6) | (dDesc << 3) |
+				eDesc);
 		bb.put((byte) (0xff & (desc >>> 8)));
 		bb.put((byte) (0xff & desc));
 
@@ -245,6 +245,26 @@ public final class Varint {
 	}
 
 	/**
+	 * Encodes a group of five values using group variable-length encoding with size prefix into the given buffer.
+	 *
+	 * @param bb     buffer for writing bytes
+	 * @param values array with 5 values to write
+	 */
+	public static void writeGroupUnsigned(ByteBuffer bb, long[] values) {
+		writeGroupUnsigned(bb, values[0], values[1], values[2], values[3], values[4]);
+	}
+
+	/**
+	 * Encodes a group of four five values using group variable-length encoding with size prefix into the given buffer.
+	 *
+	 * @param bb     buffer for writing bytes
+	 * @param values array with 4 values to write
+	 */
+	public static void writeGroupUnsigned4(ByteBuffer bb, long[] values) {
+		writeGroupUnsigned4(bb, values[0], values[1], values[2], values[3]);
+	}
+
+	/**
 	 * Encodes a group of four long values using group variable-length encoding with size prefix into the given buffer.
 	 *
 	 * @param bb buffer for writing bytes
@@ -259,7 +279,7 @@ public final class Varint {
 		byte cDesc = descriptor(c);
 		byte dDesc = descriptor(d);
 
-		short desc = (short) ((dDesc << 9) | (cDesc << 6) | (bDesc << 3) | aDesc);
+		short desc = (short) ((aDesc << 12) | (bDesc << 9) | (cDesc << 6) | (dDesc << 3));
 		bb.put((byte) (0xff & (desc >>> 8)));
 		bb.put((byte) (0xff & desc));
 
@@ -278,12 +298,12 @@ public final class Varint {
 	public static void readGroupUnsigned(ByteBuffer bb, long[] values) {
 		short desc = (short) (((bb.get() & 0xff) << 8) | (bb.get() & 0xff));
 
-		values[0] = readSignificantBits(bb, (desc & 7) + 1);
-		values[1] = readSignificantBits(bb, ((desc >> 3) & 7) + 1);
+		values[0] = readSignificantBits(bb, ((desc >> 12) & 7) + 1);
+		values[1] = readSignificantBits(bb, ((desc >> 9) & 7) + 1);
 		values[2] = readSignificantBits(bb, ((desc >> 6) & 7) + 1);
-		values[3] = readSignificantBits(bb, ((desc >> 9) & 7) + 1);
+		values[3] = readSignificantBits(bb, ((desc >> 3) & 7) + 1);
 		if (values.length > 4) {
-			values[4] = readSignificantBits(bb, ((desc >> 12) & 7) + 1);
+			values[4] = readSignificantBits(bb, (desc & 7) + 1);
 		}
 	}
 
@@ -298,9 +318,9 @@ public final class Varint {
 		short desc = (short) (((bb.get(0) & 0xff) << 8) | (bb.get(1) & 0xff));
 		int pos = 2;
 		for (int j = 0; j < index; j++) {
-			pos += ((desc >> (3 * j)) & 7) + 1;
+			pos += ((desc >> (12 - 3 * j)) & 7) + 1;
 		}
-		return readSignificantBits(bb, pos, ((desc >> index * 3) & 7) + 1);
+		return readSignificantBits(bb, pos, ((desc >> (12 - index * 3)) & 7) + 1);
 	}
 
 	/**
@@ -319,11 +339,11 @@ public final class Varint {
 			this.value = value;
 			this.valueDesc = (short) (((value.get(0) & 0xff) << 8) | (value.get(1) & 0xff));
 			this.lengths = new int[] {
-					(valueDesc & 7) + 1,
-					((valueDesc >> 3) & 7) + 1,
-					((valueDesc >> 6) & 7) + 1,
+					((valueDesc >> 12) & 7) + 1,
 					((valueDesc >> 9) & 7) + 1,
-					((valueDesc >> 12) & 7) + 1
+					((valueDesc >> 6) & 7) + 1,
+					((valueDesc >> 3) & 7) + 1,
+					(valueDesc & 7) + 1
 			};
 			this.lengthMask = lengthMask();
 		}
@@ -331,7 +351,7 @@ public final class Varint {
 		private byte[] lengthMask() {
 			int desc = 0;
 			for (int i = 0; i < shouldMatch.length; i++) {
-				desc |= shouldMatch[i] ? (7 << (i * 3)) : 0;
+				desc |= shouldMatch[i] ? (7 << (12 - i * 3)) : 0;
 			}
 			return new byte[] { (byte) (0xff & (desc >>> 8)), (byte) (0xff & desc) };
 		}
@@ -347,7 +367,7 @@ public final class Varint {
 			int otherPos = 2;
 			for (int i = 0; i < shouldMatch.length; i++) {
 				int length = lengths[i];
-				int otherLength = ((otherDesc >> (3 * i)) & 7) + 1;
+				int otherLength = ((otherDesc >> (12 - 3 * i)) & 7) + 1;
 				if (shouldMatch[i]) {
 					if (length != otherLength || compareRegion(value, thisPos, other, otherPos, length) != 0) {
 						return false;
@@ -376,8 +396,8 @@ public final class Varint {
 			short group2Desc = (short) (((group2.get(0) & 0xff) << 8) | (group2.get(1) & 0xff));
 			for (int i = 0; i < indexes.length; i++) {
 				int index = indexes[i];
-				int value1Length = ((group1Desc >> (3 * index)) & 7) + 1;
-				int value2Length = ((group2Desc >> (3 * index)) & 7) + 1;
+				int value1Length = ((group1Desc >> (12 - 3 * index)) & 7) + 1;
+				int value2Length = ((group2Desc >> (12 - 3 * index)) & 7) + 1;
 				if (value1Length < value2Length) {
 					return -1;
 				} else if (value1Length > value2Length) {
@@ -387,11 +407,11 @@ public final class Varint {
 					// faster as one combined loop
 					int group1Pos = 2;
 					for (int j = 0; j < index; j++) {
-						group1Pos += ((group1Desc >> (3 * j)) & 7) + 1;
+						group1Pos += ((group1Desc >> (12 - 3 * j)) & 7) + 1;
 					}
 					int group2Pos = 2;
 					for (int j = 0; j < index; j++) {
-						group2Pos += ((group2Desc >> (3 * j)) & 7) + 1;
+						group2Pos += ((group2Desc >> (12 - 3 * j)) & 7) + 1;
 					}
 
 					int diff = compareRegion(group1, group1Pos, group2, group2Pos, value1Length);

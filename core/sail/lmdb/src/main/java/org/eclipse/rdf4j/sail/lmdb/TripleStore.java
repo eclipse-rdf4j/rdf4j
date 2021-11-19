@@ -305,8 +305,8 @@ class TripleStore implements Closeable {
 					TripleIndex addedIndex = new TripleIndex(fieldSeq);
 					RecordIterator[] sourceIter = { null };
 					try {
-						sourceIter[0] = new LmdbRecordIterator(false, -1, -1, -1, -1,
-								null, sourceIndex.getDB(), new TxnRef(txn, Mode.NONE));
+						sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
+								null, new TxnRef(txn, Mode.NONE));
 
 						RecordIterator it = sourceIter[0];
 						Record record;
@@ -433,8 +433,7 @@ class TripleStore implements Closeable {
 			TripleIndex index, boolean rangeSearch) {
 		TxnRef txnRef = getReadTxn();
 		txnRef.begin();
-		return new LmdbRecordIterator(rangeSearch, subj, pred, obj, context, index.tripleComparator, index.getDB(),
-				txnRef);
+		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, index.tripleComparator, txnRef);
 	}
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
@@ -448,8 +447,8 @@ class TripleStore implements Closeable {
 			});
 		} else {
 			// TODO currently uses a scan to determine range size
-			byte[] minValue = getMinKey(subj, pred, obj, context);
-			byte[] maxValue = getMaxKey(subj, pred, obj, context);
+			byte[] minValue = index.getMinKey(subj, pred, obj, context);
+			byte[] maxValue = index.getMaxKey(subj, pred, obj, context);
 			ByteBuffer maxValueBuffer = ByteBuffer.wrap(maxValue);
 			return LmdbUtil.<Long>readTransaction(env, (stack, txn) -> {
 				long cursor = 0;
@@ -506,7 +505,7 @@ class TripleStore implements Closeable {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.callocStack(stack), dataVal = MDBVal.callocStack(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
-			toKey(keyBuf, subj, pred, obj, context);
+			mainIndex.toKey(keyBuf, subj, pred, obj, context);
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
@@ -622,36 +621,6 @@ class TripleStore implements Closeable {
 
 	public void rollback() throws IOException {
 		endTransaction(false);
-	}
-
-	static void toSearchKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
-	}
-
-	static void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		writeGroupUnsigned4(bb, subj, pred, obj, context);
-	}
-
-	static byte[] getMinKey(long subj, long pred, long obj, long context) {
-		subj = subj <= 0 ? 0 : subj;
-		pred = pred <= 0 ? 0 : pred;
-		obj = obj <= 0 ? 0 : obj;
-		context = context <= 0 ? 0 : context;
-		byte[] minValue = new byte[calcGroupLengthUnsigned4(subj, pred, obj, context)];
-		ByteBuffer bb = ByteBuffer.wrap(minValue);
-		writeGroupUnsigned4(bb, subj, pred, obj, context);
-		return minValue;
-	}
-
-	static byte[] getMaxKey(long subj, long pred, long obj, long context) {
-		subj = subj <= 0 ? Long.MAX_VALUE : subj;
-		pred = pred <= 0 ? Long.MAX_VALUE : pred;
-		obj = obj <= 0 ? Long.MAX_VALUE : obj;
-		context = context <= 0 ? Long.MAX_VALUE : context;
-		byte[] maxValue = new byte[calcGroupLengthUnsigned4(subj, pred, obj, context)];
-		ByteBuffer bb = ByteBuffer.wrap(maxValue);
-		writeGroupUnsigned4(bb, subj, pred, obj, context);
-		return maxValue;
 	}
 
 	private Properties loadProperties(File propFile) throws IOException {
@@ -787,7 +756,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private class TripleIndex {
+	class TripleIndex {
 
 		private final TripleComparator tripleComparator;
 		private final String fieldSeq;
@@ -861,6 +830,36 @@ class TripleStore implements Closeable {
 			}
 
 			return score;
+		}
+
+		byte[] getMinKey(long subj, long pred, long obj, long context) {
+			subj = subj <= 0 ? 0 : subj;
+			pred = pred <= 0 ? 0 : pred;
+			obj = obj <= 0 ? 0 : obj;
+			context = context <= 0 ? 0 : context;
+			byte[] minValue = new byte[calcGroupLengthUnsigned4(subj, pred, obj, context)];
+			ByteBuffer bb = ByteBuffer.wrap(minValue);
+			writeGroupUnsigned4(bb, subj, pred, obj, context);
+			return minValue;
+		}
+
+		byte[] getMaxKey(long subj, long pred, long obj, long context) {
+			subj = subj <= 0 ? Long.MAX_VALUE : subj;
+			pred = pred <= 0 ? Long.MAX_VALUE : pred;
+			obj = obj <= 0 ? Long.MAX_VALUE : obj;
+			context = context < 0 ? Long.MAX_VALUE : context;
+			byte[] maxValue = new byte[calcGroupLengthUnsigned4(subj, pred, obj, context)];
+			ByteBuffer bb = ByteBuffer.wrap(maxValue);
+			writeGroupUnsigned4(bb, subj, pred, obj, context);
+			return maxValue;
+		}
+
+		void toSearchKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
+		}
+
+		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+			writeGroupUnsigned4(bb, subj, pred, obj, context);
 		}
 
 		@Override

@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Comparator;
 
+import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -46,18 +47,18 @@ public class LmdbRecordIterator implements RecordIterator {
 
 	private boolean closed = false;
 
-	private MDBVal keyData = MDBVal.callocStack(stack), valueData = MDBVal.callocStack(stack);
+	private MDBVal keyData = MDBVal.calloc(stack), valueData = MDBVal.calloc(stack);
 
 	private int lastResult;
 
 	private boolean fetchNext = false;
 
-	public LmdbRecordIterator(boolean rangeSearch, long subj, long pred, long obj, long context,
-			Comparator<ByteBuffer> cmp, int dbi, TxnRef txnRef) {
+	public LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj, long context,
+			Comparator<ByteBuffer> cmp, TxnRef txnRef) {
 		byte[] minKey;
 		if (rangeSearch) {
-			minKey = TripleStore.getMinKey(subj, pred, obj, context);
-			this.maxKey = ByteBuffer.wrap(TripleStore.getMaxKey(subj, pred, obj, context));
+			minKey = index.getMinKey(subj, pred, obj, context);
+			this.maxKey = ByteBuffer.wrap(index.getMaxKey(subj, pred, obj, context));
 		} else {
 			minKey = null;
 			this.maxKey = null;
@@ -65,7 +66,7 @@ public class LmdbRecordIterator implements RecordIterator {
 		boolean matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
 		if (matchValues) {
 			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
-			TripleStore.toSearchKey(bb, subj, pred, obj, context);
+			index.toSearchKey(bb, subj, pred, obj, context);
 			bb.flip();
 			this.groupMatcher = new GroupMatcher(bb, subj > 0, pred > 0, obj > 0, context >= 0, false);
 		} else {
@@ -75,7 +76,7 @@ public class LmdbRecordIterator implements RecordIterator {
 		this.txnRef = txnRef;
 
 		PointerBuffer pp = stack.mallocPointer(1);
-		E(mdb_cursor_open(txnRef.get(), dbi, pp));
+		E(mdb_cursor_open(txnRef.get(), index.getDB(), pp));
 		cursor = pp.get(0);
 
 		if (minKey != null) {
@@ -103,9 +104,6 @@ public class LmdbRecordIterator implements RecordIterator {
 			} else {
 				// Matching value found
 				Record record = new Record(keyData.mv_data(), valueData.mv_data());
-				record.key.order(ByteOrder.BIG_ENDIAN);
-				record.val.order(ByteOrder.BIG_ENDIAN);
-
 				// fetch next value
 				fetchNext = true;
 				return record;
