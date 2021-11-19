@@ -8,6 +8,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.ByteBuffer;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * A record in the triple store.
@@ -17,9 +20,15 @@ import java.nio.ByteBuffer;
 public class Record {
 	final ByteBuffer key;
 	final ByteBuffer val;
+	private final BiConsumer<ByteBuffer, long[]> toQuad;
 
-	public Record(ByteBuffer key, ByteBuffer val) {
+	public Record(ByteBuffer key, ByteBuffer val, BiConsumer<ByteBuffer, long[]> toQuad) {
 		this.key = key;
 		this.val = val;
+		this.toQuad = toQuad;
+	}
+
+	void toQuad(long[] quad) {
+		toQuad.accept(key, quad);
 	}
 }

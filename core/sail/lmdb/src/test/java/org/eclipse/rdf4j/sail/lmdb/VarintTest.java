@@ -34,29 +34,17 @@ public class VarintTest {
 	}
 
 	@Test
-	public void testVarintGroup() {
+	public void testVarintList() {
 		ByteBuffer bb = ByteBuffer.allocate(2 + 4 * Long.BYTES);
 		for (int i = 0; i < values.length - 4; i++) {
 			long[] expected = new long[4];
 			System.arraycopy(values, 0, expected, 0, 4);
 			bb.clear();
-			Varint.writeGroupUnsigned4(bb, expected[0], expected[1], expected[2], expected[3]);
+			Varint.writeListUnsigned(bb, expected);
 			bb.flip();
 			long[] actual = new long[4];
-			Varint.readGroupUnsigned(bb, actual);
+			Varint.readListUnsigned(bb, actual);
 			assertArrayEquals("Encoded and decoded value should be equal", expected, actual);
 		}
-	}
-
-	@Test
-	public void testVarintGroupSmallValues() {
-		ByteBuffer bb = ByteBuffer.allocate(2 + 4 * Long.BYTES);
-		Varint.writeGroupUnsigned4(bb, 0, 1, 2, 3);
-		bb.flip();
-		assertEquals(bb.remaining(), 2 + 4);
-		bb.clear();
-		Varint.writeGroupUnsigned4(bb, 10, 4, 7, 9);
-		bb.flip();
-		assertEquals(bb.remaining(), 2 + 4);
 	}
 }

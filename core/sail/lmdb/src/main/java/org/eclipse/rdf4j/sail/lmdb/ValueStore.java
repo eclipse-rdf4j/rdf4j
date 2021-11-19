@@ -302,7 +302,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	protected byte[] getData(long id) throws IOException {
-		return readTransaction(env, (stack, txn) -> {
+		return readTransaction(env, writeTxn, (stack, txn) -> {
 			MDBVal keyData = MDBVal.callocStack(stack);
 			ByteBuffer idBuffer = idBuffer(stack);
 			id2data(idBuffer, id);
@@ -345,7 +345,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long findId(byte[] data) throws IOException {
-		Long id = LmdbUtil.<Long>readTransaction(env, (stack, txn) -> {
+		Long id = LmdbUtil.<Long>readTransaction(env, writeTxn, (stack, txn) -> {
 			if (data.length < mdb_env_get_maxkeysize(env)) {
 				MDBVal keyData = MDBVal.callocStack(stack);
 				keyData.mv_data(stack.bytes(data));
@@ -924,7 +924,7 @@ class ValueStore extends AbstractValueFactory {
 		String namespace = namespaceCache.get(cacheID);
 
 		if (namespace == null) {
-			namespace = readTransaction(env, (stack, txn) -> {
+			namespace = readTransaction(env, writeTxn, (stack, txn) -> {
 				MDBVal keyData = MDBVal.callocStack(stack);
 				ByteBuffer idBuffer = idBuffer(stack);
 				id2data(idBuffer, id);

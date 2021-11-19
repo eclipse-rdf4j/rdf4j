@@ -6,14 +6,13 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.lmdb.benchmark;
+package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -24,48 +23,28 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
-import org.junit.Rule;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-import org.openjdk.jmh.annotations.Benchmark;
-import org.openjdk.jmh.annotations.BenchmarkMode;
-import org.openjdk.jmh.annotations.Fork;
-import org.openjdk.jmh.annotations.Level;
-import org.openjdk.jmh.annotations.Measurement;
-import org.openjdk.jmh.annotations.Mode;
-import org.openjdk.jmh.annotations.OutputTimeUnit;
-import org.openjdk.jmh.annotations.Scope;
-import org.openjdk.jmh.annotations.Setup;
-import org.openjdk.jmh.annotations.State;
-import org.openjdk.jmh.annotations.TearDown;
-import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.runner.Runner;
-import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
+ * @author Ken Wenzel
  */
-@State(Scope.Benchmark)
-@Warmup(iterations = 2)
-@BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-Xmn1G", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
-@OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class QueryBenchmark {
+public class QueryBenchmarkTest {
 
-	private SailRepository repository;
+	private static SailRepository repository;
 
-	@Rule
-	public TemporaryFolder tempDir = new TemporaryFolder();
+	public static TemporaryFolder tempDir = new TemporaryFolder();
 
 	private static final String query1;
 	private static final String query2;
 	private static final String query3;
 	private static final String query4;
 	private static final String query5;
+
+	static List<Statement> statementList;
 
 	static {
 		try {
@@ -79,20 +58,8 @@ public class QueryBenchmark {
 		}
 	}
 
-	List<Statement> statementList;
-
-	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark") // adapt to control which benchmark tests to run
-				// .addProfiler("stack", "lines=20;period=1;top=20")
-				.forks(1)
-				.build();
-
-		new Runner(opt).run();
-	}
-
-	@Setup(Level.Trial)
-	public void beforeClass() throws IOException {
+	@BeforeClass
+	public static void beforeClass() throws IOException {
 		tempDir.create();
 		File file = tempDir.newFolder();
 
@@ -105,63 +72,61 @@ public class QueryBenchmark {
 		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-
 			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
 		}
-
-		System.gc();
-
 	}
 
 	private static InputStream getResourceAsStream(String name) {
-		return QueryBenchmark.class.getClassLoader().getResourceAsStream(name);
+		return QueryBenchmarkTest.class.getClassLoader().getResourceAsStream(name);
 	}
 
-	@TearDown(Level.Trial)
-	public void afterClass() throws IOException {
+	@AfterClass
+	public static void afterClass() throws IOException {
 		tempDir.delete();
 		repository.shutDown();
+		tempDir = null;
+		repository = null;
+		statementList = null;
 	}
 
-	@Benchmark
-	public long groupByQuery() {
-
+	@Test
+	public void groupByQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			long count = connection
 					.prepareTupleQuery(query1)
 					.evaluate()
 					.stream()
 					.count();
+			System.out.println(count);
 		}
 	}
 
-	@Benchmark
-	public long complexQuery() {
-
+	@Test
+	public void complexQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			long count = connection
 					.prepareTupleQuery(query4)
 					.evaluate()
 					.stream()
 					.count();
+			System.out.println("count: " + count);
 		}
 	}
 
-	@Benchmark
-	public long distinctPredicatesQuery() {
-
+	@Test
+	public void distinctPredicatesQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
+			long count = connection
 					.prepareTupleQuery(query5)
 					.evaluate()
 					.stream()
 					.count();
+			System.out.println(count);
 		}
 	}
 
-	@Benchmark
-	public boolean removeByQuery() {
-
+	@Test
+	public void removeByQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.remove((Resource) null, RDF.TYPE, null);
@@ -170,13 +135,12 @@ public class QueryBenchmark {
 			connection.add(statementList);
 			connection.commit();
 		}
-		return hasStatement();
+		hasStatement();
 
 	}
 
-	@Benchmark
-	public boolean removeByQueryReadCommitted() {
-
+	@Test
+	public void removeByQueryReadCommitted() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.remove((Resource) null, RDF.TYPE, null);
@@ -185,13 +149,12 @@ public class QueryBenchmark {
 			connection.add(statementList);
 			connection.commit();
 		}
-		return hasStatement();
+		hasStatement();
 
 	}
 
-	@Benchmark
-	public boolean simpleUpdateQueryIsolationReadCommitted() {
-
+	@Test
+	public void simpleUpdateQueryIsolationReadCommitted() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
 			connection.prepareUpdate(query2).execute();
@@ -203,13 +166,12 @@ public class QueryBenchmark {
 			connection.prepareUpdate(query3).execute();
 			connection.commit();
 		}
-		return hasStatement();
+		hasStatement();
 
 	}
 
-	@Benchmark
-	public boolean simpleUpdateQueryIsolationNone() {
-
+	@Test
+	public void simpleUpdateQueryIsolationNone() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.prepareUpdate(query2).execute();
@@ -221,7 +183,7 @@ public class QueryBenchmark {
 			connection.prepareUpdate(query3).execute();
 			connection.commit();
 		}
-		return hasStatement();
+		hasStatement();
 
 	}
 

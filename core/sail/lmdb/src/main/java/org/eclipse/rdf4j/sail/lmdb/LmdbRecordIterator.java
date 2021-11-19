@@ -11,19 +11,19 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.Comparator;
 
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
@@ -32,56 +32,63 @@ import org.lwjgl.util.lmdb.MDBVal;
  * @author Ken Wenzel
  */
 public class LmdbRecordIterator implements RecordIterator {
-
-	private final MemoryStack stack = MemoryStack.create().push();
+	private final TripleIndex index;
 
 	private final long cursor;
 
-	private final ByteBuffer maxKey;
+	private final MDBVal maxKey;
 
 	private final GroupMatcher groupMatcher;
-
-	private final Comparator<ByteBuffer> cmp;
 
 	private final TxnRef txnRef;
 
 	private boolean closed = false;
 
-	private MDBVal keyData = MDBVal.calloc(stack), valueData = MDBVal.calloc(stack);
+	private final MDBVal keyData = MDBVal.calloc();
+
+	private final MDBVal valueData = MDBVal.calloc();
+
+	private ByteBuffer minKeyBuf;
 
 	private int lastResult;
 
 	private boolean fetchNext = false;
 
 	public LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj, long context,
-			Comparator<ByteBuffer> cmp, TxnRef txnRef) {
-		byte[] minKey;
+			TxnRef txnRef) {
+		this.index = index;
 		if (rangeSearch) {
-			minKey = index.getMinKey(subj, pred, obj, context);
-			this.maxKey = ByteBuffer.wrap(index.getMaxKey(subj, pred, obj, context));
+			minKeyBuf = MemoryUtil.memAlloc(TripleStore.MAX_KEY_LENGTH);
+			index.getMinKey(minKeyBuf, subj, pred, obj, context);
+			minKeyBuf.flip();
+
+			this.maxKey = MDBVal.calloc();
+			ByteBuffer maxKeyBuf = MemoryUtil.memAlloc(TripleStore.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
+			this.maxKey.mv_data(maxKeyBuf);
 		} else {
-			minKey = null;
+			minKeyBuf = null;
 			this.maxKey = null;
 		}
+
 		boolean matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
 		if (matchValues) {
-			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);
-			index.toSearchKey(bb, subj, pred, obj, context);
-			bb.flip();
-			this.groupMatcher = new GroupMatcher(bb, subj > 0, pred > 0, obj > 0, context >= 0, false);
+			this.groupMatcher = index.createMatcher(subj, pred, obj, context);
 		} else {
 			this.groupMatcher = null;
 		}
-		this.cmp = cmp;
 		this.txnRef = txnRef;
 
-		PointerBuffer pp = stack.mallocPointer(1);
-		E(mdb_cursor_open(txnRef.get(), index.getDB(), pp));
-		cursor = pp.get(0);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txnRef.get(), index.getDB(), pp));
+			cursor = pp.get(0);
+		}
 
-		if (minKey != null) {
+		if (minKeyBuf != null) {
 			// set cursor to min key
-			keyData.mv_data(stack.bytes(minKey));
+			keyData.mv_data(minKeyBuf);
 			lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 		} else {
 			// set cursor to first item
@@ -96,14 +103,15 @@ public class LmdbRecordIterator implements RecordIterator {
 			fetchNext = false;
 		}
 		while (lastResult == 0) {
-			if (maxKey != null && cmp.compare(keyData.mv_data(), maxKey) > 0) {
+			// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
+			if (maxKey != null && mdb_cmp(txnRef.get(), index.getDB(), keyData, maxKey) > 0) {
 				lastResult = MDB_NOTFOUND;
 			} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
 				// value doesn't match search key/mask, fetch next value
 				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 			} else {
 				// Matching value found
-				Record record = new Record(keyData.mv_data(), valueData.mv_data());
+				Record record = new Record(keyData.mv_data(), valueData.mv_data(), index::keyToQuad);
 				// fetch next value
 				fetchNext = true;
 				return record;
@@ -118,10 +126,18 @@ public class LmdbRecordIterator implements RecordIterator {
 		if (!closed) {
 			try {
 				mdb_cursor_close(cursor);
+				keyData.close();
+				valueData.close();
+				if (minKeyBuf != null) {
+					MemoryUtil.memFree(minKeyBuf);
+				}
+				if (maxKey != null) {
+					MemoryUtil.memFree(maxKey.mv_data());
+					maxKey.close();
+				}
 				if (txnRef != null) {
 					txnRef.end();
 				}
-				stack.close();
 			} finally {
 				closed = true;
 			}

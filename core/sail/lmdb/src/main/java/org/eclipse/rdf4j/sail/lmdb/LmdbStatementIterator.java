@@ -59,8 +59,7 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 				return null;
 			}
 
-			ByteBuffer key = nextRecord.key;
-			Varint.readGroupUnsigned(key, quad);
+			nextRecord.toQuad(quad);
 
 			long subjID = quad[TripleStore.SUBJ_IDX];
 			Resource subj = (Resource) valueStore.getValue(subjID);

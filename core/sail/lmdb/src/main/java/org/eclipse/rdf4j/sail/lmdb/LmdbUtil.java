@@ -40,16 +40,27 @@ final class LmdbUtil {
 	}
 
 	static <T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
+		return readTransaction(env, 0L, transaction);
+	}
+
+	static <T> T readTransaction(long env, long writeTxn, Transaction<T> transaction) throws IOException {
 		T ret;
 		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
+			long txn;
+			if (writeTxn == 0) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+				txn = pp.get(0);
+			} else {
+				txn = writeTxn;
+			}
 
-			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-			long txn = pp.get(0);
 			try {
 				ret = transaction.exec(stack, txn);
 			} finally {
-				mdb_txn_abort(txn);
+				if (writeTxn == 0) {
+					mdb_txn_abort(txn);
+				}
 			}
 		}
 

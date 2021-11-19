@@ -1,7 +1,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.ByteBuffer;
-import java.util.Comparator;
 
 /**
  * Encodes and decodes unsigned values using variable-length encoding.
@@ -104,6 +103,52 @@ public final class Varint {
 	}
 
 	/**
+	 * Calculates required length in bytes to encode the given long value using variable-length encoding.
+	 *
+	 * @param value the value value
+	 * @return length in bytes
+	 */
+	public static int calcLengthUnsigned(long value) {
+		if (value <= 240) {
+			return 1;
+		} else if (value <= 2287) {
+			return 2;
+		} else if (value <= 67823) {
+			return 3;
+		} else {
+			int bytes = descriptor(value) + 1;
+			return 1 + bytes;
+		}
+	}
+
+	/**
+	 * Calculates required length in bytes to encode a list of four long values using variable-length encoding.
+	 *
+	 * @param a first value
+	 * @param b second value
+	 * @param c third value
+	 * @param d fourth value
+	 * @return length in bytes
+	 */
+	public static int calcListLengthUnsigned(long a, long b, long c, long d) {
+		return calcLengthUnsigned(a) + calcLengthUnsigned(b) + calcLengthUnsigned(c) + calcLengthUnsigned(d);
+	}
+
+	/**
+	 * The number of bytes required to represent the given number minus one. The descriptor can be encoded in 3 bits.
+	 *
+	 * <p>
+	 * 000 = 1, 001 = 2, ..., 111 = 8
+	 * </p>
+	 *
+	 * @param value the long value
+	 * @return the descriptor encoded as byte
+	 */
+	private static byte descriptor(long value) {
+		return value == 0 ? 0 : (byte) (7 - Long.numberOfLeadingZeros(value) / 8);
+	}
+
+	/**
 	 * Decodes a value using the <a href="https://sqlite.org/src4/doc/trunk/www/varint.wiki">variable-length encoding of
 	 * SQLite</a>.
 	 *
@@ -126,6 +171,104 @@ public final class Varint {
 		} else {
 			int bytes = a0 - 250 + 3;
 			return readSignificantBits(bb, bytes);
+		}
+	}
+
+	/**
+	 * Decodes a value using the <a href="https://sqlite.org/src4/doc/trunk/www/varint.wiki">variable-length encoding of
+	 * SQLite</a>.
+	 *
+	 * @param bb buffer for reading bytes
+	 * @return decoded value
+	 * @throws IllegalArgumentException if encoded varint is longer than 9 bytes
+	 * @see #writeUnsigned(ByteBuffer, long)
+	 */
+	public static long readUnsigned(ByteBuffer bb, int pos) throws IllegalArgumentException {
+		int a0 = bb.get(pos) & 0xFF;
+		if (a0 <= 240) {
+			return a0;
+		} else if (a0 <= 248) {
+			int a1 = bb.get(pos + 1) & 0xFF;
+			return 240 + 256 * (a0 - 241) + a1;
+		} else if (a0 == 249) {
+			int a1 = bb.get(pos + 1) & 0xFF;
+			int a2 = bb.get(pos + 1) & 0xFF;
+			return 2288 + 256 * a1 + a2;
+		} else {
+			int bytes = a0 - 250 + 3;
+			return readSignificantBits(bb, pos + 1, bytes);
+		}
+	}
+
+	/**
+	 * Determines length of an encoded varint value by inspecting the first byte.
+	 *
+	 * @param a0 first byte of varint value
+	 * @return decoded value
+	 */
+	public static int firstToLength(int a0) {
+		if (a0 <= 240) {
+			return 1;
+		} else if (a0 <= 248) {
+			return 2;
+		} else if (a0 == 249) {
+			return 3;
+		} else {
+			int bytes = a0 - 250 + 3;
+			return 1 + bytes;
+		}
+	}
+
+	/**
+	 * Decodes a single element of a list of variable-length long values from a buffer.
+	 *
+	 * @param bb    buffer for reading bytes
+	 * @param index the element's index
+	 * @return the decoded value
+	 */
+	public static long readListElementUnsigned(ByteBuffer bb, int index) {
+		int pos = 0;
+		for (int i = 0; i < index; i++) {
+			int a0 = bb.get(pos) & 0xFF;
+			pos += firstToLength(a0);
+		}
+		return readUnsigned(bb, pos);
+	}
+
+	/**
+	 * Encodes multiple values using variable-length encoding into the given buffer.
+	 *
+	 * @param bb     buffer for writing bytes
+	 * @param values array with values to write
+	 */
+	public static void writeListUnsigned(ByteBuffer bb, long[] values) {
+		for (int i = 0; i < values.length; i++) {
+			writeUnsigned(bb, values[i]);
+		}
+	}
+
+	/**
+	 * Decodes multiple values using variable-length encoding from the given buffer.
+	 *
+	 * @param bb     buffer for writing bytes
+	 * @param values array for the result values
+	 */
+	public static void readListUnsigned(ByteBuffer bb, long[] values) {
+		for (int i = 0; i < values.length; i++) {
+			values[i] = readUnsigned(bb);
+		}
+	}
+
+	/**
+	 * Decodes multiple values using variable-length encoding from the given buffer.
+	 *
+	 * @param bb       buffer for writing bytes
+	 * @param indexMap map for indexes of values within values array
+	 * @param values   array for the result values
+	 */
+	public static void readListUnsigned(ByteBuffer bb, int[] indexMap, long[] values) {
+		for (int i = 0; i < values.length; i++) {
+			values[indexMap[i]] = readUnsigned(bb);
 		}
 	}
 
@@ -173,201 +316,46 @@ public final class Varint {
 		return value;
 	}
 
-	/**
-	 * The number of bytes required to represent the given number minus one. The descriptor is encoded in 3 bits.
-	 *
-	 * <p>
-	 * 000 = 1, 001 = 2, ..., 111 = 8
-	 * </p>
-	 *
-	 * @param value the long value
-	 * @return the descriptor encoded as byte
-	 */
-	private static byte descriptor(long value) {
-		return value == 0 ? 0 : (byte) (7 - Long.numberOfLeadingZeros(value) / 8);
-	}
-
-	/**
-	 * Encodes a group of five long values using group variable-length encoding with size prefix into the given buffer.
-	 *
-	 * @param bb buffer for writing bytes
-	 * @param a  first value
-	 * @param b  second value
-	 * @param c  third value
-	 * @param d  fourth value
-	 * @param e  fifth value
-	 */
-	public static void writeGroupUnsigned(ByteBuffer bb, long a, long b, long c, long d, long e) {
-		byte aDesc = descriptor(a);
-		byte bDesc = descriptor(b);
-		byte cDesc = descriptor(c);
-		byte dDesc = descriptor(d);
-		byte eDesc = descriptor(e);
-
-		short desc = (short) ((aDesc << 12) | (bDesc << 9) | (cDesc << 6) | (dDesc << 3) |
-				eDesc);
-		bb.put((byte) (0xff & (desc >>> 8)));
-		bb.put((byte) (0xff & desc));
-
-		writeSignificantBits(bb, a, aDesc + 1);
-		writeSignificantBits(bb, b, bDesc + 1);
-		writeSignificantBits(bb, c, cDesc + 1);
-		writeSignificantBits(bb, d, dDesc + 1);
-		writeSignificantBits(bb, e, eDesc + 1);
-	}
-
-	/**
-	 * Calculates required length in bytes to encode a group of five long values using group variable-length encoding
-	 * with size prefix.
-	 *
-	 * @param a first value
-	 * @param b second value
-	 * @param c third value
-	 * @param d fourth value
-	 * @return length in bytes
-	 */
-	public static int calcGroupLengthUnsigned(long a, long b, long c, long d, long e) {
-		return 2 + 5 + descriptor(a) + descriptor(b) + descriptor(c) + descriptor(d) + descriptor(e);
-	}
-
-	/**
-	 * Calculates required length in bytes to encode a group of four long values using group variable-length encoding
-	 * with size prefix.
-	 *
-	 * @param a first value
-	 * @param b second value
-	 * @param c third value
-	 * @param d fourth value
-	 * @return length in bytes
-	 */
-	public static int calcGroupLengthUnsigned4(long a, long b, long c, long d) {
-		return 2 + 4 + descriptor(a) + descriptor(b) + descriptor(c) + descriptor(d);
-	}
-
-	/**
-	 * Encodes a group of five values using group variable-length encoding with size prefix into the given buffer.
-	 *
-	 * @param bb     buffer for writing bytes
-	 * @param values array with 5 values to write
-	 */
-	public static void writeGroupUnsigned(ByteBuffer bb, long[] values) {
-		writeGroupUnsigned(bb, values[0], values[1], values[2], values[3], values[4]);
-	}
-
-	/**
-	 * Encodes a group of four five values using group variable-length encoding with size prefix into the given buffer.
-	 *
-	 * @param bb     buffer for writing bytes
-	 * @param values array with 4 values to write
-	 */
-	public static void writeGroupUnsigned4(ByteBuffer bb, long[] values) {
-		writeGroupUnsigned4(bb, values[0], values[1], values[2], values[3]);
-	}
-
-	/**
-	 * Encodes a group of four long values using group variable-length encoding with size prefix into the given buffer.
-	 *
-	 * @param bb buffer for writing bytes
-	 * @param a  first value
-	 * @param b  second value
-	 * @param c  third value
-	 * @param d  fourth value
-	 */
-	public static void writeGroupUnsigned4(ByteBuffer bb, long a, long b, long c, long d) {
-		byte aDesc = descriptor(a);
-		byte bDesc = descriptor(b);
-		byte cDesc = descriptor(c);
-		byte dDesc = descriptor(d);
-
-		short desc = (short) ((aDesc << 12) | (bDesc << 9) | (cDesc << 6) | (dDesc << 3));
-		bb.put((byte) (0xff & (desc >>> 8)));
-		bb.put((byte) (0xff & desc));
-
-		writeSignificantBits(bb, a, aDesc + 1);
-		writeSignificantBits(bb, b, bDesc + 1);
-		writeSignificantBits(bb, c, cDesc + 1);
-		writeSignificantBits(bb, d, dDesc + 1);
-	}
-
-	/**
-	 * Decodes a group of four or five variable-length long values with size prefix from a buffer.
-	 *
-	 * @param bb     buffer for reading bytes
-	 * @param values array for decoded values
-	 */
-	public static void readGroupUnsigned(ByteBuffer bb, long[] values) {
-		short desc = (short) (((bb.get() & 0xff) << 8) | (bb.get() & 0xff));
-
-		values[0] = readSignificantBits(bb, ((desc >> 12) & 7) + 1);
-		values[1] = readSignificantBits(bb, ((desc >> 9) & 7) + 1);
-		values[2] = readSignificantBits(bb, ((desc >> 6) & 7) + 1);
-		values[3] = readSignificantBits(bb, ((desc >> 3) & 7) + 1);
-		if (values.length > 4) {
-			values[4] = readSignificantBits(bb, (desc & 7) + 1);
+	private static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
+		int result = 0;
+		for (int i = 0; result == 0 && i < length; i++) {
+			result = (bb1.get(startIdx1 + i) & 0xff) - (bb2.get(startIdx2 + i) & 0xff);
 		}
+		return result;
 	}
 
 	/**
-	 * Decodes a single element of group of variable-length long values with size prefix from a buffer.
-	 *
-	 * @param bb    buffer for reading bytes
-	 * @param index the element's index
-	 * @return the decoded value
-	 */
-	public static long readGroupElementUnsigned(ByteBuffer bb, int index) {
-		short desc = (short) (((bb.get(0) & 0xff) << 8) | (bb.get(1) & 0xff));
-		int pos = 2;
-		for (int j = 0; j < index; j++) {
-			pos += ((desc >> (12 - 3 * j)) & 7) + 1;
-		}
-		return readSignificantBits(bb, pos, ((desc >> (12 - index * 3)) & 7) + 1);
-	}
-
-	/**
-	 * A matcher for partial equality tests of group varints.
+	 * A matcher for partial equality tests of varint lists.
 	 */
 	public static class GroupMatcher {
 
 		final ByteBuffer value;
 		final boolean[] shouldMatch;
 		final int[] lengths;
-		final byte[] lengthMask;
-		final short valueDesc;
 
-		public GroupMatcher(ByteBuffer value, boolean a, boolean b, boolean c, boolean d, boolean e) {
-			this.shouldMatch = new boolean[] { a, b, c, d, e };
+		public GroupMatcher(ByteBuffer value, boolean[] shouldMatch) {
 			this.value = value;
-			this.valueDesc = (short) (((value.get(0) & 0xff) << 8) | (value.get(1) & 0xff));
-			this.lengths = new int[] {
-					((valueDesc >> 12) & 7) + 1,
-					((valueDesc >> 9) & 7) + 1,
-					((valueDesc >> 6) & 7) + 1,
-					((valueDesc >> 3) & 7) + 1,
-					(valueDesc & 7) + 1
-			};
-			this.lengthMask = lengthMask();
+			this.shouldMatch = shouldMatch;
+			this.lengths = new int[shouldMatch.length];
+			int pos = 0;
+			for (int i = 0; i < lengths.length; i++) {
+				int a0 = value.get(pos) & 0xFF;
+				int length = firstToLength(a0);
+				lengths[i] = length;
+				pos += length;
+			}
 		}
 
-		private byte[] lengthMask() {
-			int desc = 0;
-			for (int i = 0; i < shouldMatch.length; i++) {
-				desc |= shouldMatch[i] ? (7 << (12 - i * 3)) : 0;
-			}
-			return new byte[] { (byte) (0xff & (desc >>> 8)), (byte) (0xff & desc) };
+		public GroupMatcher(ByteBuffer value, boolean a, boolean b, boolean c, boolean d, boolean e) {
+			this(value, new boolean[] { a, b, c, d, e });
 		}
 
 		public boolean matches(ByteBuffer other) {
-			for (int i = 0; i < 2; i++) {
-				if (((value.get(i) ^ other.get(i)) & lengthMask[i]) != 0) {
-					return false;
-				}
-			}
-			short otherDesc = (short) (((other.get(0) & 0xff) << 8) | (other.get(1) & 0xff));
-			int thisPos = 2;
-			int otherPos = 2;
+			int thisPos = 0;
+			int otherPos = 0;
 			for (int i = 0; i < shouldMatch.length; i++) {
 				int length = lengths[i];
-				int otherLength = ((otherDesc >> (12 - 3 * i)) & 7) + 1;
+				int otherLength = firstToLength(other.get(otherPos) & 0xFF);
 				if (shouldMatch[i]) {
 					if (length != otherLength || compareRegion(value, thisPos, other, otherPos, length) != 0) {
 						return false;
@@ -378,57 +366,5 @@ public final class Varint {
 			}
 			return true;
 		}
-	}
-
-	/**
-	 * A comparator for element-wise comparison of group varints.
-	 */
-	public static class GroupComparator implements Comparator<ByteBuffer> {
-
-		private final int[] indexes;
-
-		public GroupComparator(int[] indexes) {
-			this.indexes = indexes;
-		}
-
-		public int compare(ByteBuffer group1, ByteBuffer group2) {
-			short group1Desc = (short) (((group1.get(0) & 0xff) << 8) | (group1.get(1) & 0xff));
-			short group2Desc = (short) (((group2.get(0) & 0xff) << 8) | (group2.get(1) & 0xff));
-			for (int i = 0; i < indexes.length; i++) {
-				int index = indexes[i];
-				int value1Length = ((group1Desc >> (12 - 3 * index)) & 7) + 1;
-				int value2Length = ((group2Desc >> (12 - 3 * index)) & 7) + 1;
-				if (value1Length < value2Length) {
-					return -1;
-				} else if (value1Length > value2Length) {
-					return 1;
-				} else {
-					// two independent for loops seem to be
-					// faster as one combined loop
-					int group1Pos = 2;
-					for (int j = 0; j < index; j++) {
-						group1Pos += ((group1Desc >> (12 - 3 * j)) & 7) + 1;
-					}
-					int group2Pos = 2;
-					for (int j = 0; j < index; j++) {
-						group2Pos += ((group2Desc >> (12 - 3 * j)) & 7) + 1;
-					}
-
-					int diff = compareRegion(group1, group1Pos, group2, group2Pos, value1Length);
-					if (diff != 0) {
-						return diff;
-					}
-				}
-			}
-			return 0;
-		}
-	}
-
-	private static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
-		int result = 0;
-		for (int i = 0; result == 0 && i < length; i++) {
-			result = (bb1.get(startIdx1 + i) & 0xff) - (bb2.get(startIdx2 + i) & 0xff);
-		}
-		return result;
 	}
 }

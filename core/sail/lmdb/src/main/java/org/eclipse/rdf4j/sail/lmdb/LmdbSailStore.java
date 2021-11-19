@@ -328,7 +328,7 @@ class LmdbSailStore implements SailStore {
 							if (storeTxnStarted.get()) {
 								tripleStore.commit();
 								valueStore.commit();
-								// do not set flag to false until _after_ commit is succesfully completed.
+								// do not set flag to false until _after_ commit is successfully completed.
 								storeTxnStarted.set(false);
 							}
 						}

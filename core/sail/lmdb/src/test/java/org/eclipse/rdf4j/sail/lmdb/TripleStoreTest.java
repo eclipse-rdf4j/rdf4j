@@ -32,7 +32,7 @@ import org.junit.rules.TemporaryFolder;
 /**
  * Low-level tests for {@link TripleStore}.
  */
-public class TipleStoreTest {
+public class TripleStoreTest {
 
 	@Rule
 	public TemporaryFolder tempFolder = new TemporaryFolder();
