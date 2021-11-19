@@ -26,11 +26,11 @@ public class LmdbStoreDirLockTest {
 	public void testLocking() throws Exception {
 		File dataDir = tempDir.newFolder();
 		LmdbStore sail = new LmdbStore(dataDir, "spoc,posc");
-		sail.initialize();
+		sail.init();
 
 		try {
 			LmdbStore sail2 = new LmdbStore(dataDir, "spoc,posc");
-			sail2.initialize();
+			sail2.init();
 			try {
 				fail("initialized a second lmdb store with same dataDir");
 			} finally {

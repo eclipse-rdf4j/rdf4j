@@ -27,7 +27,7 @@ public class LmdbStoreTmpDatadirTest {
 		File dataDir = tempFolder.newFolder();
 		LmdbStore store = new LmdbStore(dataDir);
 
-		store.initialize();
+		store.init();
 		assertTrue("Data dir not set correctly", dataDir.equals(store.getDataDir()));
 
 		store.shutDown();
@@ -37,7 +37,7 @@ public class LmdbStoreTmpDatadirTest {
 	@Test
 	public void testTmpDatadir() throws IOException {
 		LmdbStore store = new LmdbStore();
-		store.initialize();
+		store.init();
 		File dataDir = store.getDataDir();
 		assertTrue("Temp data dir not created", dataDir != null && dataDir.exists());
 
@@ -48,11 +48,11 @@ public class LmdbStoreTmpDatadirTest {
 	@Test
 	public void testTmpDatadirReinit() throws IOException {
 		LmdbStore store = new LmdbStore();
-		store.initialize();
+		store.init();
 		File dataDir1 = store.getDataDir();
 		store.shutDown();
 
-		store.initialize();
+		store.init();
 		File dataDir2 = store.getDataDir();
 		store.shutDown();
 		assertFalse("Temp data dirs are the same", dataDir1.equals(dataDir2));
@@ -63,11 +63,11 @@ public class LmdbStoreTmpDatadirTest {
 		File dataDir = tempFolder.newFolder();
 		LmdbStore store = new LmdbStore(dataDir);
 
-		store.initialize();
+		store.init();
 		store.shutDown();
 
 		store.setDataDir(null);
-		store.initialize();
+		store.init();
 		File tmpDataDir = store.getDataDir();
 		store.shutDown();
 

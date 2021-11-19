@@ -36,7 +36,7 @@ public class TestLmdbStoreUpgrade {
 		File dataDir = tmpDir.getRoot();
 		LmdbStore store = new LmdbStore(dataDir);
 		try {
-			store.initialize();
+			store.init();
 			try (NotifyingSailConnection con = store.getConnection()) {
 				ValueFactory vf = store.getValueFactory();
 				con.begin();
@@ -54,7 +54,7 @@ public class TestLmdbStoreUpgrade {
 	public void assertValue(File dataDir) throws SailException {
 		LmdbStore store = new LmdbStore(dataDir);
 		try {
-			store.initialize();
+			store.init();
 			try (NotifyingSailConnection con = store.getConnection()) {
 				ValueFactory vf = store.getValueFactory();
 				CloseableIteration<? extends Statement, SailException> iter;
