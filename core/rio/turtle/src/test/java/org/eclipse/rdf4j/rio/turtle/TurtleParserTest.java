@@ -360,6 +360,16 @@ public class TurtleParserTest {
 	}
 
 	@Test
+	public void testLineNumberReportingInLongStringLiterals() throws IOException {
+		assertEquals(0, locationListener.getLineNo());
+		assertEquals(0, locationListener.getColumnNo());
+		Reader in = new StringReader("<urn:a> <urn:b> \"\"\"is\nallowed\nin\na very long string\"\"\" .");
+		parser.parse(in, baseURI);
+		assertEquals(4, locationListener.getLineNo());
+		assertEquals(-1, locationListener.getColumnNo());
+	}
+
+	@Test
 	public void testParseBooleanLiteralComma() throws IOException {
 		String data = "<urn:a> <urn:b> true, false .";
 		Reader r = new StringReader(data);
