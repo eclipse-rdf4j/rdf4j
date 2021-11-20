@@ -109,13 +109,8 @@ public abstract class RdfLiteral<T> implements RdfValue {
 		@Override
 		public String getQueryString() {
 			StringBuilder literal = new StringBuilder();
-
-			if (value.contains("'") || value.contains("\"")) {
-				literal.append(SparqlBuilderUtils.getLongQuotedString(value));
-			} else {
-				literal.append(SparqlBuilderUtils.getQuotedString(value));
-			}
-
+			String escaped = SparqlBuilderUtils.getEscapedString(value);
+			literal.append(SparqlBuilderUtils.getQuotedString(escaped));
 			SparqlBuilderUtils.appendQueryElementIfPresent(dataType, literal, DATATYPE_SPECIFIER, null);
 			SparqlBuilderUtils.appendStringIfPresent(languageTag, literal, LANG_TAG_SPECIFIER, null);
 
