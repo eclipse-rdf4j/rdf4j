@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -56,8 +57,9 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Filter spo = new Filter(new StatementPattern(s, p, o), oSmallerThanTwo);
 		Compare o2SmallerThanFour = new Compare(o2, four, CompareOp.LT);
 		Filter spo2 = new Filter(new StatementPattern(s, p, o2), o2SmallerThanFour);
-		TupleExpr expected = new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
-				new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2")));
+		TupleExpr expected = new QueryRoot(
+				new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
+						new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2"))));
 		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2  . FILTER(?o > '2'^^xsd:int)  . FILTER(?o2 < '4'^^xsd:int) }";
 
 		testOptimizer(expected, query);
@@ -75,8 +77,9 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Filter spo = new Filter(new StatementPattern(s, p, o), oSmallerThanTwo);
 		Compare o2SmallerThanFour = new Compare(o2, four, CompareOp.LT);
 		Filter spo2 = new Filter(new StatementPattern(s, p, o2), o2SmallerThanFour);
-		TupleExpr expected = new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
-				new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2")));
+		TupleExpr expected = new QueryRoot(
+				new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
+						new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2"))));
 
 		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2  . FILTER(?o > '2'^^xsd:int && ?o2 < '4'^^xsd:int) }";
 
