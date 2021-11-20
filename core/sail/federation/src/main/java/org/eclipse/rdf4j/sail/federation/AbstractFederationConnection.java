@@ -366,8 +366,13 @@ abstract class AbstractFederationConnection extends AbstractSailConnection imple
 		LOGGER.trace("Incoming query model:\n{}", parsed);
 
 		// Clone the tuple expression to allow for more aggressive optimisations
-		TupleExpr query = new QueryRoot(parsed.clone());
-
+		TupleExpr clone = parsed.clone();
+		TupleExpr query;
+		if (clone instanceof QueryRoot) {
+			query = clone;
+		} else {
+			query = new QueryRoot(clone);
+		}
 		new BindingAssigner().optimize(query, dataset, bindings);
 		new ConstantOptimizer(strategy).optimize(query, dataset, bindings);
 		new CompareOptimizer().optimize(query, dataset, bindings);

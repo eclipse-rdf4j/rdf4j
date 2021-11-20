@@ -1,16 +1,18 @@
-/*
- * ******************************************************************************
- *  * Copyright (c) 2021 Eclipse RDF4J contributors.
- *  * All rights reserved. This program and the accompanying materials
- *  * are made available under the terms of the Eclipse Distribution License v1.0
- *  * which accompanies this distribution, and is available at
- *  * http://www.eclipse.org/org/documents/edl-v10.php.
- *  ******************************************************************************
- */
+/*******************************************************************************
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.spring.util;
 
-import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.*;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toBoolean;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toBooleanMaybe;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toBooleanOptional;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toIRI;
+import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toIRIMaybe;
 
 import java.util.Map;
 import java.util.Objects;

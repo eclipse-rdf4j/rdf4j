@@ -21,7 +21,7 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	 * Variables *
 	 *-----------*/
 
-	private volatile Iterator<? extends E> iter;
+	private Iterator<? extends E> iter;
 
 	/*--------------*
 	 * Constructors *

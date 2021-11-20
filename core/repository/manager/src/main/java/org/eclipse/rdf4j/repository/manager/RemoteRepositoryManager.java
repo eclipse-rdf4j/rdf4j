@@ -167,7 +167,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		HTTPRepository systemRepository = new HTTPRepository(serverURL, SystemRepository.ID);
 		systemRepository.setHttpClientSessionManager(getSharedHttpClientSessionManager());
 		systemRepository.setUsernameAndPassword(username, password);
-		systemRepository.initialize();
+		systemRepository.init();
 		return systemRepository;
 	}
 

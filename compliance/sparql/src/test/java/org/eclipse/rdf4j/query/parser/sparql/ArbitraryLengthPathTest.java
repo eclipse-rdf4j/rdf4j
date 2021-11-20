@@ -35,7 +35,6 @@ public class ArbitraryLengthPathTest extends TestCase {
 	@Override
 	public void setUp() throws Exception {
 		repo = new SailRepository(new MemoryStore());
-		repo.initialize();
 		con = repo.getConnection();
 	}
 

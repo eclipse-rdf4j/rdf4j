@@ -131,6 +131,7 @@ public class QueryResponder {
 					throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException {
 				GraphQuery gq = (GraphQuery) q;
 				RDFFormat format = (RDFFormat) bestFormat(acceptHeader);
+				response.setContentType(format.getDefaultMIMEType());
 				gq.evaluate(Rio.createWriter(format, response.getOutputStream()));
 			}
 		},
@@ -142,6 +143,7 @@ public class QueryResponder {
 					throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException {
 				TupleQuery tq = (TupleQuery) q;
 				QueryResultFormat format = (QueryResultFormat) bestFormat(acceptHeader);
+				response.setContentType(format.getDefaultMIMEType());
 				tq.evaluate(QueryResultIO.createTupleWriter(format, response.getOutputStream()));
 			}
 		},
@@ -154,6 +156,7 @@ public class QueryResponder {
 					throws QueryEvaluationException, RDFHandlerException, UnsupportedRDFormatException, IOException {
 				BooleanQuery bq = (BooleanQuery) q;
 				QueryResultFormat format = (QueryResultFormat) bestFormat(acceptHeader);
+				response.setContentType(format.getDefaultMIMEType());
 				final Optional<BooleanQueryResultWriterFactory> optional = BooleanQueryResultWriterRegistry
 						.getInstance()
 						.get(format);

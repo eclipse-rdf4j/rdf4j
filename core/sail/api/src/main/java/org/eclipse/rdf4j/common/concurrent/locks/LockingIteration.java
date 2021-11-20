@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
-import java.util.NoSuchElementException;
-
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
@@ -19,18 +17,10 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
  */
 public class LockingIteration<E, X extends Exception> extends IterationWrapper<E, X> {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	/**
 	 * The lock to release when the Iteration is closed.
 	 */
 	private final Lock lock;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	/**
 	 * Creates a new LockingIteration.
@@ -45,50 +35,12 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 		this.lock = lock;
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
-	@Override
-	public synchronized boolean hasNext() throws X {
-		if (isClosed()) {
-			return false;
-		}
-
-		if (super.hasNext()) {
-			return true;
-		}
-
-		close();
-		return false;
-	}
-
-	@Override
-	public synchronized E next() throws X {
-		if (isClosed()) {
-			throw new NoSuchElementException("Iteration has been closed");
-		}
-
-		return super.next();
-	}
-
-	@Override
-	public synchronized void remove() throws X {
-		if (isClosed()) {
-			throw new IllegalStateException("Iteration has been closed");
-		}
-
-		super.remove();
-	}
-
 	@Override
 	protected void handleClose() throws X {
 		try {
 			super.handleClose();
 		} finally {
-			synchronized (this) {
-				lock.release();
-			}
+			lock.release();
 		}
 	}
 }

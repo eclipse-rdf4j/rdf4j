@@ -13,6 +13,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -118,14 +119,8 @@ public class XMLWriter {
 	 * @param outputStream The OutputStream to write the XML to.
 	 */
 	public XMLWriter(OutputStream outputStream) {
-		try {
-			_charEncoding = "UTF-8";
-			_writer = new OutputStreamWriter(outputStream, _charEncoding);
-		} catch (UnsupportedEncodingException e) {
-			// UTF-8 must be supported by all compliant JVM's,
-			// this exception should never be thrown.
-			throw new RuntimeException("UTF-8 character encoding not supported on this platform");
-		}
+		_charEncoding = StandardCharsets.UTF_8.name();
+		_writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8);
 	}
 
 	/**

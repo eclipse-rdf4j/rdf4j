@@ -41,15 +41,6 @@ public interface Repository {
 	File getDataDir();
 
 	/**
-	 * Initializes this repository.
-	 *
-	 * @throws RepositoryException If the initialization failed.
-	 * @deprecated Use {@link #init()} instead.
-	 */
-	@Deprecated
-	void initialize() throws RepositoryException;
-
-	/**
 	 * Initializes this repository. A repository needs to be initialized before it can be used, however explicitly
 	 * calling this method is not necessary: the repository will automatically initialize itself if an operation is
 	 * executed on it that requires it to be initialized.
@@ -57,9 +48,7 @@ public interface Repository {
 	 * @throws RepositoryException If the initialization failed.
 	 * @since 2.5
 	 */
-	default void init() throws RepositoryException {
-		initialize();
-	}
+	void init() throws RepositoryException;
 
 	/**
 	 * Indicates if the Repository has been initialized. Note that the initialization status may change if the

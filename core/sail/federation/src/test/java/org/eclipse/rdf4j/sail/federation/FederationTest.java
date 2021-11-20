@@ -35,7 +35,7 @@ public class FederationTest extends RDFStoreTest {
 		sail.addMember(new SailRepository(new MemoryStore()));
 		sail.addMember(new SailRepository(new MemoryStore()));
 		sail.addMember(new SailRepository(new MemoryStore()));
-		sail.initialize();
+		sail.init();
 		return sail;
 	}
 }

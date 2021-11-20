@@ -501,7 +501,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				new HttpPut(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));
 
 		try {
-			method.setEntity(new StringEntity(name, ContentType.create("text/plain", "UTF-8")));
+			method.setEntity(new StringEntity(name, ContentType.create("text/plain", StandardCharsets.UTF_8)));
 			executeNoContent(method);
 		} catch (RepositoryException e) {
 			throw e;

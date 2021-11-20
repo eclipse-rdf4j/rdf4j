@@ -22,7 +22,7 @@ public interface RepositoryInterceptor extends EventListener {
 
 	boolean getConnection(Repository repo, RepositoryConnection conn);
 
-	boolean initialize(Repository repo);
+	boolean init(Repository repo);
 
 	boolean setDataDir(Repository repo, File dataDir);
 

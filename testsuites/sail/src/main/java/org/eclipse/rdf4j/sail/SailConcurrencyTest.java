@@ -64,7 +64,7 @@ public abstract class SailConcurrencyTest {
 	@Before
 	public void setUp() throws Exception {
 		store = createSail();
-		store.initialize();
+		store.init();
 		vf = store.getValueFactory();
 	}
 

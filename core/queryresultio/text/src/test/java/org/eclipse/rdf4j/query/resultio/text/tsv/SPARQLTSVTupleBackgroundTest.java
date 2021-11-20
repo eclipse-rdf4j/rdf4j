@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.lang.ref.WeakReference;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
@@ -104,7 +105,7 @@ public class SPARQLTSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 		writer.handleLinks(Arrays.<String>asList());
 		QueryResults.report(results, writer);
 
-		return out.toString("UTF-8");
+		return out.toString(StandardCharsets.UTF_8);
 	}
 
 	private void assertRegex(String pattern, String actual) {

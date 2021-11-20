@@ -38,7 +38,7 @@ public abstract class SailInterruptTest {
 	@Before
 	public void setUp() throws Exception {
 		store = createSail();
-		store.initialize();
+		store.init();
 		vf = store.getValueFactory();
 	}
 

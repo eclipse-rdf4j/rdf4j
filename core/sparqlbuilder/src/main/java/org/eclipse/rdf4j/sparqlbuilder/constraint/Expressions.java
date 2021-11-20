@@ -17,12 +17,26 @@ import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.*;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.AlternativePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePredicatePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.NegatedPropertySet;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.OneOrMorePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePathOrInversePredicatePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.SequencePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrMorePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrOnePath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Assignable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
-import org.eclipse.rdf4j.sparqlbuilder.rdf.*;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfValue;
 
 /**
  * A class with static methods to create SPARQL expressions. Obviously there's some more flushing out TODO still
@@ -208,6 +222,10 @@ public class Expressions {
 	}
 
 	public static Expression<?> custom(Iri functionIri, Operand... operands) {
+		return new CustomFunction(functionIri).addOperand(operands);
+	}
+
+	public static Expression<?> custom(IRI functionIri, Operand... operands) {
 		return new CustomFunction(functionIri).addOperand(operands);
 	}
 
@@ -617,7 +635,15 @@ public class Expressions {
 		return new PredicatePath(predicate);
 	}
 
+	public static PredicatePath p(IRI predicate) {
+		return new PredicatePath(predicate);
+	}
+
 	public static InversePredicatePath pInv(Iri predicate) {
+		return new InversePredicatePath(predicate);
+	}
+
+	public static InversePredicatePath pInv(IRI predicate) {
 		return new InversePredicatePath(predicate);
 	}
 
@@ -650,6 +676,10 @@ public class Expressions {
 	}
 
 	public static PropertyPathBuilder path(Iri property) {
+		return new EmptyPropertyPathBuilder().pred(property);
+	}
+
+	public static PropertyPathBuilder path(IRI property) {
 		return new EmptyPropertyPathBuilder().pred(property);
 	}
 

@@ -16,12 +16,12 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -71,20 +71,14 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private final BindingSet parentBindings;
 
 	private final Group group;
-
-	private volatile boolean initialized = false;
-
-	private final Object lock = new Object();
-
 	private final File tempFile;
-
 	private final DB db;
-
 	/**
 	 * Number of items cached before internal collections are synced to disk. If set to 0, no disk-syncing is done and
 	 * all internal caching is kept in memory.
 	 */
 	private final long iterationCacheSyncThreshold;
+	private boolean initialized = false;
 
 	/*--------------*
 	 * Constructors *
@@ -122,12 +116,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
 		if (!initialized) {
-			synchronized (lock) {
-				if (!initialized) {
-					super.setIterator(createIterator());
-					initialized = true;
-				}
-			}
+			super.setIterator(createIterator());
+			initialized = true;
 		}
 		return super.hasNext();
 	}
@@ -135,12 +125,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	@Override
 	public BindingSet next() throws QueryEvaluationException {
 		if (!initialized) {
-			synchronized (lock) {
-				if (!initialized) {
-					super.setIterator(createIterator());
-					initialized = true;
-				}
-			}
+			super.setIterator(createIterator());
+			initialized = true;
 		}
 		return super.next();
 	}
@@ -274,7 +260,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 					Value v1 = bindingSet.getValue(name);
 					Value v2 = otherSolution.getValue(name);
 
-					if (!ObjectUtil.nullEquals(v1, v2)) {
+					if (!Objects.equals(v1, v2)) {
 						return false;
 					}
 				}
@@ -290,28 +276,24 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private final BindingSet prototype;
 
-		private volatile Map<String, Aggregate> aggregates;
+		private Map<String, Aggregate> aggregates;
 
-		public Entry(BindingSet prototype) throws ValueExprEvaluationException, QueryEvaluationException {
+		public Entry(BindingSet prototype) throws QueryEvaluationException {
 			this.prototype = prototype;
 
 		}
 
-		private Map<String, Aggregate> getAggregates() throws ValueExprEvaluationException, QueryEvaluationException {
+		private Map<String, Aggregate> getAggregates() throws QueryEvaluationException {
 			Map<String, Aggregate> result = aggregates;
 			if (result == null) {
-				synchronized (this) {
-					result = aggregates;
-					if (result == null) {
-						result = aggregates = new LinkedHashMap<>();
-						for (GroupElem ge : group.getGroupElements()) {
-							Aggregate create = create(ge.getOperator());
-							if (create != null) {
-								aggregates.put(ge.getName(), create);
-							}
-						}
+				result = aggregates = new LinkedHashMap<>();
+				for (GroupElem ge : group.getGroupElements()) {
+					Aggregate create = create(ge.getOperator());
+					if (create != null) {
+						aggregates.put(ge.getName(), create);
 					}
 				}
+
 			}
 			return result;
 		}
@@ -342,7 +324,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		private Aggregate create(AggregateOperator operator)
-				throws ValueExprEvaluationException, QueryEvaluationException {
+				throws QueryEvaluationException {
 			if (operator instanceof Count) {
 				return new CountAggregate((Count) operator);
 			} else if (operator instanceof Min) {
@@ -411,9 +393,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private class CountAggregate extends Aggregate {
 
-		private long count = 0;
-
 		private final Set<BindingSet> distinctBindingSets;
+		private long count = 0;
 
 		public CountAggregate(Count operator) {
 			super(operator);
@@ -636,7 +617,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private Value sample = null;
 
-		private Random random;
+		private final Random random;
 
 		public SampleAggregate(Sample operator) {
 			super(operator);
@@ -666,12 +647,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private class ConcatAggregate extends Aggregate {
 
-		private StringBuilder concatenated = new StringBuilder();
+		private final StringBuilder concatenated = new StringBuilder();
 
 		private String separator = " ";
 
 		public ConcatAggregate(GroupConcat groupConcatOp)
-				throws ValueExprEvaluationException, QueryEvaluationException {
+				throws QueryEvaluationException {
 			super(groupConcatOp);
 			ValueExpr separatorExpr = groupConcatOp.getSeparator();
 			if (separatorExpr != null) {

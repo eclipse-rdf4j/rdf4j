@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.queryrender.sparql.experimental;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -16,6 +17,7 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Modify;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
@@ -33,7 +35,7 @@ import com.google.common.collect.Sets;
 
 /**
  * Tests for the {@link SparqlQueryRenderer}.
- * 
+ *
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
@@ -53,7 +55,7 @@ public class SparqlQueryRendererTest {
 
 	private String loadClasspathResourceAsUtf8String(String resourceFile) throws Exception {
 		BufferedReader reader = new BufferedReader(
-				new InputStreamReader(this.getClass().getResourceAsStream(resourceFile), "UTF-8"));
+				new InputStreamReader(this.getClass().getResourceAsStream(resourceFile), StandardCharsets.UTF_8));
 		StringBuilder textBuilder = new StringBuilder();
 		String line;
 		while ((line = reader.readLine()) != null) {
@@ -301,7 +303,7 @@ public class SparqlQueryRendererTest {
 
 	/**
 	 * Multiple prefix declarations: fails with RDF4J parser
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	// @Test
@@ -1302,8 +1304,11 @@ public class SparqlQueryRendererTest {
 	private ParsedOperation removeReduced(ParsedOperation parsedOp) {
 		if (parsedOp instanceof ParsedGraphQuery) {
 			TupleExpr expr = ((ParsedGraphQuery) parsedOp).getTupleExpr();
+			if (expr instanceof QueryRoot) {
+				expr = ((QueryRoot) expr).getArg();
+			}
 			if (expr instanceof Reduced) {
-				((ParsedGraphQuery) parsedOp).setTupleExpr(((Reduced) expr).getArg());
+				((ParsedGraphQuery) parsedOp).setTupleExpr(new QueryRoot(((Reduced) expr).getArg()));
 			}
 		}
 		return parsedOp;
@@ -1314,7 +1319,7 @@ public class SparqlQueryRendererTest {
 	 * FIXME: RDF4J now provides scope change info in the algebra tree string representation, and the renderer component
 	 * does not always produce exactly the same scopes (due to differences in curly braces etc.). In almost all cases
 	 * this makes no difference for the semantics of the query (just performance).
-	 * 
+	 *
 	 * see https://metaphacts.atlassian.net/browse/ID-1860
 	 */
 	private String stripScopeChange(String input) {

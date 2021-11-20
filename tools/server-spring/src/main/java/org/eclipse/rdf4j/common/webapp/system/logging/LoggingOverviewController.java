@@ -41,9 +41,9 @@ public class LoggingOverviewController implements Controller {
 		Map<String, Object> model = new HashMap<>();
 		LogReader logReader = getLogReader(offset, count, request);
 		model.put("logreader", logReader);
-		model.put("offset", new Integer(offset));
-		model.put("count", new Integer(count));
-		model.put("countsAvailable", Arrays.asList(new Integer[] { 50, 100, 200, 500 }));
+		model.put("offset", offset);
+		model.put("count", count);
+		model.put("countsAvailable", Arrays.asList(50, 100, 200, 500));
 		if (logReader.supportsLevelFilter()) {
 			LogLevel level = logReader.getLevel();
 			model.put("level", (level == null) ? "ALL" : level.toString());

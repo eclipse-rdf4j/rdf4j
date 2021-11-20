@@ -38,7 +38,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 
 	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
 
-	private volatile CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
 
 	/*--------------*
 	 * Constructors *

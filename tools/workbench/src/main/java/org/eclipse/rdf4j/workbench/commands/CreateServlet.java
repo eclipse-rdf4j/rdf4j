@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
@@ -132,7 +133,7 @@ public class CreateServlet extends TransformationServlet {
 
 	static ConfigTemplate getConfigTemplate(final String type) throws IOException {
 		try (InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + ".ttl")) {
-			final String template = IOUtil.readString(new InputStreamReader(ttlInput, "UTF-8"));
+			final String template = IOUtil.readString(new InputStreamReader(ttlInput, StandardCharsets.UTF_8));
 			return new ConfigTemplate(template);
 		}
 	}

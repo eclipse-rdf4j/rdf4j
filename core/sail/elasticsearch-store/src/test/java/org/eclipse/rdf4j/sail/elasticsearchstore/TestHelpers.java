@@ -9,10 +9,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
-import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
 import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.elasticsearch.common.settings.Settings.Builder;
 import org.slf4j.Logger;

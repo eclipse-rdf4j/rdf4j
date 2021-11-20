@@ -29,7 +29,7 @@ public class ShutdownTest {
 	public void shutdownWhileRunningValidation() throws InterruptedException {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.initialize();
+		shaclSail.init();
 
 		Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(getSleepingCallable());
 
@@ -50,7 +50,7 @@ public class ShutdownTest {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		for (int j = 0; j < 3; j++) {
-			shaclSail.initialize();
+			shaclSail.init();
 
 			Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(getSleepingCallable());
 
@@ -91,7 +91,7 @@ public class ShutdownTest {
 	private ExecutorService[] startShaclSailAndTask()
 			throws InterruptedException, NoSuchFieldException, IllegalAccessException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.initialize();
+		shaclSail.init();
 
 		Future<Object> objectFuture = shaclSail.submitRunnableToExecutorService(getSleepingCallable());
 

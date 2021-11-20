@@ -71,7 +71,7 @@ public class MemTripleSourceTest {
 	@Before
 	public void setUp() throws Exception {
 		store = new MemoryStore();
-		store.initialize();
+		store.init();
 		f = store.getValueFactory();
 
 		bob = f.createIRI(EX_NS, "bob");

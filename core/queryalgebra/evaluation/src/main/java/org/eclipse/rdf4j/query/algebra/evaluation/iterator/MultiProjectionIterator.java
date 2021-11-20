@@ -35,9 +35,9 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 
 	private final BindingSet[] previousBindings;
 
-	private volatile BindingSet currentBindings;
+	private BindingSet currentBindings;
 
-	private volatile int nextProjectionIdx;
+	private int nextProjectionIdx;
 
 	/*--------------*
 	 * Constructors *

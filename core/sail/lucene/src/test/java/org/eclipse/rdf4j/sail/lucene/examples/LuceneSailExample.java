@@ -64,7 +64,6 @@ public class LuceneSailExample {
 
 		// create a Repository to access the sails
 		SailRepository repository = new SailRepository(lucenesail);
-		repository.initialize();
 
 		try ( // add some test data, the FOAF ont
 				SailRepositoryConnection connection = repository.getConnection()) {

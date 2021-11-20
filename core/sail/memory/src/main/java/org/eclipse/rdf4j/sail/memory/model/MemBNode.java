@@ -28,17 +28,17 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	/**
 	 * The list of statements for which this MemBNode is the subject.
 	 */
-	transient private volatile MemStatementList subjectStatements;
+	transient private final MemStatementList subjectStatements = new MemStatementList();
 
 	/**
 	 * The list of statements for which this MemBNode is the object.
 	 */
-	transient private volatile MemStatementList objectStatements;
+	transient private final MemStatementList objectStatements = new MemStatementList();
 
 	/**
 	 * The list of statements for which this MemBNode represents the context.
 	 */
-	transient private volatile MemStatementList contextStatements;
+	transient private final MemStatementList contextStatements = new MemStatementList();
 
 	/*--------------*
 	 * Constructors *
@@ -66,32 +66,25 @@ public class MemBNode extends SimpleBNode implements MemResource {
 
 	@Override
 	public boolean hasStatements() {
-		return subjectStatements != null || objectStatements != null || contextStatements != null;
+		return !subjectStatements.isEmpty() || !objectStatements.isEmpty() || !contextStatements.isEmpty();
 	}
 
 	@Override
 	public MemStatementList getSubjectStatementList() {
-		if (subjectStatements == null) {
-			return EMPTY_LIST;
-		} else {
-			return subjectStatements;
-		}
+
+		return subjectStatements;
+
 	}
 
 	@Override
 	public int getSubjectStatementCount() {
-		if (subjectStatements == null) {
-			return 0;
-		} else {
-			return subjectStatements.size();
-		}
+
+		return subjectStatements.size();
+
 	}
 
 	@Override
 	public void addSubjectStatement(MemStatement st) {
-		if (subjectStatements == null) {
-			subjectStatements = new MemStatementList(4);
-		}
 
 		subjectStatements.add(st);
 	}
@@ -100,45 +93,30 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	public void removeSubjectStatement(MemStatement st) {
 		subjectStatements.remove(st);
 
-		if (subjectStatements.isEmpty()) {
-			subjectStatements = null;
-		}
 	}
 
 	@Override
 	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) {
-		if (subjectStatements != null) {
-			subjectStatements.cleanSnapshots(currentSnapshot);
+		subjectStatements.cleanSnapshots(currentSnapshot);
 
-			if (subjectStatements.isEmpty()) {
-				subjectStatements = null;
-			}
-		}
 	}
 
 	@Override
 	public MemStatementList getObjectStatementList() {
-		if (objectStatements == null) {
-			return EMPTY_LIST;
-		} else {
-			return objectStatements;
-		}
+
+		return objectStatements;
+
 	}
 
 	@Override
 	public int getObjectStatementCount() {
-		if (objectStatements == null) {
-			return 0;
-		} else {
-			return objectStatements.size();
-		}
+
+		return objectStatements.size();
+
 	}
 
 	@Override
 	public void addObjectStatement(MemStatement st) {
-		if (objectStatements == null) {
-			objectStatements = new MemStatementList(4);
-		}
 
 		objectStatements.add(st);
 	}
@@ -147,45 +125,30 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	public void removeObjectStatement(MemStatement st) {
 		objectStatements.remove(st);
 
-		if (objectStatements.isEmpty()) {
-			objectStatements = null;
-		}
 	}
 
 	@Override
 	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) {
-		if (objectStatements != null) {
-			objectStatements.cleanSnapshots(currentSnapshot);
+		objectStatements.cleanSnapshots(currentSnapshot);
 
-			if (objectStatements.isEmpty()) {
-				objectStatements = null;
-			}
-		}
 	}
 
 	@Override
 	public MemStatementList getContextStatementList() {
-		if (contextStatements == null) {
-			return EMPTY_LIST;
-		} else {
-			return contextStatements;
-		}
+
+		return contextStatements;
+
 	}
 
 	@Override
 	public int getContextStatementCount() {
-		if (contextStatements == null) {
-			return 0;
-		} else {
-			return contextStatements.size();
-		}
+
+		return contextStatements.size();
+
 	}
 
 	@Override
 	public void addContextStatement(MemStatement st) {
-		if (contextStatements == null) {
-			contextStatements = new MemStatementList(4);
-		}
 
 		contextStatements.add(st);
 	}
@@ -194,19 +157,11 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	public void removeContextStatement(MemStatement st) {
 		contextStatements.remove(st);
 
-		if (contextStatements.isEmpty()) {
-			contextStatements = null;
-		}
 	}
 
 	@Override
 	public void cleanSnapshotsFromContextStatements(int currentSnapshot) {
-		if (contextStatements != null) {
-			contextStatements.cleanSnapshots(currentSnapshot);
+		contextStatements.cleanSnapshots(currentSnapshot);
 
-			if (contextStatements.isEmpty()) {
-				contextStatements = null;
-			}
-		}
 	}
 }

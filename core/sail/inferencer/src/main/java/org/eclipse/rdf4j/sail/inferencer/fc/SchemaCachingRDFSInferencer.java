@@ -204,9 +204,9 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void initialize()
+	public void init()
 			throws SailException {
-		super.initialize();
+		super.init();
 
 		if (sharedSchema) {
 			return;

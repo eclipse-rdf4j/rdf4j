@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
 import java.util.Optional;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.core.Base;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.PrefixDeclarations;
@@ -37,6 +40,16 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 		this.base = Optional.of(SparqlBuilder.base(iri));
 
 		return (T) this;
+	}
+
+	/**
+	 * Set the base IRI of this query
+	 *
+	 * @param iri the base IRI
+	 * @return this
+	 */
+	public T base(IRI iri) {
+		return base(iri(iri));
 	}
 
 	/**

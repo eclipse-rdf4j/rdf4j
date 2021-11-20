@@ -12,6 +12,8 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -47,7 +49,11 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	public String render(final ParsedQuery theQuery) throws Exception {
 		mRenderer.reset();
 
-		StringBuffer aBody = new StringBuffer(mRenderer.render(theQuery.getTupleExpr()));
+		TupleExpr tupleExpr = theQuery.getTupleExpr();
+		if (tupleExpr instanceof QueryRoot) {
+			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		}
+		StringBuffer aBody = new StringBuffer(mRenderer.render(tupleExpr));
 
 		boolean aFirst = true;
 

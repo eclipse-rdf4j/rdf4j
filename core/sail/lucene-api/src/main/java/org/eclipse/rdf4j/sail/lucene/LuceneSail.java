@@ -347,8 +347,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void initialize() throws SailException {
-		super.initialize();
+	public void init() throws SailException {
+		super.init();
 		if (parameters.containsKey(INDEXEDFIELDS)) {
 			String indexedfieldsString = parameters.getProperty(INDEXEDFIELDS);
 			Properties prop = new Properties();

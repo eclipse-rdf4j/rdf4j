@@ -1,12 +1,10 @@
-/*
- * ******************************************************************************
- *  * Copyright (c) 2021 Eclipse RDF4J contributors.
- *  * All rights reserved. This program and the accompanying materials
- *  * are made available under the terms of the Eclipse Distribution License v1.0
- *  * which accompanies this distribution, and is available at
- *  * http://www.eclipse.org/org/documents/edl-v10.php.
- *  ******************************************************************************
- */
+/*******************************************************************************
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.spring.resultcache;
 
@@ -21,7 +19,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.*;
+import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;

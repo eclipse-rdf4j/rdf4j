@@ -16,6 +16,7 @@ import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -174,7 +175,7 @@ public class Create extends ConsoleCommand {
 			if (templateStream != null) {
 				String template;
 				try {
-					template = IOUtil.readString(new InputStreamReader(templateStream, "UTF-8"));
+					template = IOUtil.readString(new InputStreamReader(templateStream, StandardCharsets.UTF_8));
 				} finally {
 					templateStream.close();
 				}

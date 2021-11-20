@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -35,15 +36,16 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  */
 public class EvaluationStatistics {
 
-	protected CardinalityCalculator cc;
+	private CardinalityCalculator calculator;
 
-	public synchronized double getCardinality(TupleExpr expr) {
-		if (cc == null) {
-			cc = createCardinalityCalculator();
+	public double getCardinality(TupleExpr expr) {
+		if (calculator == null) {
+			calculator = createCardinalityCalculator();
+			assert calculator != null;
 		}
 
-		expr.visit(cc);
-		return cc.getCardinality();
+		expr.visit(calculator);
+		return calculator.getCardinality();
 	}
 
 	protected CardinalityCalculator createCardinalityCalculator() {
@@ -56,9 +58,9 @@ public class EvaluationStatistics {
 
 	protected static class CardinalityCalculator extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private static double VAR_CARDINALITY = 10;
+		private static final double VAR_CARDINALITY = 10;
 
-		private static double UNBOUND_SERVICE_CARDINALITY = 100000;
+		private static final double UNBOUND_SERVICE_CARDINALITY = 100000;
 
 		protected double cardinality;
 
@@ -263,6 +265,11 @@ public class EvaluationStatistics {
 		}
 
 		@Override
+		public void meet(QueryRoot node) {
+			node.getArg().visit(this);
+		}
+
+		@Override
 		protected void meetNode(QueryModelNode node) {
 			if (node instanceof ExternalSet) {
 				meetExternalSet((ExternalSet) node);
@@ -291,5 +298,4 @@ public class EvaluationStatistics {
 		}
 	}
 
-	;
 }

@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfObject;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
@@ -27,6 +28,10 @@ class TriplesSameSubject implements TriplePattern {
 	TriplesSameSubject(RdfSubject subject, RdfPredicate predicate, RdfObject... objects) {
 		this.subject = subject;
 		andHas(predicate, objects);
+	}
+
+	TriplesSameSubject(RdfSubject subject, IRI predicate, RdfObject... objects) {
+		this(subject, Rdf.iri(predicate), objects);
 	}
 
 	TriplesSameSubject(RdfSubject subject, RdfPredicateObjectList... lists) {

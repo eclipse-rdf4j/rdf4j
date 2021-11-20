@@ -41,7 +41,6 @@ public class MemInferencingTest extends InferencingTest {
 
 		SchemaCachingRDFSInferencer sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(datadir), true);
 		SailRepository repo = new SailRepository(sailStack);
-		repo.initialize();
 		ValueFactory vf = repo.getValueFactory();
 
 		IRI s1 = vf.createIRI("foo:s1");
@@ -60,7 +59,7 @@ public class MemInferencingTest extends InferencingTest {
 		// re-init
 //		sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(datadir), true);
 //		repo = new SailRepository(sailStack);
-		repo.initialize();
+		repo.init();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			assertTrue(conn.hasStatement(s1, RDF.TYPE, c2, true));
@@ -154,7 +153,6 @@ public class MemInferencingTest extends InferencingTest {
 
 		SailRepository sailRepository1 = new SailRepository(SchemaCachingRDFSInferencer.fastInstantiateFrom(
 				(SchemaCachingRDFSInferencer) ((SailRepository) sailRepository).getSail(), new MemoryStore()));
-		sailRepository1.initialize();
 
 		try (RepositoryConnection connection = sailRepository1.getConnection()) {
 			connection.add(vf.createStatement(aInstance, RDF.TYPE, A));

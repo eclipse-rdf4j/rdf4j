@@ -28,7 +28,7 @@ public class SailModelNamespacesTest extends ModelNamespacesTest {
 	protected Model getModelImplementation() {
 		sail = new MemoryStore();
 		try {
-			sail.initialize();
+			sail.init();
 			conn = sail.getConnection();
 			conn.begin();
 			return new SailModel(conn, false);

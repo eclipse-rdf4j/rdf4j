@@ -8,9 +8,16 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 public class CustomFunction extends Expression<CustomFunction> {
+	CustomFunction(IRI functionIri) {
+		this(iri(functionIri));
+	}
+
 	CustomFunction(Iri functionIri) {
 		super(functionIri, ", ");
 		parenthesize();

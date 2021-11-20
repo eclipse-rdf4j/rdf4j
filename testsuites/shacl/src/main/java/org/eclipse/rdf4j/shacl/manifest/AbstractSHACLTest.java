@@ -81,8 +81,6 @@ public abstract class AbstractSHACLTest extends TestCase {
 
 	protected Repository createRepository(Model shapesGraph) throws Exception {
 		Repository repo = new SailRepository(newSail());
-		repo.initialize();
-
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.clear();
 			conn.clearNamespaces();

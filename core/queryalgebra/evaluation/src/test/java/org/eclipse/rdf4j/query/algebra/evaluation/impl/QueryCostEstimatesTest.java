@@ -29,8 +29,7 @@ public class QueryCostEstimatesTest {
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
 		QueryJoinOptimizer opt = new QueryJoinOptimizer();
-		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
-		opt.optimize(optRoot, null, null);
+		opt.optimize(q.getTupleExpr(), null, null);
 
 		assertEquals("QueryRoot\n" +
 				"   Projection\n" +
@@ -55,7 +54,7 @@ public class QueryCostEstimatesTest {
 				"                  Var (name=p)\n" +
 				"                  Var (name=o)\n" +
 				"               BindingSetAssignment ([[x=ex:a], [x=ex:b], [x=ex:c], [x=ex:d], [x=ex:e], [x=ex:f], [x=ex:g]])\n",
-				optRoot.toString());
+				q.getTupleExpr().toString());
 
 	}
 

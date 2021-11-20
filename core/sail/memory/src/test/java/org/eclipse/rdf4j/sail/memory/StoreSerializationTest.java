@@ -55,7 +55,7 @@ public class StoreSerializationTest extends TestCase {
 
 	public void testShortLiterals() throws Exception {
 		MemoryStore store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		ValueFactory factory = store.getValueFactory();
 		IRI foo = factory.createIRI("http://www.foo.example/foo");
@@ -76,7 +76,7 @@ public class StoreSerializationTest extends TestCase {
 		store.shutDown();
 
 		store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		con = store.getConnection();
 
@@ -91,7 +91,7 @@ public class StoreSerializationTest extends TestCase {
 
 	public void testSerialization() throws Exception {
 		MemoryStore store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		ValueFactory factory = store.getValueFactory();
 		IRI foo = factory.createIRI("http://www.foo.example/foo");
@@ -121,7 +121,7 @@ public class StoreSerializationTest extends TestCase {
 		store.shutDown();
 
 		store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		factory = store.getValueFactory();
 		foo = factory.createIRI("http://www.foo.example/foo");
@@ -148,7 +148,7 @@ public class StoreSerializationTest extends TestCase {
 
 	public void testLongLiterals() throws Exception {
 		MemoryStore store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		ValueFactory factory = store.getValueFactory();
 		IRI foo = factory.createIRI("http://www.foo.example/foo");
@@ -169,7 +169,7 @@ public class StoreSerializationTest extends TestCase {
 		store.shutDown();
 
 		store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		con = store.getConnection();
 

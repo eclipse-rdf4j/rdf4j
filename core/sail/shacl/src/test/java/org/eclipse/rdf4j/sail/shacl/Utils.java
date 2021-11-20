@@ -96,7 +96,6 @@ public class Utils {
 
 	public static SailRepository getInitializedShaclRepository(URL resourceName) {
 		SailRepository repo = new SailRepository(new ShaclSail(new MemoryStore()));
-		repo.initialize();
 		try {
 			Utils.loadShapeData(repo, resourceName);
 		} catch (IOException e) {
@@ -107,7 +106,6 @@ public class Utils {
 
 	public static SailRepository getSailRepository(URL resourceName) {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
-		sailRepository.initialize();
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.add(resourceName, resourceName.toString(), RDFFormat.TURTLE);
 		} catch (IOException | NullPointerException e) {

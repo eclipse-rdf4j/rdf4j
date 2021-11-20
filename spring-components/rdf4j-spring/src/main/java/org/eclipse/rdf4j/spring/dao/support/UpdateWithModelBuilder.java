@@ -1,12 +1,10 @@
-/*
- * ******************************************************************************
- *  * Copyright (c) 2021 Eclipse RDF4J contributors.
- *  * All rights reserved. This program and the accompanying materials
- *  * are made available under the terms of the Eclipse Distribution License v1.0
- *  * which accompanies this distribution, and is available at
- *  * http://www.eclipse.org/org/documents/edl-v10.php.
- *  ******************************************************************************
- */
+/*******************************************************************************
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.spring.dao.support;
 
@@ -19,7 +17,12 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.apache.commons.lang3.ObjectUtils;
-import org.eclipse.rdf4j.model.*;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;

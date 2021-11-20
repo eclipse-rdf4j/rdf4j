@@ -19,7 +19,6 @@ public class HTTPRepositoryTransactionTest {
 			try {
 				server.start();
 				testRepository = new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
-				testRepository.initialize();
 			} catch (Exception e) {
 				server.stop();
 				throw e;

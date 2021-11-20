@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.toRdfLiteralArray;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfObject;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
@@ -40,6 +41,18 @@ public interface TriplePattern extends GraphPattern {
 	/**
 	 * Add predicate-object lists describing this triple pattern's subject
 	 *
+	 * @param predicate the predicate to use to describe this triple pattern's subject
+	 * @param objects   the corresponding object(s)
+	 *
+	 * @return this triple pattern
+	 */
+	default TriplePattern andHas(IRI predicate, RdfObject... objects) {
+		return andHas(Rdf.iri(predicate), objects);
+	}
+
+	/**
+	 * Add predicate-object lists describing this triple pattern's subject
+	 *
 	 * @param lists the {@link RdfPredicateObjectList}(s) to add
 	 *
 	 * @return this triple pattern
@@ -59,6 +72,19 @@ public interface TriplePattern extends GraphPattern {
 		return andHas(predicate, toRdfLiteralArray(objects));
 	}
 
+	/**
+	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Strings and converts them to
+	 * StringLiterals
+	 *
+	 * @param predicate the predicate to use to describe this triple pattern's subject
+	 * @param objects   the corresponding object(s)
+	 *
+	 * @return this triple pattern
+	 */
+	default TriplePattern andHas(IRI predicate, String... objects) {
+		return andHas(Rdf.iri(predicate), objects);
+	}
+
 	;
 
 	/**
@@ -74,6 +100,19 @@ public interface TriplePattern extends GraphPattern {
 		return andHas(predicate, toRdfLiteralArray(objects));
 	}
 
+	/**
+	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Boolean and converts them to
+	 * BooleanLiterals
+	 *
+	 * @param predicate the predicate to use to describe this triple pattern's subject
+	 * @param objects   the corresponding object(s)
+	 *
+	 * @return this triple pattern
+	 */
+	default TriplePattern andHas(IRI predicate, Boolean... objects) {
+		return andHas(Rdf.iri(predicate), objects);
+	}
+
 	;
 
 	/**
@@ -87,6 +126,19 @@ public interface TriplePattern extends GraphPattern {
 	 */
 	default TriplePattern andHas(RdfPredicate predicate, Number... objects) {
 		return andHas(predicate, toRdfLiteralArray(objects));
+	}
+
+	/**
+	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Numbers and converts them to
+	 * NumberLiterals
+	 *
+	 * @param predicate the predicate to use to describe this triple pattern's subject
+	 * @param objects   the corresponding object(s)
+	 *
+	 * @return this triple pattern
+	 */
+	default TriplePattern andHas(IRI predicate, Number... objects) {
+		return andHas(Rdf.iri(predicate), objects);
 	}
 
 	;

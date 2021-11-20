@@ -175,11 +175,6 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	@Override
-	public void initialize() throws SailException {
-		init();
-	}
-
-	@Override
 	public void init() throws SailException {
 		initializationLock.writeLock().lock();
 		try {

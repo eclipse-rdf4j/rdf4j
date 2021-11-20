@@ -88,6 +88,18 @@ public class SimpleStatement extends AbstractStatement {
 		return object;
 	}
 
+	public boolean exactSameSubject(Resource subject) {
+		return subject == this.subject;
+	}
+
+	public boolean exactSamePredicate(IRI predicate) {
+		return predicate == this.predicate;
+	}
+
+	public boolean exactSameObject(Value object) {
+		return object == this.object;
+	}
+
 	// Implements Statement.getContext()
 	@Override
 	public Resource getContext() {

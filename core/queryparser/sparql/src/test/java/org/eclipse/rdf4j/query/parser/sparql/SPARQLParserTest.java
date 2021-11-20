@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -116,7 +117,8 @@ public class SPARQLParserTest {
 		TupleExpr te = q.getTupleExpr();
 
 		assertNotNull(te);
-
+		assertTrue(te instanceof QueryRoot);
+		te = ((QueryRoot) te).getArg();
 		assertTrue(te instanceof Slice);
 		Slice s = (Slice) te;
 		assertTrue(s.getArg() instanceof Join);
@@ -138,10 +140,11 @@ public class SPARQLParserTest {
 
 		ParsedBooleanQuery q = (ParsedBooleanQuery) parser.parseQuery(qb.toString(), null);
 		TupleExpr te = q.getTupleExpr();
-
+		assertTrue(te instanceof QueryRoot);
+		te = ((QueryRoot) te).getArg();
 		assertNotNull(te);
 		assertTrue(te instanceof Slice);
-		assertNull(te.getParentNode());
+		assertTrue(te.getParentNode() instanceof QueryRoot);
 	}
 
 	/**
@@ -189,11 +192,12 @@ public class SPARQLParserTest {
 		qb.append("SELECT *  {?a <foo:bar> \"test\"}");
 
 		ParsedTupleQuery q = (ParsedTupleQuery) parser.parseQuery(qb.toString(), null);
-		TupleExpr te = q.getTupleExpr();
-
-		assertNotNull(te);
-		assertTrue(te instanceof Projection);
-		assertNull(te.getParentNode());
+		TupleExpr tupleExpr = q.getTupleExpr();
+		assertTrue(tupleExpr instanceof QueryRoot);
+		tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		assertNotNull(tupleExpr);
+		assertTrue(tupleExpr instanceof Projection);
+		assertTrue(tupleExpr.getParentNode() instanceof QueryRoot);
 	}
 
 	@Test
@@ -202,11 +206,13 @@ public class SPARQLParserTest {
 		qb.append("CONSTRUCT WHERE {?a <foo:bar> \"test\"}");
 
 		ParsedGraphQuery q = (ParsedGraphQuery) parser.parseQuery(qb.toString(), null);
-		TupleExpr te = q.getTupleExpr();
 
+		TupleExpr te = q.getTupleExpr();
+		assertTrue(te instanceof QueryRoot);
+		te = ((QueryRoot) te).getArg();
 		assertNotNull(te);
 		assertTrue(te instanceof Projection);
-		assertNull(te.getParentNode());
+		assertTrue(te.getParentNode() instanceof QueryRoot);
 	}
 
 	@Test
@@ -217,7 +223,8 @@ public class SPARQLParserTest {
 
 		assertNotNull(query);
 		TupleExpr te = query.getTupleExpr();
-
+		assertTrue(te instanceof QueryRoot);
+		te = ((QueryRoot) te).getArg();
 		assertTrue(te instanceof Projection);
 
 		te = ((Projection) te).getArg();
@@ -237,7 +244,8 @@ public class SPARQLParserTest {
 
 		ParsedQuery q = parser.parseQuery(qb.toString(), null);
 		TupleExpr te = q.getTupleExpr();
-
+		assertTrue(te instanceof QueryRoot);
+		te = ((QueryRoot) te).getArg();
 		assertNotNull(te);
 
 		assertTrue(te instanceof Slice);
@@ -262,7 +270,8 @@ public class SPARQLParserTest {
 
 		ParsedQuery q = parser.parseQuery(qb.toString(), null);
 		TupleExpr te = q.getTupleExpr();
-
+		assertTrue(te instanceof QueryRoot);
+		te = ((QueryRoot) te).getArg();
 		assertNotNull(te);
 
 		assertTrue(te instanceof Slice);
@@ -307,6 +316,8 @@ public class SPARQLParserTest {
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+		assertTrue(tupleExpr instanceof QueryRoot);
+		tupleExpr = ((QueryRoot) tupleExpr).getArg();
 
 		Slice slice = (Slice) tupleExpr;
 		Union union = (Union) slice.getArg();
@@ -325,8 +336,11 @@ public class SPARQLParserTest {
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
-
+		assertTrue(tupleExpr instanceof QueryRoot);
+		tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		assertTrue(tupleExpr instanceof Slice);
 		Slice slice = (Slice) tupleExpr;
+		assertTrue(slice.getArg() instanceof Union);
 		Union union = (Union) slice.getArg();
 
 		Var leftSubjectVar = ((StatementPattern) union.getLeftArg()).getSubjectVar();
@@ -343,7 +357,9 @@ public class SPARQLParserTest {
 
 		ParsedQuery parsedQuery = parser.parseQuery(query, null);
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
-
+		assertTrue(tupleExpr instanceof QueryRoot);
+		tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		assertTrue(tupleExpr instanceof Slice);
 		Slice slice = (Slice) tupleExpr;
 
 		ArbitraryLengthPath path = (ArbitraryLengthPath) slice.getArg();

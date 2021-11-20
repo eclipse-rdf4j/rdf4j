@@ -292,7 +292,6 @@ public class SolrIndexTest {
 
 		// create a Repository wrapping the LuceneSail
 		SailRepository repository = new SailRepository(sail);
-		repository.initialize();
 
 		try ( // now add the statements through the repo
 				// add statements with context
@@ -344,7 +343,6 @@ public class SolrIndexTest {
 
 		// create a Repository wrapping the LuceneSail
 		SailRepository repository = new SailRepository(sail);
-		repository.initialize();
 
 		try ( // now add the statements through the repo
 				// add statements with context

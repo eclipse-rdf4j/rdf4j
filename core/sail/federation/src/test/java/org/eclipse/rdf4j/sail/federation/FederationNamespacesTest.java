@@ -81,14 +81,12 @@ public class FederationNamespacesTest {
 			federation.addMember(createMember(Integer.toString(i), "http://test/" + paths[i] + "#"));
 		}
 		SailRepository repo = new SailRepository(federation);
-		repo.initialize();
 		return repo.getConnection();
 	}
 
 	private Repository createMember(String memberID, String name)
 			throws RepositoryException, RDFParseException, IOException {
 		SailRepository member = new SailRepository(new MemoryStore());
-		member.initialize();
 		try (SailRepositoryConnection con = member.getConnection()) {
 			con.setNamespace(PREFIX, name);
 		}

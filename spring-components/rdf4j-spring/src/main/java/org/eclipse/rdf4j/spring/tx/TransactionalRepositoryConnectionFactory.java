@@ -1,12 +1,10 @@
-/*
- * ******************************************************************************
- *  * Copyright (c) 2021 Eclipse RDF4J contributors.
- *  * All rights reserved. This program and the accompanying materials
- *  * are made available under the terms of the Eclipse Distribution License v1.0
- *  * which accompanies this distribution, and is available at
- *  * http://www.eclipse.org/org/documents/edl-v10.php.
- *  ******************************************************************************
- */
+/*******************************************************************************
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.spring.tx;
 
@@ -14,7 +12,11 @@ import java.lang.invoke.MethodHandles;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
-import org.eclipse.rdf4j.spring.tx.exception.*;
+import org.eclipse.rdf4j.spring.tx.exception.CommitException;
+import org.eclipse.rdf4j.spring.tx.exception.ConnectionClosedException;
+import org.eclipse.rdf4j.spring.tx.exception.NoTransactionException;
+import org.eclipse.rdf4j.spring.tx.exception.RDF4JTransactionException;
+import org.eclipse.rdf4j.spring.tx.exception.RollbackException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

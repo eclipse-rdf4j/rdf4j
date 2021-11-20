@@ -8,10 +8,9 @@
 package org.eclipse.rdf4j.common.app;
 
 import java.util.Locale;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.eclipse.rdf4j.common.lang.ObjectUtil;
 
 /**
  * A product version in Aduna's version format (i.e. major.minor-modifier). Where major stands for the major version
@@ -326,7 +325,7 @@ public class AppVersion implements Comparable<AppVersion> {
 			}
 		}
 
-		if (result == 0 && !ObjectUtil.nullEquals(modifier, other.modifier)) {
+		if (result == 0 && !Objects.equals(modifier, other.modifier)) {
 			if (modifier == null) {
 				result = 1;
 			} else if (other.modifier == null) {

@@ -44,21 +44,8 @@ abstract class SearchQueryEvaluatorTest {
 		}
 
 		@Override
-		public Collection<BindingSet> evaluate(QuerySpec query) throws SailException {
-			return null;
-		}
-
-		@Override
 		public Collection<BindingSet> evaluate(SearchQueryEvaluator query) throws SailException {
 			return null;
-		}
-
-		@Override
-		public void beginReading() throws IOException {
-		}
-
-		@Override
-		public void endReading() throws IOException {
 		}
 
 		@Override
