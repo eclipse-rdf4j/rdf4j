@@ -75,4 +75,35 @@ public class URIUtilTest {
 		assertFalse("URI containing Unicode control char should be invalid",
 				URIUtil.isValidURIReference("http://example.org/foo\u001F/bar/"));
 	}
+
+	@Test
+	public void isValidLocalName() {
+		assertTrue(URIUtil.isValidLocalName("2bar"));
+		assertTrue(URIUtil.isValidLocalName("foobar"));
+		assertTrue(URIUtil.isValidLocalName("_foobar"));
+		assertTrue(URIUtil.isValidLocalName("foo-bar"));
+		assertTrue(URIUtil.isValidLocalName("foo.bar"));
+		assertTrue(URIUtil.isValidLocalName(":foobar"));
+		assertTrue(URIUtil.isValidLocalName(":foobär"));
+		assertTrue(URIUtil.isValidLocalName(""));
+
+		assertFalse(URIUtil.isValidLocalName(" "));
+		assertFalse(URIUtil.isValidLocalName("foo$bar"));
+		assertFalse(URIUtil.isValidLocalName("$foobar"));
+		assertFalse(URIUtil.isValidLocalName("foo~bar"));
+		assertFalse(URIUtil.isValidLocalName("~foobar"));
+		assertFalse(URIUtil.isValidLocalName("-foobar"));
+		assertFalse(URIUtil.isValidLocalName("[foobar]"));
+		assertFalse(URIUtil.isValidLocalName("foobar]"));
+		assertFalse(URIUtil.isValidLocalName("(foobar)"));
+		assertFalse(URIUtil.isValidLocalName("foobar)"));
+		assertFalse(URIUtil.isValidLocalName("{foobar}"));
+		assertFalse(URIUtil.isValidLocalName("foobar}"));
+		assertFalse(URIUtil.isValidLocalName(".foobar"));
+		assertFalse(URIUtil.isValidLocalName("foo\tbar"));
+		assertFalse(URIUtil.isValidLocalName("foo\rbar"));
+		assertFalse(URIUtil.isValidLocalName("foo\tbar"));
+		assertFalse(URIUtil.isValidLocalName("foo\nbar"));
+		assertFalse(URIUtil.isValidLocalName("*foobar"));
+	}
 }

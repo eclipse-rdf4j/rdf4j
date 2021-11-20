@@ -615,6 +615,10 @@ public class Expressions {
 		return function(SparqlFunction.STRDT, lexicalForm, datatype);
 	}
 
+	public static Expression<?> strlen(Operand operand) {
+		return function(SparqlFunction.STRLEN, operand);
+	}
+
 	public static Expression<?> isBlank(Variable var) {
 		return function(SparqlFunction.IS_BLANK, var);
 	}
