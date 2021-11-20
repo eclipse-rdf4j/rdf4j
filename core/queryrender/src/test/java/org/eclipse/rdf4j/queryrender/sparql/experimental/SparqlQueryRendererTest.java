@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Modify;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
@@ -1303,8 +1304,11 @@ public class SparqlQueryRendererTest {
 	private ParsedOperation removeReduced(ParsedOperation parsedOp) {
 		if (parsedOp instanceof ParsedGraphQuery) {
 			TupleExpr expr = ((ParsedGraphQuery) parsedOp).getTupleExpr();
+			if (expr instanceof QueryRoot) {
+				expr = ((QueryRoot) expr).getArg();
+			}
 			if (expr instanceof Reduced) {
-				((ParsedGraphQuery) parsedOp).setTupleExpr(((Reduced) expr).getArg());
+				((ParsedGraphQuery) parsedOp).setTupleExpr(new QueryRoot(((Reduced) expr).getArg()));
 			}
 		}
 		return parsedOp;

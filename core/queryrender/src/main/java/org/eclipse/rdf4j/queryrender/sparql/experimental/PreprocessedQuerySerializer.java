@@ -291,8 +291,10 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 		renderedExtensionElements.put(query, Sets.newHashSet());
 		this.currentQueryProfile = query;
 		builder.append("CONSTRUCT { \n");
+
 		this.meet(query.projection);
 		builder.append("} ");
+
 		processDatasetClause(query.dataset);
 
 		builder.append("WHERE { \n");

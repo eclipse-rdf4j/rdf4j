@@ -598,19 +598,20 @@ public class SpinParser {
 		if (SP.CONSTRUCT_CLASS.equals(queryType)) {
 			SpinVisitor visitor = new SpinVisitor(store);
 			visitor.visitConstruct(queryResource);
-			return new ParsedGraphQuery(visitor.getTupleExpr());
+			TupleExpr tupleExpr = makeQueryRootIfNeeded(visitor.getTupleExpr());
+			return new ParsedGraphQuery(tupleExpr);
 		} else if (SP.SELECT_CLASS.equals(queryType)) {
 			SpinVisitor visitor = new SpinVisitor(store);
 			visitor.visitSelect(queryResource);
-			return new ParsedTupleQuery(visitor.getTupleExpr());
+			return new ParsedTupleQuery(makeQueryRootIfNeeded(visitor.getTupleExpr()));
 		} else if (SP.ASK_CLASS.equals(queryType)) {
 			SpinVisitor visitor = new SpinVisitor(store);
 			visitor.visitAsk(queryResource);
-			return new ParsedBooleanQuery(visitor.getTupleExpr());
+			return new ParsedBooleanQuery(makeQueryRootIfNeeded(visitor.getTupleExpr()));
 		} else if (SP.DESCRIBE_CLASS.equals(queryType)) {
 			SpinVisitor visitor = new SpinVisitor(store);
 			visitor.visitDescribe(queryResource);
-			return new ParsedDescribeQuery(visitor.getTupleExpr());
+			return new ParsedDescribeQuery(makeQueryRootIfNeeded(visitor.getTupleExpr()));
 		} else if (SP.MODIFY_CLASS.equals(queryType)) {
 			SpinVisitor visitor = new SpinVisitor(store);
 			visitor.visitModify(queryResource);
@@ -655,6 +656,14 @@ public class SpinParser {
 			return parsedUpdate;
 		} else {
 			throw new MalformedSpinException(String.format("Unrecognised command type: %s", queryType));
+		}
+	}
+
+	private TupleExpr makeQueryRootIfNeeded(TupleExpr tupleExpr) {
+		if (!(tupleExpr instanceof QueryRoot)) {
+			return new QueryRoot(tupleExpr);
+		} else {
+			return tupleExpr;
 		}
 	}
 

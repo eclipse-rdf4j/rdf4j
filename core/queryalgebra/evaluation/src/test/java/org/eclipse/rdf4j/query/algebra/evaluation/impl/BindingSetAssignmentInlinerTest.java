@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -52,7 +53,10 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 
-		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
+
 		assertThat(optimizedTree).isInstanceOf(Projection.class);
 
 		Projection projection = (Projection) optimizedTree;
@@ -78,7 +82,8 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 
-		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
 		assertThat(optimizedTree).isInstanceOf(Projection.class);
 
 		Projection projection = (Projection) optimizedTree;
@@ -104,7 +109,8 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 
-		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
 		assertThat(optimizedTree).isInstanceOf(Projection.class);
 
 		Projection projection = (Projection) optimizedTree;
@@ -133,7 +139,8 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 
-		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
 
 		assertThat(optimizedTree).isInstanceOf(Projection.class);
 
@@ -168,7 +175,8 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 
-		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
 
 		assertThat(optimizedTree).isInstanceOf(Projection.class);
 		Projection projection = (Projection) optimizedTree;
@@ -193,7 +201,8 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 
-		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
 
 		assertThat(optimizedTree).isInstanceOf(Projection.class);
 
@@ -220,7 +229,8 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 
-		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
 
 		assertThat(optimizedTree).isInstanceOf(Projection.class);
 
@@ -247,7 +257,8 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 
-		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
 
 		assertThat(optimizedTree).isInstanceOf(Projection.class);
 
@@ -277,7 +288,8 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 		QueryOptimizer optimizer = getOptimizer();
 		optimizer.optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
 
-		TupleExpr optimizedTree = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTreeRoot = parsedQuery.getTupleExpr();
+		TupleExpr optimizedTree = ((QueryRoot) optimizedTreeRoot).getArg();
 
 		assertThat(optimizedTree).isInstanceOf(Projection.class);
 

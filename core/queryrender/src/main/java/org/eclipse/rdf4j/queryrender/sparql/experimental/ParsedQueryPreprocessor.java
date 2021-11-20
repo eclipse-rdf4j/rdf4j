@@ -151,7 +151,11 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 	}
 
 	public SerializableParsedConstructQuery transformToSerialize(ParsedGraphQuery query) {
-		query.getTupleExpr().visit(this);
+		TupleExpr tupleExpr = query.getTupleExpr();
+		if (tupleExpr instanceof QueryRoot) {
+			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		}
+		tupleExpr.visit(this);
 
 		for (SerializableParsedTupleQuery tmp : this.queriesByProjection.values()) {
 			cleanBindingSetAssignments(tmp);
@@ -225,13 +229,16 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 	 *         information.
 	 */
 	public SerializableParsedBooleanQuery transformToSerialize(ParsedBooleanQuery query) {
-		if (!(query.getTupleExpr() instanceof Slice)) {
+		TupleExpr tupleExpr = query.getTupleExpr();
+		if (tupleExpr instanceof QueryRoot)
+			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		if (!(tupleExpr instanceof Slice)) {
 			throw new IllegalArgumentException(
 					"Unexpected boolean query: Slice expected as a root element, was "
-							+ query.getTupleExpr().getSignature());
+							+ tupleExpr.getSignature());
 		}
 
-		Slice queryRoot = (Slice) query.getTupleExpr().clone();
+		Slice queryRoot = (Slice) tupleExpr.clone();
 
 		TupleExpr whereClause = queryRoot.getArg();
 
