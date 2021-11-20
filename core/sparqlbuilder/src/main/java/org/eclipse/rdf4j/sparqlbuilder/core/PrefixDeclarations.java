@@ -19,7 +19,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 	/**
 	 * Add prefix declarations to this collection
 	 *
-	 * @param prefixes
+	 * @param prefixes the prefixes
 	 * @return this
 	 */
 	public PrefixDeclarations addPrefix(Prefix... prefixes) {
@@ -65,7 +65,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 		int pos = 0;
 		int lastPos = 0;
 		while (pos != -1 && pos < queryString.length()) {
-			pos = findNextRelevantIndex(queryString, lastPos);
+			pos = findNextRelevantIndex(queryString, lastPos, isInsideString);
 			if (pos == -1) {
 				break;
 			}
@@ -163,17 +163,17 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 		return queryString.charAt(pos) == '"';
 	}
 
-	private int findNextRelevantIndex(String queryString, int lastPos) {
+	private int findNextRelevantIndex(String queryString, int lastPos, boolean isInsideString) {
 		int[] mins = new int[] {
-				queryString.indexOf('<', lastPos),
-				queryString.indexOf('\\', lastPos),
+				isInsideString ? -1 : queryString.indexOf('<', lastPos),
+				isInsideString ? queryString.indexOf('\\', lastPos) : -1,
 				queryString.indexOf('"', lastPos),
 				queryString.indexOf("'''", lastPos)
 		};
 		int min = Integer.MAX_VALUE;
-		for (int i = 0; i < mins.length; i++) {
-			if (mins[i] >= 0) {
-				min = Math.min(min, mins[i]);
+		for (int j : mins) {
+			if (j >= 0) {
+				min = Math.min(min, j);
 			}
 		}
 		return min == Integer.MAX_VALUE ? -1 : min;
