@@ -8,10 +8,7 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
-import java.util.function.Function;
-import java.util.stream.Stream;
-
-import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
+import org.eclipse.rdf4j.model.util.URIUtil;
 
 /**
  * A collection of SPARQL Prefix declarations
@@ -201,7 +198,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 
 	private boolean isContinuationALocalName(String continuation) {
 		String localNameCandiate = continuation.substring(0, findNextWhitespace(continuation));
-		return TurtleUtil.isPN_LOCAL(localNameCandiate);
+		return URIUtil.isValidLocalName(localNameCandiate);
 	}
 
 	private int findNextWhitespace(String continuation) {

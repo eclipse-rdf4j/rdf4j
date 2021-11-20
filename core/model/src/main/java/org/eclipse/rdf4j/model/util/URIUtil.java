@@ -7,11 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
+
+import org.eclipse.rdf4j.common.text.ASCIIUtil;
 
 /**
  * Utility functions for working with {@link URI URIs}.
@@ -200,4 +203,159 @@ public class URIUtil {
 
 		return unreserved;
 	}
+
+	/**
+	 * Checks whether the specified name is allowed as the local name part of an IRI according to the SPARQL 1.1/Turtle
+	 * 1.1 spec.
+	 * 
+	 * @param name the candidate local name
+	 * @return true if it is a local name
+	 */
+	public static boolean isValidLocalName(String name) {
+		// Empty names are legal
+		if (name.length() == 0) {
+			return true;
+		}
+
+		if (!isPN_CHARS_U(name.charAt(0)) && name.charAt(0) != ':' && !ASCIIUtil.isNumber(name.charAt(0))
+				&& !isPLX_START(name)) {
+			return false;
+		}
+
+		if (!isNameStartChar(name.charAt(0))) {
+			return false;
+		}
+
+		for (int i = 1; i < name.length(); i++) {
+			if (!isNameChar(name.charAt(i))) {
+				return false;
+			}
+
+			// Check if the percent encoding was less than two characters from the
+			// end of the prefix, in which case it is invalid
+			if (name.charAt(i) == '%' && (name.length() - i) < 3) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Check if the supplied code point represents either a valid prefixed name base character or an underscore.
+	 * <p>
+	 * From Turtle Spec:
+	 * <p>
+	 * http://www.w3.org/TR/turtle/#grammar-production-PN_CHARS_U
+	 * <p>
+	 * [164s] PN_CHARS_U ::= PN_CHARS_BASE | '_'
+	 */
+	private static boolean isPN_CHARS_U(int codePoint) {
+		return isPN_CHARS_BASE(codePoint) || codePoint == '_';
+	}
+
+	private static boolean isPLX_START(String name) {
+		if (name.length() >= 3 && isPERCENT(name.substring(0, 3))) {
+			return true;
+		}
+
+		if (name.length() >= 2 && isPN_LOCAL_ESC(name.substring(0, 2))) {
+			return true;
+		}
+
+		return false;
+	}
+
+	private static boolean isPERCENT(String name) {
+		if (name.length() != 3) {
+			return false;
+		}
+
+		if (name.charAt(0) != '%') {
+			return false;
+		}
+
+		if (!ASCIIUtil.isHex(name.charAt(1)) || !ASCIIUtil.isHex(name.charAt(2))) {
+			return false;
+		}
+
+		return true;
+	}
+
+	private static boolean isPN_LOCAL_ESC(String name) {
+		if (name.length() != 2) {
+			return false;
+		}
+
+		if (!name.startsWith("\\")) {
+			return false;
+		}
+
+		if (!(Arrays.binarySearch(LOCAL_ESCAPED_CHARS, name.charAt(1)) > -1)) {
+			return false;
+		}
+
+		return true;
+	}
+
+	private static final char[] LOCAL_ESCAPED_CHARS = new char[] { '_', '~', '.', '-', '!', '$', '&', '\'', '(', ')',
+			'*', '+', ',', ';', '=', '/', '?', '#', '@', '%' };
+
+	/**
+	 * Check if the supplied code point represents a valid prefixed name base character.
+	 * <p>
+	 * From Turtle Spec:
+	 * <p>
+	 * http://www.w3.org/TR/turtle/#grammar-production-PN_CHARS_BASE
+	 * <p>
+	 * [163s] PN_CHARS_BASE ::= [A-Z] | [a-z] | [#x00C0-#x00D6] | [#x00D8-#x00F6] | [#x00F8-#x02FF] | [#x0370-#x037D] |
+	 * [#x037F-#x1FFF] | [#x200C-#x200D] | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] |
+	 * [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]
+	 */
+	private static boolean isPN_CHARS_BASE(int codePoint) {
+		return ASCIIUtil.isLetter(codePoint) || codePoint >= 0x00C0 && codePoint <= 0x00D6
+				|| codePoint >= 0x00D8 && codePoint <= 0x00F6 || codePoint >= 0x00F8 && codePoint <= 0x02FF
+				|| codePoint >= 0x0370 && codePoint <= 0x037D || codePoint >= 0x037F && codePoint <= 0x1FFF
+				|| codePoint >= 0x200C && codePoint <= 0x200D || codePoint >= 0x2070 && codePoint <= 0x218F
+				|| codePoint >= 0x2C00 && codePoint <= 0x2FEF || codePoint >= 0x3001 && codePoint <= 0xD7FF
+				|| codePoint >= 0xF900 && codePoint <= 0xFDCF || codePoint >= 0xFDF0 && codePoint <= 0xFFFD
+				|| codePoint >= 0x10000 && codePoint <= 0xEFFFF;
+	}
+
+	/**
+	 * Check if the supplied code point represents a valid name start character.
+	 *
+	 * @param codePoint a Unicode code point.
+	 * @return <code>true</code> if the supplied code point represents a valid name start char, <code>false</code>
+	 *         otherwise.
+	 */
+	private static boolean isNameStartChar(int codePoint) {
+		return isPN_CHARS_U(codePoint) || codePoint == ':' || ASCIIUtil.isNumber(codePoint) || codePoint == '\\'
+				|| codePoint == '%';
+	}
+
+	/**
+	 * Check if the supplied code point represents a valid name character.
+	 *
+	 * @param codePoint a Unicode code point.
+	 * @return <code>true</code> if the supplied code point represents a valid name char, <code>false</code> otherwise.
+	 */
+	private static boolean isNameChar(int codePoint) {
+		return isPN_CHARS(codePoint) || codePoint == '.' || codePoint == ':' | codePoint == '\\' || codePoint == '%';
+	}
+
+	/**
+	 * Check if the supplied code point represents a valid prefixed name character.
+	 * <p>
+	 * From Turtle Spec:
+	 * <p>
+	 * http://www.w3.org/TR/turtle/#grammar-production-PN_CHARS
+	 * <p>
+	 * [166s] PN_CHARS ::= PN_CHARS_U | '-' | [0-9] | #x00B7 | [#x0300-#x036F] | [#x203F-#x2040]
+	 */
+	private static boolean isPN_CHARS(int codePoint) {
+		return isPN_CHARS_U(codePoint) || ASCIIUtil.isNumber(codePoint) || codePoint == '-' || codePoint == 0x00B7
+				|| codePoint >= 0x0300 && codePoint <= 0x036F || codePoint >= 0x203F && codePoint <= 0x2040;
+	}
+
 }
