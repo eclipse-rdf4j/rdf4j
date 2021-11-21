@@ -88,7 +88,7 @@ public class QueryWithPrefixesTest extends BaseExamples {
 		query = Queries
 				.SELECT(name)
 				.prefix(FOAF.NS)
-				.where(x.has(Expressions.path(iri(FOAF.ACCOUNT)).then(iri(FOAF.MBOX)).build(), name));
+				.where(x.has(p -> p.pred(FOAF.ACCOUNT).then(FOAF.MBOX).build(), name));
 		Assert.assertEquals(
 				"PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
 						+ "SELECT ?name\n"

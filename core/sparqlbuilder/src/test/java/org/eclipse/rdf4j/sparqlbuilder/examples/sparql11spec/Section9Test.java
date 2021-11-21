@@ -14,6 +14,7 @@ import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 import org.eclipse.rdf4j.model.vocabulary.DC;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
@@ -135,8 +136,6 @@ public class Section9Test extends BaseExamples {
 
 	@Test
 	public void example_9_2__7_sequence_inverse() {
-		// TODO: this example should be documented in the programming guide because it illustrates
-		// the use of sub-builders well
 		GraphPattern gp = x.has(path -> path
 				.pred(foaf.iri("knows"))
 				.then(b -> b.pred(foaf.iri("knows"))
@@ -318,11 +317,11 @@ public class Section9Test extends BaseExamples {
 	public void example_9_4__1() {
 		// Note: changed example: added WHERE, added dot
 		query = Queries.SELECT(x, type)
-				.prefix(rdfs)
-				.prefix(rdf)
+				.prefix(RDFS.NS)
+				.prefix(RDF.NS)
 				.where(x.has(p -> p
-						.pred(rdf.iri("type"))
-						.then(rdfs.iri("subClassOf"))
+						.pred(RDF.TYPE)
+						.then(RDFS.SUBCLASSOF)
 						.zeroOrMore(),
 						type));
 		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
@@ -339,11 +338,11 @@ public class Section9Test extends BaseExamples {
 	public void example_9_4__2() {
 		// Note: changed example: added WHERE, added dot
 		query = Queries.SELECT(person)
-				.prefix(foaf)
+				.prefix(FOAF.NS)
 				.prefix(base)
 				.where(base.iri("x")
 						.has(p -> p
-								.pred(foaf.iri("knows"))
+								.pred(FOAF.KNOWS)
 								.oneOrMore(),
 								person));
 		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
