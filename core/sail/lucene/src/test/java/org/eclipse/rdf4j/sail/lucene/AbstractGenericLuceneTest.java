@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -96,6 +97,8 @@ public abstract class AbstractGenericLuceneTest {
 	public static final IRI PREDICATE_3 = vf.createIRI("urn:predicate3");
 
 	static final Logger LOG = LoggerFactory.getLogger(AbstractGenericLuceneTest.class);
+
+	private final Random random = new Random(43252333);
 
 	protected LuceneSail sail;
 
@@ -772,7 +775,7 @@ public abstract class AbstractGenericLuceneTest {
 		for (int i = 0; i < numThreads; i++) {
 			new Thread(new Runnable() {
 
-				private long iterationCount = 10 + Math.round(Math.random() * 100);
+				private long iterationCount = 10 + Math.round(random.nextDouble() * 100);
 
 				@Override
 				public void run() {

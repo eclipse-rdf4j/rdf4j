@@ -35,7 +35,7 @@ class IOUtilTest {
 		}
 
 		// test random positive integers
-		Random rng = new Random();
+		Random rng = new Random(328982033);
 		for (int i = 2; i < 10_000; i++) {
 			shouldWriteVarInt(rng.nextInt(Integer.MAX_VALUE));
 		}

@@ -19,6 +19,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.io.PipedReader;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -26,6 +27,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -91,6 +93,8 @@ public abstract class AbstractLuceneSailTest {
 	protected LuceneSail sail;
 
 	protected Repository repository;
+
+	private final Random random = new Random(43252333);
 
 	static {
 		StringBuilder buffer = new StringBuilder();
@@ -1051,7 +1055,7 @@ public abstract class AbstractLuceneSailTest {
 		for (int i = 0; i < numThreads; i++) {
 			new Thread(new Runnable() {
 
-				private long iterationCount = 10 + Math.round(Math.random() * 100);
+				private final long iterationCount = 10 + Math.round(random.nextDouble() * 100);
 
 				@Override
 				public void run() {

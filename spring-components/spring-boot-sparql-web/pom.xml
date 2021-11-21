@@ -9,17 +9,6 @@
 	<artifactId>rdf4j-spring-boot-sparql-web</artifactId>
 	<name>RDF4J: Spring boot component for a HTTP sparql server</name>
 	<description>HTTP server component implementing only the SPARQL protocol</description>
-	<dependencyManagement>
-		<dependencies>
-			<dependency>
-				<groupId>org.springframework.boot</groupId>
-				<artifactId>spring-boot-dependencies</artifactId>
-				<version>${spring.boot.version}</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

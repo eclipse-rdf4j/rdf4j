@@ -317,7 +317,7 @@ public class LoadingBenchmark {
 	}
 
 	private static List<Statement> getStatements() {
-		Random random = new Random();
+		Random random = new Random(34435325);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
 

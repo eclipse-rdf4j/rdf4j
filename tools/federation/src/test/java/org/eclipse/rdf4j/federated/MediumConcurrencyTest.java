@@ -87,7 +87,7 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	public void testPhaser() throws Exception {
 
 		final Phaser p1 = new Phaser(1);
-		final Random rand = new Random();
+		final Random rand = new Random(325656342);
 
 		for (int i = 0; i < 10; i++) {
 			final int tid = i;
