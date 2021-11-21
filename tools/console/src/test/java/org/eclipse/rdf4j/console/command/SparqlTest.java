@@ -10,13 +10,12 @@ package org.eclipse.rdf4j.console.command;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.Reader;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Model;
@@ -91,8 +90,9 @@ public class SparqlTest extends AbstractCommandTest {
 
 		assertTrue(f.exists(), "File does not exist");
 		assertTrue(f.length() > 0, "Empty file");
-
-		Model m = Rio.parse(new FileReader(f), "", RDFFormat.TURTLE);
+		Reader reader = new FileReader(f);
+		Model m = Rio.parse(reader, "", RDFFormat.TURTLE);
+		reader.close();
 		assertTrue(m.size() > 0, "Empty model");
 	}
 
@@ -107,8 +107,9 @@ public class SparqlTest extends AbstractCommandTest {
 
 		assertTrue(f.exists(), "File does not exist");
 		assertTrue(f.length() > 0, "Empty file");
-
-		Model m = Rio.parse(new FileReader(f), "", RDFFormat.TURTLE);
+		Reader reader = new FileReader(f);
+		Model m = Rio.parse(reader, "", RDFFormat.TURTLE);
+		reader.close();
 		assertTrue(m.size() > 0, "Empty model");
 	}
 
