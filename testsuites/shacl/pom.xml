@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-shacl-testsuite</artifactId>
-	<name>RDF4J SHACL compliance test suite</name>
+	<name>RDF4J: SHACL compliance test suite</name>
 	<description>Test suite for the SHACL Shapes Constraint Language</description>
 	<dependencies>
 		<dependency>

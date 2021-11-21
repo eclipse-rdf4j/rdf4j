@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-solr-compliance</artifactId>
-	<name>RDF4J Solr Sail Tests</name>
+	<name>RDF4J: Solr Sail Tests</name>
 	<description>Tests for Solr Sail.</description>
 	<properties>
 		<!-- used to set up embedded solr server in integration tests -->

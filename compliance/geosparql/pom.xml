@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-geosparql-compliance</artifactId>
-	<name>RDF4J GeoSPARQL compliance tests</name>
+	<name>RDF4J: GeoSPARQL compliance tests</name>
 	<description>Tests for the GeoSPARQL query language implementation</description>
 	<dependencies>
 		<dependency>

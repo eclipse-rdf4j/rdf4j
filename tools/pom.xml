@@ -8,7 +8,7 @@
 	</parent>
 	<artifactId>rdf4j-tools</artifactId>
 	<packaging>pom</packaging>
-	<name>RDF4J Tools</name>
+	<name>RDF4J: Tools</name>
 	<description>Server, Workbench, Console and other end-user tools for RDF4J.</description>
 	<modules>
 		<module>config</module>

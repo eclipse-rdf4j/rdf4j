@@ -7,7 +7,7 @@
 	</parent>
 	<modelVersion>4.0.0</modelVersion>
 	<artifactId>rdf4j-model-compliance</artifactId>
-	<name>RDF4J Model compliance tests</name>
+	<name>RDF4J: Model compliance tests</name>
 	<dependencies>
 		<dependency>
 			<groupId>org.openjdk.jmh</groupId>

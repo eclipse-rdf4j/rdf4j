@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-sparql-testsuite</artifactId>
-	<name>RDF4J SPARQL compliance test suite</name>
+	<name>RDF4J: SPARQL compliance test suite</name>
 	<description>Test suite for the SPARQL query language</description>
 	<dependencies>
 		<dependency>
