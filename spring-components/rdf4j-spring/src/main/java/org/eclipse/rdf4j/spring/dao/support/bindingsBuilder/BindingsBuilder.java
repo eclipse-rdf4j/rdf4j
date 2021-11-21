@@ -15,7 +15,7 @@ import java.util.Objects;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
+import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
 /**
  * @since 4.0.0
@@ -37,7 +37,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder add(ExtendedVariable key, Value value) {
+	public BindingsBuilder add(Variable key, Value value) {
 		return add(key.getVarName(), value);
 	}
 
@@ -48,7 +48,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder addMaybe(ExtendedVariable key, Value value) {
+	public BindingsBuilder addMaybe(Variable key, Value value) {
 		return addMaybe(key.getVarName(), value);
 	}
 
@@ -62,7 +62,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder add(ExtendedVariable key, IRI value) {
+	public BindingsBuilder add(Variable key, IRI value) {
 		return add(key.getVarName(), value);
 	}
 
@@ -73,12 +73,12 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder addMaybe(ExtendedVariable key, IRI value) {
+	public BindingsBuilder addMaybe(Variable key, IRI value) {
 		return addMaybe(key.getVarName(), value);
 	}
 
 	@Override
-	public BindingsBuilder addMaybe(ExtendedVariable key, String value) {
+	public BindingsBuilder addMaybe(Variable key, String value) {
 		return addMaybe(key.getVarName(), value);
 	}
 
@@ -92,7 +92,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder add(ExtendedVariable key, String value) {
+	public BindingsBuilder add(Variable key, String value) {
 		return add(key.getVarName(), value);
 	}
 
@@ -111,7 +111,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder add(ExtendedVariable key, Integer value) {
+	public BindingsBuilder add(Variable key, Integer value) {
 		return add(key.getVarName(), value);
 	}
 
@@ -122,7 +122,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder addMaybe(ExtendedVariable key, Integer value) {
+	public BindingsBuilder addMaybe(Variable key, Integer value) {
 		return addMaybe(key.getVarName(), value);
 	}
 
@@ -136,7 +136,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder add(ExtendedVariable key, Boolean value) {
+	public BindingsBuilder add(Variable key, Boolean value) {
 		return add(key.getVarName(), value);
 	}
 
@@ -147,7 +147,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder addMaybe(ExtendedVariable key, Boolean value) {
+	public BindingsBuilder addMaybe(Variable key, Boolean value) {
 		return addMaybe(key.getVarName(), value);
 	}
 
@@ -161,7 +161,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder add(ExtendedVariable key, Float value) {
+	public BindingsBuilder add(Variable key, Float value) {
 		return add(key.getVarName(), value);
 	}
 
@@ -172,7 +172,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder addMaybe(ExtendedVariable key, Float value) {
+	public BindingsBuilder addMaybe(Variable key, Float value) {
 		return addMaybe(key.getVarName(), value);
 	}
 
@@ -186,7 +186,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder add(ExtendedVariable key, Double value) {
+	public BindingsBuilder add(Variable key, Double value) {
 		return add(key.getVarName(), value);
 	}
 
@@ -197,7 +197,7 @@ public class BindingsBuilder implements MutableBindings {
 	}
 
 	@Override
-	public BindingsBuilder addMaybe(ExtendedVariable var, Double value) {
+	public BindingsBuilder addMaybe(Variable var, Double value) {
 		return addMaybe(var.getVarName(), value);
 	}
 

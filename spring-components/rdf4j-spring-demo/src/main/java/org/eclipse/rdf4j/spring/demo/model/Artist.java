@@ -11,16 +11,16 @@ package org.eclipse.rdf4j.spring.demo.model;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
+import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
 /**
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
 public class Artist {
-	public static final ExtendedVariable ARTIST_ID = new ExtendedVariable("artist_id");
-	public static final ExtendedVariable ARTIST_FIRST_NAME = new ExtendedVariable("artist_firstName");
-	public static final ExtendedVariable ARTIST_LAST_NAME = new ExtendedVariable("artist_lastName");
+	public static final Variable ARTIST_ID = new Variable("artist_id");
+	public static final Variable ARTIST_FIRST_NAME = new Variable("artist_firstName");
+	public static final Variable ARTIST_LAST_NAME = new Variable("artist_lastName");
 	private IRI id;
 	private String firstName;
 	private String lastName;

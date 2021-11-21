@@ -11,17 +11,17 @@ package org.eclipse.rdf4j.spring.demo.model;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
+import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
 /**
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
 public class Painting {
-	public static final ExtendedVariable PAINTING_ID = new ExtendedVariable("painting_id");
-	public static final ExtendedVariable PAINTING_ARTIST_ID = new ExtendedVariable("painting_artist_id");
-	public static final ExtendedVariable PAINTING_TECHNIQUE = new ExtendedVariable("painting_technique");
-	public static final ExtendedVariable PAINTING_LABEL = new ExtendedVariable("painting_label");
+	public static final Variable PAINTING_ID = new Variable("painting_id");
+	public static final Variable PAINTING_ARTIST_ID = new Variable("painting_artist_id");
+	public static final Variable PAINTING_TECHNIQUE = new Variable("painting_technique");
+	public static final Variable PAINTING_LABEL = new Variable("painting_label");
 
 	private IRI id;
 	private String title;
