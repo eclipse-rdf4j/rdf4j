@@ -60,6 +60,7 @@ public class ExplanationImpl implements Explanation {
 
 	@Override
 	public String toDot() {
-		return "digraph Explanation {\n" + genericPlanNode.toDot() + "\n}\n";
+		String sep = System.lineSeparator();
+		return "digraph Explanation {" + sep + genericPlanNode.toDot() + sep + "}" + sep;
 	}
 }
