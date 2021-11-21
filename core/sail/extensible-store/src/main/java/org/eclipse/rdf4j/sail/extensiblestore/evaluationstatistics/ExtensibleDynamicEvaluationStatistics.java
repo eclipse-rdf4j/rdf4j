@@ -70,6 +70,8 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 	ConcurrentLinkedQueue<StatementQueueItem> queue = new ConcurrentLinkedQueue<>();
 
+	private final Object monitor = new Object();
+
 	AtomicInteger queueSize = new AtomicInteger();
 
 	private final HashFunction HASH_FUNCTION = Hashing.murmur3_128();
@@ -118,110 +120,120 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 	}
 
 	@Override
-	synchronized public double staleness(long expectedSize) {
+	public double staleness(long expectedSize) {
+		synchronized (monitor) {
+			double estimatedSize = size.cardinality() - size_removed.cardinality();
 
-		double estimatedSize = size.cardinality() - size_removed.cardinality();
+			// add 500 because this is our minimum margin of error
+			estimatedSize += 500;
+			expectedSize += 500;
 
-		// add 500 because this is our minimum margin of error
-		estimatedSize += 500;
-		expectedSize += 500;
+			double diff = Math.abs(estimatedSize - expectedSize);
 
-		double diff = Math.abs(estimatedSize - expectedSize);
+			double staleness;
 
-		double staleness;
-
-		if (estimatedSize + expectedSize == 0 || diff == 0) {
-			staleness = 0;
-		} else {
-			if (expectedSize > estimatedSize) {
-				staleness = diff / expectedSize;
+			if (estimatedSize + expectedSize == 0 || diff == 0) {
+				staleness = 0;
 			} else {
-				staleness = diff / Math.max(0, estimatedSize);
+				if (expectedSize > estimatedSize) {
+					staleness = diff / expectedSize;
+				} else {
+					staleness = diff / Math.max(0, estimatedSize);
+				}
 			}
+
+			logger.debug("expected size {}; estimated size: {}; staleness: {}", expectedSize, estimatedSize, staleness);
+
+			return staleness;
 		}
-
-		logger.debug("expected size {}; estimated size: {}; staleness: {}", expectedSize, estimatedSize, staleness);
-
-		return staleness;
-
 	}
 
 	class ExtensibleDynamicEvaluationStatisticsCardinalityCalculator extends CardinalityCalculator {
 
 		@Override
-		synchronized protected double getCardinality(StatementPattern sp) {
-			double min = size.cardinality() - size_removed.cardinality();
+		protected double getCardinality(StatementPattern sp) {
+			synchronized (monitor) {
 
-			min = Math.min(min, getSubjectCardinality(sp.getSubjectVar()));
-			min = Math.min(min, getPredicateCardinality(sp.getPredicateVar()));
-			min = Math.min(min, getObjectCardinality(sp.getObjectVar()));
+				double min = size.cardinality() - size_removed.cardinality();
 
-			// skip more complex evaluations if min is unlikely to get lower
-			if (min < 2) {
+				min = Math.min(min, getSubjectCardinality(sp.getSubjectVar()));
+				min = Math.min(min, getPredicateCardinality(sp.getPredicateVar()));
+				min = Math.min(min, getObjectCardinality(sp.getObjectVar()));
+
+				// skip more complex evaluations if min is unlikely to get lower
+				if (min < 2) {
+					return min;
+				}
+
+				if (sp.getSubjectVar().getValue() != null && sp.getPredicateVar().getValue() != null) {
+					min = Math.min(min,
+							getHllCardinality(
+									subjectPredicateIndex,
+									subjectPredicateIndex_removed,
+									sp.getSubjectVar().getValue(),
+									sp.getPredicateVar().getValue()));
+				}
+
+				if (sp.getPredicateVar().getValue() != null && sp.getObjectVar().getValue() != null) {
+					min = Math.min(min,
+							getHllCardinality(
+									predicateObjectIndex,
+									predicateObjectIndex_removed,
+									sp.getPredicateVar().getValue(),
+									sp.getObjectVar().getValue()));
+				}
+
 				return min;
 			}
 
-			if (sp.getSubjectVar().getValue() != null && sp.getPredicateVar().getValue() != null) {
-				min = Math.min(min,
-						getHllCardinality(
-								subjectPredicateIndex,
-								subjectPredicateIndex_removed,
-								sp.getSubjectVar().getValue(),
-								sp.getPredicateVar().getValue()));
-			}
-
-			if (sp.getPredicateVar().getValue() != null && sp.getObjectVar().getValue() != null) {
-				min = Math.min(min,
-						getHllCardinality(
-								predicateObjectIndex,
-								predicateObjectIndex_removed,
-								sp.getPredicateVar().getValue(),
-								sp.getObjectVar().getValue()));
-			}
-
-			return min;
-
 		}
 
 		@Override
-		synchronized protected double getSubjectCardinality(Var var) {
-			if (var.getValue() == null) {
-				return size.cardinality();
-			} else {
-				return getHllCardinality(subjectIndex, subjectIndex_removed, var.getValue());
+		protected double getSubjectCardinality(Var var) {
+			synchronized (monitor) {
+				if (var.getValue() == null) {
+					return size.cardinality();
+				} else {
+					return getHllCardinality(subjectIndex, subjectIndex_removed, var.getValue());
+				}
 			}
 
 		}
 
 		@Override
-		synchronized protected double getPredicateCardinality(Var var) {
-			if (var.getValue() == null) {
-				return size.cardinality();
-			} else {
-				return getHllCardinality(predicateIndex, predicateIndex_removed, var.getValue());
+		protected double getPredicateCardinality(Var var) {
+			synchronized (monitor) {
+				if (var.getValue() == null) {
+					return size.cardinality();
+				} else {
+					return getHllCardinality(predicateIndex, predicateIndex_removed, var.getValue());
+				}
+
 			}
 		}
 
 		@Override
-		synchronized protected double getObjectCardinality(Var var) {
-			if (var.getValue() == null) {
-				return size.cardinality();
-			} else {
-				return getHllCardinality(objectIndex, objectIndex_removed, var.getValue());
+		protected double getObjectCardinality(Var var) {
+			synchronized (monitor) {
+				if (var.getValue() == null) {
+					return size.cardinality();
+				} else {
+					return getHllCardinality(objectIndex, objectIndex_removed, var.getValue());
+				}
 			}
 		}
 
 		@Override
-		synchronized protected double getContextCardinality(Var var) {
-			if (var.getValue() == null) {
-				return defaultContext.cardinality() - defaultContext_removed.cardinality();
-			} else {
-				return getHllCardinality(contextIndex, contextIndex_removed, var.getValue());
+		protected double getContextCardinality(Var var) {
+			synchronized (monitor) {
+				if (var.getValue() == null) {
+					return defaultContext.cardinality() - defaultContext_removed.cardinality();
+				} else {
+					return getHllCardinality(contextIndex, contextIndex_removed, var.getValue());
+				}
 			}
 		}
 	}
-
-	;
 
 	private double getHllCardinality(HLL[][] index, HLL[][] index_removed,
 			Value value1, Value value2) {
@@ -259,74 +271,80 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 		}
 	}
 
-	synchronized private void startQueueConsumingThread() {
-		if (queueConsumingThread == null) {
-			queueConsumingThread = new Thread(() -> {
-				try {
-					while (!queue.isEmpty()) {
-						StatementQueueItem poll = queue.poll();
-						queueSize.decrementAndGet();
-						Statement statement = poll.statement;
-						long statementHash = HASH_FUNCTION
-								.hashString(statement.toString(), StandardCharsets.UTF_8)
-								.asLong();
+	private void startQueueConsumingThread() {
+		synchronized (monitor) {
+			if (queueConsumingThread == null) {
+				queueConsumingThread = new Thread(() -> {
+					try {
+						while (!queue.isEmpty()) {
+							StatementQueueItem poll = queue.poll();
+							queueSize.decrementAndGet();
+							Statement statement = poll.statement;
+							long statementHash = HASH_FUNCTION
+									.hashString(statement.toString(), StandardCharsets.UTF_8)
+									.asLong();
 
-						if (poll.type == StatementQueueItem.Type.added) {
+							if (poll.type == StatementQueueItem.Type.added) {
 
-							handleStatement(statement, statementHash, size, subjectIndex, predicateIndex, objectIndex,
-									subjectPredicateIndex, predicateObjectIndex, defaultContext, contextIndex);
+								handleStatement(statement, statementHash, size, subjectIndex, predicateIndex,
+										objectIndex,
+										subjectPredicateIndex, predicateObjectIndex, defaultContext, contextIndex);
 
-						} else { // removed
+							} else { // removed
 
-							assert poll.type == StatementQueueItem.Type.removed;
+								assert poll.type == StatementQueueItem.Type.removed;
 
-							handleStatement(statement, statementHash, size_removed, subjectIndex_removed,
-									predicateIndex_removed, objectIndex_removed, subjectPredicateIndex_removed,
-									predicateObjectIndex_removed, defaultContext_removed, contextIndex_removed);
-
-						}
-
-						if (queue.isEmpty()) {
-							try {
-								Thread.sleep(2);
-							} catch (InterruptedException ignored) {
+								handleStatement(statement, statementHash, size_removed, subjectIndex_removed,
+										predicateIndex_removed, objectIndex_removed, subjectPredicateIndex_removed,
+										predicateObjectIndex_removed, defaultContext_removed, contextIndex_removed);
 
 							}
+
+							if (queue.isEmpty()) {
+								try {
+									Thread.sleep(2);
+								} catch (InterruptedException ignored) {
+
+								}
+							}
 						}
+					} finally {
+						queueConsumingThread = null;
 					}
-				} finally {
-					queueConsumingThread = null;
-				}
 
-			});
+				});
 
-			queueConsumingThread.setDaemon(true);
-			queueConsumingThread.start();
+				queueConsumingThread.setDaemon(true);
+				queueConsumingThread.start();
 
+			}
 		}
 	}
 
-	synchronized private void handleStatement(Statement statement, long statementHash, HLL size,
+	private void handleStatement(Statement statement, long statementHash, HLL size,
 			Map<Integer, HLL> subjectIndex, Map<Integer, HLL> predicateIndex,
 			Map<Integer, HLL> objectIndex, HLL[][] subjectPredicateIndex,
 			HLL[][] predicateObjectIndex, HLL defaultContext,
 			Map<Integer, HLL> contextIndex) {
-		size.addRaw(statementHash);
-		int subjectHash = statement.getSubject().hashCode();
-		int predicateHash = statement.getPredicate().hashCode();
-		int objectHash = statement.getObject().hashCode();
+		synchronized (monitor) {
+			size.addRaw(statementHash);
 
-		indexOneValue(statementHash, subjectIndex, subjectHash);
-		indexOneValue(statementHash, predicateIndex, predicateHash);
-		indexOneValue(statementHash, objectIndex, objectHash);
+			int subjectHash = statement.getSubject().hashCode();
+			int predicateHash = statement.getPredicate().hashCode();
+			int objectHash = statement.getObject().hashCode();
 
-		indexTwoValues(statementHash, subjectPredicateIndex, subjectHash, predicateHash);
-		indexTwoValues(statementHash, predicateObjectIndex, predicateHash, objectHash);
+			indexOneValue(statementHash, subjectIndex, subjectHash);
+			indexOneValue(statementHash, predicateIndex, predicateHash);
+			indexOneValue(statementHash, objectIndex, objectHash);
 
-		if (statement.getContext() == null) {
-			defaultContext.addRaw(statementHash);
-		} else {
-			indexOneValue(statementHash, contextIndex, statement.getContext().hashCode());
+			indexTwoValues(statementHash, subjectPredicateIndex, subjectHash, predicateHash);
+			indexTwoValues(statementHash, predicateObjectIndex, predicateHash, objectHash);
+
+			if (statement.getContext() == null) {
+				defaultContext.addRaw(statementHash);
+			} else {
+				indexOneValue(statementHash, contextIndex, statement.getContext().hashCode());
+			}
 		}
 	}
 
@@ -341,7 +359,7 @@ public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationS
 
 		enum Type {
 			added,
-			removed;
+			removed
 		}
 	}
 
