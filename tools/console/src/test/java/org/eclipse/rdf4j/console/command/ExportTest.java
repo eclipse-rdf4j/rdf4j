@@ -7,8 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.console.command;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
@@ -53,9 +52,11 @@ public class ExportTest extends AbstractCommandTest {
 	public final void testExportAll() throws RepositoryException, IOException {
 		File nq = new File(locationFile, "all.nq");
 		cmd.execute("export", nq.getAbsolutePath());
-		Reader reader = Files.newReader(nq, StandardCharsets.UTF_8);
-		Model exp = Rio.parse(reader, "http://example.com", RDFFormat.NQUADS);
-		reader.close();
+		Model exp = null;
+		try (Reader reader = Files.newReader(nq, StandardCharsets.UTF_8)) {
+			exp = Rio.parse(reader, "http://example.com", RDFFormat.NQUADS);
+		}
+		assertNotNull(exp);
 		assertTrue(nq.length() > 0, "File is empty");
 		assertEquals(3, exp.contexts().size(), "Number of contexts incorrect");
 
@@ -68,9 +69,11 @@ public class ExportTest extends AbstractCommandTest {
 
 		File nq = new File(locationFile, "all.nq");
 		cmd.execute("export", nq.getName());
-		Reader reader = Files.newReader(nq, StandardCharsets.UTF_8);
-		Model exp = Rio.parse(reader, "http://example.com", RDFFormat.NQUADS);
-		reader.close();
+		Model exp = null;
+		try (Reader reader = Files.newReader(nq, StandardCharsets.UTF_8)) {
+			exp = Rio.parse(reader, "http://example.com", RDFFormat.NQUADS);
+		}
+		assertNotNull(exp);
 		assertTrue(nq.length() > 0, "File is empty");
 		assertEquals(3, exp.contexts().size(), "Number of contexts incorrect");
 	}
@@ -79,11 +82,12 @@ public class ExportTest extends AbstractCommandTest {
 	public final void testExportContexts() throws RepositoryException, IOException {
 		File nq = new File(locationFile, "default.nq");
 		cmd.execute("export", nq.getAbsolutePath(), "null", "http://example.org/ns/context/resurrection");
-		Reader reader = Files.newReader(nq, StandardCharsets.UTF_8);
-		Model exp = Rio.parse(reader, "http://example.com", RDFFormat.NQUADS);
-		reader.close();
+		Model exp = null;
+		try (Reader reader = Files.newReader(nq, StandardCharsets.UTF_8)) {
+			exp = Rio.parse(reader, "http://example.com", RDFFormat.NQUADS);
+		}
+		assertNotNull(exp);
 		assertTrue(nq.length() > 0, "File is empty");
-
 		assertEquals(2, exp.contexts().size(), "Number of contexts incorrect");
 		assertEquals(4, exp.size(), "Number of triples incorrect");
 	}
