@@ -223,16 +223,16 @@ Subclasses of `SimpleRDF4JCRUDDao` must implement a couple of template methods i
 behaviour for the specific entity and id classes.
 
 In the following, we use the entity {{< javadoc "Artist" "spring/demo/model/Artist.html">}} (as used in the demo 
-application) as an example. Note that we define public constants of type {{< javadoc "ExtendedVariable" "sparqlbuilder/core/ExtendedVariable.html" >}}, 
+application) as an example. Note that we define public constants of type {{< javadoc "Variable" "sparqlbuilder/core/Variable.html" >}}, 
 one corresponding to each of the entity's fields.
  
 ```java
 public class Artist {
-    // recommended pattern: use a public ExtendedVariable constant for each of the entities fields 
+    // recommended pattern: use a public Variable constant for each of the entities fields 
     // for use in queries and result processing. 
-	public static final ExtendedVariable ARTIST_ID = new ExtendedVariable("artist_id"); 
-	public static final ExtendedVariable ARTIST_FIRST_NAME = new ExtendedVariable("artist_firstName");
-	public static final ExtendedVariable ARTIST_LAST_NAME = new ExtendedVariable("artist_lastName");
+	public static final Variable ARTIST_ID = SparqlBuilder.var("artist_id"); 
+	public static final Variable ARTIST_FIRST_NAME = SparqlBuilder.var("artist_firstName");
+	public static final Variable ARTIST_LAST_NAME = SparqlBuilder.var("artist_lastName");
 	private IRI id;
 	private String firstName;
 	private String lastName;

@@ -23,7 +23,7 @@ public class Variable implements Projectable, RdfSubject, RdfPredicate, RdfObjec
 		GraphName, Assignable {
 	private String varName;
 
-	public Variable(String varName) {
+	Variable(String varName) {
 		this.varName = varName;
 	}
 

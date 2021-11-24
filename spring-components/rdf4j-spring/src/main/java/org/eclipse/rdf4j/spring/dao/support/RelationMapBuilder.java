@@ -37,10 +37,10 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
  * @author Florian Kleedorfer
  */
 public class RelationMapBuilder {
-	public static final Variable _relSubject = new Variable("rel_subject");
-	public static final Variable _relObject = new Variable("rel_object");
-	private static final Variable _relKey = new Variable("rel_key");
-	private static final Variable _relValue = new Variable("rel_value");
+	public static final Variable _relSubject = SparqlBuilder.var("rel_subject");
+	public static final Variable _relObject = SparqlBuilder.var("rel_object");
+	private static final Variable _relKey = SparqlBuilder.var("rel_key");
+	private static final Variable _relValue = SparqlBuilder.var("rel_value");
 	private static final IRI NOTHING = SimpleValueFactory.getInstance()
 			.createIRI("urn:java:relationDaoSupport:Nothing");
 	private RdfPredicate predicate;

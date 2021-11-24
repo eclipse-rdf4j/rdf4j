@@ -320,8 +320,8 @@ public class RDF4JTemplate {
 			Collection<IRI> toResources,
 			boolean deleteOtherOutgoing,
 			boolean deleteOtherIcoming) {
-		Variable from = new Variable("fromResource");
-		Variable to = new Variable("toResource");
+		Variable from = SparqlBuilder.var("fromResource");
+		Variable to = SparqlBuilder.var("toResource");
 		if (deleteOtherOutgoing) {
 			String query = Queries.MODIFY()
 					.delete(from.has(property, to))

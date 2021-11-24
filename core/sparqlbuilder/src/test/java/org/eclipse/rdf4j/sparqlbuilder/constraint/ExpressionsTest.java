@@ -12,6 +12,7 @@ import static org.junit.Assert.assertEquals;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.junit.Test;
@@ -62,15 +63,15 @@ public class ExpressionsTest {
 
 	@Test
 	public void test_BIND_fromOtherVariable() {
-		Variable from = new Variable("from");
-		Variable to = new Variable("to");
+		Variable from = SparqlBuilder.var("from");
+		Variable to = SparqlBuilder.var("to");
 		Assertions.assertEquals(
 				"BIND( ?from AS ?to )", Expressions.bind(from, to).getQueryString());
 	}
 
 	@Test
 	public void test_NOT_IN_twoIris() {
-		Variable test = new Variable("test");
+		Variable test = SparqlBuilder.var("test");
 		Assertions.assertEquals(
 				"?test NOT IN ( <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>, <http://www.w3.org/2000/01/rdf-schema#subClassOf> )",
 				Expressions.notIn(test, Rdf.iri(RDF.TYPE), Rdf.iri(RDFS.SUBCLASSOF))
@@ -79,7 +80,7 @@ public class ExpressionsTest {
 
 	@Test
 	public void test_IS_BLANK() {
-		Variable test = new Variable("test");
+		Variable test = SparqlBuilder.var("test");
 		Assertions.assertEquals(
 				"isBLANK( ?test )", Expressions.isBlank(test).getQueryString());
 	}

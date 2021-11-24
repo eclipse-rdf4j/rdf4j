@@ -117,7 +117,7 @@ public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {
 				.evaluateAndConvert()
 				.toStream()
 				.map(bs -> QueryResultUtils.getIRI(bs, ARTIST_ID))
-				.map(iri -> getById(iri))
+				.map(this::getById)
 				.collect(Collectors.toSet());
 	}
 

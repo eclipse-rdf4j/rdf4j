@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.spring.domain.model;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
 /**
@@ -16,10 +17,10 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
  * @author Florian Kleedorfer
  */
 public class Painting {
-	public static final Variable PAINTING_ID = new Variable("painting_id");
-	public static final Variable PAINTING_ARTIST_ID = new Variable("painting_artist_id");
-	public static final Variable PAINTING_TECHNIQUE = new Variable("painting_technique");
-	public static final Variable PAINTING_LABEL = new Variable("painting_label");
+	public static final Variable PAINTING_ID = SparqlBuilder.var("painting_id");
+	public static final Variable PAINTING_ARTIST_ID = SparqlBuilder.var("painting_artist_id");
+	public static final Variable PAINTING_TECHNIQUE = SparqlBuilder.var("painting_technique");
+	public static final Variable PAINTING_LABEL = SparqlBuilder.var("painting_label");
 
 	private IRI id;
 	private String title;
