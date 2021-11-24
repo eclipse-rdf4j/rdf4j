@@ -33,7 +33,7 @@ public class DataGenerator {
 	public static final int PROBABILITY_IS_AUTHOR = 70; // probability in % that a person is an author (owl_sameAs)
 	public static final int PROBABILITY_HAS_PERSON = 80; // probability in % that a project has a responsible person
 
-	protected Random rand = new Random();
+	protected Random rand = new Random(64352342);
 
 	// string build for the endpoints
 	protected StringBuilder endpoint1 = new StringBuilder();

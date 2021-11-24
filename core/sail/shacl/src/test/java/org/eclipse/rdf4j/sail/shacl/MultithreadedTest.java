@@ -211,7 +211,7 @@ public abstract class MultithreadedTest {
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 
-		Random r = new Random();
+		Random r = new Random(52465534);
 
 		ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 

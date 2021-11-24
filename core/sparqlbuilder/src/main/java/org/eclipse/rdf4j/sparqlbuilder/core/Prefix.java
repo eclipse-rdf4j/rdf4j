@@ -31,6 +31,14 @@ public class Prefix implements QueryElement {
 		this(alias, Rdf.iri(iri));
 	}
 
+	Iri getIri() {
+		return iri;
+	}
+
+	String getLabel() {
+		return label;
+	}
+
 	/**
 	 * Create a prefixed IRI reference from this prefix
 	 *

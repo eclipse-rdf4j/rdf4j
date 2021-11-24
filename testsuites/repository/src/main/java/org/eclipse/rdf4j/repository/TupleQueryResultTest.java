@@ -16,6 +16,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Random;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -50,9 +51,9 @@ public abstract class TupleQueryResultTest {
 
 	private String emptyResultQuery;
 
-	private String singleResultQuery;
-
 	private String multipleResultQuery;
+
+	private final Random random = new Random(43252333);
 
 	@Before
 	public void setUp() throws Exception {
@@ -102,7 +103,7 @@ public abstract class TupleQueryResultTest {
 		query.append("SELECT DISTINCT ?P \n");
 		query.append("WHERE { [] dc:publisher ?P }\n");
 
-		singleResultQuery = query.toString();
+		String singleResultQuery = query.toString();
 
 		query = new StringBuilder();
 
@@ -192,13 +193,13 @@ public abstract class TupleQueryResultTest {
 		while (count < testStatementCount) {
 			con.add(vf.createIRI("urn:test:" + subjectIndex), vf.createIRI("urn:test:" + predicateIndex),
 					vf.createIRI("urn:test:" + objectIndex));
-			if (Math.round(Math.random()) > 0) {
+			if (Math.round(random.nextDouble()) > 0) {
 				subjectIndex++;
 			}
-			if (Math.round(Math.random()) > 0) {
+			if (Math.round(random.nextDouble()) > 0) {
 				predicateIndex++;
 			}
-			if (Math.round(Math.random()) > 0) {
+			if (Math.round(random.nextDouble()) > 0) {
 				objectIndex++;
 			}
 			count++;
@@ -230,13 +231,13 @@ public abstract class TupleQueryResultTest {
 		while (count < testStatementCount) {
 			con.add(vf.createIRI("urn:test:" + subjectIndex), vf.createIRI("urn:test:" + predicateIndex),
 					vf.createIRI("urn:test:" + objectIndex));
-			if (Math.round(Math.random()) > 0) {
+			if (Math.round(random.nextDouble()) > 0) {
 				subjectIndex++;
 			}
-			if (Math.round(Math.random()) > 0) {
+			if (Math.round(random.nextDouble()) > 0) {
 				predicateIndex++;
 			}
-			if (Math.round(Math.random()) > 0) {
+			if (Math.round(random.nextDouble()) > 0) {
 				objectIndex++;
 			}
 			count++;
@@ -250,8 +251,8 @@ public abstract class TupleQueryResultTest {
 				TupleQuery tupleQuery = repCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 
 				// see if open results hangs test
-				try (TupleQueryResult result = tupleQuery.evaluate()) {
-				}
+				// DO NOT CLOSE THIS
+				tupleQuery.evaluate();
 			}
 		}
 	}

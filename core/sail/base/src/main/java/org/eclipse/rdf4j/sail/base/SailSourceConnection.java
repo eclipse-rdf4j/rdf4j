@@ -42,8 +42,8 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.UpdateContext;
+import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSailConnection;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
-import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionBase;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +53,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author James Leigh
  */
-public abstract class SailSourceConnection extends NotifyingSailConnectionBase
+public abstract class SailSourceConnection extends AbstractNotifyingSailConnection
 		implements InferencerConnection, FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);

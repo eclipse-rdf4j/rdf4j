@@ -51,6 +51,8 @@ public abstract class AbstractQueryResultIOTest {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
+	private final Random random = new Random(43252333);
+
 	/**
 	 *
 	 */
@@ -328,7 +330,7 @@ public abstract class AbstractQueryResultIOTest {
 		// only do this test if the callback is enabled
 		if (writer.getSupportedSettings().contains(BasicQueryWriterSettings.JSONP_CALLBACK)) {
 
-			String callback = "nextfunctionname" + Math.abs(new Random().nextInt());
+			String callback = "nextfunctionname" + Math.abs(random.nextInt());
 
 			writer.getWriterConfig().set(BasicQueryWriterSettings.JSONP_CALLBACK, callback);
 

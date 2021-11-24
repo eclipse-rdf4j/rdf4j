@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.SilentIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -34,7 +35,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
-import org.eclipse.rdf4j.repository.sparql.federation.SilentIteration;
 
 /**
  * A federated service that can evaluate {@link TupleFunction}s.
@@ -85,7 +85,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 			final Set<String> projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
 		final CloseableIteration<BindingSet, QueryEvaluationException> iter, eval;
 		eval = evaluate(service, new SingletonIteration<>(bindings), baseUri);
-		iter = service.isSilent() ? new SilentIteration(eval) : eval;
+		iter = service.isSilent() ? new SilentIteration<BindingSet, QueryEvaluationException>(eval) : eval;
 		if (service.getBindingNames().equals(projectionVars)) {
 			return iter;
 		}

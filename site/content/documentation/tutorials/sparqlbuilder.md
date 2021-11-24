@@ -20,8 +20,10 @@ SparqlBuilder allows the following SPARQL query:
 to be created as simply as:
 
 ```java
-query.prefix(foaf).select(name)
-    .where(x.has(foaf.iri("name"), name))
+query
+    .prefix(FOAF.NS)
+    .select(name)
+    .where(x.has(FOAF.NAME, name))
     .orderBy(name)
     .limit(5)
     .offset(10);
@@ -77,7 +79,7 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 Variable price = SparqlBuilder.var("price");
 System.out.println(price.getQueryString()); // ==> ?price
 
-Prefix foaf = SparqlBuilder.prefix(FOAF.PREFIX, FOAF.NAMESPACE);
+Prefix foaf = SparqlBuilder.prefix(FOAF.NS);
 System.out.println(foaf.getQueryString()); // ==> PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 ```
 
@@ -108,7 +110,7 @@ System.out.println(triple.getQueryString()); // ==> ?book dc:author "J.R.R. Tolk
 or, using RDF4J Model object and vocabulary constants directly:
 
 ```java
-Prefix dc = SparqlBuilder.prefix(DC.PREFIX, DC.NAMESPACE);
+Prefix dc = SparqlBuilder.prefix(DC.NS);
 Variable book = SparqlBuilder.var("book");
 
 TriplePattern triple = GraphPatterns.tp(book, DC.AUTHOR, Rdf.literalOf("J.R.R. Tolkien"));
@@ -120,7 +122,7 @@ In almost all places, SparqlBuilder allows either RDF4J Model objects or its own
 A TriplePattern instance can also be created from the `has()` and `isA()` shortcut methods of `RdfSubject`, and be expanded to contain multiple triples with the same subject via predicate-object lists and object lists:
 
 ```java
-Prefix foaf = SparqlBuilder.prefix(FOAF.PREFIX, FOAF.NAMESPACE);
+Prefix foaf = SparqlBuilder.prefix(FOAF.NS);
 Variable x = SparqlBuilder.var("x"), name = SparqlBuilder.var("name");
 
 TriplePattern triple = x.has(FOAF.NICK, Rdf.literalOf("Alice"), Rdf.literalOf("Alice_"))
@@ -128,6 +130,27 @@ TriplePattern triple = x.has(FOAF.NICK, Rdf.literalOf("Alice"), Rdf.literalOf("A
 System.out.println(triple.getQueryString());
 // ===> ?x foaf:nick "Alice_", "Alice" ;
 //	   foaf:name ?name .
+```
+
+### Property Paths
+
+Property paths can be generated using a builder returned from `Expressions.path()`:
+```
+SelectQuery query = Queries
+    .SELECT(name)
+    .prefix(FOAF.NS)
+    .where(x.has(
+            Expressions
+                .path(FOAF.ACCOUNT)
+                .then(FOAF.MBOX)
+                .build(), 
+            name))
+```
+yields
+```
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+SELECT ?name
+WHERE { ?x foaf:account / foaf:mbox ?name . }
 ```
 
 ### Compound graph patterns
@@ -214,9 +237,7 @@ For more detailed examples of how to use SparqlBuilder, check out the JUnit test
 
 Currently, the following SPARQL 1.1 features have not yet been implemented in SparqlBuilder:
 
-- Property Paths
 - Values Block
 - RDF Collection Syntax
-- BIND
 - DESCRIBE and ASK Queries
 

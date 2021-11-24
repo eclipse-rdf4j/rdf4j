@@ -17,15 +17,7 @@ import java.util.Objects;
  */
 public class CloseableIteratorIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	private Iterator<? extends E> iter;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	/**
 	 * Creates an uninitialized CloseableIteratorIteration, needs to be initialized by calling

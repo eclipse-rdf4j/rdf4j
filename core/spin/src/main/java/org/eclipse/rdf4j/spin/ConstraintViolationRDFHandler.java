@@ -15,9 +15,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.helpers.RDFHandlerBase;
+import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 
-public class ConstraintViolationRDFHandler extends RDFHandlerBase {
+public class ConstraintViolationRDFHandler extends AbstractRDFHandler {
 
 	private boolean hasStatements;
 

@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore;
 
+import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -20,7 +21,7 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 
 public class NaiveHashSetDataStructure implements DataStructureInterface {
 
-	Set<ExtensibleStatement> statements = ConcurrentHashMap.newKeySet();
+	Set<ExtensibleStatement> statements = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
 	@Override
 	synchronized public void addStatement(ExtensibleStatement statement) {

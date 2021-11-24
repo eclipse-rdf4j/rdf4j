@@ -10,9 +10,12 @@ package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
+import java.util.Arrays;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.sparqlbuilder.core.Base;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
 import org.eclipse.rdf4j.sparqlbuilder.core.PrefixDeclarations;
@@ -78,6 +81,21 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 	}
 
 	/**
+	 * Add prefix declarations to this query
+	 *
+	 * @param namespaces the namespaces to use for prefixes
+	 * @return
+	 */
+	public T prefix(Namespace... namespaces) {
+		return prefix(Arrays
+				.stream(namespaces)
+				.map(n -> SparqlBuilder.prefix(n))
+				.collect(Collectors.toList())
+				.toArray(new Prefix[namespaces.length])
+		);
+	}
+
+	/**
 	 * Set the Prefix declarations of this query
 	 *
 	 * @param prefixes the {@link PrefixDeclarations} to set
@@ -95,8 +113,11 @@ public abstract class OuterQuery<T extends OuterQuery<T>> extends Query<T> {
 
 		SparqlBuilderUtils.appendAndNewlineIfPresent(base, query);
 		SparqlBuilderUtils.appendAndNewlineIfPresent(prefixes, query);
-
-		query.append(super.getQueryString());
+		String queryString = super.getQueryString();
+		if (prefixes.isPresent()) {
+			queryString = prefixes.get().replacePrefixesInQuery(queryString);
+		}
+		query.append(queryString);
 
 		return query.toString();
 	}
