@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -68,7 +69,7 @@ public class MemoryBackedOnlySparqlApplicationTest {
 		ParsedQuery parseQuery = new SPARQLParser().parseQuery(query, null);
 		SPARQLProtocolSession session = rep.createSPARQLProtocolSession();
 		try {
-			TupleQueryResult sendTupleQuery = session.sendTupleQuery(QueryLanguage.SPARQL, query, null, false);
+			TupleQueryResult sendTupleQuery = session.sendTupleQuery(QueryLanguage.SPARQL, query, null, false, new WeakReference<>(this));
 			while (sendTupleQuery.hasNext()) {
 				assertNotNull(sendTupleQuery.next());
 			}
