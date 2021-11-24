@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-sail-lucene-api</artifactId>
-	<name>RDF4J Lucene Sail API</name>
+	<name>RDF4J: Lucene Sail API</name>
 	<description>StackableSail API offering full-text search on literals, based on Apache Lucene.</description>
 	<dependencies>
 		<dependency>

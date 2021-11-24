@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-sail-lucene</artifactId>
-	<name>RDF4J Lucene Sail Index</name>
+	<name>RDF4J: Lucene Sail Index</name>
 	<description>StackableSail implementation offering full-text search on literals, based on Apache Lucene.</description>
 	<dependencies>
 		<dependency>

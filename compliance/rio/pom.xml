@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-rio-compliance</artifactId>
-	<name>RDF4J Rio compliance tests</name>
+	<name>RDF4J: Rio compliance tests</name>
 	<description>Tests for parsers and writers of various RDF file formats.</description>
 	<dependencies>
 		<dependency>

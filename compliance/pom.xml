@@ -19,7 +19,7 @@
 		<module>elasticsearch</module>
 		<module>geosparql</module>
 	</modules>
-	<name>RDF4J Compliance tests</name>
+	<name>RDF4J: Compliance tests</name>
 	<description>Eclipse RDF4J compliance and integration tests</description>
 	<dependencyManagement>
 		<dependencies>

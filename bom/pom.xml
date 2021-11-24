@@ -8,7 +8,7 @@
 	</parent>
 	<artifactId>rdf4j-bom</artifactId>
 	<packaging>pom</packaging>
-	<name>RDF4J BOM</name>
+	<name>RDF4J: BOM</name>
 	<description>RDF4J Bill of Materials (BOM)</description>
 	<dependencyManagement>
 		<dependencies>

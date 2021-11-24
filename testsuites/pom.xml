@@ -8,7 +8,7 @@
 	</parent>
 	<artifactId>rdf4j-testsuites</artifactId>
 	<packaging>pom</packaging>
-	<name>RDF4J : Test Suites</name>
+	<name>RDF4J: Test Suites</name>
 	<description>Test suites for Eclipse RDF4J modules</description>
 	<modules>
 		<module>model</module>

@@ -27,7 +27,7 @@
 		<module>client</module>
 		<module>storage</module>
 	</modules>
-	<name>RDF4J Core</name>
+	<name>RDF4J: Core</name>
 	<description>Core modules for RDF4J</description>
 	<profiles>
 		<profile>
