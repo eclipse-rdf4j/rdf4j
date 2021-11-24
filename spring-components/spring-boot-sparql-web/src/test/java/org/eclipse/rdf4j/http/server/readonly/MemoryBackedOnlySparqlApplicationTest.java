@@ -69,7 +69,8 @@ public class MemoryBackedOnlySparqlApplicationTest {
 		ParsedQuery parseQuery = new SPARQLParser().parseQuery(query, null);
 		SPARQLProtocolSession session = rep.createSPARQLProtocolSession();
 		try {
-			TupleQueryResult sendTupleQuery = session.sendTupleQuery(QueryLanguage.SPARQL, query, null, false, new WeakReference<>(this));
+			TupleQueryResult sendTupleQuery = session.sendTupleQuery(QueryLanguage.SPARQL, query, null, false,
+					new WeakReference<>(this));
 			while (sendTupleQuery.hasNext()) {
 				assertNotNull(sendTupleQuery.next());
 			}
