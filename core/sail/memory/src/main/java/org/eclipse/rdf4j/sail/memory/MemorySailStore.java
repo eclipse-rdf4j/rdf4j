@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.memory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
@@ -72,6 +73,17 @@ class MemorySailStore implements SailStore {
 	 * List containing all available statements.
 	 */
 	private final MemStatementList statements = new MemStatementList(256);
+
+	/**
+	 * This gets set to `true` when we add our first inferred statement. If the value is `false` we guarantee that there
+	 * are no inferred statements in the MemorySailStore. If it is `true` then an inferred statement was added at some
+	 * point, but we make no guarantees regarding if there still are inferred statements or if they are in the current
+	 * snapshot.
+	 *
+	 * The purpose of this variable is to optimize read operations that only read inferred statements when there are no
+	 * inferred statements.
+	 */
+	private volatile boolean mayHaveInferred = false;
 
 	/**
 	 * Identifies the current snapshot.
@@ -240,6 +252,13 @@ class MemorySailStore implements SailStore {
 
 	private CloseableIteration<MemStatement, SailException> getMemStatementIterator(MemResource subj, MemIRI pred,
 			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList statementList) {
+
+		if (explicit != null && !explicit) {
+			// we are looking for inferred statements
+			if (!mayHaveInferred) {
+				return EMPTY_ITERATION;
+			}
+		}
 
 		MemStatementList smallestList = statementList;
 
@@ -480,7 +499,7 @@ class MemorySailStore implements SailStore {
 						contexts = new Resource[] { (Resource) ctxVar.getValue() };
 					}
 					try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
-							null, -1, contexts);) {
+							null, -1, contexts)) {
 						while (iter.hasNext()) {
 							MemStatement st = iter.next();
 							int since = st.getSinceSnapshot();
@@ -562,7 +581,7 @@ class MemorySailStore implements SailStore {
 			acquireExclusiveTransactionLock();
 			requireCleanup = true;
 			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(null, null, null,
-					explicit, nextSnapshot, contexts);) {
+					explicit, nextSnapshot, contexts)) {
 				while (iter.hasNext()) {
 					MemStatement st = iter.next();
 					st.setTillSnapshot(nextSnapshot);
@@ -618,6 +637,10 @@ class MemorySailStore implements SailStore {
 
 		private MemStatement addStatement(Resource subj, IRI pred, Value obj, Resource context, boolean explicit)
 				throws SailException {
+			if (!explicit) {
+				mayHaveInferred = true;
+			}
+
 			// Get or create MemValues for the operands
 			MemResource memSubj = valueFactory.getOrCreateMemResource(subj);
 			MemIRI memPred = valueFactory.getOrCreateMemURI(pred);
@@ -630,7 +653,7 @@ class MemorySailStore implements SailStore {
 				// statement is already present. Check this.
 
 				try (CloseableIteration<MemStatement, SailException> stIter = createStatementIterator(memSubj, memPred,
-						memObj, null, Integer.MAX_VALUE - 1, memContext);) {
+						memObj, null, Integer.MAX_VALUE - 1, memContext)) {
 					if (stIter.hasNext()) {
 						// statement is already present, update its transaction
 						// status if appropriate
@@ -853,7 +876,7 @@ class MemorySailStore implements SailStore {
 			// Filter more thoroughly by considering snapshot and read-mode
 			// parameters
 			try (MemStatementIterator<SailException> iter = new MemStatementIterator<>(contextStatements, null, null,
-					null, null, snapshot);) {
+					null, null, snapshot)) {
 				return iter.hasNext();
 			}
 		}
