@@ -262,13 +262,6 @@ class ValueStore extends AbstractValueFactory {
 		return result;
 	}
 
-	protected byte[] toBytes(long value) {
-		return ByteBuffer.wrap(new byte[Long.BYTES])
-				.order(BYTE_ORDER)
-				.putLong(value)
-				.array();
-	}
-
 	protected ByteBuffer idBuffer(MemoryStack stack) {
 		return stack.malloc(2 + Long.BYTES);
 	}
@@ -777,10 +770,11 @@ class ValueStore extends AbstractValueFactory {
 		byte[] localNameData = uri.getLocalName().getBytes(StandardCharsets.UTF_8);
 
 		// Combine parts in a single byte array
-		byte[] uriData = new byte[1 + Long.BYTES + localNameData.length];
+		int nsIDLength = Varint.calcLengthUnsigned(nsID);
+		byte[] uriData = new byte[1 + nsIDLength + localNameData.length];
 		uriData[0] = URI_VALUE;
-		ByteArrayUtil.putLong(nsID, uriData, 1);
-		ByteArrayUtil.put(localNameData, uriData, 1 + Long.BYTES);
+		Varint.writeUnsigned(ByteBuffer.wrap(uriData, 1, nsIDLength), nsID);
+		ByteArrayUtil.put(localNameData, uriData, 1 + nsIDLength);
 
 		return uriData;
 	}
@@ -835,14 +829,16 @@ class ValueStore extends AbstractValueFactory {
 		byte[] labelData = label.getBytes(StandardCharsets.UTF_8);
 
 		// Combine parts in a single byte array
-		byte[] literalData = new byte[2 + Long.BYTES + langDataLength + labelData.length];
-		literalData[0] = LITERAL_VALUE;
-		ByteArrayUtil.putLong(datatypeID, literalData, 1);
-		literalData[9] = (byte) langDataLength;
+		int datatypeIDLength = Varint.calcLengthUnsigned(datatypeID);
+		byte[] literalData = new byte[2 + datatypeIDLength + langDataLength + labelData.length];
+		ByteBuffer bb = ByteBuffer.wrap(literalData);
+		bb.put(LITERAL_VALUE);
+		Varint.writeUnsigned(bb, datatypeID);
+		bb.put((byte) langDataLength);
 		if (langData != null) {
-			ByteArrayUtil.put(langData, literalData, 10);
+			bb.put(langData);
 		}
-		ByteArrayUtil.put(labelData, literalData, 10 + langDataLength);
+		bb.put(labelData);
 
 		return literalData;
 	}
@@ -865,9 +861,12 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private LmdbIRI data2uri(long id, byte[] data) throws IOException {
-		long nsID = ByteArrayUtil.getLong(data, 1);
+		ByteBuffer bb = ByteBuffer.wrap(data);
+		// skip type marker
+		bb.get();
+		long nsID = Varint.readUnsigned(bb);
 		String namespace = getNamespace(nsID);
-		String localName = new String(data, 1 + Long.BYTES, data.length - 1 - Long.BYTES, StandardCharsets.UTF_8);
+		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
 
 		return new LmdbIRI(revision, namespace, localName, id);
 	}
@@ -878,8 +877,11 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private LmdbLiteral data2literal(long id, byte[] data) throws IOException {
+		ByteBuffer bb = ByteBuffer.wrap(data);
+		// skip type marker
+		bb.get();
 		// Get datatype
-		long datatypeID = ByteArrayUtil.getLong(data, 1);
+		long datatypeID = Varint.readUnsigned(bb);
 		IRI datatype = null;
 		if (datatypeID != LmdbValue.UNKNOWN_ID) {
 			datatype = (IRI) getValue(datatypeID);
@@ -887,13 +889,14 @@ class ValueStore extends AbstractValueFactory {
 
 		// Get language tag
 		String lang = null;
-		int langLength = data[9];
+		int langLength = bb.get() & 0xFF;
 		if (langLength > 0) {
-			lang = new String(data, 10, langLength, StandardCharsets.UTF_8);
+			lang = new String(data, bb.position(), langLength, StandardCharsets.UTF_8);
 		}
 
 		// Get label
-		String label = new String(data, 10 + langLength, data.length - 10 - langLength, StandardCharsets.UTF_8);
+		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
+			StandardCharsets.UTF_8);
 
 		if (lang != null) {
 			return new LmdbLiteral(revision, label, lang, id);
