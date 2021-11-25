@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
  *   byte A+3 - end : the UTF-8 encoded namespace prefix
  * </pre>
  *
- * @author Arjohn Kampman
  */
 class NamespaceStore implements Iterable<SimpleNamespace> {
 

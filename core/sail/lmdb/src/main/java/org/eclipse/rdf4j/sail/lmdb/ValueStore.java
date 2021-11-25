@@ -70,8 +70,6 @@ import org.lwjgl.util.lmdb.MDBVal;
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  *
- * @author Arjohn Kampman
- * @author Ken Wenzel
  */
 class ValueStore extends AbstractValueFactory {
 

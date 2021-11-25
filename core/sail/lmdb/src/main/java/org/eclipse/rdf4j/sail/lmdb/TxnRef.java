@@ -12,7 +12,6 @@ import org.lwjgl.util.lmdb.LMDB;
 /**
  * Reference for a LMDB transaction.
  *
- * @author Ken Wenzel
  */
 public class TxnRef {
 	enum Mode {

@@ -29,7 +29,6 @@ import org.lwjgl.util.lmdb.MDBVal;
 /**
  * A record iterator that wraps a native LMDB iterator.
  *
- * @author Ken Wenzel
  */
 public class LmdbRecordIterator implements RecordIterator {
 	private final TripleIndex index;

@@ -45,7 +45,7 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
- * @author Håvard Ottestad
+ * Benchmarks query performance with real data.
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 2)

@@ -31,8 +31,7 @@ import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
 /**
- * @author James Leigh
- */
+  */
 @RunWith(Parameterized.class)
 public class TestLmdbStoreMemoryOverflow {
 

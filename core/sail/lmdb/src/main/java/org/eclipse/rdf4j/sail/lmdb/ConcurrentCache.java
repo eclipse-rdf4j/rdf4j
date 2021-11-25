@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -16,7 +16,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * is called every time by <code>put</code> The maximum size is maintained approximately. Cleanup is not done if size is
  * less than <code>capacity + CLEANUP_INTERVAL / 2</code>.
  *
- * @author Oleg Mirzov
  */
 public class ConcurrentCache<K, V> {
 

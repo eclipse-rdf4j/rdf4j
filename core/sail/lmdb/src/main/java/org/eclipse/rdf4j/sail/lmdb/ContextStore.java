@@ -53,7 +53,6 @@ import org.slf4j.LoggerFactory;
  *   byte 12 - A     : the UTF-8 encoded the encoded context identifer
  * </pre>
  *
- * @author Jeen Broekstra
  *
  */
 class ContextStore implements Iterable<Resource> {

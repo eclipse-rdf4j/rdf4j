@@ -38,7 +38,6 @@ import org.slf4j.LoggerFactory;
 /**
  * A {@link Model} that keeps the {@link Statement}s in an {@link SailSource}.
  *
- * @author James Leigh
  */
 class SailSourceModel extends AbstractModel {
 

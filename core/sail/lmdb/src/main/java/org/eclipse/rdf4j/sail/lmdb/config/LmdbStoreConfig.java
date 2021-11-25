@@ -17,8 +17,7 @@ import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
 /**
- * @author Arjohn Kampman
- */
+  */
 public class LmdbStoreConfig extends BaseSailConfig {
 
 	/*-----------*

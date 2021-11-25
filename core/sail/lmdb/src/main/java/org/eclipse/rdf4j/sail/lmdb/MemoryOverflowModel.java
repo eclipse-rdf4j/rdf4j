@@ -38,7 +38,6 @@ import org.slf4j.LoggerFactory;
  * estimated memory usage is more than the amount of free memory available. Once the threshold is cross this
  * implementation seamlessly changes to a disk based {@link SailSourceModel}.
  *
- * @author James Leigh
  */
 abstract class MemoryOverflowModel extends AbstractModel {
 

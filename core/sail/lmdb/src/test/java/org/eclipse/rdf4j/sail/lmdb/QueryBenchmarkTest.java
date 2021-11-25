@@ -29,9 +29,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * @author Håvard Ottestad
- * @author Ken Wenzel
- */
+   */
 public class QueryBenchmarkTest {
 
 	private static SailRepository repository;

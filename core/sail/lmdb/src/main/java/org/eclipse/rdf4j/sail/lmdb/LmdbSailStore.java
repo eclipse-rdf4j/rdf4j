@@ -46,8 +46,6 @@ import org.slf4j.LoggerFactory;
 /**
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
  *
- * @author James Leigh
- * @author Ken Wenzel
  */
 class LmdbSailStore implements SailStore {
 
@@ -542,8 +540,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	/**
-	 * @author James Leigh
-	 */
+	 	 */
 	private final class LmdbSailDataset implements SailDataset {
 
 		private final boolean explicit;

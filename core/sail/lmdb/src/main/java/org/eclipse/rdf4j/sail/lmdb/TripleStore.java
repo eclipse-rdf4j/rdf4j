@@ -75,8 +75,6 @@ import org.slf4j.LoggerFactory;
  * subject, predicate, object and context. The ID <tt>0</tt> is used to represent the "null" context and doesn't map to
  * an actual RDF value.
  *
- * @author Arjohn Kampman
- * @author Ken Wenzel
  */
 @SuppressWarnings("deprecation")
 class TripleStore implements Closeable {

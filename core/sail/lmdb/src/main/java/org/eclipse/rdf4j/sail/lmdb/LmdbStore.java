@@ -40,9 +40,6 @@ import org.slf4j.LoggerFactory;
 /**
  * A SAIL implementation using LMDB for storing and querying its data.
  *
- * @author Arjohn Kampman
- * @author jeen
- * @author Ken Wenzel
  */
 public class LmdbStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 

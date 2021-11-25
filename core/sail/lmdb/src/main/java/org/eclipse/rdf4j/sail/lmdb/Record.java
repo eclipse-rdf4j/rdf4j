@@ -15,7 +15,6 @@ import java.util.function.Function;
 /**
  * A record in the triple store.
  *
- * @author Ken Wenzel
  */
 public class Record {
 	final ByteBuffer key;

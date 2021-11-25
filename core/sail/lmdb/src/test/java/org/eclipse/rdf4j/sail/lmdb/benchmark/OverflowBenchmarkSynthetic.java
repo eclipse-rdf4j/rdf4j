@@ -44,7 +44,7 @@ import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Logger;
 
 /**
- * @author Håvard Ottestad
+ * Benchmarks transaction isolation and overflow performance with synthetic data.
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 0)
