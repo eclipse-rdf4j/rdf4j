@@ -99,15 +99,15 @@ class ValueStore extends AbstractValueFactory {
 
 	private static final String FILENAME_PREFIX = "values";
 
-	private static final byte ID_KEY = 0x0; // 0000 0000
+	private static final byte ID_KEY = 0x0;
 
-	private static final byte HASH_KEY = 0x1; // 0000 0001
+	private static final byte HASH_KEY = 0x1;
 
-	private static final byte URI_VALUE = 0x1; // 0000 0001
+	private static final byte URI_VALUE = 0x2;
 
-	private static final byte BNODE_VALUE = 0x2; // 0000 0010
+	private static final byte BNODE_VALUE = 0x3;
 
-	private static final byte LITERAL_VALUE = 0x3; // 0000 0011
+	private static final byte LITERAL_VALUE = 0x4;
 
 	/*-----------*
 	 * Variables *
@@ -148,6 +148,11 @@ class ValueStore extends AbstractValueFactory {
 	private long env;
 	private int dbi;
 	private long writeTxn;
+
+	/***
+	 * Maximum size of keys before hashing is used (size of two long values)
+	 */
+	private static final int MAX_KEY_SIZE = 16;
 
 	/**
 	 * An object that indicates the revision of the value store, which is used to check if cached value IDs are still
@@ -190,10 +195,10 @@ class ValueStore extends AbstractValueFactory {
 				E(mdb_cursor_open(txn, dbi, pp));
 				cursor = pp.get(0);
 
-				MDBVal keyData = MDBVal.callocStack(stack);
+				MDBVal keyData = MDBVal.calloc(stack);
 				// set cursor to min key
 				keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
-				MDBVal valueData = MDBVal.callocStack(stack);
+				MDBVal valueData = MDBVal.calloc(stack);
 				if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0 &&
 						mdb_cursor_get(cursor, keyData, valueData, MDB_PREV) == 0) {
 					nextId = data2id(keyData.mv_data()) + 1;
@@ -301,12 +306,12 @@ class ValueStore extends AbstractValueFactory {
 
 	protected byte[] getData(long id) throws IOException {
 		return readTransaction(env, writeTxn, (stack, txn) -> {
-			MDBVal keyData = MDBVal.callocStack(stack);
+			MDBVal keyData = MDBVal.calloc(stack);
 			ByteBuffer idBuffer = idBuffer(stack);
 			id2data(idBuffer, id);
 			idBuffer.flip();
 			keyData.mv_data(idBuffer);
-			MDBVal valueData = MDBVal.callocStack(stack);
+			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == 0) {
 				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
 				valueData.mv_data().get(valueBytes);
@@ -344,26 +349,26 @@ class ValueStore extends AbstractValueFactory {
 
 	private long findId(byte[] data) throws IOException {
 		Long id = LmdbUtil.<Long>readTransaction(env, writeTxn, (stack, txn) -> {
-			if (data.length < mdb_env_get_maxkeysize(env)) {
-				MDBVal keyData = MDBVal.callocStack(stack);
+			if (data.length < MAX_KEY_SIZE) {
+				MDBVal keyData = MDBVal.calloc(stack);
 				keyData.mv_data(stack.bytes(data));
-				MDBVal valueData = MDBVal.callocStack(stack);
+				MDBVal valueData = MDBVal.calloc(stack);
 				if (mdb_get(txn, dbi, keyData, valueData) == 0) {
 					return data2id(valueData.mv_data());
 				}
 			} else {
 				ByteBuffer dataBb = ByteBuffer.wrap(data);
 				long dataHash = hash(data);
-				byte[] hashAndNr = new byte[1 + Long.BYTES * 2];
-				ByteBuffer hashBb = ByteBuffer.wrap(hashAndNr);
+				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 1).order(BYTE_ORDER);
 				hashBb.put(HASH_KEY);
 				hashBb.putLong(dataHash);
-				hashBb.putLong(0);
+				Varint.writeUnsigned(hashBb, 0L);
+				hashBb.flip();
 
-				MDBVal keyData = MDBVal.callocStack(stack);
+				MDBVal keyData = MDBVal.calloc(stack);
 				// set cursor to min key
-				keyData.mv_data(stack.bytes(hashAndNr));
-				MDBVal valueData = MDBVal.callocStack(stack);
+				keyData.mv_data(hashBb);
+				MDBVal valueData = MDBVal.calloc(stack);
 
 				long cursor = 0;
 				try {
@@ -371,13 +376,18 @@ class ValueStore extends AbstractValueFactory {
 					E(mdb_cursor_open(txn, dbi, pp));
 					cursor = pp.get(0);
 
+					// iterate all entries for hash value
 					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0) {
 						do {
 							if (compareRegion(keyData.mv_data(), 0, hashBb, 0, 1 + Long.BYTES) != 0) {
 								break;
 							}
 
-							if (valueData.mv_data().compareTo(dataBb) == 0) {
+							// lookup id
+							keyData.mv_data(valueData.mv_data());
+							// id was found and stored value is equal to requested value
+							if (mdb_get(txn, dbi, keyData, valueData) == 0
+									&& valueData.mv_data().compareTo(dataBb) == 0) {
 								return data2id(keyData.mv_data());
 							}
 						} while (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == 0);
@@ -405,10 +415,10 @@ class ValueStore extends AbstractValueFactory {
 
 	private void storeId(long id, byte[] data) throws IOException {
 		this.<Long>writeTransaction((stack, txn) -> {
-			if (data.length < mdb_env_get_maxkeysize(env)) {
-				MDBVal dataVal = MDBVal.callocStack(stack);
+			if (data.length < MAX_KEY_SIZE) {
+				MDBVal dataVal = MDBVal.calloc(stack);
 				dataVal.mv_data(stack.bytes(data));
-				MDBVal idVal = MDBVal.callocStack(stack);
+				MDBVal idVal = MDBVal.calloc(stack);
 				ByteBuffer idBuffer = idBuffer(stack);
 				id2data(idBuffer, id);
 				idBuffer.flip();
@@ -418,55 +428,61 @@ class ValueStore extends AbstractValueFactory {
 				mdb_put(txn, dbi, idVal, dataVal, 0);
 			} else {
 				long dataHash = hash(data);
-				byte[] hashAndNr = new byte[1 + Long.BYTES * 2];
-				ByteBuffer hashBb = ByteBuffer.wrap(hashAndNr);
+				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 1).order(BYTE_ORDER);
 				hashBb.put(HASH_KEY);
 				hashBb.putLong(dataHash);
-				hashBb.putLong(1 + Long.BYTES, 0);
+				Varint.writeUnsigned(hashBb, Long.MAX_VALUE);
+				hashBb.flip();
 
-				MDBVal keyData = MDBVal.callocStack(stack);
+				MDBVal keyData = MDBVal.calloc(stack);
 				// set cursor to min key
-				keyData.mv_data(stack.bytes(hashAndNr));
-				MDBVal valueData = MDBVal.callocStack(stack);
+				keyData.mv_data(hashBb);
+				MDBVal valueData = MDBVal.calloc(stack);
 
-				long hashNr = 0;
+				long hashNr = -1;
 				long cursor = 0;
 				try {
 					PointerBuffer pp = stack.mallocPointer(1);
 					E(mdb_cursor_open(txn, dbi, pp));
 					cursor = pp.get(0);
 
-					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0) {
-						do {
-							hashNr++;
-							if (compareRegion(keyData.mv_data(), 0, hashBb, 0, 1 + Long.BYTES) != 0) {
-								break;
-							}
-						} while (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == 0);
+					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0 &&
+						mdb_cursor_get(cursor, keyData, valueData, MDB_PREV) == 0 &&
+						keyData.mv_data().remaining() > 1 + Long.BYTES &&
+						compareRegion(keyData.mv_data(), 0, hashBb, 0, 1 + Long.BYTES) == 0
+					) {
+						hashNr = Varint.readUnsigned(keyData.mv_data(), 1 + Long.BYTES);
 					}
+					hashNr += 1;
 				} finally {
 					if (cursor != 0) {
 						mdb_cursor_close(cursor);
 					}
 				}
 
-				hashBb.putLong(1 + Long.BYTES, hashNr);
-				keyData = MDBVal.callocStack(stack);
-				keyData.mv_data(stack.bytes(hashAndNr));
-				valueData = MDBVal.callocStack(stack);
+				hashBb.position(1 + Long.BYTES);
+				Varint.writeUnsigned(hashBb, hashNr);
+				hashBb.limit(hashBb.position());
+				hashBb.rewind();
+
+				keyData = MDBVal.calloc(stack);
+				keyData.mv_data(hashBb);
+				valueData = MDBVal.calloc(stack);
 				ByteBuffer idBuffer = idBuffer(stack);
 				id2data(idBuffer, id);
 				idBuffer.flip();
 				valueData.mv_data(idBuffer);
+				// store mapping of hash+nr -> ID
 				mdb_put(txn, dbi, keyData, valueData, 0);
 
-				MDBVal realValueData = MDBVal.callocStack(stack);
+				MDBVal realValueData = MDBVal.calloc(stack);
 				ByteBuffer dataBuffer = null;
 				try {
 					dataBuffer = MemoryUtil.memAlloc(data.length);
 					dataBuffer.put(data);
 					dataBuffer.flip();
 					realValueData.mv_data(dataBuffer);
+					// store mapping of ID -> data
 					mdb_put(txn, dbi, valueData, realValueData, 0);
 				} finally {
 					if (dataBuffer != null) {
@@ -923,12 +939,12 @@ class ValueStore extends AbstractValueFactory {
 
 		if (namespace == null) {
 			namespace = readTransaction(env, writeTxn, (stack, txn) -> {
-				MDBVal keyData = MDBVal.callocStack(stack);
+				MDBVal keyData = MDBVal.calloc(stack);
 				ByteBuffer idBuffer = idBuffer(stack);
 				id2data(idBuffer, id);
 				idBuffer.flip();
 				keyData.mv_data(idBuffer);
-				MDBVal valueData = MDBVal.callocStack(stack);
+				MDBVal valueData = MDBVal.calloc(stack);
 				if (mdb_get(txn, dbi, keyData, valueData) == 0) {
 					byte[] valueBytes = new byte[valueData.mv_data().remaining()];
 					valueData.mv_data().get(valueBytes);
