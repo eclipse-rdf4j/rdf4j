@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -352,9 +353,10 @@ class ValueStore extends AbstractValueFactory {
 			} else {
 				ByteBuffer dataBb = ByteBuffer.wrap(data);
 				long dataHash = hash(data);
-				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 1).order(BYTE_ORDER);
+				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 2).order(BYTE_ORDER);
 				hashBb.put(HASH_KEY);
-				hashBb.putLong(dataHash);
+				Varint.writeUnsigned(hashBb, dataHash);
+				int hashNrPos = hashBb.position();
 				Varint.writeUnsigned(hashBb, 0L);
 				hashBb.flip();
 
@@ -372,7 +374,7 @@ class ValueStore extends AbstractValueFactory {
 					// iterate all entries for hash value
 					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0) {
 						do {
-							if (compareRegion(keyData.mv_data(), 0, hashBb, 0, 1 + Long.BYTES) != 0) {
+							if (compareRegion(keyData.mv_data(), 0, hashBb, 0, hashNrPos) != 0) {
 								break;
 							}
 
@@ -421,9 +423,10 @@ class ValueStore extends AbstractValueFactory {
 				mdb_put(txn, dbi, idVal, dataVal, 0);
 			} else {
 				long dataHash = hash(data);
-				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 1).order(BYTE_ORDER);
+				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 2).order(BYTE_ORDER);
 				hashBb.put(HASH_KEY);
-				hashBb.putLong(dataHash);
+				Varint.writeUnsigned(hashBb, dataHash);
+				int hashNrPos = hashBb.position();
 				Varint.writeUnsigned(hashBb, Long.MAX_VALUE);
 				hashBb.flip();
 
@@ -439,12 +442,13 @@ class ValueStore extends AbstractValueFactory {
 					E(mdb_cursor_open(txn, dbi, pp));
 					cursor = pp.get(0);
 
+					// go to last entry with same hash value and retrieve its number
 					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0 &&
 						mdb_cursor_get(cursor, keyData, valueData, MDB_PREV) == 0 &&
-						keyData.mv_data().remaining() > 1 + Long.BYTES &&
-						compareRegion(keyData.mv_data(), 0, hashBb, 0, 1 + Long.BYTES) == 0
+						keyData.mv_data().remaining() > hashNrPos &&
+						compareRegion(keyData.mv_data(), 0, hashBb, 0, hashNrPos) == 0
 					) {
-						hashNr = Varint.readUnsigned(keyData.mv_data(), 1 + Long.BYTES);
+						hashNr = Varint.readUnsigned(keyData.mv_data(), hashNrPos);
 					}
 					hashNr += 1;
 				} finally {
@@ -453,7 +457,7 @@ class ValueStore extends AbstractValueFactory {
 					}
 				}
 
-				hashBb.position(1 + Long.BYTES);
+				hashBb.position(hashNrPos);
 				Varint.writeUnsigned(hashBb, hashNr);
 				hashBb.limit(hashBb.position());
 				hashBb.rewind();
