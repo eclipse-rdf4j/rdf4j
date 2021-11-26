@@ -15,7 +15,7 @@ import java.util.function.Consumer;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Operation;
-import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
+import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.BindingsBuilder;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
@@ -46,7 +46,7 @@ public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<
 		return bindingsBuilder.build();
 	}
 
-	public SUB withBinding(ExtendedVariable key, IRI value) {
+	public SUB withBinding(Variable key, IRI value) {
 		bindingsBuilder.add(key, value);
 		return (SUB) this;
 	}
@@ -56,7 +56,7 @@ public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<
 		return (SUB) this;
 	}
 
-	public SUB withBinding(ExtendedVariable key, String value) {
+	public SUB withBinding(Variable key, String value) {
 		bindingsBuilder.add(key, value);
 		return (SUB) this;
 	}
@@ -66,7 +66,7 @@ public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<
 		return (SUB) this;
 	}
 
-	public SUB withBinding(ExtendedVariable key, Integer value) {
+	public SUB withBinding(Variable key, Integer value) {
 		bindingsBuilder.add(key, value);
 		return (SUB) this;
 	}
@@ -76,7 +76,7 @@ public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<
 		return (SUB) this;
 	}
 
-	public SUB withBinding(ExtendedVariable key, Boolean value) {
+	public SUB withBinding(Variable key, Boolean value) {
 		bindingsBuilder.add(key, value);
 		return (SUB) this;
 	}
@@ -86,7 +86,7 @@ public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<
 		return (SUB) this;
 	}
 
-	public SUB withBinding(ExtendedVariable key, Float value) {
+	public SUB withBinding(Variable key, Float value) {
 		bindingsBuilder.add(key, value);
 		return (SUB) this;
 	}
@@ -96,7 +96,7 @@ public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<
 		return (SUB) this;
 	}
 
-	public SUB withBinding(ExtendedVariable key, Double value) {
+	public SUB withBinding(Variable key, Double value) {
 		bindingsBuilder.add(key, value);
 		return (SUB) this;
 	}

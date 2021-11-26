@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
-import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.ModifyQuery;
@@ -321,8 +320,8 @@ public class RDF4JTemplate {
 			Collection<IRI> toResources,
 			boolean deleteOtherOutgoing,
 			boolean deleteOtherIcoming) {
-		ExtendedVariable from = new ExtendedVariable("fromResource");
-		ExtendedVariable to = new ExtendedVariable("toResource");
+		Variable from = SparqlBuilder.var("fromResource");
+		Variable to = SparqlBuilder.var("toResource");
 		if (deleteOtherOutgoing) {
 			String query = Queries.MODIFY()
 					.delete(from.has(property, to))

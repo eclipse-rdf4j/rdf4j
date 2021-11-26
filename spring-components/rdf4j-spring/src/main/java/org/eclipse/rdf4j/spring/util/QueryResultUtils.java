@@ -13,7 +13,7 @@ import java.util.Optional;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.sparqlbuilder.core.ExtendedVariable;
+import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
 /**
  * @since 4.0.0
@@ -25,7 +25,7 @@ public class QueryResultUtils {
 		return Optional.ofNullable(resultRow.getValue(varName));
 	}
 
-	public static Optional<Value> getValueOptional(BindingSet resultRow, ExtendedVariable var) {
+	public static Optional<Value> getValueOptional(BindingSet resultRow, Variable var) {
 		return getValueOptional(resultRow, var.getVarName());
 	}
 
@@ -33,7 +33,7 @@ public class QueryResultUtils {
 		return getValueOptional(resultRow, varName).orElse(null);
 	}
 
-	public static Value getValueMaybe(BindingSet resultRow, ExtendedVariable var) {
+	public static Value getValueMaybe(BindingSet resultRow, Variable var) {
 		return getValueMaybe(resultRow, var.getVarName());
 	}
 
@@ -46,11 +46,11 @@ public class QueryResultUtils {
 										varName)));
 	}
 
-	public static Value getValue(BindingSet resultRow, ExtendedVariable var) {
+	public static Value getValue(BindingSet resultRow, Variable var) {
 		return getValue(resultRow, var.getVarName());
 	}
 
-	public static IRI getIRI(BindingSet resultRow, ExtendedVariable var) {
+	public static IRI getIRI(BindingSet resultRow, Variable var) {
 		return TypeMappingUtils.toIRI(getValue(resultRow, var));
 	}
 
@@ -62,7 +62,7 @@ public class QueryResultUtils {
 		return getValueOptional(resultRow, varName).map(TypeMappingUtils::toIRI);
 	}
 
-	public static Optional<IRI> getIRIOptional(BindingSet resultRow, ExtendedVariable var) {
+	public static Optional<IRI> getIRIOptional(BindingSet resultRow, Variable var) {
 		return getValueOptional(resultRow, var.getVarName()).map(TypeMappingUtils::toIRI);
 	}
 
@@ -70,11 +70,11 @@ public class QueryResultUtils {
 		return getIRIOptional(resultRow, varName).orElse(null);
 	}
 
-	public static IRI getIRIMaybe(BindingSet resultRow, ExtendedVariable var) {
+	public static IRI getIRIMaybe(BindingSet resultRow, Variable var) {
 		return getIRIMaybe(resultRow, var.getVarName());
 	}
 
-	public static String getString(BindingSet resultRow, ExtendedVariable var) {
+	public static String getString(BindingSet resultRow, Variable var) {
 		return getValue(resultRow, var).stringValue();
 	}
 
@@ -83,7 +83,7 @@ public class QueryResultUtils {
 	}
 
 	public static Optional<String> getStringOptional(
-			BindingSet resultRow, ExtendedVariable var) {
+			BindingSet resultRow, Variable var) {
 		return getValueOptional(resultRow, var).map(Value::stringValue);
 	}
 
@@ -95,11 +95,11 @@ public class QueryResultUtils {
 		return getStringOptional(resultRow, varName).orElse(null);
 	}
 
-	public static String getStringMaybe(BindingSet resultRow, ExtendedVariable var) {
+	public static String getStringMaybe(BindingSet resultRow, Variable var) {
 		return getStringMaybe(resultRow, var.getVarName());
 	}
 
-	public static Boolean getBoolean(BindingSet resultRow, ExtendedVariable var) {
+	public static Boolean getBoolean(BindingSet resultRow, Variable var) {
 		return TypeMappingUtils.toBoolean(getValue(resultRow, var));
 	}
 
@@ -108,7 +108,7 @@ public class QueryResultUtils {
 	}
 
 	public static Optional<Boolean> getBooleanOptional(
-			BindingSet resultRow, ExtendedVariable var) {
+			BindingSet resultRow, Variable var) {
 		return getValueOptional(resultRow, var).map(TypeMappingUtils::toBoolean);
 	}
 
@@ -120,7 +120,7 @@ public class QueryResultUtils {
 		return getBooleanOptional(resultRow, varName).orElse(null);
 	}
 
-	public static Boolean getBooleanMaybe(BindingSet resultRow, ExtendedVariable var) {
+	public static Boolean getBooleanMaybe(BindingSet resultRow, Variable var) {
 		return getBooleanMaybe(resultRow, var.getVarName());
 	}
 }
