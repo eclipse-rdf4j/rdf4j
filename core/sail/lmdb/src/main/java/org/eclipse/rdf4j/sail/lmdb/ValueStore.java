@@ -24,7 +24,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
-import static org.lwjgl.util.lmdb.LMDB.mdb_env_get_maxkeysize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
@@ -55,7 +54,6 @@ import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -70,7 +68,6 @@ import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
- *
  */
 class ValueStore extends AbstractValueFactory {
 
@@ -113,6 +110,10 @@ class ValueStore extends AbstractValueFactory {
 	/*-----------*
 	 * Variables *
 	 *-----------*/
+	/***
+	 * Maximum size of keys before hashing is used (size of two long values)
+	 */
+	private static final int MAX_KEY_SIZE = 16;
 	/**
 	 * The default byte order for all byte buffers
 	 */
@@ -149,12 +150,6 @@ class ValueStore extends AbstractValueFactory {
 	private long env;
 	private int dbi;
 	private long writeTxn;
-
-	/***
-	 * Maximum size of keys before hashing is used (size of two long values)
-	 */
-	private static final int MAX_KEY_SIZE = 16;
-
 	/**
 	 * An object that indicates the revision of the value store, which is used to check if cached value IDs are still
 	 * valid. In order to be valid, the ValueStoreRevision object of a LmdbValue needs to be equal to this object.
@@ -307,9 +302,21 @@ class ValueStore extends AbstractValueFactory {
 			keyData.mv_data(idBuffer);
 			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == 0) {
-				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
-				valueData.mv_data().get(valueBytes);
-				return valueBytes;
+				int rc = 0;
+				if (valueData.mv_data().get(0) == HASH_KEY) {
+					// stored value is a hash -> lookup value with key hash+ID
+					ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 2);
+					hashBb.put(valueData.mv_data());
+					Varint.writeUnsigned(hashBb, id);
+					hashBb.flip();
+					keyData.mv_data(hashBb);
+					rc = mdb_get(txn, dbi, keyData, valueData);
+				}
+				if (rc == 0) {
+					byte[] valueBytes = new byte[valueData.mv_data().remaining()];
+					valueData.mv_data().get(valueBytes);
+					return valueBytes;
+				}
 			}
 			return null;
 		});
@@ -353,15 +360,13 @@ class ValueStore extends AbstractValueFactory {
 			} else {
 				ByteBuffer dataBb = ByteBuffer.wrap(data);
 				long dataHash = hash(data);
-				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 2).order(BYTE_ORDER);
+				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES + 1).order(BYTE_ORDER);
 				hashBb.put(HASH_KEY);
 				Varint.writeUnsigned(hashBb, dataHash);
-				int hashNrPos = hashBb.position();
-				Varint.writeUnsigned(hashBb, 0L);
+				int hashLength = hashBb.position();
 				hashBb.flip();
 
 				MDBVal keyData = MDBVal.calloc(stack);
-				// set cursor to min key
 				keyData.mv_data(hashBb);
 				MDBVal valueData = MDBVal.calloc(stack);
 
@@ -374,16 +379,13 @@ class ValueStore extends AbstractValueFactory {
 					// iterate all entries for hash value
 					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0) {
 						do {
-							if (compareRegion(keyData.mv_data(), 0, hashBb, 0, hashNrPos) != 0) {
+							if (compareRegion(keyData.mv_data(), 0, hashBb, 0, hashLength) != 0) {
 								break;
 							}
 
-							// lookup id
-							keyData.mv_data(valueData.mv_data());
-							// id was found and stored value is equal to requested value
-							if (mdb_get(txn, dbi, keyData, valueData) == 0
-									&& valueData.mv_data().compareTo(dataBb) == 0) {
-								return data2id(keyData.mv_data());
+							// id was found if stored value is equal to requested value
+							if (valueData.mv_data().compareTo(dataBb) == 0) {
+								return Varint.readUnsigned(keyData.mv_data(), hashLength);
 							}
 						} while (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == 0);
 					}
@@ -423,69 +425,41 @@ class ValueStore extends AbstractValueFactory {
 				mdb_put(txn, dbi, idVal, dataVal, 0);
 			} else {
 				long dataHash = hash(data);
-				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 2).order(BYTE_ORDER);
+				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 2);
 				hashBb.put(HASH_KEY);
 				Varint.writeUnsigned(hashBb, dataHash);
-				int hashNrPos = hashBb.position();
-				Varint.writeUnsigned(hashBb, Long.MAX_VALUE);
+				int hashLength = hashBb.position();
+				Varint.writeUnsigned(hashBb, id);
 				hashBb.flip();
 
 				MDBVal keyData = MDBVal.calloc(stack);
-				// set cursor to min key
 				keyData.mv_data(hashBb);
 				MDBVal valueData = MDBVal.calloc(stack);
 
-				long hashNr = -1;
-				long cursor = 0;
+				ByteBuffer valueBuffer = null;
 				try {
-					PointerBuffer pp = stack.mallocPointer(1);
-					E(mdb_cursor_open(txn, dbi, pp));
-					cursor = pp.get(0);
-
-					// go to last entry with same hash value and retrieve its number
-					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0 &&
-						mdb_cursor_get(cursor, keyData, valueData, MDB_PREV) == 0 &&
-						keyData.mv_data().remaining() > hashNrPos &&
-						compareRegion(keyData.mv_data(), 0, hashBb, 0, hashNrPos) == 0
-					) {
-						hashNr = Varint.readUnsigned(keyData.mv_data(), hashNrPos);
-					}
-					hashNr += 1;
+					valueBuffer = MemoryUtil.memAlloc(data.length);
+					valueBuffer.put(data);
+					valueBuffer.flip();
+					valueData.mv_data(valueBuffer);
+					// store mapping of hash+ID -> data
+					mdb_put(txn, dbi, keyData, valueData, 0);
 				} finally {
-					if (cursor != 0) {
-						mdb_cursor_close(cursor);
+					if (valueBuffer != null) {
+						MemoryUtil.memFree(valueBuffer);
 					}
 				}
 
-				hashBb.position(hashNrPos);
-				Varint.writeUnsigned(hashBb, hashNr);
-				hashBb.limit(hashBb.position());
-				hashBb.rewind();
-
-				keyData = MDBVal.calloc(stack);
-				keyData.mv_data(hashBb);
-				valueData = MDBVal.calloc(stack);
 				ByteBuffer idBuffer = idBuffer(stack);
 				id2data(idBuffer, id);
 				idBuffer.flip();
-				valueData.mv_data(idBuffer);
-				// store mapping of hash+nr -> ID
-				mdb_put(txn, dbi, keyData, valueData, 0);
+				keyData.mv_data(idBuffer);
 
-				MDBVal realValueData = MDBVal.calloc(stack);
-				ByteBuffer dataBuffer = null;
-				try {
-					dataBuffer = MemoryUtil.memAlloc(data.length);
-					dataBuffer.put(data);
-					dataBuffer.flip();
-					realValueData.mv_data(dataBuffer);
-					// store mapping of ID -> data
-					mdb_put(txn, dbi, valueData, realValueData, 0);
-				} finally {
-					if (dataBuffer != null) {
-						MemoryUtil.memFree(dataBuffer);
-					}
-				}
+				hashBb.limit(hashLength);
+				valueData.mv_data(hashBb);
+
+				// store mapping of ID -> hash
+				mdb_put(txn, dbi, keyData, valueData, 0);
 			}
 			return null;
 		});
@@ -900,7 +874,7 @@ class ValueStore extends AbstractValueFactory {
 
 		// Get label
 		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
-			StandardCharsets.UTF_8);
+				StandardCharsets.UTF_8);
 
 		if (lang != null) {
 			return new LmdbLiteral(revision, label, lang, id);
@@ -945,22 +919,11 @@ class ValueStore extends AbstractValueFactory {
 		String namespace = namespaceCache.get(cacheID);
 
 		if (namespace == null) {
-			namespace = readTransaction(env, writeTxn, (stack, txn) -> {
-				MDBVal keyData = MDBVal.calloc(stack);
-				ByteBuffer idBuffer = idBuffer(stack);
-				id2data(idBuffer, id);
-				idBuffer.flip();
-				keyData.mv_data(idBuffer);
-				MDBVal valueData = MDBVal.calloc(stack);
-				if (mdb_get(txn, dbi, keyData, valueData) == 0) {
-					byte[] valueBytes = new byte[valueData.mv_data().remaining()];
-					valueData.mv_data().get(valueBytes);
-					return data2namespace(valueBytes);
-				}
-				return null;
-			});
-
-			namespaceCache.put(cacheID, namespace);
+			byte[] namespaceData = getData(id);
+			if (namespaceData != null) {
+				namespace = data2namespace(namespaceData);
+				namespaceCache.put(cacheID, namespace);
+			}
 		}
 
 		return namespace;
