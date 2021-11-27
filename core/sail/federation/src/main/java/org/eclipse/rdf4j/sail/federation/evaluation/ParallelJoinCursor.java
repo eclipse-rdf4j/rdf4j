@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.federation.evaluation;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -51,7 +52,7 @@ public class ParallelJoinCursor extends LookAheadIteration<BindingSet, QueryEval
 	private volatile boolean closed;
 
 	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<>(
-			1024);
+			1024, new WeakReference<>(this));
 
 	private final List<CloseableIteration<BindingSet, QueryEvaluationException>> toCloseList = new ArrayList<>();
 

@@ -13,6 +13,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
+import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
@@ -56,7 +57,7 @@ public class BackgroundGraphResultHangTest {
 		Exception exception = assertThrows(QueryEvaluationException.class, () -> {
 			BackgroundGraphResult gRes = new BackgroundGraphResult(new DummyParser(),
 					new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8,
-					"http://base.org");
+					"http://base.org", new WeakReference<>(data));
 
 			gRes.run();
 			gRes.getNamespaces();

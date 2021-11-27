@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.http.client;
 
 import java.io.InputStream;
+import java.lang.ref.WeakReference;
 import java.nio.charset.Charset;
 import java.util.HashSet;
 import java.util.Objects;
@@ -28,14 +29,15 @@ public class BackgroundResultExecutor implements AutoCloseable {
 		this.executor = Objects.requireNonNull(executor, "Executor service was null");
 	}
 
-	public TupleQueryResult parse(TupleQueryResultParser parser, InputStream in) {
-		BackgroundTupleResult result = new BackgroundTupleResult(parser, in);
+	public TupleQueryResult parse(TupleQueryResultParser parser, InputStream in, WeakReference<?> callerReference) {
+		BackgroundTupleResult result = new BackgroundTupleResult(parser, in, callerReference);
 		autoCloseRunnable(result, result);
 		return result;
 	}
 
-	public GraphQueryResult parse(RDFParser parser, InputStream in, Charset charset, String baseURI) {
-		BackgroundGraphResult result = new BackgroundGraphResult(parser, in, charset, baseURI);
+	public GraphQueryResult parse(RDFParser parser, InputStream in, Charset charset, String baseURI,
+			WeakReference<?> callerReference) {
+		BackgroundGraphResult result = new BackgroundGraphResult(parser, in, charset, baseURI, callerReference);
 		autoCloseRunnable(result, result);
 		return result;
 	}

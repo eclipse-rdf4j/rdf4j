@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.iteration;
 
+import java.lang.ref.WeakReference;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -30,13 +31,15 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 
 	private final Queue<Exception> exceptions = new ConcurrentLinkedQueue<>();
 
+	private final WeakReference<?> callerRef;
+
 	/**
 	 * Creates an <var>QueueIteration</var> with the given (fixed) capacity and default access policy.
 	 *
 	 * @param capacity the capacity of this queue
 	 */
-	protected QueueIteration(int capacity) {
-		this(capacity, false);
+	protected QueueIteration(int capacity, WeakReference<?> callerRef) {
+		this(capacity, false, callerRef);
 	}
 
 	/**
@@ -46,8 +49,9 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * @param fair     if <var>true</var> then queue accesses for threads blocked on insertion or removal, are processed
 	 *                 in FIFO order; if <var>false</var> the access order is unspecified.
 	 */
-	protected QueueIteration(int capacity, boolean fair) {
+	protected QueueIteration(int capacity, boolean fair, WeakReference<?> callerRef) {
 		super();
+		this.callerRef = callerRef;
 		this.queue = new ArrayBlockingQueue<>(capacity, fair);
 	}
 
@@ -59,8 +63,9 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
 	 *              implementation for this cursor.
 	 */
-	protected QueueIteration(BlockingQueue<E> queue) {
+	protected QueueIteration(BlockingQueue<E> queue, WeakReference<?> callerRef) {
 		this.queue = queue;
+		this.callerRef = callerRef;
 	}
 
 	/**
@@ -85,6 +90,11 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 					&& !queue.offer(item, 1, TimeUnit.SECONDS)) {
 				// No body, just iterating regularly through the loop conditions to respond to state changes without a
 				// full busy-wait loop
+				if (callerRef.get() == null) {
+					// Whatever called us is gone.
+					// So stop
+					close();
+				}
 			}
 			// Proactively close if interruption didn't propagate an exception to the catch clause below
 			if (done.get() || Thread.currentThread().isInterrupted()) {

@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -222,7 +223,8 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 		try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
 			QueryResultIO.writeTuple(new IteratingTupleQueryResult(bindingNames, bindings), getTupleFormat(), bos);
 			try (ByteArrayInputStream bis = new ByteArrayInputStream(bos.toByteArray())) {
-				TupleQueryResult parsedBindings = QueryResultIO.parseTuple(bis, getTupleFormat());
+				TupleQueryResult parsedBindings = QueryResultIO.parseTuple(bis, getTupleFormat(),
+						new WeakReference<>(this));
 				assertEquals(bindingNames, parsedBindings.getBindingNames());
 				List<BindingSet> actualBindings = new ArrayList<>();
 				parsedBindings.forEach(actualBindings::add);

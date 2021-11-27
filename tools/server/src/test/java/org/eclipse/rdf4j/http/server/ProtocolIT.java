@@ -16,6 +16,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -627,7 +628,8 @@ public class ProtocolIT {
 			// HTTP 200
 			if (responseCode == HttpURLConnection.HTTP_OK) {
 				// Process query results
-				return QueryResultIO.parseTuple(conn.getInputStream(), TupleQueryResultFormat.SPARQL);
+				return QueryResultIO.parseTuple(conn.getInputStream(), TupleQueryResultFormat.SPARQL,
+						new WeakReference<>(this));
 			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 						+ responseCode + ")";
