@@ -290,8 +290,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			ret = evaluate((SingletonSet) expr, bindings);
 		} else if (expr instanceof EmptySet) {
 			ret = evaluate((EmptySet) expr, bindings);
-		} else if (expr instanceof ExternalSet) {
-			ret = evaluate((ExternalSet) expr, bindings);
 		} else if (expr instanceof ZeroLengthPath) {
 			ret = evaluate((ZeroLengthPath) expr, bindings);
 		} else if (expr instanceof ArbitraryLengthPath) {
@@ -1006,11 +1004,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet, BindingSet bindings)
 			throws QueryEvaluationException {
 		return new EmptyIteration<>();
-	}
-
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ExternalSet external, BindingSet bindings)
-			throws QueryEvaluationException {
-		return external.evaluate(bindings);
 	}
 
 	@Override
