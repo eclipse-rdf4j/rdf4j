@@ -440,8 +440,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.map(shapePlanNodeTuple -> () -> {
 
 						PlanNode planNode = shapePlanNodeTuple.getPlanNode();
-						ValidationExecutionLogger validationExecutionLogger = new ValidationExecutionLogger(
-								sail.isGlobalLogValidationExecution());
+						ValidationExecutionLogger validationExecutionLogger = ValidationExecutionLogger
+								.getInstance(sail.isLogValidationViolations());
 
 						planNode.receiveLogger(validationExecutionLogger);
 

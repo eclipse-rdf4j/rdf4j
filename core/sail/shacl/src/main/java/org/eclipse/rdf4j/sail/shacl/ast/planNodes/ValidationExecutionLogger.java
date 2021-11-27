@@ -23,34 +23,17 @@ public class ValidationExecutionLogger {
 
 	private final static Logger logger = LoggerFactory.getLogger(ValidationExecutionLogger.class);
 
-	private List<LogStatement> list = null;
+	private final List<LogStatement> list = new ArrayList<>();
 
-	private static final boolean groupedLogging = true;
-
-	private final boolean enabled;
-
-	public ValidationExecutionLogger(boolean enabled) {
-		this.enabled = enabled;
+	ValidationExecutionLogger() {
 	}
 
 	void log(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id, String message) {
 		LogStatement logStatement = new LogStatement(depth, name, tuple, planNode, id, message);
-		if (groupedLogging) {
-			if (list == null) {
-				list = new ArrayList<>();
-			}
-			list.add(logStatement);
-		} else {
-			logger.info(logStatement.toString());
-		}
+		list.add(logStatement);
 	}
 
 	public void flush() {
-
-		if (list == null || list.isEmpty()) {
-			return;
-		}
-
 		Map<String, List<LogStatement>> map = new HashMap<>();
 
 		list.forEach(s -> {
@@ -69,7 +52,44 @@ public class ValidationExecutionLogger {
 	}
 
 	public boolean isEnabled() {
-		return enabled;
+		return true;
+	}
+
+	public static ValidationExecutionLogger getInstance(boolean enabled) {
+		if (enabled) {
+			return new ValidationExecutionLogger();
+		} else {
+			return DeactivatedValidationLogger.getInstance();
+		}
+	}
+
+}
+
+class DeactivatedValidationLogger extends ValidationExecutionLogger {
+
+	private static final DeactivatedValidationLogger instance = new DeactivatedValidationLogger();
+
+	private DeactivatedValidationLogger() {
+		super();
+	}
+
+	static ValidationExecutionLogger getInstance() {
+		return instance;
+	}
+
+	@Override
+	void log(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id, String message) {
+		// no-op
+	}
+
+	@Override
+	public void flush() {
+		// no-op
+	}
+
+	@Override
+	public boolean isEnabled() {
+		return false;
 	}
 }
 
@@ -117,7 +137,7 @@ class LogStatement {
 
 		return StringUtils.leftPad(id, 14) + "\t"
 				+ leadingSpace(depth) + name
-				+ ":  " + tuple.toString()
+				+ ":  " + tuple
 				+ " :  " + planNode.toString()
 				+ (message != null ? " :  " + message : "");
 

@@ -39,6 +39,10 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 
 @Isolated
 public abstract class MultithreadedTest {
@@ -357,6 +361,9 @@ public abstract class MultithreadedTest {
 	@Test
 	public void testLotsOfValidationFailuresSerializable() throws IOException {
 		System.out.println("testLotsOfValidationFailuresSerializable");
+
+		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName())).setLevel(Level.ERROR);
+
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);

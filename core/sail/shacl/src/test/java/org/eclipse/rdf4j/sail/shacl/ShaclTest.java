@@ -54,19 +54,4 @@ public class ShaclTest extends AbstractShaclTest {
 		runWithAutomaticLogging(() -> referenceImplementationTestCaseValidation(testCase));
 	}
 
-	private void runWithAutomaticLogging(Runnable r) {
-		try {
-			r.run();
-		} catch (Throwable t) {
-			fullLogging = true;
-			System.out.println("\n##############################################");
-			System.out.println("###### Re-running test with full logging #####");
-			System.out.println("##############################################\n");
-
-			r.run();
-		} finally {
-			fullLogging = false;
-		}
-	}
-
 }

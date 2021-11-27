@@ -60,8 +60,8 @@ public class ParallelBenchmark {
 
 	@Setup(Level.Iteration)
 	public void setUp() throws InterruptedException {
-		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
-		root.setLevel(ch.qos.logback.classic.Level.INFO);
+		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
+				.setLevel(ch.qos.logback.classic.Level.ERROR);
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 

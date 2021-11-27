@@ -47,21 +47,6 @@ public class ShaclTestWithoutRdfsReasoner extends AbstractShaclTest {
 		return testCase.getTestCasePath().contains("/subclass");
 	}
 
-	private void runWithAutomaticLogging(Runnable r) {
-		try {
-			r.run();
-		} catch (Throwable t) {
-			fullLogging = true;
-			System.out.println("\n##############################################");
-			System.out.println("###### Re-running test with full logging #####");
-			System.out.println("##############################################\n");
-
-			r.run();
-		} finally {
-			fullLogging = false;
-		}
-	}
-
 	SailRepository getShaclSail(TestCase testCase, boolean loadInitialData) {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());

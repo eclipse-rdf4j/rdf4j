@@ -1057,6 +1057,22 @@ abstract public class AbstractShaclTest {
 		return repository;
 	}
 
+	void runWithAutomaticLogging(Runnable r) {
+		try {
+			r.run();
+		} catch (Throwable t) {
+			fullLogging = true;
+			System.out.println("\n##############################################");
+			System.out.println("###### Re-running test with full logging #####");
+			System.out.println("##############################################\n");
+
+			r.run();
+			throw new IllegalStateException("There should have been an assertion error before this exception!");
+		} finally {
+			fullLogging = false;
+		}
+	}
+
 	/**
 	 * Sort and output testCasePaths
 	 *
