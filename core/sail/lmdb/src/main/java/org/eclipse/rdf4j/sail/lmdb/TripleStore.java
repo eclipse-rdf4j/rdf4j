@@ -186,7 +186,11 @@ class TripleStore implements Closeable {
 		mdb_env_set_maxdbs(env, 6);
 
 		// Open environment
-		E(mdb_env_open(env, dir.getPath(), MDB_NOTLS | MDB_NOSYNC | MDB_NOMETASYNC, 0664));
+		int flags = MDB_NOTLS;
+		if (!forceSync) {
+			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
+		}
+		E(mdb_env_open(env, dir.getPath(), flags, 0664));
 
 		File propFile = new File(dir, PROPERTIES_FILE);
 
@@ -344,14 +348,8 @@ class TripleStore implements Closeable {
 							mdb_put(txn, addedIndex.getDB(), keyValue, dataValue, 0);
 						}
 					} finally {
-						try {
-							if (sourceIter[0] != null) {
-								sourceIter[0].close();
-							}
-						} finally {
-							// if (addedDB != null) {
-							// addedDB.sync();
-							// }
+						if (sourceIter[0] != null) {
+							sourceIter[0].close();
 						}
 					}
 

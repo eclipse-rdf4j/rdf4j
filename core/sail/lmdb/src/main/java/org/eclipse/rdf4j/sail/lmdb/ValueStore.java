@@ -150,6 +150,8 @@ class ValueStore extends AbstractValueFactory {
 	private long env;
 	private int dbi;
 	private long writeTxn;
+	private boolean forceSync;
+
 	/**
 	 * An object that indicates the revision of the value store, which is used to check if cached value IDs are still
 	 * valid. In order to be valid, the ValueStoreRevision object of a LmdbValue needs to be equal to this object.
@@ -175,6 +177,7 @@ class ValueStore extends AbstractValueFactory {
 	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
 			int namespaceIDCacheSize) throws IOException {
 		this.dbDir = new File(dataDir, FILENAME_PREFIX);
+		this.forceSync = forceSync;
 		open();
 
 		valueCache = new ConcurrentCache<>(valueCacheSize);
@@ -246,7 +249,11 @@ class ValueStore extends AbstractValueFactory {
 		mdb_env_set_mapsize(env, 1_099_511_627L);
 
 		// Open environment
-		E(mdb_env_open(env, dbDir.getPath(), MDB_NOTLS | MDB_NOSYNC | MDB_NOMETASYNC, 0664));
+		int flags = MDB_NOTLS;
+		if (!forceSync) {
+			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
+		}
+		E(mdb_env_open(env, dbDir.getPath(), flags, 0664));
 
 		// Open database
 		dbi = openDatabase(env, null, MDB_CREATE, null);
@@ -639,16 +646,6 @@ class ValueStore extends AbstractValueFactory {
 		} catch (InterruptedException e) {
 			throw new IOException("Failed to acquire write lock", e);
 		}
-	}
-
-	/**
-	 * Synchronizes any changes that are cached in memory to disk.
-	 *
-	 * @throws IOException If an I/O error occurred.
-	 */
-	public void sync() throws IOException {
-		// TODO correctly handle sync
-		// db.sync();
 	}
 
 	/**

@@ -315,20 +315,16 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				try {
-					valueStore.sync();
+					namespaceStore.sync();
 				} finally {
 					try {
-						namespaceStore.sync();
+						contextStore.sync();
 					} finally {
-						try {
-							contextStore.sync();
-						} finally {
-							if (storeTxnStarted.get()) {
-								tripleStore.commit();
-								valueStore.commit();
-								// do not set flag to false until _after_ commit is successfully completed.
-								storeTxnStarted.set(false);
-							}
+						if (storeTxnStarted.get()) {
+							tripleStore.commit();
+							valueStore.commit();
+							// do not set flag to false until _after_ commit is successfully completed.
+							storeTxnStarted.set(false);
 						}
 					}
 				}
