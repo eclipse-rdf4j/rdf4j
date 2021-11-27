@@ -10,7 +10,11 @@ package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.toRdfLiteralArray;
 
+import java.util.function.Consumer;
+
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfObject;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
@@ -58,6 +62,19 @@ public interface TriplePattern extends GraphPattern {
 	 * @return this triple pattern
 	 */
 	TriplePattern andHas(RdfPredicateObjectList... lists);
+
+	/**
+	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes {@link Value}s and converts them to
+	 * StringLiterals
+	 *
+	 * @param predicate the predicate to use to describe this triple pattern's subject
+	 * @param objects   the corresponding object(s)
+	 *
+	 * @return this triple pattern
+	 */
+	default TriplePattern andHas(RdfPredicate predicate, Value... objects) {
+		return andHas(predicate, Rdf.objects(objects));
+	}
 
 	/**
 	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Strings and converts them to
@@ -142,6 +159,55 @@ public interface TriplePattern extends GraphPattern {
 	}
 
 	;
+
+	/**
+	 * Add a property path with an object list describing this triple pattern's subject
+	 *
+	 * @param propertyPathConfigurer an object accepting an {@link EmptyPropertyPathBuilder} that configures it as
+	 *                               needed
+	 * @param objects                the corresponding object(s)
+	 *
+	 * @return this triple pattern
+	 */
+	default TriplePattern andHas(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, RdfObject... objects) {
+		EmptyPropertyPathBuilder pathBuilder = new EmptyPropertyPathBuilder();
+		propertyPathConfigurer.accept(pathBuilder);
+		return andHas(pathBuilder.build(), objects);
+	}
+
+	/**
+	 * Wrapper for {@link #andHas(Consumer, RdfObject...)} converting the {@link Value} <code>objects</code> to
+	 * {@link RdfObject}s.
+	 */
+	default TriplePattern andHas(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, Value... objects) {
+		return andHas(propertyPathConfigurer, Rdf.objects(objects));
+	}
+
+	/**
+	 * Wrapper for {@link #andHas(Consumer, RdfObject...)} converting the {@link String} <code>objects</code> to
+	 * {@link RdfObject}s.
+	 */
+
+	default TriplePattern andHas(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, String... objects) {
+		return andHas(propertyPathConfigurer, toRdfLiteralArray(objects));
+	}
+
+	/**
+	 * Wrapper for {@link #andHas(Consumer, RdfObject...)} converting the {@link Number} <code>objects</code> to
+	 * {@link RdfObject}s.
+	 */
+
+	default TriplePattern andHas(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, Number... objects) {
+		return andHas(propertyPathConfigurer, toRdfLiteralArray(objects));
+	}
+
+	/**
+	 * Wrapper for {@link #andHas(Consumer, RdfObject...)} converting the {@link Boolean} <code>objects</code> to
+	 * {@link RdfObject}s.
+	 */
+	default TriplePattern andHas(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, Boolean... objects) {
+		return andHas(propertyPathConfigurer, toRdfLiteralArray(objects));
+	}
 
 	/**
 	 * Use the built-in RDF shortcut {@code a} for {@code rdf:type} to specify the subject's type

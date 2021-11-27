@@ -10,8 +10,11 @@ package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.toRdfLiteralArray;
 
+import java.util.function.Consumer;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
@@ -165,5 +168,50 @@ public interface RdfSubject extends QueryElement {
 	 */
 	default TriplePattern isA(IRI... objects) {
 		return has(RdfPredicate.a, objects);
+	}
+
+	/**
+	 * Create a triple pattern from this subject, predicate path and object.
+	 *
+	 * @param propertyPathConfigurer an object that accepts an {@link EmptyPropertyPathBuilder}
+	 * @param objects                the object(s) of the triple pattern
+	 * @return a new {@link TriplePattern} with this subject, and the given predicate path and object(s)
+	 */
+	default TriplePattern has(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, RdfObject... objects) {
+		EmptyPropertyPathBuilder pathBuilder = new EmptyPropertyPathBuilder();
+		propertyPathConfigurer.accept(pathBuilder);
+		return GraphPatterns.tp(this, pathBuilder.build(), objects);
+	}
+
+	/**
+	 * Wrapper for {@link #has(Consumer, RdfObject...)} that converts the specified {@link Value} <code>objects</code>
+	 * to {@link RdfObject}s.
+	 */
+	default TriplePattern has(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, Value... objects) {
+		return has(propertyPathConfigurer, Rdf.objects(objects));
+	}
+
+	/**
+	 * Wrapper for {@link #has(Consumer, RdfObject...)} that converts the specified {@link String} <code>objects</code>
+	 * to {@link RdfLiteral}s.
+	 */
+	default TriplePattern has(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, String... objects) {
+		return has(propertyPathConfigurer, toRdfLiteralArray(objects));
+	}
+
+	/**
+	 * Wrapper for {@link #has(Consumer, RdfObject...)} that converts the specified {@link Number} <code>objects</code>
+	 * to {@link RdfLiteral}s.
+	 */
+	default TriplePattern has(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, Number... objects) {
+		return has(propertyPathConfigurer, toRdfLiteralArray(objects));
+	}
+
+	/**
+	 * Wrapper for {@link #has(Consumer, RdfObject...)} that converts the specified {@link Boolean} <code>objects</code>
+	 * to {@link RdfLiteral}s.
+	 */
+	default TriplePattern has(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, Boolean... objects) {
+		return (has(propertyPathConfigurer, toRdfLiteralArray(objects)));
 	}
 }

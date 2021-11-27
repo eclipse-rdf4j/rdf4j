@@ -10,7 +10,13 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder;
 
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.*;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.p;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pAlt;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pGroup;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pOneOrMore;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pSeq;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pZeroOrMore;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pZeroOrOne;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 import java.util.Objects;
@@ -51,10 +57,18 @@ public class PropertyPathBuilder {
 		return new PropertyPathBuilder(predicate);
 	}
 
+	/**
+	 * Build the path.
+	 *
+	 * @return
+	 */
 	public PropertyPath build() {
 		return head;
 	}
 
+	/**
+	 * Invert whatever comes next (i.e. append <code>^</code>.
+	 */
 	public PropertyPathBuilder inv() {
 		Objects.requireNonNull(head);
 		head = new InversePath(groupIfNotGrouped(head));
@@ -68,22 +82,34 @@ public class PropertyPathBuilder {
 		return new GroupedPath(path);
 	}
 
+	/**
+	 * Append <code>`/` predicate</code> to the path.
+	 */
 	public PropertyPathBuilder then(Iri predicate) {
 		return then(p(predicate));
 	}
 
+	/**
+	 * Append <code>`/` path</code> to the path.
+	 */
 	public PropertyPathBuilder then(IRI predicate) {
 		return then(iri(predicate));
 	}
 
+	/**
+	 * Append <code>`/` path</code> to the path.
+	 */
 	public PropertyPathBuilder then(PropertyPath path) {
 		Objects.requireNonNull(head);
 		head = pSeq(head, path);
 		return this;
 	}
 
+	/**
+	 * Append <code>`/`</code> and the product of the <code>subtreeBuilder</code> to the path.
+	 */
 	public PropertyPathBuilder then(Consumer<EmptyPropertyPathBuilder> subtreeBuilder) {
-		return withSubtree(subtreeBuilder, Expressions::pSeq);
+		return withSubtree(subtreeBuilder, PropertyPaths::pSeq);
 	}
 
 	private PropertyPathBuilder withSubtree(
@@ -96,29 +122,48 @@ public class PropertyPathBuilder {
 		return this;
 	}
 
+	/**
+	 * Append <code>`|` predicate</code> to the path.
+	 */
 	public PropertyPathBuilder or(Iri predicate) {
 		return or(p(predicate));
 	}
 
+	/**
+	 * Append <code>`|` path</code> to the path.
+	 */
 	public PropertyPathBuilder or(IRI predicate) {
 		return or(iri(predicate));
 	}
 
+	/**
+	 * Append <code>`|` path</code> to the path.
+	 */
 	public PropertyPathBuilder or(PropertyPath path) {
 		Objects.requireNonNull(head);
 		head = pAlt(head, path);
 		return this;
 	}
 
+	/**
+	 * Append <code>`|`</code> and the product of the <code>subtreeBuilder</code> to the path.
+	 */
 	public PropertyPathBuilder or(Consumer<EmptyPropertyPathBuilder> subtreeBuilder) {
-		return withSubtree(subtreeBuilder, Expressions::pAlt);
+		return withSubtree(subtreeBuilder, PropertyPaths::pAlt);
 	}
 
+	/**
+	 * Append <code>`*`</code> to the path.
+	 */
 	public PropertyPathBuilder zeroOrMore() {
 		Objects.requireNonNull(head);
 		head = pZeroOrMore(head);
 		return this;
 	}
+
+	/**
+	 * Append <code>`+`</code> to the path.
+	 */
 
 	public PropertyPathBuilder oneOrMore() {
 		Objects.requireNonNull(head);
@@ -126,12 +171,18 @@ public class PropertyPathBuilder {
 		return this;
 	}
 
+	/**
+	 * Append <code>`?`</code> to the path.
+	 */
 	public PropertyPathBuilder zeroOrOne() {
 		Objects.requireNonNull(head);
 		head = pZeroOrOne(head);
 		return this;
 	}
 
+	/**
+	 * Enclose the path with <code>`(` and `)`</code>.
+	 */
 	public PropertyPathBuilder group() {
 		Objects.requireNonNull(head);
 		head = pGroup(head);

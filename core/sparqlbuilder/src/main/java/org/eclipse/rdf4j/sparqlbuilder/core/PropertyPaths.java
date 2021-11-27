@@ -15,6 +15,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 
+/**
+ * Use the {@link org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder} instead.
+ */
+@Deprecated(since = "4.0")
 public class PropertyPaths {
 	/**
 	 * Construct property paths for use with the {@link SparqlBuilder}

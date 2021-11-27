@@ -134,16 +134,14 @@ System.out.println(triple.getQueryString());
 
 ### Property Paths
 
-Property paths can be generated using a builder returned from `Expressions.path()`:
+Property paths can be generated with a lambda expression that uses a builder pattern 
+wherever a predicate (IRI) can be passed:
 ```
 SelectQuery query = Queries
     .SELECT(name)
     .prefix(FOAF.NS)
-    .where(x.has(
-            Expressions
-                .path(FOAF.ACCOUNT)
-                .then(FOAF.MBOX)
-                .build(), 
+    .where(x.has(p -> p.pred(FOAF.ACCOUNT)
+                .then(FOAF.MBOX),
             name))
 ```
 yields
@@ -152,6 +150,15 @@ PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 SELECT ?name
 WHERE { ?x foaf:account / foaf:mbox ?name . }
 ```
+Here are a few examples and the path they yield
+
+| property path builder code          |  property path |
+|--------------------------|---------------- |
+|`p -> p.pred(FOAF.ACCOUNT).then(FOAF.MBOX)` | `foaf:account / foaf:mbox` |
+|`p -> p.pred(RDF.TYPE).then(RDFS.SUBCLASSOF).zeroOrMore()` | `rdf:type / rdfs:subClassOf *` |
+|`p -> p.pred(EX.MOTHER_OF).or(EX.FATHER_OF).oneOrMore()` | `( ex:motherOf \| ex:fatherOf ) +` |
+|`p -> p.pred(EX.MOTHER_OF).or(p1 -> p1.pred(EX.FATHER_OF).zeroOrOne())` | `ex:motherOf \| ( ex:fatherOf ? )` |
+|`p -> p.negProp().pred(RDF.TYPE).invPred(RDF.TYPE)` | `!( rdf:type \| ^ rdf:type )` |
 
 ### Compound graph patterns
 
