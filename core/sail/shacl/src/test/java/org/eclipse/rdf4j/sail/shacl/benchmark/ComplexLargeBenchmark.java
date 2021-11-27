@@ -92,14 +92,12 @@ public class ComplexLargeBenchmark {
 		}
 	}
 
-
 	@Setup(Level.Trial)
 	public void setUp() throws InterruptedException {
 
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.WARN);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
-
 
 		System.gc();
 		Thread.sleep(100);
