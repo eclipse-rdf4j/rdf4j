@@ -9,9 +9,6 @@
 	<artifactId>rdf4j-sail-lmdb</artifactId>
 	<name>RDF4J: LmdbStore</name>
 	<description>Sail implementation that stores data to disk using LMDB.</description>
-	<properties>
-		<lwjgl.version>3.3.0</lwjgl.version>
-	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.lwjgl</groupId>

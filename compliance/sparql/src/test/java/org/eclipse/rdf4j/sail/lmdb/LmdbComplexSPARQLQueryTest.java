@@ -16,7 +16,8 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 
 /**
- * @author jeen
+ * Test additional SPARQL functionality on LMDB store.
+ *
  */
 public class LmdbComplexSPARQLQueryTest extends ComplexSPARQLQueryTest {
 

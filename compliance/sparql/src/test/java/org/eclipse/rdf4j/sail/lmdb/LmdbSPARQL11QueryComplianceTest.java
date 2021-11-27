@@ -16,7 +16,7 @@ import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * @author jeen
+ * Test SPARQL 1.1 query functionality on LMDB store.
  *
  */
 public class LmdbSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest {

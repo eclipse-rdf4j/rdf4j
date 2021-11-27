@@ -115,6 +115,70 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-linux</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-macos-arm64</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-macos</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-windows</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-linux</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-macos</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-macos-arm64</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-windows</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-util</artifactId>
 			<version>${project.version}</version>
