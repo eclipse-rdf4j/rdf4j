@@ -7,13 +7,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+
 import org.eclipse.rdf4j.model.impl.ContextStatement;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A MemStatement is a Statement which contains context information and a flag indicating whether the statement is
  * explicit or inferred.
  */
 public class MemStatement extends ContextStatement {
+
+	private static final Logger logger = LoggerFactory.getLogger(MemStatement.class);
 
 	/*-----------*
 	 * Constants *
@@ -28,7 +35,7 @@ public class MemStatement extends ContextStatement {
 	/**
 	 * Flag indicating whether or not this statement has been added explicitly or that it has been inferred.
 	 */
-	private volatile boolean explicit;
+	private final boolean explicit;
 
 	/**
 	 * Identifies the snapshot in which this statement was introduced.
@@ -59,7 +66,7 @@ public class MemStatement extends ContextStatement {
 	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context, boolean explicit,
 			int sinceSnapshot) {
 		super(subject, predicate, object, context);
-		setExplicit(explicit);
+		this.explicit = explicit;
 		setSinceSnapshot(sinceSnapshot);
 	}
 
@@ -107,8 +114,20 @@ public class MemStatement extends ContextStatement {
 		return snapshot >= sinceSnapshot && snapshot < tillSnapshot;
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public void setExplicit(boolean explicit) {
-		this.explicit = explicit;
+		logger.warn(
+				"The explicit field has been set to final for improved performance. Java reflection will be used " +
+						"to modify it. Take note that the MemorySailStore will not detect this change and may " +
+						"assume that it doesn't have any inferred statements!");
+
+		try {
+			Field explicitField = MemStatement.class.getDeclaredField("explicit");
+			explicitField.setAccessible(true);
+			explicitField.set(this, explicit);
+		} catch (NoSuchFieldException | IllegalAccessException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	public boolean isExplicit() {
