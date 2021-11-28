@@ -101,11 +101,15 @@ class ValueStore extends AbstractValueFactory {
 
 	private static final byte HASH_KEY = 0x1;
 
-	private static final byte URI_VALUE = 0x2;
+	private static final byte HASHID_KEY = 0x2;
 
-	private static final byte BNODE_VALUE = 0x3;
+	private static final byte URI_VALUE = 0x3;
 
-	private static final byte LITERAL_VALUE = 0x4;
+	private static final byte BNODE_VALUE = 0x4;
+
+	private static final byte LITERAL_VALUE = 0x5;
+
+	private static final byte NAMESPACE_VALUE = 0x6;
 
 	/*-----------*
 	 * Variables *
@@ -269,9 +273,10 @@ class ValueStore extends AbstractValueFactory {
 		return stack.malloc(2 + Long.BYTES);
 	}
 
-	protected void id2data(ByteBuffer bb, long id) {
+	protected ByteBuffer id2data(ByteBuffer bb, long id) {
 		bb.put(ID_KEY);
 		Varint.writeUnsigned(bb, id);
+		return bb;
 	}
 
 	protected long data2id(ByteBuffer bb) {
@@ -303,14 +308,26 @@ class ValueStore extends AbstractValueFactory {
 	protected byte[] getData(long id) throws IOException {
 		return readTransaction(env, writeTxn, (stack, txn) -> {
 			MDBVal keyData = MDBVal.calloc(stack);
-			ByteBuffer idBuffer = idBuffer(stack);
-			id2data(idBuffer, id);
-			idBuffer.flip();
-			keyData.mv_data(idBuffer);
+			keyData.mv_data(id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == 0) {
 				int rc = 0;
-				if (valueData.mv_data().get(0) == HASH_KEY) {
+				byte type = valueData.mv_data().get(0);
+				if (type == HASH_KEY) {
+					// stored value is a hash -> lookup value with key hash
+					keyData.mv_data(valueData.mv_data());
+					if (mdb_get(txn, dbi, keyData, valueData) == 0) {
+						// skip the ID
+						ByteBuffer valueBb = valueData.mv_data();
+						int idLength = Varint.firstToLength(valueBb.get(0));
+						valueBb.position(idLength);
+						int dataLength = valueBb.remaining();
+						byte[] valueBytes = new byte[dataLength];
+						valueBb.get(valueBytes);
+						return valueBytes;
+					}
+					return null;
+				} else if (type == HASHID_KEY) {
 					// stored value is a hash -> lookup value with key hash+ID
 					ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 2);
 					hashBb.put(valueData.mv_data());
@@ -355,27 +372,93 @@ class ValueStore extends AbstractValueFactory {
 		return resultValue;
 	}
 
-	private long findId(byte[] data) throws IOException {
+	private ByteBuffer encodeData(byte[] data, long id, boolean includeId) {
+		ByteBuffer valueBuffer = includeId ? MemoryUtil.memAlloc(Varint.calcLengthUnsigned(id) + data.length)
+				: MemoryUtil.memAlloc(data.length);
+		if (includeId) {
+			// store ID in value
+			Varint.writeUnsigned(valueBuffer, id);
+		}
+		valueBuffer.put(data);
+		valueBuffer.flip();
+		return valueBuffer;
+	}
+
+	private long findId(byte[] data, boolean create) throws IOException {
 		Long id = LmdbUtil.<Long>readTransaction(env, writeTxn, (stack, txn) -> {
 			if (data.length < MAX_KEY_SIZE) {
-				MDBVal keyData = MDBVal.calloc(stack);
-				keyData.mv_data(stack.bytes(data));
-				MDBVal valueData = MDBVal.calloc(stack);
-				if (mdb_get(txn, dbi, keyData, valueData) == 0) {
-					return data2id(valueData.mv_data());
+				MDBVal dataVal = MDBVal.calloc(stack);
+				dataVal.mv_data(stack.bytes(data));
+				MDBVal idVal = MDBVal.calloc(stack);
+				if (mdb_get(txn, dbi, dataVal, idVal) == 0) {
+					return data2id(idVal.mv_data());
 				}
+				if (!create) {
+					return null;
+				}
+				// id was not found, create a new one
+				long newId = nextId();
+				writeTransaction((stack2, writeTxn) -> {
+					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+
+					mdb_put(writeTxn, dbi, dataVal, idVal, 0);
+					mdb_put(writeTxn, dbi, idVal, dataVal, 0);
+					return null;
+				});
+				return newId;
 			} else {
 				ByteBuffer dataBb = ByteBuffer.wrap(data);
 				long dataHash = hash(data);
-				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES + 1).order(BYTE_ORDER);
+				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES + 1);
 				hashBb.put(HASH_KEY);
 				Varint.writeUnsigned(hashBb, dataHash);
 				int hashLength = hashBb.position();
 				hashBb.flip();
 
-				MDBVal keyData = MDBVal.calloc(stack);
-				keyData.mv_data(hashBb);
-				MDBVal valueData = MDBVal.calloc(stack);
+				MDBVal hashVal = MDBVal.calloc(stack);
+				hashVal.mv_data(hashBb);
+				MDBVal dataVal = MDBVal.calloc(stack);
+
+				// first value is directly stored with hash as key
+				if (mdb_get(txn, dbi, hashVal, dataVal) == 0) {
+					ByteBuffer valueBb = dataVal.mv_data();
+					int idLength = Varint.firstToLength(valueBb.get(0));
+					int storedDataLength = valueBb.remaining() - idLength;
+					if (storedDataLength == data.length &&
+							compareRegion(valueBb, idLength, dataBb, 0, storedDataLength) == 0) {
+						return Varint.readUnsigned(valueBb);
+					}
+				} else {
+					// no value for hash exists
+					if (!create) {
+						return null;
+					}
+					long newId = nextId();
+					writeTransaction((stack2, writeTxn) -> {
+						ByteBuffer valueBb = encodeData(data, newId, true);
+						dataVal.mv_data(valueBb);
+						try {
+							// store mapping of hash -> ID+data
+							mdb_put(txn, dbi, hashVal, dataVal, 0);
+
+							MDBVal idVal = MDBVal.calloc(stack);
+							idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+
+							// store mapping of ID -> hash
+							mdb_put(writeTxn, dbi, idVal, hashVal, 0);
+							return null;
+						} finally {
+							if (valueBb != null) {
+								MemoryUtil.memFree(valueBb);
+							}
+						}
+					});
+					return newId;
+				}
+
+				// test existing entries for hash key against given value
+				hashBb.put(0, HASHID_KEY);
+				hashVal.mv_data(hashBb);
 
 				long cursor = 0;
 				try {
@@ -384,25 +467,61 @@ class ValueStore extends AbstractValueFactory {
 					cursor = pp.get(0);
 
 					// iterate all entries for hash value
-					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0) {
+					if (mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE) == 0) {
 						do {
-							if (compareRegion(keyData.mv_data(), 0, hashBb, 0, hashLength) != 0) {
+							if (compareRegion(hashVal.mv_data(), 0, hashBb, 0, hashLength) != 0) {
 								break;
 							}
 
 							// id was found if stored value is equal to requested value
-							if (valueData.mv_data().compareTo(dataBb) == 0) {
-								return Varint.readUnsigned(keyData.mv_data(), hashLength);
+							if (dataVal.mv_data().compareTo(dataBb) == 0) {
+								return Varint.readUnsigned(hashVal.mv_data(), hashLength);
 							}
-						} while (mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == 0);
+						} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == 0);
 					}
 				} finally {
 					if (cursor != 0) {
 						mdb_cursor_close(cursor);
 					}
 				}
+
+				if (!create) {
+					return null;
+				}
+
+				// id was not found, create a new one
+				long newId = nextId();
+				writeTransaction((stack2, writeTxn) -> {
+					// store hash and ID
+					hashBb.limit(hashBb.capacity());
+					hashBb.position(hashLength);
+					Varint.writeUnsigned(hashBb, newId);
+					hashBb.flip();
+					hashVal.mv_data(hashBb);
+
+					ByteBuffer valueBb = encodeData(data, newId, false);
+					try {
+						dataVal.mv_data(valueBb);
+						// store mapping of hash+ID -> data
+						mdb_put(txn, dbi, hashVal, dataVal, 0);
+					} finally {
+						if (valueBb != null) {
+							MemoryUtil.memFree(valueBb);
+						}
+					}
+
+					MDBVal idVal = MDBVal.calloc(stack);
+					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+
+					hashBb.limit(hashLength);
+					hashVal.mv_data(hashBb);
+
+					// store mapping of ID -> hash
+					mdb_put(txn, dbi, idVal, hashVal, 0);
+					return null;
+				});
+				return newId;
 			}
-			return null;
 		});
 		return id != null ? id : LmdbValue.UNKNOWN_ID;
 	}
@@ -415,61 +534,6 @@ class ValueStore extends AbstractValueFactory {
 		} else {
 			return LmdbUtil.transaction(env, transaction);
 		}
-	}
-
-	private void storeId(long id, byte[] data) throws IOException {
-		this.<Long>writeTransaction((stack, txn) -> {
-			if (data.length < MAX_KEY_SIZE) {
-				MDBVal dataVal = MDBVal.calloc(stack);
-				dataVal.mv_data(stack.bytes(data));
-				MDBVal idVal = MDBVal.calloc(stack);
-				ByteBuffer idBuffer = idBuffer(stack);
-				id2data(idBuffer, id);
-				idBuffer.flip();
-				idVal.mv_data(idBuffer);
-
-				mdb_put(txn, dbi, dataVal, idVal, 0);
-				mdb_put(txn, dbi, idVal, dataVal, 0);
-			} else {
-				long dataHash = hash(data);
-				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 2);
-				hashBb.put(HASH_KEY);
-				Varint.writeUnsigned(hashBb, dataHash);
-				int hashLength = hashBb.position();
-				Varint.writeUnsigned(hashBb, id);
-				hashBb.flip();
-
-				MDBVal keyData = MDBVal.calloc(stack);
-				keyData.mv_data(hashBb);
-				MDBVal valueData = MDBVal.calloc(stack);
-
-				ByteBuffer valueBuffer = null;
-				try {
-					valueBuffer = MemoryUtil.memAlloc(data.length);
-					valueBuffer.put(data);
-					valueBuffer.flip();
-					valueData.mv_data(valueBuffer);
-					// store mapping of hash+ID -> data
-					mdb_put(txn, dbi, keyData, valueData, 0);
-				} finally {
-					if (valueBuffer != null) {
-						MemoryUtil.memFree(valueBuffer);
-					}
-				}
-
-				ByteBuffer idBuffer = idBuffer(stack);
-				id2data(idBuffer, id);
-				idBuffer.flip();
-				keyData.mv_data(idBuffer);
-
-				hashBb.limit(hashLength);
-				valueData.mv_data(hashBb);
-
-				// store mapping of ID -> hash
-				mdb_put(txn, dbi, keyData, valueData, 0);
-			}
-			return null;
-		});
 	}
 
 	int compareRegion(ByteBuffer array1, int startIdx1, ByteBuffer array2, int startIdx2, int length) {
@@ -487,7 +551,18 @@ class ValueStore extends AbstractValueFactory {
 	 * @return The ID for the specified value, or {@link LmdbValue#UNKNOWN_ID} if no such ID could be found.
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public long getID(Value value) throws IOException {
+	public long getId(Value value) throws IOException {
+		return getId(value, false);
+	}
+
+	/**
+	 * Gets the ID for the specified value.
+	 *
+	 * @param value A value.
+	 * @return The ID for the specified value, or {@link LmdbValue#UNKNOWN_ID} if no such ID could be found.
+	 * @throws IOException If an I/O error occurred.
+	 */
+	public long getId(Value value, boolean create) throws IOException {
 		// Try to get the internal ID from the value itself
 		boolean isOwnValue = isOwnValue(value);
 
@@ -518,13 +593,13 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		// ID not cached, search in file
-		byte[] data = value2data(value, false);
+		byte[] data = value2data(value, create);
 		if (data == null && value instanceof Literal) {
 			data = literal2legacy((Literal) value);
 		}
 
 		if (data != null) {
-			long id = findId(data);
+			long id = findId(data, create);
 
 			if (id != LmdbValue.UNKNOWN_ID) {
 				if (isOwnValue) {
@@ -584,26 +659,7 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public long storeValue(Value value) throws IOException {
-		long id = getID(value);
-
-		if (id == LmdbValue.UNKNOWN_ID) {
-			// Unable to get internal ID in a cheap way, just store it in the data
-			// store which will handle duplicates
-			byte[] valueData = value2data(value, true);
-
-			id = nextId();
-			storeId(id, valueData);
-
-			LmdbValue nv = isOwnValue(value) ? (LmdbValue) value : getLmdbValue(value);
-
-			// Store id in value for fast access in any consecutive calls
-			nv.setInternalID(id, revision);
-
-			// Update cache
-			valueIDCache.put(nv, id);
-		}
-
-		return id;
+		return getId(value, true);
 	}
 
 	/**
@@ -684,7 +740,7 @@ class ValueStore extends AbstractValueFactory {
 						"Store must be manually exported and imported to fix namespaces like " + namespace);
 			} else {
 				Value value = this.data2value(id, data);
-				if (id != this.getID(copy(value))) {
+				if (id != this.getId(copy(value), false)) {
 					throw new SailException(
 							"Store must be manually exported and imported to merge values like " + value);
 				}
@@ -781,10 +837,8 @@ class ValueStore extends AbstractValueFactory {
 		// Get datatype ID
 		long datatypeID = LmdbValue.UNKNOWN_ID;
 
-		if (create) {
-			datatypeID = storeValue(dt);
-		} else if (dt != null) {
-			datatypeID = getID(dt);
+		if (dt != null) {
+			datatypeID = getId(dt, create);
 
 			if (datatypeID == LmdbValue.UNKNOWN_ID) {
 				// Unknown datatype means unknown literal
@@ -819,7 +873,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private boolean isNamespaceData(byte[] data) {
-		return data[0] != URI_VALUE && data[0] != BNODE_VALUE && data[0] != LITERAL_VALUE;
+		return data[0] == NAMESPACE_VALUE;
 	}
 
 	private LmdbValue data2value(long id, byte[] data) throws IOException {
@@ -831,7 +885,7 @@ class ValueStore extends AbstractValueFactory {
 		case LITERAL_VALUE:
 			return data2literal(id, data);
 		default:
-			throw new IllegalArgumentException("Namespaces cannot be converted into values: " + data2namespace(data));
+			throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
 		}
 	}
 
@@ -882,8 +936,8 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private String data2namespace(byte[] data) throws UnsupportedEncodingException {
-		return new String(data, StandardCharsets.UTF_8);
+	private String data2namespace(byte[] data) {
+		return new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 	}
 
 	private long getNamespaceID(String namespace, boolean create) throws IOException {
@@ -892,14 +946,12 @@ class ValueStore extends AbstractValueFactory {
 			return cacheID;
 		}
 
-		byte[] namespaceData = namespace.getBytes(StandardCharsets.UTF_8);
+		byte[] namespaceBytes = namespace.getBytes(StandardCharsets.UTF_8);
+		byte[] namespaceData = new byte[namespaceBytes.length + 1];
+		namespaceData[0] = NAMESPACE_VALUE;
+		System.arraycopy(namespaceBytes, 0, namespaceData, 1, namespaceBytes.length);
 
-		long id = findId(namespaceData);
-		if (id == LmdbValue.UNKNOWN_ID && create) {
-			id = nextId();
-			storeId(id, namespaceData);
-		}
-
+		long id = findId(namespaceData, create);
 		if (id != LmdbValue.UNKNOWN_ID) {
 			namespaceIDCache.put(namespace, id);
 		}

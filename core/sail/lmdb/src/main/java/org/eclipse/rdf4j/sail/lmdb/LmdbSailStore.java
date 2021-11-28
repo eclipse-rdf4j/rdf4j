@@ -163,7 +163,7 @@ class LmdbSailStore implements SailStore {
 			if (context == null) {
 				contextIDs.add(0L);
 			} else {
-				long contextID = valueStore.getID(context);
+				long contextID = valueStore.getId(context);
 				if (contextID != LmdbValue.UNKNOWN_ID) {
 					contextIDs.add(contextID);
 				}
@@ -213,7 +213,7 @@ class LmdbSailStore implements SailStore {
 			boolean explicit, Resource... contexts) throws IOException {
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
-			subjID = valueStore.getID(subj);
+			subjID = valueStore.getId(subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
 				return new EmptyIteration<>();
 			}
@@ -221,7 +221,7 @@ class LmdbSailStore implements SailStore {
 
 		long predID = LmdbValue.UNKNOWN_ID;
 		if (pred != null) {
-			predID = valueStore.getID(pred);
+			predID = valueStore.getId(pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
 				return new EmptyIteration<>();
 			}
@@ -229,7 +229,7 @@ class LmdbSailStore implements SailStore {
 
 		long objID = LmdbValue.UNKNOWN_ID;
 		if (obj != null) {
-			objID = valueStore.getID(obj);
+			objID = valueStore.getId(obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
 				return new EmptyIteration<>();
@@ -244,7 +244,7 @@ class LmdbSailStore implements SailStore {
 				if (context == null) {
 					contextIDList.add(0L);
 				} else {
-					long contextID = valueStore.getID(context);
+					long contextID = valueStore.getId(context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {
 						contextIDList.add(contextID);
@@ -462,21 +462,21 @@ class LmdbSailStore implements SailStore {
 				startTriplestoreTransaction();
 				long subjID = LmdbValue.UNKNOWN_ID;
 				if (subj != null) {
-					subjID = valueStore.getID(subj);
+					subjID = valueStore.getId(subj);
 					if (subjID == LmdbValue.UNKNOWN_ID) {
 						return 0;
 					}
 				}
 				long predID = LmdbValue.UNKNOWN_ID;
 				if (pred != null) {
-					predID = valueStore.getID(pred);
+					predID = valueStore.getId(pred);
 					if (predID == LmdbValue.UNKNOWN_ID) {
 						return 0;
 					}
 				}
 				long objID = LmdbValue.UNKNOWN_ID;
 				if (obj != null) {
-					objID = valueStore.getID(obj);
+					objID = valueStore.getId(obj);
 					if (objID == LmdbValue.UNKNOWN_ID) {
 						return 0;
 					}
@@ -491,7 +491,7 @@ class LmdbSailStore implements SailStore {
 						if (context == null) {
 							contextIds[i] = 0;
 						} else {
-							long id = valueStore.getID(context);
+							long id = valueStore.getId(context);
 							// unknown_id cannot be used (would result in removal from all contexts)
 							// TODO check if Long.MAX_VALUE is correct here
 							contextIds[i] = (id != LmdbValue.UNKNOWN_ID) ? id : Long.MAX_VALUE;

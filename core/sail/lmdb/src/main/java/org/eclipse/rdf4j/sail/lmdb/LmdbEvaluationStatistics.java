@@ -78,7 +78,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 	private double cardinality(Resource subj, IRI pred, Value obj, Resource context) throws IOException {
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
-			subjID = valueStore.getID(subj);
+			subjID = valueStore.getId(subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
 				return 0;
 			}
@@ -86,7 +86,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 
 		long predID = LmdbValue.UNKNOWN_ID;
 		if (pred != null) {
-			predID = valueStore.getID(pred);
+			predID = valueStore.getId(pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
 				return 0;
 			}
@@ -94,7 +94,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 
 		long objID = LmdbValue.UNKNOWN_ID;
 		if (obj != null) {
-			objID = valueStore.getID(obj);
+			objID = valueStore.getId(obj);
 			if (objID == LmdbValue.UNKNOWN_ID) {
 				return 0;
 			}
@@ -102,7 +102,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics {
 
 		long contextID = LmdbValue.UNKNOWN_ID;
 		if (context != null) {
-			contextID = valueStore.getID(context);
+			contextID = valueStore.getId(context);
 			if (contextID == LmdbValue.UNKNOWN_ID) {
 				return 0;
 			}

@@ -213,15 +213,16 @@ public final class Varint {
 	 * @param a0 first byte of varint value
 	 * @return decoded value
 	 */
-	public static int firstToLength(int a0) {
-		if (a0 <= 240) {
+	public static int firstToLength(byte a0) {
+		int a0Unsigned = a0 & 0xFF;
+		if (a0Unsigned <= 240) {
 			return 1;
-		} else if (a0 <= 248) {
+		} else if (a0Unsigned <= 248) {
 			return 2;
-		} else if (a0 == 249) {
+		} else if (a0Unsigned == 249) {
 			return 3;
 		} else {
-			int bytes = a0 - 250 + 3;
+			int bytes = a0Unsigned - 250 + 3;
 			return 1 + bytes;
 		}
 	}
@@ -236,8 +237,7 @@ public final class Varint {
 	public static long readListElementUnsigned(ByteBuffer bb, int index) {
 		int pos = 0;
 		for (int i = 0; i < index; i++) {
-			int a0 = bb.get(pos) & 0xFF;
-			pos += firstToLength(a0);
+			pos += firstToLength(bb.get(pos));
 		}
 		return readUnsigned(bb, pos);
 	}
@@ -346,8 +346,7 @@ public final class Varint {
 			this.lengths = new int[shouldMatch.length];
 			int pos = 0;
 			for (int i = 0; i < lengths.length; i++) {
-				int a0 = value.get(pos) & 0xFF;
-				int length = firstToLength(a0);
+				int length = firstToLength(value.get(pos));
 				lengths[i] = length;
 				pos += length;
 			}
@@ -362,7 +361,7 @@ public final class Varint {
 			int otherPos = 0;
 			for (int i = 0; i < shouldMatch.length; i++) {
 				int length = lengths[i];
-				int otherLength = firstToLength(other.get(otherPos) & 0xFF);
+				int otherLength = firstToLength(other.get(otherPos));
 				if (shouldMatch[i]) {
 					if (length != otherLength || compareRegion(value, thisPos, other, otherPos, length) != 0) {
 						return false;
