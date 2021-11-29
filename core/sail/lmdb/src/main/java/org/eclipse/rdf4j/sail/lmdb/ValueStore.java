@@ -119,10 +119,6 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private static final int MAX_KEY_SIZE = 16;
 	/**
-	 * The default byte order for all byte buffers
-	 */
-	private static ByteOrder BYTE_ORDER = ByteOrder.BIG_ENDIAN;
-	/**
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
 	private final File dbDir;
@@ -311,36 +307,9 @@ class ValueStore extends AbstractValueFactory {
 			keyData.mv_data(id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == 0) {
-				int rc = 0;
-				byte type = valueData.mv_data().get(0);
-				if (type == HASH_KEY) {
-					// stored value is a hash -> lookup value with key hash
-					keyData.mv_data(valueData.mv_data());
-					if (mdb_get(txn, dbi, keyData, valueData) == 0) {
-						// skip the ID
-						ByteBuffer valueBb = valueData.mv_data();
-						int idLength = Varint.firstToLength(valueBb.get(0));
-						valueBb.position(idLength);
-						int dataLength = valueBb.remaining();
-						byte[] valueBytes = new byte[dataLength];
-						valueBb.get(valueBytes);
-						return valueBytes;
-					}
-					return null;
-				} else if (type == HASHID_KEY) {
-					// stored value is a hash -> lookup value with key hash+ID
-					ByteBuffer hashBb = stack.malloc(1 + Long.BYTES * 2 + 2);
-					hashBb.put(valueData.mv_data());
-					Varint.writeUnsigned(hashBb, id);
-					hashBb.flip();
-					keyData.mv_data(hashBb);
-					rc = mdb_get(txn, dbi, keyData, valueData);
-				}
-				if (rc == 0) {
-					byte[] valueBytes = new byte[valueData.mv_data().remaining()];
-					valueData.mv_data().get(valueBytes);
-					return valueBytes;
-				}
+				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
+				valueData.mv_data().get(valueBytes);
+				return valueBytes;
 			}
 			return null;
 		});
@@ -372,18 +341,6 @@ class ValueStore extends AbstractValueFactory {
 		return resultValue;
 	}
 
-	private ByteBuffer encodeData(byte[] data, long id, boolean includeId) {
-		ByteBuffer valueBuffer = includeId ? MemoryUtil.memAlloc(Varint.calcLengthUnsigned(id) + data.length)
-				: MemoryUtil.memAlloc(data.length);
-		if (includeId) {
-			// store ID in value
-			Varint.writeUnsigned(valueBuffer, id);
-		}
-		valueBuffer.put(data);
-		valueBuffer.flip();
-		return valueBuffer;
-	}
-
 	private long findId(byte[] data, boolean create) throws IOException {
 		Long id = LmdbUtil.<Long>readTransaction(env, writeTxn, (stack, txn) -> {
 			if (data.length < MAX_KEY_SIZE) {
@@ -407,9 +364,11 @@ class ValueStore extends AbstractValueFactory {
 				});
 				return newId;
 			} else {
+				MDBVal idVal = MDBVal.calloc(stack);
+
 				ByteBuffer dataBb = ByteBuffer.wrap(data);
 				long dataHash = hash(data);
-				ByteBuffer hashBb = stack.malloc(1 + Long.BYTES + 1);
+				ByteBuffer hashBb = stack.malloc(2 + 2 * Long.BYTES + 2);
 				hashBb.put(HASH_KEY);
 				Varint.writeUnsigned(hashBb, dataHash);
 				int hashLength = hashBb.position();
@@ -419,14 +378,12 @@ class ValueStore extends AbstractValueFactory {
 				hashVal.mv_data(hashBb);
 				MDBVal dataVal = MDBVal.calloc(stack);
 
-				// first value is directly stored with hash as key
+				// ID of first value is directly stored with hash as key
 				if (mdb_get(txn, dbi, hashVal, dataVal) == 0) {
-					ByteBuffer valueBb = dataVal.mv_data();
-					int idLength = Varint.firstToLength(valueBb.get(0));
-					int storedDataLength = valueBb.remaining() - idLength;
-					if (storedDataLength == data.length &&
-							compareRegion(valueBb, idLength, dataBb, 0, storedDataLength) == 0) {
-						return Varint.readUnsigned(valueBb);
+					idVal.mv_data(dataVal.mv_data());
+					if (mdb_get(txn, dbi, idVal, dataVal) == 0 &&
+							dataVal.mv_data().compareTo(dataBb) == 0) {
+						return data2id(idVal.mv_data());
 					}
 				} else {
 					// no value for hash exists
@@ -435,17 +392,15 @@ class ValueStore extends AbstractValueFactory {
 					}
 					long newId = nextId();
 					writeTransaction((stack2, writeTxn) -> {
-						ByteBuffer valueBb = encodeData(data, newId, true);
+						ByteBuffer valueBb = MemoryUtil.memAlloc(data.length).put(data).flip();
 						dataVal.mv_data(valueBb);
 						try {
-							// store mapping of hash -> ID+data
-							mdb_put(txn, dbi, hashVal, dataVal, 0);
-
-							MDBVal idVal = MDBVal.calloc(stack);
 							idVal.mv_data(id2data(idBuffer(stack), newId).flip());
 
-							// store mapping of ID -> hash
-							mdb_put(writeTxn, dbi, idVal, hashVal, 0);
+							// store mapping of hash -> ID
+							mdb_put(txn, dbi, hashVal, idVal, 0);
+							// store mapping of ID -> data
+							mdb_put(writeTxn, dbi, idVal, dataVal, 0);
 							return null;
 						} finally {
 							if (valueBb != null) {
@@ -473,9 +428,14 @@ class ValueStore extends AbstractValueFactory {
 								break;
 							}
 
-							// id was found if stored value is equal to requested value
-							if (dataVal.mv_data().compareTo(dataBb) == 0) {
-								return Varint.readUnsigned(hashVal.mv_data(), hashLength);
+							// use only ID part of key for lookup of data
+							ByteBuffer hashIdBb = hashVal.mv_data();
+							hashIdBb.position(hashLength);
+							idVal.mv_data(hashIdBb);
+							if (mdb_get(txn, dbi, idVal, dataVal) == 0 &&
+									dataVal.mv_data().compareTo(dataBb) == 0) {
+								// id was found if stored value is equal to requested value
+								return data2id(hashIdBb);
 							}
 						} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == 0);
 					}
@@ -492,32 +452,32 @@ class ValueStore extends AbstractValueFactory {
 				// id was not found, create a new one
 				long newId = nextId();
 				writeTransaction((stack2, writeTxn) -> {
-					// store hash and ID
+					// encode ID
+					ByteBuffer idBb = id2data(idBuffer(stack), newId).flip();
+					idVal.mv_data(idBb);
+
+					// encode hash and ID
 					hashBb.limit(hashBb.capacity());
 					hashBb.position(hashLength);
-					Varint.writeUnsigned(hashBb, newId);
+					hashBb.put(idBb);
+					idBb.rewind();
 					hashBb.flip();
 					hashVal.mv_data(hashBb);
 
-					ByteBuffer valueBb = encodeData(data, newId, false);
+					// store mapping of hash+ID -> []
+					dataVal.mv_data(stack.bytes());
+					mdb_put(txn, dbi, hashVal, dataVal, 0);
+
+					ByteBuffer valueBb = MemoryUtil.memAlloc(data.length).put(data).flip();
 					try {
 						dataVal.mv_data(valueBb);
-						// store mapping of hash+ID -> data
-						mdb_put(txn, dbi, hashVal, dataVal, 0);
+						// store mapping of ID -> data
+						mdb_put(txn, dbi, idVal, dataVal, 0);
 					} finally {
 						if (valueBb != null) {
 							MemoryUtil.memFree(valueBb);
 						}
 					}
-
-					MDBVal idVal = MDBVal.calloc(stack);
-					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
-
-					hashBb.limit(hashLength);
-					hashVal.mv_data(hashBb);
-
-					// store mapping of ID -> hash
-					mdb_put(txn, dbi, idVal, hashVal, 0);
 					return null;
 				});
 				return newId;
