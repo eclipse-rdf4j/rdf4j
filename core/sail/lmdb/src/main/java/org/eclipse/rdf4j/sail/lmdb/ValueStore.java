@@ -18,6 +18,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
+import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
@@ -392,21 +393,15 @@ class ValueStore extends AbstractValueFactory {
 					}
 					long newId = nextId();
 					writeTransaction((stack2, writeTxn) -> {
-						ByteBuffer valueBb = MemoryUtil.memAlloc(data.length).put(data).flip();
-						dataVal.mv_data(valueBb);
-						try {
-							idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+						dataVal.mv_size(data.length);
+						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
 
-							// store mapping of hash -> ID
-							mdb_put(txn, dbi, hashVal, idVal, 0);
-							// store mapping of ID -> data
-							mdb_put(writeTxn, dbi, idVal, dataVal, 0);
-							return null;
-						} finally {
-							if (valueBb != null) {
-								MemoryUtil.memFree(valueBb);
-							}
-						}
+						// store mapping of hash -> ID
+						mdb_put(txn, dbi, hashVal, idVal, 0);
+						// store mapping of ID -> data
+						mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE);
+						dataVal.mv_data().put(data);
+						return null;
 					});
 					return newId;
 				}
@@ -468,16 +463,10 @@ class ValueStore extends AbstractValueFactory {
 					dataVal.mv_data(stack.bytes());
 					mdb_put(txn, dbi, hashVal, dataVal, 0);
 
-					ByteBuffer valueBb = MemoryUtil.memAlloc(data.length).put(data).flip();
-					try {
-						dataVal.mv_data(valueBb);
-						// store mapping of ID -> data
-						mdb_put(txn, dbi, idVal, dataVal, 0);
-					} finally {
-						if (valueBb != null) {
-							MemoryUtil.memFree(valueBb);
-						}
-					}
+					dataVal.mv_size(data.length);
+					// store mapping of ID -> data
+					mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE);
+					dataVal.mv_data().put(data);
 					return null;
 				});
 				return newId;
