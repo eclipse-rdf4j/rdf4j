@@ -87,9 +87,10 @@ class LmdbSailStore implements SailStore {
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
-			valueStore = new ValueStore(dataDir, forceSync, valueCacheSize, valueIDCacheSize, namespaceCacheSize,
+			valueStore = new ValueStore(new File(dataDir, "values"), forceSync, valueCacheSize, valueIDCacheSize,
+					namespaceCacheSize,
 					namespaceIDCacheSize);
-			tripleStore = new TripleStore(dataDir, tripleIndexes, forceSync);
+			tripleStore = new TripleStore(new File(dataDir, "triples"), tripleIndexes, forceSync);
 			contextStore = new ContextStore(this, dataDir);
 			initialized = true;
 		} finally {

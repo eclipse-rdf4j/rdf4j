@@ -132,7 +132,7 @@ class TripleStore implements Closeable {
 	 */
 	private final File dir;
 	/**
-	 * Object containing meta-data for the triple store. This includes
+	 * Object containing meta-data for the triple store.
 	 */
 	private final Properties properties;
 	/**
@@ -170,10 +170,12 @@ class TripleStore implements Closeable {
 	}
 
 	public TripleStore(File dir, String indexSpecStr, boolean forceSync) throws IOException, SailException {
-		this.dir = new File(dir, "triples");
+		this.dir = dir;
 		this.forceSync = forceSync;
 
+		// create directory if it not exists
 		this.dir.mkdirs();
+
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_env_create(pp));
@@ -190,9 +192,9 @@ class TripleStore implements Closeable {
 		if (!forceSync) {
 			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
 		}
-		E(mdb_env_open(env, dir.getPath(), flags, 0664));
+		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
 
-		File propFile = new File(dir, PROPERTIES_FILE);
+		File propFile = new File(this.dir, PROPERTIES_FILE);
 
 		if (!propFile.exists()) {
 			// newly created lmdb store

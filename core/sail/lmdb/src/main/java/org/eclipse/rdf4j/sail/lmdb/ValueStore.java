@@ -37,7 +37,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.zip.CRC32;
@@ -64,7 +63,6 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
@@ -96,8 +94,6 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
 
-	private static final String FILENAME_PREFIX = "values";
-
 	private static final byte ID_KEY = 0x0;
 
 	private static final byte HASH_KEY = 0x1;
@@ -122,7 +118,7 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
-	private final File dbDir;
+	private final File dir;
 	/**
 	 * Lock manager used to prevent the removal of values over multiple method calls. Note that values can still be
 	 * added when read locks are active.
@@ -167,17 +163,17 @@ class ValueStore extends AbstractValueFactory {
 	 * Constructors *
 	 *--------------*/
 
-	public ValueStore(File dataDir) throws IOException {
-		this(dataDir, false);
+	public ValueStore(File dir) throws IOException {
+		this(dir, false);
 	}
 
-	public ValueStore(File dataDir, boolean forceSync) throws IOException {
-		this(dataDir, forceSync, VALUE_CACHE_SIZE, VALUE_ID_CACHE_SIZE, NAMESPACE_CACHE_SIZE, NAMESPACE_ID_CACHE_SIZE);
+	public ValueStore(File dir, boolean forceSync) throws IOException {
+		this(dir, forceSync, VALUE_CACHE_SIZE, VALUE_ID_CACHE_SIZE, NAMESPACE_CACHE_SIZE, NAMESPACE_ID_CACHE_SIZE);
 	}
 
-	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
+	public ValueStore(File dir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
 			int namespaceIDCacheSize) throws IOException {
-		this.dbDir = new File(dataDir, FILENAME_PREFIX);
+		this.dir = dir;
 		this.forceSync = forceSync;
 		open();
 
@@ -237,7 +233,7 @@ class ValueStore extends AbstractValueFactory {
 
 	private void open() throws IOException {
 		// create directory if it not exists
-		dbDir.mkdirs();
+		dir.mkdirs();
 
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -254,7 +250,7 @@ class ValueStore extends AbstractValueFactory {
 		if (!forceSync) {
 			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
 		}
-		E(mdb_env_open(env, dbDir.getPath(), flags, 0664));
+		E(mdb_env_open(env, dir.getAbsolutePath(), flags, 0664));
 
 		// Open database
 		dbi = openDatabase(env, null, MDB_CREATE, null);
@@ -634,8 +630,8 @@ class ValueStore extends AbstractValueFactory {
 			try {
 				close();
 
-				new File(dbDir, "data.mdb").delete();
-				new File(dbDir, "lock.mdb").delete();
+				new File(dir, "data.mdb").delete();
+				new File(dir, "lock.mdb").delete();
 
 				valueCache.clear();
 				valueIDCache.clear();

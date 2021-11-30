@@ -423,7 +423,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private boolean upgradeStore(File dataDir, String version) throws IOException, SailException {
 		if (version == null) {
 			// either a new store or a pre-2.8.2 store
-			ValueStore valueStore = new ValueStore(dataDir);
+			ValueStore valueStore = new ValueStore(new File(dataDir, "values"));
 			try {
 				valueStore.checkConsistency();
 				return true; // good enough
