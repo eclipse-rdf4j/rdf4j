@@ -54,7 +54,6 @@ import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
@@ -659,52 +658,6 @@ class ValueStore extends AbstractValueFactory {
 			endTransaction(false);
 			mdb_env_close(env);
 			env = 0;
-		}
-	}
-
-	/**
-	 * Checks that every value has exactly one ID.
-	 *
-	 * @throws IOException
-	 */
-	public void checkConsistency() throws SailException, IOException {
-		int maxID = (int) nextId - 1;
-		for (int id = 1; id <= maxID; id++) {
-			byte[] data = getData(id);
-			if (isNamespaceData(data)) {
-				String namespace = data2namespace(data);
-				try {
-					if (id == getNamespaceID(namespace, false)
-							&& java.net.URI.create(namespace + "part").isAbsolute()) {
-						continue;
-					}
-				} catch (IllegalArgumentException e) {
-					// throw SailException
-				}
-				throw new SailException(
-						"Store must be manually exported and imported to fix namespaces like " + namespace);
-			} else {
-				Value value = this.data2value(id, data);
-				if (id != this.getId(copy(value), false)) {
-					throw new SailException(
-							"Store must be manually exported and imported to merge values like " + value);
-				}
-			}
-		}
-	}
-
-	private Value copy(Value value) {
-		if (value instanceof IRI) {
-			return createIRI(value.stringValue());
-		} else if (value instanceof Literal) {
-			Literal lit = (Literal) value;
-			if (Literals.isLanguageLiteral(lit)) {
-				return createLiteral(value.stringValue(), lit.getLanguage().orElse(null));
-			} else {
-				return createLiteral(value.stringValue(), lit.getDatatype());
-			}
-		} else {
-			return createBNode(value.stringValue());
 		}
 	}
 

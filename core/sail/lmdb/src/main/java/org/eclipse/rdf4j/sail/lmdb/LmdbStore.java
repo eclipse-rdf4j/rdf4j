@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -270,9 +271,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 		try {
 			File versionFile = new File(dataDir, "lmdbrdf.ver");
-			String version = versionFile.exists() ? FileUtils.readFileToString(versionFile) : null;
+			String version = versionFile.exists() ? FileUtils.readFileToString(versionFile, StandardCharsets.UTF_8)
+					: null;
 			if (!VERSION.equals(version) && upgradeStore(dataDir, version)) {
-				FileUtils.writeStringToFile(versionFile, VERSION);
+				FileUtils.writeStringToFile(versionFile, VERSION, StandardCharsets.UTF_8);
 			}
 			final LmdbSailStore mainStore = new LmdbSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
 					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
@@ -421,26 +423,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	private boolean upgradeStore(File dataDir, String version) throws IOException, SailException {
-		if (version == null) {
-			// either a new store or a pre-2.8.2 store
-			ValueStore valueStore = new ValueStore(new File(dataDir, "values"));
-			try {
-				valueStore.checkConsistency();
-				return true; // good enough
-			} catch (SailException e) {
-				// valueStore is not consistent - possibly contains two entries for
-				// string-literals with the same lexical value (e.g. "foo" and
-				// "foo"^^xsd:string). Log an error and indicate upgrade should
-				// not be executed.
-				logger.error(
-						"VALUE INCONSISTENCY: could not automatically upgrade lmdb store to RDF 1.1-compatibility: {}. Failure to upgrade may result in inconsistent query results when comparing literal values.",
-						e.getMessage());
-				return false;
-			} finally {
-				valueStore.close();
-			}
-		} else {
-			return false; // no upgrade needed
-		}
+		// nothing to do, just update version number
+		return true;
 	}
 }
