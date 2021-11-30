@@ -106,7 +106,7 @@ public class LmdbStoreConsistencyIT {
 		repo.shutDown();
 
 		// Step 4: check the repository size with SPOC only
-		new File(dataDir, "triples.prop").delete(); // delete triples.prop to
+		new File(dataDir, "triples/triples.prop").delete(); // delete triples.prop to
 		// update index usage
 		repo = new SailRepository(new LmdbStore(dataDir, "spoc"));
 
@@ -118,7 +118,7 @@ public class LmdbStoreConsistencyIT {
 		repo.shutDown();
 
 		// Step 5: check the repository size with PSOC only
-		new File(dataDir, "triples.prop").delete(); // delete triples.prop to
+		new File(dataDir, "triples/triples.prop").delete(); // delete triples.prop to
 		// update index usage
 		repo = new SailRepository(new LmdbStore(dataDir, "psoc"));
 
@@ -132,8 +132,10 @@ public class LmdbStoreConsistencyIT {
 		// Step 6: computing the differences of the contents of the indices
 		logger.info("Computing differences of sets...");
 
-		Collection<? extends Statement> differenceA = RepositoryUtil.difference(spocStatements, psocStatements);
-		Collection<? extends Statement> differenceB = RepositoryUtil.difference(psocStatements, spocStatements);
+		Model differenceA = new LinkedHashModel(spocStatements);
+		differenceA.removeAll(psocStatements);
+		Model differenceB = new LinkedHashModel(psocStatements);
+		differenceB.removeAll(spocStatements);
 
 		logger.info("Difference SPOC MINUS PSOC: " + differenceA.size());
 		logger.info("Difference PSOC MINUS SPOC: " + differenceB.size());
