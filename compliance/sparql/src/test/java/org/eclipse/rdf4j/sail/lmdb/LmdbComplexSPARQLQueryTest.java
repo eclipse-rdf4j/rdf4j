@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.query.parser.sparql.ComplexSPARQLQueryTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
  * Test additional SPARQL functionality on LMDB store.
@@ -26,7 +27,7 @@ public class LmdbComplexSPARQLQueryTest extends ComplexSPARQLQueryTest {
 	@Override
 	protected Repository newRepository() throws Exception {
 		dataDir = Files.createTempDirectory("lmdbstore").toFile();
-		return new SailRepository(new LmdbStore(dataDir, "spoc"));
+		return new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
 
 	}
 

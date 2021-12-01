@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11UpdateComplianceTe
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
@@ -36,6 +37,7 @@ public class LmdbPARQL11UpdateComplianceTest extends SPARQL11UpdateComplianceTes
 
 	@Override
 	protected Repository newRepository() throws Exception {
-		return new DatasetRepository(new SailRepository(new LmdbStore(folder.newFolder(), "spoc")));
+		return new DatasetRepository(
+				new SailRepository(new LmdbStore(folder.newFolder(), new LmdbStoreConfig("spoc"))));
 	}
 }
