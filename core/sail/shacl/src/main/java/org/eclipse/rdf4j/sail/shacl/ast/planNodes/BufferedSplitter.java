@@ -16,7 +16,6 @@ import java.util.Objects;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -115,7 +114,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 				public ValidationTuple next() throws SailException {
 					init();
 					ValidationTuple tuple = iterator.next();
-					if (GlobalValidationExecutionLogging.loggingEnabled) {
+					if (validationExecutionLogger.isEnabled()) {
 						validationExecutionLogger.log(depth(),
 								bufferedSplitter.parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple,
 								bufferedSplitter.parent,

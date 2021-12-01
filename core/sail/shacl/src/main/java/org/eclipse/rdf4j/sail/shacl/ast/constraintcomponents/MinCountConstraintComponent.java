@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import static org.eclipse.rdf4j.model.util.Values.literal;
@@ -39,8 +47,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public void toModel(Resource subject, IRI predicate, Model model, Set<Resource> cycleDetection) {
-		model.add(subject, SHACL.MIN_COUNT,
-				literal(BigInteger.valueOf(minCount)));
+		model.add(subject, SHACL.MIN_COUNT, literal(BigInteger.valueOf(minCount)));
 	}
 
 	@Override
@@ -51,6 +58,10 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
+
+		if (minCount <= 0) {
+			return EmptyNode.getInstance();
+		}
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
@@ -102,6 +113,9 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
 			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+		if (minCount <= 0) {
+			return ValidationQuery.Deactivated.getInstance();
+		}
 
 		String targetVarPrefix = "target_";
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();

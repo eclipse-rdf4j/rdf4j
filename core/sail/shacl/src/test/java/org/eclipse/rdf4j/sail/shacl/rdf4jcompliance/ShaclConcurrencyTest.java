@@ -24,9 +24,7 @@ public class ShaclConcurrencyTest extends SailConcurrencyTest {
 
 	@Override
 	protected Sail createSail() throws SailException {
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setIgnoreNoShapesLoadedException(true);
-		return shaclSail;
+		return new ShaclSail(new MemoryStore());
 	}
 
 	@Ignore

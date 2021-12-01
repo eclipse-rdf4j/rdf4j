@@ -55,8 +55,6 @@ public class ShaclSailFactory implements SailFactory {
 			}
 
 			sail.setCacheSelectNodes(shaclSailConfig.isCacheSelectNodes());
-			sail.setUndefinedTargetValidatesAllSubjects(shaclSailConfig.isUndefinedTargetValidatesAllSubjects());
-			sail.setIgnoreNoShapesLoadedException(shaclSailConfig.isIgnoreNoShapesLoadedException());
 			sail.setLogValidationPlans(shaclSailConfig.isLogValidationPlans());
 			sail.setLogValidationViolations(shaclSailConfig.isLogValidationViolations());
 			sail.setParallelValidation(shaclSailConfig.isParallelValidation());

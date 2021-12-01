@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.util.Set;
@@ -33,11 +34,11 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class PrepareCommitTest {
 
-	@Test(expected = IllegalStateException.class)
+	@Test
 	public void testFailureWhenChangesAfterPrepare() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
 
@@ -51,11 +52,21 @@ public class PrepareCommitTest {
 			connection.begin();
 			connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 			connection.prepare();
-			connection.removeStatements(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+			assertThrows(IllegalStateException.class, () -> {
+				try {
+					connection.removeStatements(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
+
 			connection.commit();
+
+		} finally {
+			shaclSail.shutDown();
 		}
 
-		shaclSail.shutDown();
 	}
 
 	@Test
@@ -86,6 +97,7 @@ public class PrepareCommitTest {
 			assertThat(minCountValues).hasSize(1).allMatch(l -> l.intValue() == 0);
 		} finally {
 			conn.close();
+			shaclSail.shutDown();
 		}
 	}
 

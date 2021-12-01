@@ -20,6 +20,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.InputStream;
 
@@ -34,7 +35,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 public class TransactionSettingsTest {
@@ -305,7 +306,7 @@ public class TransactionSettingsTest {
 
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void testInvalid() throws Throwable {
 
 		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
@@ -320,18 +321,21 @@ public class TransactionSettingsTest {
 			}
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-			try {
-				connection.commit();
-			} catch (RepositoryException e) {
-				throw e.getCause();
-			}
+
+			assertThrows(ShaclSailValidationException.class, () -> {
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
 
 		} finally {
 			repository.shutDown();
 		}
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void testInvalidSnapshot() throws Throwable {
 
 		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
@@ -346,11 +350,13 @@ public class TransactionSettingsTest {
 			}
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-			try {
-				connection.commit();
-			} catch (RepositoryException e) {
-				throw e.getCause();
-			}
+			assertThrows(ShaclSailValidationException.class, () -> {
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
 
 		} finally {
 			repository.shutDown();
@@ -392,7 +398,7 @@ public class TransactionSettingsTest {
 
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void testValidationDisabled() throws Throwable {
 
 		SailRepository repository = new SailRepository(new ShaclSail(new MemoryStore()));
@@ -413,11 +419,13 @@ public class TransactionSettingsTest {
 			connection.begin(Bulk);
 			try (SailRepositoryConnection connection1 = repository.getConnection()) {
 
-				try {
-					connection.commit();
-				} catch (RepositoryException e) {
-					throw e.getCause();
-				}
+				assertThrows(ShaclSailValidationException.class, () -> {
+					try {
+						connection.commit();
+					} catch (RepositoryException e) {
+						throw e.getCause();
+					}
+				});
 			}
 
 		} finally {
