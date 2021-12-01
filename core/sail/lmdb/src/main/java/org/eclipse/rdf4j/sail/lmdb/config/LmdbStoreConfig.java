@@ -19,12 +19,41 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 /**
   */
 public class LmdbStoreConfig extends BaseSailConfig {
+	/**
+	 * The default size of the triple database.
+	 */
+	public static final long TRIPLE_DB_SIZE = 10_737_418_240L; // 10 GiB
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+	/**
+	 * The default size of the value database.
+	 */
+	public static final long VALUE_DB_SIZE = 10_737_418_240L; // 10 GiB
+
+	/**
+	 * The default value cache size.
+	 */
+	public static final int VALUE_CACHE_SIZE = 512;
+
+	/**
+	 * The default value id cache size.
+	 */
+	public static final int VALUE_ID_CACHE_SIZE = 128;
+
+	/**
+	 * The default namespace cache size.
+	 */
+	public static final int NAMESPACE_CACHE_SIZE = 64;
+
+	/**
+	 * The default namespace id cache size.
+	 */
+	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
 
 	private String tripleIndexes;
+
+	private long tripleDBSize = -1;
+
+	private long valueDBSize = -1;
 
 	private boolean forceSync = false;
 
@@ -62,48 +91,76 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return tripleIndexes;
 	}
 
-	public void setTripleIndexes(String tripleIndexes) {
+	public LmdbStoreConfig setTripleIndexes(String tripleIndexes) {
 		this.tripleIndexes = tripleIndexes;
+		return this;
+	}
+
+	public LmdbStoreConfig setTripleDBSize(long tripleDBSize) {
+		this.tripleDBSize = tripleDBSize;
+		return this;
+	}
+
+	public long getTripleDBSize() {
+		return tripleDBSize >= 0 ? tripleDBSize : TRIPLE_DB_SIZE;
+	}
+
+	public LmdbStoreConfig setValueDBSize(long valueDBSize) {
+		this.valueDBSize = valueDBSize;
+		return this;
+	}
+
+	public long getValueDBSize() {
+		return valueDBSize >= 0 ? valueDBSize : VALUE_DB_SIZE;
 	}
 
 	public boolean getForceSync() {
 		return forceSync;
 	}
 
-	public void setForceSync(boolean forceSync) {
+	/**
+	 * Flag indicating whether updates should be synced to disk forcefully. This may have a severe impact on write
+	 * performance. By default, this feature is disabled.
+	 */
+	public LmdbStoreConfig setForceSync(boolean forceSync) {
 		this.forceSync = forceSync;
+		return this;
 	}
 
 	public int getValueCacheSize() {
-		return valueCacheSize;
+		return valueCacheSize >= 0 ? valueCacheSize : VALUE_CACHE_SIZE;
 	}
 
-	public void setValueCacheSize(int valueCacheSize) {
+	public LmdbStoreConfig setValueCacheSize(int valueCacheSize) {
 		this.valueCacheSize = valueCacheSize;
+		return this;
 	}
 
 	public int getValueIDCacheSize() {
-		return valueIDCacheSize;
+		return valueIDCacheSize >= 0 ? valueIDCacheSize : VALUE_ID_CACHE_SIZE;
 	}
 
-	public void setValueIDCacheSize(int valueIDCacheSize) {
+	public LmdbStoreConfig setValueIDCacheSize(int valueIDCacheSize) {
 		this.valueIDCacheSize = valueIDCacheSize;
+		return this;
 	}
 
 	public int getNamespaceCacheSize() {
-		return namespaceCacheSize;
+		return namespaceCacheSize >= 0 ? namespaceCacheSize : NAMESPACE_CACHE_SIZE;
 	}
 
-	public void setNamespaceCacheSize(int namespaceCacheSize) {
+	public LmdbStoreConfig setNamespaceCacheSize(int namespaceCacheSize) {
 		this.namespaceCacheSize = namespaceCacheSize;
+		return this;
 	}
 
 	public int getNamespaceIDCacheSize() {
-		return namespaceIDCacheSize;
+		return namespaceIDCacheSize >= 0 ? namespaceIDCacheSize : NAMESPACE_ID_CACHE_SIZE;
 	}
 
-	public void setNamespaceIDCacheSize(int namespaceIDCacheSize) {
+	public LmdbStoreConfig setNamespaceIDCacheSize(int namespaceIDCacheSize) {
 		this.namespaceIDCacheSize = namespaceIDCacheSize;
+		return this;
 	}
 
 	@Override
@@ -115,8 +172,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (tripleIndexes != null) {
 			m.add(implNode, LmdbStoreSchema.TRIPLE_INDEXES, vf.createLiteral(tripleIndexes));
 		}
+		if (tripleDBSize >= 0) {
+			m.add(implNode, LmdbStoreSchema.TRIPLE_DB_SIZE, vf.createLiteral(tripleDBSize));
+		}
+		if (valueDBSize >= 0) {
+			m.add(implNode, LmdbStoreSchema.VALUE_DB_SIZE, vf.createLiteral(valueDBSize));
+		}
 		if (forceSync) {
-			m.add(implNode, LmdbStoreSchema.FORCE_SYNC, vf.createLiteral(forceSync));
+			m.add(implNode, LmdbStoreSchema.FORCE_SYNC, vf.createLiteral(true));
 		}
 		if (valueCacheSize >= 0) {
 			m.add(implNode, LmdbStoreSchema.VALUE_CACHE_SIZE, vf.createLiteral(valueCacheSize));
@@ -141,6 +204,29 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		try {
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_INDEXES, null))
 					.ifPresent(lit -> setTripleIndexes(lit.getLabel()));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_DB_SIZE, null))
+					.ifPresent(lit -> {
+						try {
+							setTripleDBSize(lit.longValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Long value required for " + LmdbStoreSchema.TRIPLE_DB_SIZE
+											+ " property, found " + lit);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.VALUE_DB_SIZE, null))
+					.ifPresent(lit -> {
+						try {
+							setValueDBSize(lit.longValue());
+						} catch (NumberFormatException e) {
+							throw new SailConfigException(
+									"Long value required for " + LmdbStoreSchema.VALUE_DB_SIZE
+											+ " property, found " + lit);
+						}
+					});
+
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FORCE_SYNC, null)).ifPresent(lit -> {
 				try {
 					setForceSync(lit.booleanValue());

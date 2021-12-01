@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertEquals;
 
 import java.io.File;
-import java.util.Collection;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -27,8 +26,8 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.repository.util.RDFLoader;
-import org.eclipse.rdf4j.repository.util.RepositoryUtil;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -61,7 +60,7 @@ public class LmdbStoreConsistencyIT {
 
 		File dataDir = tempDir.newFolder();
 
-		Repository repo = new SailRepository(new LmdbStore(dataDir, "spoc,psoc"));
+		Repository repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,psoc")));
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			// Step1: setup the initial database state
@@ -108,7 +107,7 @@ public class LmdbStoreConsistencyIT {
 		// Step 4: check the repository size with SPOC only
 		new File(dataDir, "triples/triples.prop").delete(); // delete triples.prop to
 		// update index usage
-		repo = new SailRepository(new LmdbStore(dataDir, "spoc"));
+		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
 
 		Model spocStatements;
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -120,7 +119,7 @@ public class LmdbStoreConsistencyIT {
 		// Step 5: check the repository size with PSOC only
 		new File(dataDir, "triples/triples.prop").delete(); // delete triples.prop to
 		// update index usage
-		repo = new SailRepository(new LmdbStore(dataDir, "psoc"));
+		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("psoc")));
 
 		Model psocStatements;
 		try (RepositoryConnection conn = repo.getConnection()) {

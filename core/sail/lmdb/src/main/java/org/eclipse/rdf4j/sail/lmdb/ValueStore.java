@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
@@ -72,26 +73,6 @@ class ValueStore extends AbstractValueFactory {
 	/*-----------*
 	 * Constants *
 	 *-----------*/
-
-	/**
-	 * The default value cache size.
-	 */
-	public static final int VALUE_CACHE_SIZE = 512;
-
-	/**
-	 * The default value id cache size.
-	 */
-	public static final int VALUE_ID_CACHE_SIZE = 128;
-
-	/**
-	 * The default namespace cache size.
-	 */
-	public static final int NAMESPACE_CACHE_SIZE = 64;
-
-	/**
-	 * The default namespace id cache size.
-	 */
-	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
 
 	private static final byte ID_KEY = 0x0;
 
@@ -146,7 +127,8 @@ class ValueStore extends AbstractValueFactory {
 	private long env;
 	private int dbi;
 	private long writeTxn;
-	private boolean forceSync;
+	private final boolean forceSync;
+	private final long dbSize;
 
 	/**
 	 * An object that indicates the revision of the value store, which is used to check if cached value IDs are still
@@ -163,23 +145,19 @@ class ValueStore extends AbstractValueFactory {
 	 *--------------*/
 
 	public ValueStore(File dir) throws IOException {
-		this(dir, false);
+		this(dir, new LmdbStoreConfig());
 	}
 
-	public ValueStore(File dir, boolean forceSync) throws IOException {
-		this(dir, forceSync, VALUE_CACHE_SIZE, VALUE_ID_CACHE_SIZE, NAMESPACE_CACHE_SIZE, NAMESPACE_ID_CACHE_SIZE);
-	}
-
-	public ValueStore(File dir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
-			int namespaceIDCacheSize) throws IOException {
+	public ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
-		this.forceSync = forceSync;
+		this.forceSync = config.getForceSync();
+		this.dbSize = config.getValueDBSize();
 		open();
 
-		valueCache = new ConcurrentCache<>(valueCacheSize);
-		valueIDCache = new ConcurrentCache<>(valueIDCacheSize);
-		namespaceCache = new ConcurrentCache<>(namespaceCacheSize);
-		namespaceIDCache = new ConcurrentCache<>(namespaceIDCacheSize);
+		valueCache = new ConcurrentCache<>(config.getValueCacheSize());
+		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
+		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
+		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
 
 		setNewRevision();
 		// read maximum id from store
@@ -240,9 +218,7 @@ class ValueStore extends AbstractValueFactory {
 			env = pp.get(0);
 		}
 
-		// 1 TB for 64-Bit systems
-		// mdb_env_set_mapsize(env, 1_099_511_627_776L);
-		mdb_env_set_mapsize(env, 1_099_511_627L);
+		mdb_env_set_mapsize(env, dbSize);
 
 		// Open environment
 		int flags = MDB_NOTLS;

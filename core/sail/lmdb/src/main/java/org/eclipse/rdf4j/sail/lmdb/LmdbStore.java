@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,21 +56,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	/**
 	 * Specifies which triple indexes this lmdb store must use.
 	 */
-	private volatile String tripleIndexes;
-
-	/**
-	 * Flag indicating whether updates should be synced to disk forcefully. This may have a severe impact on write
-	 * performance. By default, this feature is disabled.
-	 */
-	private volatile boolean forceSync = false;
-
-	private volatile int valueCacheSize = ValueStore.VALUE_CACHE_SIZE;
-
-	private volatile int valueIDCacheSize = ValueStore.VALUE_ID_CACHE_SIZE;
-
-	private volatile int namespaceCacheSize = ValueStore.NAMESPACE_CACHE_SIZE;
-
-	private volatile int namespaceIDCacheSize = ValueStore.NAMESPACE_ID_CACHE_SIZE;
+	private LmdbStoreConfig config;
 
 	private SailStore store;
 
@@ -112,23 +99,37 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 *--------------*/
 
 	/**
-	 * Creates a new LmdbStore.
+	 * Creates a new LmdbStore with default settings.
 	 */
 	public LmdbStore() {
+		this(new LmdbStoreConfig());
+	}
+
+	/**
+	 * Creates a new LmdbStore.
+	 */
+	public LmdbStore(LmdbStoreConfig config) {
 		super();
+		this.config = config;
 		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
 				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
+		EvaluationStrategyFactory evalStrategyFactory = config.getEvaluationStrategyFactory();
+		if (evalStrategyFactory != null) {
+			setEvaluationStrategyFactory(evalStrategyFactory);
+		}
 	}
 
+	/**
+	 * Creates a new LmdbStore with default settings.
+	 */
 	public LmdbStore(File dataDir) {
-		this();
-		setDataDir(dataDir);
+		this(dataDir, new LmdbStoreConfig());
 	}
 
-	public LmdbStore(File dataDir, String tripleIndexes) {
-		this(dataDir);
-		setTripleIndexes(tripleIndexes);
+	public LmdbStore(File dataDir, LmdbStoreConfig config) {
+		this(config);
+		setDataDir(dataDir);
 	}
 
 	/*---------*
@@ -139,52 +140,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public void setDataDir(File dataDir) {
 		super.setDataDir(dataDir);
 		isTmpDatadir = (dataDir == null);
-	}
-
-	/**
-	 * Sets the triple indexes for the lmdb store, must be called before initialization.
-	 *
-	 * @param tripleIndexes An index strings, e.g. <tt>spoc,posc</tt>.
-	 */
-	public void setTripleIndexes(String tripleIndexes) {
-		if (isInitialized()) {
-			throw new IllegalStateException("sail has already been intialized");
-		}
-
-		this.tripleIndexes = tripleIndexes;
-	}
-
-	public String getTripleIndexes() {
-		return tripleIndexes;
-	}
-
-	/**
-	 * Specifies whether updates should be synced to disk forcefully, must be called before initialization. Enabling
-	 * this feature may prevent corruption in case of events like power loss, but can have a severe impact on write
-	 * performance. By default, this feature is disabled.
-	 */
-	public void setForceSync(boolean forceSync) {
-		this.forceSync = forceSync;
-	}
-
-	public boolean getForceSync() {
-		return forceSync;
-	}
-
-	public void setValueCacheSize(int valueCacheSize) {
-		this.valueCacheSize = valueCacheSize;
-	}
-
-	public void setValueIDCacheSize(int valueIDCacheSize) {
-		this.valueIDCacheSize = valueIDCacheSize;
-	}
-
-	public void setNamespaceCacheSize(int namespaceCacheSize) {
-		this.namespaceCacheSize = namespaceCacheSize;
-	}
-
-	public void setNamespaceIDCacheSize(int namespaceIDCacheSize) {
-		this.namespaceIDCacheSize = namespaceIDCacheSize;
 	}
 
 	/**
@@ -276,14 +231,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			if (!VERSION.equals(version) && upgradeStore(dataDir, version)) {
 				FileUtils.writeStringToFile(versionFile, VERSION, StandardCharsets.UTF_8);
 			}
-			final LmdbSailStore mainStore = new LmdbSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
-					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
+			final LmdbSailStore mainStore = new LmdbSailStore(dataDir, config);
 			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowModel() {
-
 				@Override
 				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta
-					return new LmdbSailStore(dataDir, getTripleIndexes());
+					return new LmdbSailStore(dataDir, config);
 				}
 			}) {
 

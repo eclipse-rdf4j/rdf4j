@@ -19,31 +19,39 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
  */
 public class LmdbStoreSchema {
 
-	/** The LmdbStore schema namespace (<tt>http://www.openrdf.org/config/sail/lmdb#</tt>). */
-	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/lmdb#";
+	/** The LmdbStore schema namespace (<tt>http://rdf4j.org/config/sail/lmdb#</tt>). */
+	public static final String NAMESPACE = "http://rdf4j.org/config/sail/lmdb#";
 
-	/** <tt>http://www.openrdf.org/config/sail/lmdb#tripleIndexes</tt> */
+	/** <tt>http://rdf4j.org/config/sail/lmdb#tripleIndexes</tt> */
 	public final static IRI TRIPLE_INDEXES;
 
-	/** <tt>http://www.openrdf.org/config/sail/lmdb#forceSync</tt> */
+	/** <tt>http://rdf4j.org/config/sail/lmdb#tripleDBSize</tt> */
+	public final static IRI TRIPLE_DB_SIZE;
+
+	/** <tt>http://rdf4j.org/config/sail/lmdb#forceSync</tt> */
 	public final static IRI FORCE_SYNC;
 
-	/** <tt>http://www.openrdf.org/config/sail/lmdb#valueCacheSize</tt> */
+	/** <tt>http://rdf4j.org/config/sail/lmdb#valueCacheSize</tt> */
 	public final static IRI VALUE_CACHE_SIZE;
 
-	/** <tt>http://www.openrdf.org/config/sail/lmdb#valueIDCacheSize</tt> */
+	/** <tt>http://rdf4j.org/config/sail/lmdb#valueDBSize</tt> */
+	public final static IRI VALUE_DB_SIZE;
+
+	/** <tt>http://rdf4j.org/config/sail/lmdb#valueIDCacheSize</tt> */
 	public final static IRI VALUE_ID_CACHE_SIZE;
 
-	/** <tt>http://www.openrdf.org/config/sail/lmdb#namespaceCacheSize</tt> */
+	/** <tt>http://rdf4j.org/config/sail/lmdb#namespaceCacheSize</tt> */
 	public final static IRI NAMESPACE_CACHE_SIZE;
 
-	/** <tt>http://www.openrdf.org/config/sail/lmdb#namespaceIDCacheSize</tt> */
+	/** <tt>http://rdf4j.org/config/sail/lmdb#namespaceIDCacheSize</tt> */
 	public final static IRI NAMESPACE_ID_CACHE_SIZE;
 
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, "tripleIndexes");
+		TRIPLE_DB_SIZE = factory.createIRI(NAMESPACE, "tripleDBSize");
 		FORCE_SYNC = factory.createIRI(NAMESPACE, "forceSync");
+		VALUE_DB_SIZE = factory.createIRI(NAMESPACE, "valueDBSize");
 		VALUE_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueCacheSize");
 		VALUE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueIDCacheSize");
 		NAMESPACE_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceCacheSize");

@@ -8,21 +8,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -42,7 +32,7 @@ public class TripleStoreTest {
 	@Before
 	public void before() throws Exception {
 		File dataDir = tempFolder.newFolder("triplestore");
-		tripleStore = new TripleStore(dataDir, "spoc,posc");
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 	}
 
 	int count(RecordIterator it) throws IOException {

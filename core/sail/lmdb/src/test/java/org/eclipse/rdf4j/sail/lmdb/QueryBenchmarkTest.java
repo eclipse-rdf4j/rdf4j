@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -61,7 +62,7 @@ public class QueryBenchmarkTest {
 		tempDir.create();
 		File file = tempDir.newFolder();
 
-		repository = new SailRepository(new LmdbStore(file, "spoc,ospc,psoc"));
+		repository = new SailRepository(new LmdbStore(file, new LmdbStoreConfig("spoc,ospc,psoc")));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

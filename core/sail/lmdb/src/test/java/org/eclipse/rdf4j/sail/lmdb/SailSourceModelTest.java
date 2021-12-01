@@ -20,6 +20,7 @@ import java.util.List;
 import org.eclipse.rdf4j.model.ModelTest;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -55,7 +56,7 @@ public class SailSourceModelTest extends ModelTest {
 	protected SailSourceModel getNewModel() {
 		try {
 			LmdbSailStore store = new LmdbSailStore(Files.createTempDirectory("SailSourceModelTest-").toFile(),
-					"spoc");
+					new LmdbStoreConfig("spoc"));
 			stores.add(store);
 			return new SailSourceModel(store);
 		} catch (Exception e) {

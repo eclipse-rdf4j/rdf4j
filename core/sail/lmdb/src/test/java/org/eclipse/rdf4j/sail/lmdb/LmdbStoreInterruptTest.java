@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailConcurrencyTest;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailInterruptTest;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
@@ -35,7 +36,7 @@ public class LmdbStoreInterruptTest extends SailInterruptTest {
 	@Override
 	protected NotifyingSail createSail() throws SailException {
 		try {
-			return new LmdbStore(tempDir.newFolder(), "spoc,posc");
+			return new LmdbStore(tempDir.newFolder(), new LmdbStoreConfig("spoc,posc"));
 		} catch (IOException e) {
 			throw new AssertionError(e);
 		}

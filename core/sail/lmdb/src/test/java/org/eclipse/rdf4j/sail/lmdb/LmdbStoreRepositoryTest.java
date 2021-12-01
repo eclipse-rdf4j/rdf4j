@@ -12,6 +12,7 @@ import java.io.IOException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 
@@ -21,6 +22,6 @@ public class LmdbStoreRepositoryTest extends RepositoryTest {
 
 	@Override
 	protected Repository createRepository() throws IOException {
-		return new SailRepository(new LmdbStore(tmpDir.getRoot(), "spoc"));
+		return new SailRepository(new LmdbStore(tmpDir.getRoot(), new LmdbStoreConfig("spoc")));
 	}
 }

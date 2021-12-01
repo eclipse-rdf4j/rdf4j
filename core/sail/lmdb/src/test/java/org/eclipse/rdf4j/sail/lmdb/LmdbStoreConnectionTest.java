@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -32,7 +33,7 @@ public class LmdbStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	protected Repository createRepository() throws IOException {
-		return new SailRepository(new LmdbStore(tmpDir.newFolder(), "spoc"));
+		return new SailRepository(new LmdbStore(tmpDir.newFolder(), new LmdbStoreConfig("spoc")));
 	}
 
 	@Test

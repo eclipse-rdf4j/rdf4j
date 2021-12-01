@@ -25,10 +25,10 @@ public class LmdbStoreFactory implements SailFactory {
 	 *
 	 * @see SailFactory#getSailType()
 	 */
-	public static final String SAIL_TYPE = "openrdf:LmdbStore";
+	public static final String SAIL_TYPE = "rdf4j:LmdbStore";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:LmdbStore</tt>.
+	 * Returns the Sail's type: <tt>rdf4j:LmdbStore</tt>.
 	 */
 	@Override
 	public String getSailType() {
@@ -46,36 +46,6 @@ public class LmdbStoreFactory implements SailFactory {
 			throw new SailConfigException("Invalid Sail type: " + config.getType());
 		}
 
-		LmdbStore lmdbStore = new LmdbStore();
-
-		if (config instanceof LmdbStoreConfig) {
-			LmdbStoreConfig lmdbConfig = (LmdbStoreConfig) config;
-
-			lmdbStore.setTripleIndexes(lmdbConfig.getTripleIndexes());
-			lmdbStore.setForceSync(lmdbConfig.getForceSync());
-
-			if (lmdbConfig.getValueCacheSize() >= 0) {
-				lmdbStore.setValueCacheSize(lmdbConfig.getValueCacheSize());
-			}
-			if (lmdbConfig.getValueIDCacheSize() >= 0) {
-				lmdbStore.setValueIDCacheSize(lmdbConfig.getValueIDCacheSize());
-			}
-			if (lmdbConfig.getNamespaceCacheSize() >= 0) {
-				lmdbStore.setNamespaceCacheSize(lmdbConfig.getNamespaceCacheSize());
-			}
-			if (lmdbConfig.getNamespaceIDCacheSize() >= 0) {
-				lmdbStore.setNamespaceIDCacheSize(lmdbConfig.getNamespaceIDCacheSize());
-			}
-			if (lmdbConfig.getIterationCacheSyncThreshold() > 0) {
-				lmdbStore.setIterationCacheSyncThreshold(lmdbConfig.getIterationCacheSyncThreshold());
-			}
-
-			EvaluationStrategyFactory evalStratFactory = lmdbConfig.getEvaluationStrategyFactory();
-			if (evalStratFactory != null) {
-				lmdbStore.setEvaluationStrategyFactory(evalStratFactory);
-			}
-		}
-
-		return lmdbStore;
+		return new LmdbStore(config instanceof LmdbStoreConfig ? (LmdbStoreConfig) config : new LmdbStoreConfig());
 	}
 }

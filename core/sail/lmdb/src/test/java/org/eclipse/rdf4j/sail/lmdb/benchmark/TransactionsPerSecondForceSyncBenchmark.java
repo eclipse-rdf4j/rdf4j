@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -73,8 +74,7 @@ public class TransactionsPerSecondForceSyncBenchmark {
 		i = 0;
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, "spoc,ospc,psoc");
-		sail.setForceSync(true);
+		LmdbStore sail = new LmdbStore(file, new LmdbStoreConfig("spoc,ospc,psoc").setForceSync(true));
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 

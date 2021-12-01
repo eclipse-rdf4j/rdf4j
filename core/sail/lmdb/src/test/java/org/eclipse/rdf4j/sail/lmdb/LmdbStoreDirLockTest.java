@@ -13,6 +13,7 @@ import static org.junit.Assert.fail;
 import java.io.File;
 
 import org.eclipse.rdf4j.sail.SailLockedException;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -25,11 +26,11 @@ public class LmdbStoreDirLockTest {
 	@Test
 	public void testLocking() throws Exception {
 		File dataDir = tempDir.newFolder();
-		LmdbStore sail = new LmdbStore(dataDir, "spoc,posc");
+		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		sail.init();
 
 		try {
-			LmdbStore sail2 = new LmdbStore(dataDir, "spoc,posc");
+			LmdbStore sail2 = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 			sail2.init();
 			try {
 				fail("initialized a second lmdb store with same dataDir");

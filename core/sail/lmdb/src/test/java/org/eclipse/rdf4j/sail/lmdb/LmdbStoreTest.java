@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -45,7 +46,7 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 	protected NotifyingSail createSail() throws SailException {
 		try {
 			dataDir = tempDir.newFolder();
-			NotifyingSail sail = new LmdbStore(dataDir, "spoc,posc");
+			NotifyingSail sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 			sail.init();
 			return sail;
 		} catch (IOException e) {

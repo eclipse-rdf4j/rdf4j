@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.util.Properties;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -26,7 +27,7 @@ public class DefaultIndexTest {
 	@Test
 	public void testDefaultIndex() throws Exception {
 		File dir = tmpDir.newFolder();
-		TripleStore store = new TripleStore(dir, null);
+		TripleStore store = new TripleStore(dir, new LmdbStoreConfig());
 		store.close();
 		// check that the triple store used the default index
 		assertEquals("spoc,posc", findIndex(dir));
@@ -37,11 +38,11 @@ public class DefaultIndexTest {
 	public void testExistingIndex() throws Exception {
 		File dir = tmpDir.newFolder();
 		// set a non-default index
-		TripleStore store = new TripleStore(dir, "spoc,opsc");
+		TripleStore store = new TripleStore(dir, new LmdbStoreConfig("spoc,opsc"));
 		store.close();
 		String before = findIndex(dir);
 		// check that the index is preserved with a null value
-		store = new TripleStore(dir, null);
+		store = new TripleStore(dir, new LmdbStoreConfig(null));
 		store.close();
 		assertEquals(before, findIndex(dir));
 		FileUtil.deleteDir(dir);

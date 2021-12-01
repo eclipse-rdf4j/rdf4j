@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,25 +73,14 @@ class LmdbSailStore implements SailStore {
 	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
 
 	/**
-	 * Creates a new {@link LmdbSailStore} with the default cache sizes.
-	 */
-	public LmdbSailStore(File dataDir, String tripleIndexes) throws IOException, SailException {
-		this(dataDir, tripleIndexes, false, ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
-				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE);
-	}
-
-	/**
 	 * Creates a new {@link LmdbSailStore}.
 	 */
-	public LmdbSailStore(File dataDir, String tripleIndexes, boolean forceSync, int valueCacheSize,
-			int valueIDCacheSize, int namespaceCacheSize, int namespaceIDCacheSize) throws IOException, SailException {
+	public LmdbSailStore(File dataDir, LmdbStoreConfig config) throws IOException, SailException {
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
-			valueStore = new ValueStore(new File(dataDir, "values"), forceSync, valueCacheSize, valueIDCacheSize,
-					namespaceCacheSize,
-					namespaceIDCacheSize);
-			tripleStore = new TripleStore(new File(dataDir, "triples"), tripleIndexes, forceSync);
+			valueStore = new ValueStore(new File(dataDir, "values"), config);
+			tripleStore = new TripleStore(new File(dataDir, "triples"), config);
 			contextStore = new ContextStore(this, dataDir);
 			initialized = true;
 		} finally {

@@ -62,6 +62,7 @@ import java.util.StringTokenizer;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnRef.Mode;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBStat;
@@ -114,13 +115,10 @@ class TripleStore implements Closeable {
 	/**
 	 * The version number for the current triple store.
 	 * <ul>
-	 * <li>version 0: The first version which used a single spo-index. This version did not have a properties file yet.
-	 * <li>version 1: Introduces configurable triple indexes and the properties file.
-	 * <li>version 10: Introduces a context field, essentially making this a quad store.
-	 * <li>version 10a: Introduces transaction flags, this is backwards compatible with version 10.
+	 * <li>version 1: The first version with configurable triple indexes, a context field and a properties file.
 	 * </ul>
 	 */
-	private static final int SCHEME_VERSION = 10;
+	private static final int SCHEME_VERSION = 1;
 
 	/*-----------*
 	 * Variables *
@@ -165,13 +163,9 @@ class TripleStore implements Closeable {
 		}
 	};
 
-	public TripleStore(File dir, String indexSpecStr) throws IOException, SailException {
-		this(dir, indexSpecStr, false);
-	}
-
-	public TripleStore(File dir, String indexSpecStr, boolean forceSync) throws IOException, SailException {
+	public TripleStore(File dir, LmdbStoreConfig config) throws IOException, SailException {
 		this.dir = dir;
-		this.forceSync = forceSync;
+		this.forceSync = config.getForceSync();
 
 		// create directory if it not exists
 		this.dir.mkdirs();
@@ -182,9 +176,7 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// 1 TB for 64-Bit systems
-		// mdb_env_set_mapsize(env, 1_099_511_627_776L);
-		mdb_env_set_mapsize(env, 1_099_511_627L);
+		mdb_env_set_mapsize(env, config.getTripleDBSize());
 		mdb_env_set_maxdbs(env, 6);
 
 		// Open environment
@@ -195,7 +187,7 @@ class TripleStore implements Closeable {
 		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
 
 		File propFile = new File(this.dir, PROPERTIES_FILE);
-
+		String indexSpecStr = config.getTripleIndexes();
 		if (!propFile.exists()) {
 			// newly created lmdb store
 			properties = new Properties();
@@ -247,9 +239,7 @@ class TripleStore implements Closeable {
 		} else {
 			try {
 				int version = Integer.parseInt(versionStr);
-				if (version < 10) {
-					throw new SailException("Directory contains incompatible triple data");
-				} else if (version > SCHEME_VERSION) {
+				if (version > SCHEME_VERSION) {
 					throw new SailException("Directory contains data that uses a newer data format");
 				}
 			} catch (NumberFormatException e) {

@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -53,7 +54,7 @@ public class LmdbSailStoreTest {
 	@Before
 	public void before() throws Exception {
 		File dataDir = tempFolder.newFolder("dbmodel");
-		repo = new SailRepository(new LmdbStore(dataDir, "spoc,posc"));
+		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
 		repo.init();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
