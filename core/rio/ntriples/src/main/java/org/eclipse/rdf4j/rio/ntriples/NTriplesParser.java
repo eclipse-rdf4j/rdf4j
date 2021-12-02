@@ -278,7 +278,7 @@ public class NTriplesParser extends AbstractRDFParser {
 		} else if (lineChars[currentIndex] == '@') {
 			parseLangLiteral(label);
 		} else {
-			object = createLiteral(label, null, null);
+			object = createLiteral(label, null, null, lineNo, lineChars[currentIndex]);
 		}
 	}
 
@@ -308,7 +308,7 @@ public class NTriplesParser extends AbstractRDFParser {
 			reportError("Expected '<', found: " + new String(Character.toChars(lineChars[currentIndex])),
 					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 		}
-		object = createLiteral(label, null, parseIRI());
+		object = createLiteral(label, null, parseIRI(), lineNo, lineChars[currentIndex]);
 	}
 
 	private void parseLangLiteral(String label) {
@@ -327,7 +327,8 @@ public class NTriplesParser extends AbstractRDFParser {
 		if (currentIndex >= lineChars.length) {
 			throwEOFException();
 		}
-		object = createLiteral(label, new String(lineChars, startIndex, currentIndex - startIndex), null);
+		object = createLiteral(label, new String(lineChars, startIndex, currentIndex - startIndex), null,
+				lineNo, lineChars[currentIndex]);
 	}
 
 	/**
