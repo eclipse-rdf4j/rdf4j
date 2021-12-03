@@ -14,10 +14,11 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -86,7 +87,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 						} else {
 							// Limit the bindings to the ones that are in scope for
 							// this filter
-							QueryBindingSet scopeBindings = new QueryBindingSet(rightBindings);
+							ModifiableBindingSet scopeBindings = new DynamicQueryBindingSet(rightBindings);
 							scopeBindings.retainAll(scopeBindingNames);
 
 							if (strategy.isTrue(join.getCondition(), scopeBindings)) {

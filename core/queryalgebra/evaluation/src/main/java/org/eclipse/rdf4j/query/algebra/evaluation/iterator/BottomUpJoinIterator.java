@@ -17,10 +17,11 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
@@ -111,7 +112,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 		BindingSet nextHashTableValue = removeFirstElement(hashTableValues);
 
-		QueryBindingSet result = new QueryBindingSet(currentScanElem);
+		ModifiableBindingSet result = new DynamicQueryBindingSet(currentScanElem);
 
 		for (String name : nextHashTableValue.getBindingNames()) {
 			Binding b = nextHashTableValue.getBinding(name);
@@ -161,7 +162,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	}
 
 	private BindingSet calcKey(BindingSet bindings, Set<String> commonVars) {
-		QueryBindingSet q = new QueryBindingSet();
+		ModifiableBindingSet q = new DynamicQueryBindingSet();
 		for (String varName : commonVars) {
 			Binding b = bindings.getBinding(varName);
 			if (b != null) {

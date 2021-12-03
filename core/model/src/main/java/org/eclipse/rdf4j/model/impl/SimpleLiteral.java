@@ -55,6 +55,9 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	private IRI datatype;
 
+	private final boolean plain;
+	private final boolean lateInit;
+
 	// The XSD.Datatype enum that matches the datatype IRI for this literal. This value is calculated on the fly and
 	// cached in this variable. `null` means we have not calculated and cached this value yet. We are not worried about
 	// race conditions, since calculating this value multiple times must lead to the same effective result. Transient is
@@ -66,6 +69,8 @@ public class SimpleLiteral extends AbstractLiteral {
 	 *--------------*/
 
 	protected SimpleLiteral() {
+		plain = false;
+		lateInit = true;
 	}
 
 	/**
@@ -76,6 +81,8 @@ public class SimpleLiteral extends AbstractLiteral {
 	protected SimpleLiteral(String label) {
 		setLabel(label);
 		setDatatype(XSD.STRING);
+		plain = true;
+		lateInit = false;
 	}
 
 	/**
@@ -87,6 +94,8 @@ public class SimpleLiteral extends AbstractLiteral {
 	protected SimpleLiteral(String label, String language) {
 		setLabel(label);
 		setLanguage(language);
+		plain = true;
+		lateInit = false;
 	}
 
 	/**
@@ -101,9 +110,12 @@ public class SimpleLiteral extends AbstractLiteral {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
 			setDatatype(XSD.Datatype.STRING);
+			plain = true;
 		} else {
 			setDatatype(datatype);
+			plain = datatype.equals(XSD.STRING); // can not be rdf:langString
 		}
+		lateInit = false;
 	}
 
 	protected SimpleLiteral(String label, XSD.Datatype datatype) {
@@ -112,9 +124,12 @@ public class SimpleLiteral extends AbstractLiteral {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
 			setDatatype(XSD.Datatype.STRING);
+			plain = true;
 		} else {
 			setDatatype(datatype);
+			plain = datatype == XSD.Datatype.STRING; // can not be rdf:langString
 		}
+		lateInit = false;
 
 	}
 
@@ -286,4 +301,17 @@ public class SimpleLiteral extends AbstractLiteral {
 		return XMLDatatypeUtil.parseCalendar(label);
 	}
 
+	@Override
+	public boolean isPlainLiteral() {
+		if (!lateInit)
+			return plain;
+		else {
+			return getXsdDatatype().stream().anyMatch(datatype -> datatype == XSD.Datatype.STRING);
+		}
+	}
+
+	@Override
+	public boolean isSimpleLiteral() {
+		return datatype == null && language == null;
+	}
 }

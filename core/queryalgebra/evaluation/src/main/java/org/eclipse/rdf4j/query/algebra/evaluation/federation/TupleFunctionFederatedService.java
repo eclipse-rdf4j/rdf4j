@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
@@ -110,7 +112,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 					throw new NoSuchElementException("The iteration has been closed.");
 				}
 				try {
-					QueryBindingSet projected = new QueryBindingSet();
+					ModifiableBindingSet projected = new DynamicQueryBindingSet();
 					BindingSet result = iter.next();
 					for (String var : projectionVars) {
 						Value v = result.getValue(var);

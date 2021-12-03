@@ -11,13 +11,14 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
@@ -35,7 +36,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 	@Override
 	public BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
-		QueryBindingSet targetBindings = new QueryBindingSet(sourceBindings);
+		ModifiableBindingSet targetBindings = new DynamicQueryBindingSet(sourceBindings);
 
 		for (ExtensionElem extElem : extension.getElements()) {
 			ValueExpr expr = extElem.getExpr();

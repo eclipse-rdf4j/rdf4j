@@ -622,6 +622,16 @@ public class QueryEvaluationUtilTest {
 			}
 
 			@Override
+			public boolean isPlainLiteral() {
+				return nested.isPlainLiteral();
+			}
+
+			@Override
+			public boolean isSimpleLiteral() {
+				return nested.isSimpleLiteral();
+			}
+
+			@Override
 			public byte byteValue() {
 				return nested.byteValue();
 			}

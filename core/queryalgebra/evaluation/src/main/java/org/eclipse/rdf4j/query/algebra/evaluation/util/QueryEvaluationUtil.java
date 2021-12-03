@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
-import java.util.Optional;
-
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -26,6 +24,19 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
  * @author Arjohn Kampman
  */
 public class QueryEvaluationUtil {
+
+	public static final ValueExprEvaluationException UNABLE_TO_COMPARE_STRING_WITH_OTHER_SUPPORTED_TYPES = new ValueExprEvaluationException(
+			"Unable to compare strings with other supported types");
+	public static final ValueExprEvaluationException UNABLE_TO_COMPARE_NUMERIC_TYPES_WITH_OTHER_SUPPORTED_TYPES = new ValueExprEvaluationException(
+			"Unable to compare numeric types with other supported types");
+	public static final ValueExprEvaluationException UNABLE_TO_COMPARE_DATE_TYPES_WITH_OTHER_SUPPORTED_TYPES = new ValueExprEvaluationException(
+			"Unable to compare date types with other supported types");
+	public static final ValueExprEvaluationException UNABLE_TO_COMPARE_LITERALS_WITH_UNSUPPORTED_TYPES = new ValueExprEvaluationException(
+			"Unable to compare literals with unsupported types");
+	public static final ValueExprEvaluationException NOT_ORDERED_LITERALS = new ValueExprEvaluationException(
+			"Only literals with compatible, ordered datatypes can be compared using <, <=, > and >= operators");
+	public static final ValueExprEvaluationException INTERMEDIATE_RESULTS_FOR_DATE_TIME_COMPARISON = new ValueExprEvaluationException(
+			"Indeterminate result for date/time comparison");
 
 	/**
 	 * Determines the effective boolean value (EBV) of the supplied value as defined in the
@@ -245,7 +256,7 @@ public class QueryEvaluationUtil {
 									|| (leftXsdDatatype == null && leftDatatype.equals(XSD.DATETIME)))
 									&& (rightXsdDatatype == XSD.Datatype.DATETIME
 											|| (rightXsdDatatype == null && rightDatatype.equals(XSD.DATETIME)))) {
-								throw new ValueExprEvaluationException("Indeterminate result for date/time comparison");
+								throw INTERMEDIATE_RESULTS_FOR_DATE_TIME_COMPARISON;
 							} else {
 								// We fallback to the regular RDF term compare
 								compareResult = null;
@@ -346,19 +357,17 @@ public class QueryEvaluationUtil {
 					}
 
 					if (leftString != rightString) {
-						throw new ValueExprEvaluationException("Unable to compare strings with other supported types");
+						throw UNABLE_TO_COMPARE_STRING_WITH_OTHER_SUPPORTED_TYPES;
 					}
 					if (leftNumeric != rightNumeric) {
-						throw new ValueExprEvaluationException(
-								"Unable to compare numeric types with other supported types");
+						throw UNABLE_TO_COMPARE_NUMERIC_TYPES_WITH_OTHER_SUPPORTED_TYPES;
 					}
 					if (leftDate != rightDate) {
-						throw new ValueExprEvaluationException(
-								"Unable to compare date types with other supported types");
+						throw UNABLE_TO_COMPARE_DATE_TYPES_WITH_OTHER_SUPPORTED_TYPES;
 					}
 				} else if (!leftLangLit && !rightLangLit) {
 					// For literals with unsupported datatypes we don't know if their values are equal
-					throw new ValueExprEvaluationException("Unable to compare literals with unsupported types");
+					throw UNABLE_TO_COMPARE_LITERALS_WITH_UNSUPPORTED_TYPES;
 				}
 			}
 
@@ -371,8 +380,7 @@ public class QueryEvaluationUtil {
 			case LE:
 			case GE:
 			case GT:
-				throw new ValueExprEvaluationException(
-						"Only literals with compatible, ordered datatypes can be compared using <, <=, > and >= operators");
+				throw NOT_ORDERED_LITERALS;
 			default:
 				throw new IllegalArgumentException("Unknown operator: " + operator);
 			}
@@ -387,18 +395,14 @@ public class QueryEvaluationUtil {
 	 *      Documentation</a>
 	 */
 	public static boolean isPlainLiteral(Value v) {
-		if (v instanceof Literal) {
-			return isPlainLiteral(((Literal) v));
+		if (v.isLiteral()) {
+			return ((Literal) v).isPlainLiteral();
 		}
 		return false;
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		Optional<XSD.Datatype> xsdDatatype = Literals.getXsdDatatype(l);
-		return xsdDatatype
-				.map(datatype -> datatype == XSD.Datatype.STRING)
-				.orElseGet(() -> (l.getDatatype().equals(XSD.STRING)));
-
+		return l.isPlainLiteral();
 	}
 
 	/**
@@ -409,7 +413,7 @@ public class QueryEvaluationUtil {
 	 */
 	public static boolean isSimpleLiteral(Value v) {
 		if (v instanceof Literal) {
-			return isSimpleLiteral((Literal) v);
+			return ((Literal) v).isSimpleLiteral();
 		}
 
 		return false;
@@ -422,7 +426,7 @@ public class QueryEvaluationUtil {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(Literal l) {
-		return !Literals.isLanguageLiteral(l) && l.getDatatype().equals(XSD.STRING);
+		return l.isSimpleLiteral();
 	}
 
 	/**
@@ -433,7 +437,7 @@ public class QueryEvaluationUtil {
 	 */
 	public static boolean isStringLiteral(Value v) {
 		if (v instanceof Literal) {
-			return isStringLiteral((Literal) v);
+			return ((Literal) v).isSimpleLiteral() || ((Literal) v).isPlainLiteral();
 		}
 
 		return false;
@@ -474,8 +478,7 @@ public class QueryEvaluationUtil {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-string">SPARQL Functions on Strings Documentation</a>
 	 */
 	public static boolean isStringLiteral(Literal l) {
-		IRI datatype = l.getDatatype();
-		return Literals.isLanguageLiteral(l) || datatype.equals(XSD.STRING);
+		return l.isPlainLiteral() || l.isSimpleLiteral();
 	}
 
 	private static boolean isSupportedDatatype(IRI datatype) {

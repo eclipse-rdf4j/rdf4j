@@ -18,13 +18,14 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -40,27 +41,27 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> currentIter;
 
-	private BindingSet bindings;
+	private final BindingSet bindings;
 
-	private Scope scope;
+	private final Scope scope;
 
-	private Var startVar;
+	private final Var startVar;
 
-	private Var endVar;
+	private final Var endVar;
 
 	private final boolean startVarFixed;
 
 	private final boolean endVarFixed;
 
-	private Queue<ValuePair> valueQueue;
+	private final Queue<ValuePair> valueQueue;
 
 	private final Set<ValuePair> reportedValues;
 
-	private final Set<ValuePair> unreportedValues;;
+	private final Set<ValuePair> unreportedValues;
 
-	private TupleExpr pathExpression;
+	private final TupleExpr pathExpression;
 
-	private Var contextVar;
+	private final Var contextVar;
 
 	private ValuePair currentVp;
 
@@ -105,15 +106,15 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			while (currentIter.hasNext()) {
 				BindingSet nextElement = currentIter.next();
 				// if it is not a compatible type of BindingSet
-				if (!(nextElement instanceof QueryBindingSet) && !(nextElement instanceof MapBindingSet)) {
-					nextElement = new QueryBindingSet(nextElement);
+				if (!(nextElement instanceof ModifiableBindingSet) || !(nextElement instanceof MapBindingSet)) {
+					nextElement = new DynamicQueryBindingSet(nextElement);
 				}
 
 				if (!startVarFixed && !endVarFixed && currentVp != null) {
 					Value startValue = currentVp.getStartValue();
 
 					if (startValue != null) {
-						nextElement = new QueryBindingSet(nextElement);
+						nextElement = new DynamicQueryBindingSet(nextElement);
 						addBinding(nextElement, startVar.getName(), startValue);
 					}
 				}
@@ -196,8 +197,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	}
 
 	private void addBinding(BindingSet bs, String name, Value value) {
-		if (bs instanceof QueryBindingSet) {
-			((QueryBindingSet) bs).addBinding(name, value);
+		if (bs instanceof ModifiableBindingSet) {
+			((ModifiableBindingSet) bs).addBinding(name, value);
 		} else if (bs instanceof MapBindingSet) {
 			((MapBindingSet) bs).addBinding(name, value);
 		} else {
@@ -395,25 +396,21 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 				return false;
 			}
 			if (startValue == null) {
-				if (other.startValue != null) {
-					return false;
-				}
-			} else if (!startValue.equals(other.startValue)) {
-				return false;
-			}
-			return true;
+				return other.startValue == null;
+			} else
+				return startValue.equals(other.startValue);
 		}
 	}
 
 	class VarReplacer extends AbstractQueryModelVisitor<QueryEvaluationException> {
 
-		private Var toBeReplaced;
+		private final Var toBeReplaced;
 
-		private Var replacement;
+		private final Var replacement;
 
-		private long index;
+		private final long index;
 
-		private boolean replaceAnons;
+		private final boolean replaceAnons;
 
 		public VarReplacer(Var toBeReplaced, Var replacement, long index, boolean replaceAnons) {
 			this.toBeReplaced = toBeReplaced;

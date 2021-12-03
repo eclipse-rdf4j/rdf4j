@@ -234,17 +234,20 @@ public abstract class AbstractLiteral implements Literal {
 
 		private static final long serialVersionUID = -19640527584237291L;
 
-		private String label;
-		private IRI datatype;
+		private final String label;
+		private final IRI datatype;
+		private final boolean plain;
 
 		TypedLiteral(String label) {
 			this.label = label;
 			this.datatype = XSD_STRING;
+			this.plain = true;
 		}
 
 		TypedLiteral(String label, IRI datatype) {
 			this.label = label;
 			this.datatype = datatype != null ? datatype : XSD_STRING;
+			plain = XSD_STRING.equals(this.datatype); // can not be rdf:langString
 		}
 
 		@Override
@@ -262,14 +265,23 @@ public abstract class AbstractLiteral implements Literal {
 			return datatype;
 		}
 
+		@Override
+		public boolean isPlainLiteral() {
+			return plain;
+		}
+
+		@Override
+		public boolean isSimpleLiteral() {
+			return datatype == null;
+		}
 	}
 
 	static class TaggedLiteral extends AbstractLiteral {
 
 		private static final long serialVersionUID = -19640527584237291L;
 
-		private String label;
-		private String language;
+		private final String label;
+		private final String language;
 
 		TaggedLiteral(String label, String language) {
 			this.label = label;
@@ -291,6 +303,16 @@ public abstract class AbstractLiteral implements Literal {
 			return RDF_LANGSTRING;
 		}
 
+		@Override
+		public boolean isPlainLiteral() {
+			return true;
+		}
+
+		@Override
+		public boolean isSimpleLiteral() {
+			return true;
+		}
+
 	}
 
 	static class BooleanLiteral extends AbstractLiteral {
@@ -310,7 +332,7 @@ public abstract class AbstractLiteral implements Literal {
 					.orElse(null);
 		}
 
-		private boolean value;
+		private final boolean value;
 
 		BooleanLiteral(boolean value) {
 			this.value = value;
@@ -334,6 +356,16 @@ public abstract class AbstractLiteral implements Literal {
 		@Override
 		public boolean booleanValue() {
 			return value;
+		}
+
+		@Override
+		public boolean isPlainLiteral() {
+			return false;
+		}
+
+		@Override
+		public boolean isSimpleLiteral() {
+			return false;
 		}
 
 	}
@@ -376,8 +408,8 @@ public abstract class AbstractLiteral implements Literal {
 
 		protected Number value;
 
-		private String label;
-		private IRI datatype;
+		private final String label;
+		private final IRI datatype;
 
 		NumberLiteral(byte value) {
 			this(value, Byte.toString(value), XSD_BYTE);
@@ -454,6 +486,15 @@ public abstract class AbstractLiteral implements Literal {
 			return value.doubleValue();
 		}
 
+		@Override
+		public boolean isPlainLiteral() {
+			return false;
+		}
+
+		@Override
+		public boolean isSimpleLiteral() {
+			return false;
+		}
 	}
 
 	static class IntegerLiteral extends NumberLiteral {
@@ -680,10 +721,10 @@ public abstract class AbstractLiteral implements Literal {
 			return index;
 		}
 
-		private TemporalAccessor value;
+		private final TemporalAccessor value;
 
-		private String label;
-		private IRI datatype;
+		private final String label;
+		private final IRI datatype;
 
 		TemporalAccessorLiteral(TemporalAccessor value) {
 
@@ -721,6 +762,15 @@ public abstract class AbstractLiteral implements Literal {
 			return value;
 		}
 
+		@Override
+		public boolean isPlainLiteral() {
+			return false;
+		}
+
+		@Override
+		public boolean isSimpleLiteral() {
+			return false;
+		}
 	}
 
 	static class TemporalAmountLiteral extends AbstractLiteral {
@@ -742,9 +792,9 @@ public abstract class AbstractLiteral implements Literal {
 				"(?:(?<" + SECONDS + ">\\d+)(?:\\.(?<" + NANOS + ">\\d+))?S)?"
 		);
 
-		private TemporalAmount value;
+		private final TemporalAmount value;
 
-		private String label;
+		private final String label;
 
 		TemporalAmountLiteral(TemporalAmount value) {
 
@@ -901,6 +951,15 @@ public abstract class AbstractLiteral implements Literal {
 			return value;
 		}
 
+		@Override
+		public boolean isPlainLiteral() {
+			return false;
+		}
+
+		@Override
+		public boolean isSimpleLiteral() {
+			return false;
+		}
 	}
 
 	static class CalendarLiteral extends AbstractLiteral {
@@ -959,10 +1018,10 @@ public abstract class AbstractLiteral implements Literal {
 			return DATATYPE_FACTORY.get().newXMLGregorianCalendar(label);
 		}
 
-		private XMLGregorianCalendar value;
+		private final XMLGregorianCalendar value;
 
-		private String label;
-		private IRI datatype;
+		private final String label;
+		private final IRI datatype;
 
 		CalendarLiteral(GregorianCalendar calendar) {
 			this(DATATYPE_FACTORY.get().newXMLGregorianCalendar(calendar));
@@ -996,6 +1055,15 @@ public abstract class AbstractLiteral implements Literal {
 			return value;
 		}
 
+		@Override
+		public boolean isPlainLiteral() {
+			return false;
+		}
+
+		@Override
+		public boolean isSimpleLiteral() {
+			return false;
+		}
 	}
 
 }

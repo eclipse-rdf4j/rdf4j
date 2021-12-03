@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -117,6 +118,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -145,7 +147,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SPARQLMinusIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.EvaluationStrategies;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -170,6 +171,7 @@ import com.google.common.base.Stopwatch;
  * @see ExtendedEvaluationStrategy
  */
 public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedServiceResolverClient, UUIDable {
+	public static final ValueExprEvaluationException VALUE_EXPR_EVALUATION_EXCEPTION = new ValueExprEvaluationException();
 
 	/*-----------*
 	 * Constants *
@@ -528,7 +530,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					// store default behaviour
 					if (contextValue != null) {
 						if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
-							contexts = new Resource[] { (Resource) null };
+							contexts = new Resource[] { null };
 						} else {
 							contexts = new Resource[] { (Resource) contextValue };
 						}
@@ -617,9 +619,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					}
 
 					if (objVar != null && objValue == null) {
-						if (objVar.equals(conVar) && !obj.equals(context)) {
-							return false;
-						}
+						return !objVar.equals(conVar) || obj.equals(context);
 					}
 
 					return true;
@@ -631,23 +631,60 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 				@Override
 				protected BindingSet convert(Statement st) {
-					QueryBindingSet result = new QueryBindingSet(bindings);
+					if (bindings.size() == 0) {
 
-					if (subjVar != null && !subjVar.isConstant() && !result.hasBinding(subjVar.getName())) {
-						result.addBinding(subjVar.getName(), st.getSubject());
-					}
-					if (predVar != null && !predVar.isConstant() && !result.hasBinding(predVar.getName())) {
-						result.addBinding(predVar.getName(), st.getPredicate());
-					}
-					if (objVar != null && !objVar.isConstant() && !result.hasBinding(objVar.getName())) {
-						result.addBinding(objVar.getName(), st.getObject());
-					}
-					if (conVar != null && !conVar.isConstant() && !result.hasBinding(conVar.getName())
-							&& st.getContext() != null) {
-						result.addBinding(conVar.getName(), st.getContext());
+						int newSize = 0;
+
+						if (subjVar != null && !subjVar.isConstant()) {
+							newSize++;
+						}
+						if (predVar != null && !predVar.isConstant()) {
+							newSize++;
+						}
+						if (objVar != null && !objVar.isConstant()) {
+							newSize++;
+						}
+						if (conVar != null && !conVar.isConstant() && st.getContext() != null) {
+							newSize++;
+						}
+
+						ModifiableBindingSet result = new DynamicQueryBindingSet(newSize);
+
+						if (subjVar != null && !subjVar.isConstant()) {
+							result.addBinding(subjVar.getName(), st.getSubject());
+						}
+						if (predVar != null && !predVar.isConstant()) {
+							result.addBinding(predVar.getName(), st.getPredicate());
+						}
+						if (objVar != null && !objVar.isConstant()) {
+							result.addBinding(objVar.getName(), st.getObject());
+						}
+						if (conVar != null && !conVar.isConstant() && st.getContext() != null) {
+							result.addBinding(conVar.getName(), st.getContext());
+						}
+
+						return result;
+
+					} else {
+						ModifiableBindingSet result = new DynamicQueryBindingSet(bindings);
+
+						if (subjVar != null && !subjVar.isConstant() && !result.hasBinding(subjVar.getName())) {
+							result.addBinding(subjVar.getName(), st.getSubject());
+						}
+						if (predVar != null && !predVar.isConstant() && !result.hasBinding(predVar.getName())) {
+							result.addBinding(predVar.getName(), st.getPredicate());
+						}
+						if (objVar != null && !objVar.isConstant() && !result.hasBinding(objVar.getName())) {
+							result.addBinding(objVar.getName(), st.getObject());
+						}
+						if (conVar != null && !conVar.isConstant() && !result.hasBinding(conVar.getName())
+								&& st.getContext() != null) {
+							result.addBinding(conVar.getName(), st.getContext());
+						}
+
+						return result;
 					}
 
-					return result;
 				}
 			};
 			allGood = true;
@@ -750,13 +787,13 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 			@Override
 			protected BindingSet getNextElement() throws QueryEvaluationException {
-				QueryBindingSet nextResult = null;
+				ModifiableBindingSet nextResult = null;
 				while (nextResult == null && assignments.hasNext()) {
 					final BindingSet assignedBindings = assignments.next();
 
 					for (String name : assignedBindings.getBindingNames()) {
 						if (nextResult == null) {
-							nextResult = new QueryBindingSet(bindings);
+							nextResult = new DynamicQueryBindingSet(bindings);
 						}
 
 						final Value assignedValue = assignedBindings.getValue(name);
@@ -1101,7 +1138,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		if (value == null) {
-			throw new ValueExprEvaluationException();
+			throw VALUE_EXPR_EVALUATION_EXCEPTION;
 		}
 
 		return value;
@@ -1154,7 +1191,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (argValue instanceof Triple) {
 			return tripleSource.getValueFactory().createLiteral(argValue.toString());
 		} else {
-			throw new ValueExprEvaluationException();
+			throw VALUE_EXPR_EVALUATION_EXCEPTION;
 		}
 	}
 
@@ -1172,7 +1209,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				return tripleSource.getValueFactory().createLiteral(literal.getLabel());
 			}
 		} else {
-			throw new ValueExprEvaluationException();
+			throw VALUE_EXPR_EVALUATION_EXCEPTION;
 		}
 	}
 
@@ -1185,7 +1222,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return tripleSource.getValueFactory().createLiteral(literal.getLanguage().orElse(""));
 		}
 
-		throw new ValueExprEvaluationException();
+		throw VALUE_EXPR_EVALUATION_EXCEPTION;
 	}
 
 	public Value evaluate(Datatype node, BindingSet bindings)
@@ -1207,7 +1244,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		}
 
-		throw new ValueExprEvaluationException();
+		throw VALUE_EXPR_EVALUATION_EXCEPTION;
 	}
 
 	public Value evaluate(Namespace node, BindingSet bindings)
@@ -1218,7 +1255,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			IRI uri = (IRI) argValue;
 			return tripleSource.getValueFactory().createIRI(uri.getNamespace());
 		} else {
-			throw new ValueExprEvaluationException();
+			throw VALUE_EXPR_EVALUATION_EXCEPTION;
 		}
 	}
 
@@ -1230,7 +1267,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			IRI uri = (IRI) argValue;
 			return tripleSource.getValueFactory().createLiteral(uri.getLocalName());
 		} else {
-			throw new ValueExprEvaluationException();
+			throw VALUE_EXPR_EVALUATION_EXCEPTION;
 		}
 	}
 
@@ -1340,7 +1377,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return ((IRI) argValue);
 		}
 
-		throw new ValueExprEvaluationException();
+		throw VALUE_EXPR_EVALUATION_EXCEPTION;
 	}
 
 	/**
@@ -1402,7 +1439,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return BooleanLiteral.valueOf(result);
 		}
 
-		throw new ValueExprEvaluationException();
+		throw VALUE_EXPR_EVALUATION_EXCEPTION;
 	}
 
 	public Value evaluate(LangMatches node, BindingSet bindings)
@@ -1419,7 +1456,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return BooleanLiteral.valueOf(result);
 		}
 
-		throw new ValueExprEvaluationException();
+		throw VALUE_EXPR_EVALUATION_EXCEPTION;
 
 	}
 
@@ -1443,7 +1480,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		if (strVal == null) {
-			throw new ValueExprEvaluationException();
+			throw VALUE_EXPR_EVALUATION_EXCEPTION;
 		}
 
 		if (!node.isCaseSensitive()) {
@@ -1561,7 +1598,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			if (!QueryEvaluationUtil.getEffectiveBooleanValue(rightValue)) {
 				return BooleanLiteral.FALSE;
 			} else {
-				throw new ValueExprEvaluationException();
+				throw VALUE_EXPR_EVALUATION_EXCEPTION;
 			}
 		}
 
@@ -1586,7 +1623,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			if (QueryEvaluationUtil.getEffectiveBooleanValue(rightValue)) {
 				return BooleanLiteral.TRUE;
 			} else {
-				throw new ValueExprEvaluationException();
+				throw VALUE_EXPR_EVALUATION_EXCEPTION;
 			}
 		}
 
@@ -1919,17 +1956,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					if (objValue != null && !objValue.equals(triple.getObject())) {
 						return false;
 					}
-					if (extValue != null && !extValue.equals(triple)) {
-						return false;
-					}
-					return true;
+					return extValue == null || extValue.equals(triple);
 				}
 			};
 
 			return new ConvertingIteration<Triple, BindingSet, QueryEvaluationException>(filterIter) {
 				@Override
 				protected BindingSet convert(Triple triple) throws QueryEvaluationException {
-					QueryBindingSet result = new QueryBindingSet(bindings);
+					ModifiableBindingSet result = new DynamicQueryBindingSet(bindings);
 					if (subjValue == null) {
 						result.addBinding(subjVar.getName(), triple.getSubject());
 					}
@@ -1973,7 +2007,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 						throws QueryEvaluationException {
 					while (iter.hasNext()) {
 						Resource theNode = iter.next();
-						QueryBindingSet result = new QueryBindingSet(bindings);
+						ModifiableBindingSet result = new DynamicQueryBindingSet(bindings);
 						// does it match the subjectValue/subjVar
 						if (!matchValue(theNode, subjValue, subjVar, result, RDF.SUBJECT)) {
 							continue;
@@ -2000,7 +2034,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					return null;
 				}
 
-				private boolean matchValue(Resource theNode, Value value, Var var, QueryBindingSet result,
+				private boolean matchValue(Resource theNode, Value value, Var var, ModifiableBindingSet result,
 						IRI predicate) {
 					try (CloseableIteration<? extends Statement, QueryEvaluationException> valueiter = tripleSource
 							.getStatements(theNode, predicate, null)) {

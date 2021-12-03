@@ -73,6 +73,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				FILTER_OPTIMIZER,
 				ORDER_LIMIT_OPTIMIZER,
+				new VarOptimizer(),
 				PARENT_REFERENCE_CLEANER);
 	}
 

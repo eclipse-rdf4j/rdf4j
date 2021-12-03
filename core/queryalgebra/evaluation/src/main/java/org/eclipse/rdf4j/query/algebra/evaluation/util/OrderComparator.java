@@ -14,6 +14,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Set;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Value;
@@ -63,15 +64,9 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 
 		try {
 
-			for (OrderElem element : order.getElements()) {
-				Value v1 = evaluate(element.getExpr(), o1);
-				Value v2 = evaluate(element.getExpr(), o2);
-
-				int compare = cmp.compare(v1, v2);
-
-				if (compare != 0) {
-					return element.isAscending() ? compare : -compare;
-				}
+			int compareByOrder = compareByOrder(o1, o2);
+			if (compareByOrder != 0) {
+				return compareByOrder;
 			}
 
 			// On the basis of the order clause elements the two binding sets are
@@ -85,9 +80,7 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 				if (o1 == null) {
 					return o2 == null ? 0 : 1;
 				}
-				if (o2 == null) {
-					return o1 == null ? 0 : -1;
-				}
+				return -1;
 			}
 
 			if (o2.size() != o1.size()) {
@@ -96,41 +89,70 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 
 			// we create an ordered list of binding names (using natural string order) to use for
 			// consistent iteration over binding names and binding values.
-			final ArrayList<String> o1bindingNamesOrdered = new ArrayList<>(o1.getBindingNames());
+			Set<String> o1BindingNames = o1.getBindingNames();
+			Set<String> o2BindingNames = o2.getBindingNames();
+
+			ArrayList<String> o1bindingNamesOrdered = new ArrayList<>(o1BindingNames);
 			Collections.sort(o1bindingNamesOrdered);
 
 			// binding set sizes are equal. compare on binding names.
-			if (!o1.getBindingNames().equals(o2.getBindingNames())) {
-
-				final ArrayList<String> o2bindingNamesOrdered = new ArrayList<>(o2.getBindingNames());
-				Collections.sort(o2bindingNamesOrdered);
-
-				for (int i = 0; i < o1bindingNamesOrdered.size(); i++) {
-					String o1bn = o1bindingNamesOrdered.get(i);
-					String o2bn = o2bindingNamesOrdered.get(i);
-					int compare = o1bn.compareTo(o2bn);
-					if (compare != 0) {
-						return compare;
-					}
-				}
+			int compareOnBindingNames = compareOnBindingNames(o1BindingNames, o2BindingNames, o1bindingNamesOrdered);
+			if (compareOnBindingNames != 0) {
+				return compareOnBindingNames;
 			}
 
 			// binding names equal. compare on all values.
-			for (String bindingName : o1bindingNamesOrdered) {
-				final Value v1 = o1.getValue(bindingName);
-				final Value v2 = o2.getValue(bindingName);
-
-				final int compare = cmp.compare(v1, v2);
-				if (compare != 0) {
-					return compare;
-				}
-			}
-
-			return 0;
+			return compareOnValues(o1, o2, o1bindingNamesOrdered);
 		} catch (QueryEvaluationException | IllegalArgumentException e) {
 			logger.debug(e.getMessage(), e);
 			return 0;
 		}
+	}
+
+	private int compareOnValues(BindingSet o1, BindingSet o2, ArrayList<String> o1bindingNamesOrdered) {
+		for (String bindingName : o1bindingNamesOrdered) {
+			Value v1 = o1.getValue(bindingName);
+			Value v2 = o2.getValue(bindingName);
+
+			int compare = cmp.compare(v1, v2);
+			if (compare != 0) {
+				return compare;
+			}
+		}
+		return 0;
+	}
+
+	private int compareOnBindingNames(Set<String> o1BindingNames, Set<String> o2BindingNames,
+			ArrayList<String> o1bindingNamesOrdered) {
+		if (!o1BindingNames.equals(o2BindingNames)) {
+
+			final ArrayList<String> o2bindingNamesOrdered = new ArrayList<>(o2BindingNames);
+			Collections.sort(o2bindingNamesOrdered);
+
+			for (int i = 0; i < o1bindingNamesOrdered.size(); i++) {
+				String o1bn = o1bindingNamesOrdered.get(i);
+				String o2bn = o2bindingNamesOrdered.get(i);
+				int compare = o1bn.compareTo(o2bn);
+				if (compare != 0) {
+					return compare;
+				}
+			}
+		}
+		return 0;
+	}
+
+	private int compareByOrder(BindingSet o1, BindingSet o2) {
+		for (OrderElem element : order.getElements()) {
+			Value v1 = evaluate(element.getExpr(), o1);
+			Value v2 = evaluate(element.getExpr(), o2);
+
+			int compare = cmp.compare(v1, v2);
+
+			if (compare != 0) {
+				return element.isAscending() ? compare : -compare;
+			}
+		}
+		return 0;
 	}
 
 	private Value evaluate(ValueExpr valueExpr, BindingSet o) throws QueryEvaluationException {

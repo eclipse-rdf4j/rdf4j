@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -67,6 +68,7 @@ public class GroupIteratorTest {
 		group.addGroupElement(new GroupElem("avg", new Avg(new Var("a"))));
 		GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance());
 
+		Set<String> groupBindingNames = group.getGroupBindingNames();
 		assertThat(gi.next().getBinding("avg").getValue())
 				.describedAs("AVG on empty set should result in 0")
 				.isEqualTo(vf.createLiteral("0", XSD.INTEGER));

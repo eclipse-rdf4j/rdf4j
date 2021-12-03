@@ -13,8 +13,9 @@ import java.util.List;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 
 /**
  * Iteration which forms the cross product of a list of materialized input bindings with each result obtained from the
@@ -54,7 +55,7 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 
 		if (inputBindingsIterator.hasNext()) {
 			BindingSet next = inputBindingsIterator.next();
-			QueryBindingSet res = new QueryBindingSet(next.size() + currentInputBinding.size());
+			ModifiableBindingSet res = new DynamicQueryBindingSet(next.size() + currentInputBinding.size());
 			res.addAll(next);
 			res.addAll(currentInputBinding);
 			if (!inputBindingsIterator.hasNext()) {

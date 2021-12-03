@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -155,7 +157,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		Set<BindingSet> bindingSets = createSet("bindingsets");
 
 		for (Entry entry : entries) {
-			QueryBindingSet sol = new QueryBindingSet(parentBindings);
+			ModifiableBindingSet sol = new DynamicQueryBindingSet(parentBindings);
 
 			for (String name : group.getGroupBindingNames()) {
 				BindingSet prototype = entry.getPrototype();
@@ -308,7 +310,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 		}
 
-		public void bindSolution(QueryBindingSet sol) throws QueryEvaluationException {
+		public void bindSolution(ModifiableBindingSet sol) throws QueryEvaluationException {
 			for (String name : getAggregates().keySet()) {
 				try {
 					Value value = getAggregates().get(name).getValue();

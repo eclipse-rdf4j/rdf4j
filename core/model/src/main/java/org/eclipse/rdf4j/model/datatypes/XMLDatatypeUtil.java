@@ -41,7 +41,7 @@ public class XMLDatatypeUtil {
 
 	public static final String NaN = "NaN";
 
-	private static DatatypeFactory dtFactory;
+	private static final DatatypeFactory dtFactory;
 
 	static {
 		try {
@@ -158,6 +158,38 @@ public class XMLDatatypeUtil {
 	 * @return true if it is an integer type
 	 */
 	public static boolean isIntegerDatatype(IRI datatype) {
+		if (datatype == null) {
+			return false;
+		}
+
+		if (XSD.INTEGER == datatype) {
+			return true;
+		} else if (XSD.LONG == datatype) {
+			return true;
+		} else if (XSD.INT == datatype) {
+			return true;
+		} else if (XSD.SHORT == datatype) {
+			return true;
+		} else if (XSD.BYTE == datatype) {
+			return true;
+		} else if (XSD.NON_POSITIVE_INTEGER == datatype) {
+			return true;
+		} else if (XSD.NEGATIVE_INTEGER == datatype) {
+			return true;
+		} else if (XSD.NON_NEGATIVE_INTEGER == datatype) {
+			return true;
+		} else if (XSD.POSITIVE_INTEGER == datatype) {
+			return true;
+		} else if (XSD.UNSIGNED_LONG == datatype) {
+			return true;
+		} else if (XSD.UNSIGNED_INT == datatype) {
+			return true;
+		} else if (XSD.UNSIGNED_SHORT == datatype) {
+			return true;
+		} else if (XSD.UNSIGNED_BYTE == datatype) {
+			return true;
+		}
+
 		return integerDatatypes.contains(datatype);
 	}
 
@@ -180,6 +212,30 @@ public class XMLDatatypeUtil {
 	 * @return true if it is a calendar type
 	 */
 	public static boolean isCalendarDatatype(IRI datatype) {
+		if (datatype == null) {
+			return false;
+		}
+
+		if (XSD.DATETIME == datatype) {
+			return true;
+		} else if (XSD.DATE == datatype) {
+			return true;
+		} else if (XSD.TIME == datatype) {
+			return true;
+		} else if (XSD.GYEARMONTH == datatype) {
+			return true;
+		} else if (XSD.GMONTHDAY == datatype) {
+			return true;
+		} else if (XSD.GYEAR == datatype) {
+			return true;
+		} else if (XSD.GMONTH == datatype) {
+			return true;
+		} else if (XSD.GDAY == datatype) {
+			return true;
+		} else if (XSD.DATETIMESTAMP == datatype) {
+			return true;
+		}
+
 		return calendarDatatypes.contains(datatype);
 	}
 
@@ -615,7 +671,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDate(String value) {
-		return P_DATE.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_DATE.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -625,7 +681,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidTime(String value) {
-		return P_TIME.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_TIME.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -635,7 +691,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGDay(String value) {
-		return P_GDAY.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GDAY.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -645,7 +701,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGMonth(String value) {
-		return P_GMONTH.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GMONTH.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -655,7 +711,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGMonthDay(String value) {
-		return P_GMONTHDAY.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GMONTHDAY.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -665,7 +721,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGYear(String value) {
-		return P_GYEAR.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GYEAR.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -675,7 +731,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGYearMonth(String value) {
-		return P_GYEARMONTH.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GYEARMONTH.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -1215,7 +1271,7 @@ public class XMLDatatypeUtil {
 			}
 			sb.append(mantissa.charAt(firstDigitIdx));
 			sb.append('.');
-			sb.append(mantissa.substring(firstDigitIdx + 1, dotIdx));
+			sb.append(mantissa, firstDigitIdx + 1, dotIdx);
 			sb.append(mantissa.substring(dotIdx + 1));
 
 			mantissa = sb.toString();

@@ -15,11 +15,13 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -99,9 +101,9 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 
 			@Override
 			public BindingSet getNextElement() throws QueryEvaluationException {
-				QueryBindingSet resultBindings = null;
+				ModifiableBindingSet resultBindings = null;
 				while (resultBindings == null && iter.hasNext()) {
-					resultBindings = new QueryBindingSet(bindings);
+					resultBindings = new DynamicQueryBindingSet(bindings);
 					List<? extends Value> values = iter.next();
 					if (resultVars.size() != values.size()) {
 						throw new QueryEvaluationException("Incorrect number of result vars: require " + values.size());
