@@ -7,8 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.endpoint.provider;
 
+import java.util.List;
 import java.util.Optional;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
 import org.eclipse.rdf4j.model.Value;
@@ -20,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerFunctionalInterface;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -75,6 +78,32 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 		return new SailSourceEvaluationStrategy(delegateStrategy, dataset);
 	}
 
+	@Override
+	public boolean isTrackResultSize() {
+		return delegate.isTrackResultSize();
+	}
+
+	@Override
+	public void setTrackResultSize(boolean trackResultSize) {
+		delegate.setTrackResultSize(trackResultSize);
+	}
+
+	@Override
+	public void addOptimizer(QueryOptimizerFunctionalInterface queryOptimizerFunctionalInterface,
+			boolean beforeOtherQueryOptimizers) {
+		delegate.addOptimizer(queryOptimizerFunctionalInterface, beforeOtherQueryOptimizers);
+	}
+
+	@Override
+	public List<QueryOptimizerFunctionalInterface> getQueryOptimizersPre() {
+		return delegate.getQueryOptimizersPre();
+	}
+
+	@Override
+	public List<QueryOptimizerFunctionalInterface> getQueryOptimizersPost() {
+		return delegate.getQueryOptimizersPost();
+	}
+
 	/**
 	 * {@link EvaluationStrategy} that can handle {@link PrecompiledQueryNode} without prior optimization. All other
 	 * {@link TupleExpr} are handled in the respective delegate.
@@ -96,6 +125,23 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 		@Override
 		public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
 			return delegate.getService(serviceUrl);
+		}
+
+		@Override
+		public QueryOptimizerPipeline getOptimizerPipeline() {
+			return delegate.getOptimizerPipeline();
+		}
+
+		@Override
+		@Experimental
+		public void setTrackResultSize(boolean trackResultSize) {
+			delegate.setTrackResultSize(trackResultSize);
+		}
+
+		@Override
+		@Experimental
+		public void setTrackTime(boolean trackTime) {
+			delegate.setTrackTime(trackTime);
 		}
 
 		@Override

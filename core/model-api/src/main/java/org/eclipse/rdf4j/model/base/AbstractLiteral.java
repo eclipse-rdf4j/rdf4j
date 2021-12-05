@@ -236,18 +236,15 @@ public abstract class AbstractLiteral implements Literal {
 
 		private final String label;
 		private final IRI datatype;
-		private final boolean plain;
 
 		TypedLiteral(String label) {
 			this.label = label;
 			this.datatype = XSD_STRING;
-			this.plain = true;
 		}
 
 		TypedLiteral(String label, IRI datatype) {
 			this.label = label;
 			this.datatype = datatype != null ? datatype : XSD_STRING;
-			plain = XSD_STRING.equals(this.datatype); // can not be rdf:langString
 		}
 
 		@Override
@@ -267,12 +264,12 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public boolean isPlainLiteral() {
-			return plain;
+			return false;
 		}
 
 		@Override
 		public boolean isSimpleLiteral() {
-			return datatype == null;
+			return false;
 		}
 	}
 
@@ -310,7 +307,7 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public boolean isSimpleLiteral() {
-			return true;
+			return false;
 		}
 
 	}

@@ -56,6 +56,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	private IRI datatype;
 
 	private final boolean plain;
+	private final boolean simple;
 	private final boolean lateInit;
 
 	// The XSD.Datatype enum that matches the datatype IRI for this literal. This value is calculated on the fly and
@@ -70,6 +71,7 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	protected SimpleLiteral() {
 		plain = false;
+		simple = false;
 		lateInit = true;
 	}
 
@@ -82,6 +84,7 @@ public class SimpleLiteral extends AbstractLiteral {
 		setLabel(label);
 		setDatatype(XSD.STRING);
 		plain = true;
+		simple = true;
 		lateInit = false;
 	}
 
@@ -95,6 +98,7 @@ public class SimpleLiteral extends AbstractLiteral {
 		setLabel(label);
 		setLanguage(language);
 		plain = true;
+		simple = false;
 		lateInit = false;
 	}
 
@@ -111,23 +115,23 @@ public class SimpleLiteral extends AbstractLiteral {
 		} else if (datatype == null) {
 			setDatatype(XSD.Datatype.STRING);
 			plain = true;
+			simple = true;
 		} else {
 			setDatatype(datatype);
-			plain = datatype.equals(XSD.STRING); // can not be rdf:langString
+			plain = simple = datatype.equals(XSD.STRING); // can not be rdf:langString
 		}
 		lateInit = false;
 	}
 
 	protected SimpleLiteral(String label, XSD.Datatype datatype) {
 		setLabel(label);
-		if (RDF.LANGSTRING.equals(datatype.getIri())) {
-			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
-		} else if (datatype == null) {
+		if (datatype == null) {
 			setDatatype(XSD.Datatype.STRING);
 			plain = true;
+			simple = true;
 		} else {
 			setDatatype(datatype);
-			plain = datatype == XSD.Datatype.STRING; // can not be rdf:langString
+			plain = simple = datatype == XSD.Datatype.STRING; // can not be rdf:langString
 		}
 		lateInit = false;
 
@@ -303,15 +307,19 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	@Override
 	public boolean isPlainLiteral() {
-		if (!lateInit)
+		if (!lateInit) {
 			return plain;
-		else {
-			return getXsdDatatype().stream().anyMatch(datatype -> datatype == XSD.Datatype.STRING);
+		} else {
+			return language != null || getXsdDatatype().stream().anyMatch(datatype -> datatype == XSD.Datatype.STRING);
 		}
 	}
 
 	@Override
 	public boolean isSimpleLiteral() {
-		return datatype == null && language == null;
+		if (!lateInit) {
+			return simple;
+		} else {
+			return language == null && getXsdDatatype().stream().anyMatch(datatype -> datatype == XSD.Datatype.STRING);
+		}
 	}
 }

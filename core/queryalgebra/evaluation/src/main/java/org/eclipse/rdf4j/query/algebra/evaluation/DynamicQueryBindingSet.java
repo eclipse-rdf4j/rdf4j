@@ -391,7 +391,7 @@ public class DynamicQueryBindingSet implements ModifiableBindingSet {
 				Deque<Integer> indexesToRemove = new ArrayDeque<>();
 				for (int i = 0; i < names.size(); i++) {
 					if (!bindingNames.contains(names.get(i))) {
-						indexesToRemove.addLast(i);
+						indexesToRemove.addFirst(i);
 					}
 				}
 

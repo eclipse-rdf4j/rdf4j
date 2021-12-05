@@ -84,7 +84,7 @@ public class MemIRI implements IRI, MemResource {
 	 * Methods *
 	 *---------*/
 
-	SoftReference<String> toStringCache = null;
+	transient SoftReference<String> toStringCache = null;
 
 	@Override
 	public String toString() {

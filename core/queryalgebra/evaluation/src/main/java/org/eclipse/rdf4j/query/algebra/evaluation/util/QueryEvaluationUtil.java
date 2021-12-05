@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
+import java.util.Optional;
+
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -413,7 +415,7 @@ public class QueryEvaluationUtil {
 	 */
 	public static boolean isSimpleLiteral(Value v) {
 		if (v instanceof Literal) {
-			return ((Literal) v).isSimpleLiteral();
+			return isSimpleLiteral((Literal) v);
 		}
 
 		return false;
@@ -437,7 +439,7 @@ public class QueryEvaluationUtil {
 	 */
 	public static boolean isStringLiteral(Value v) {
 		if (v instanceof Literal) {
-			return ((Literal) v).isSimpleLiteral() || ((Literal) v).isPlainLiteral();
+			return isStringLiteral((Literal) v);
 		}
 
 		return false;
