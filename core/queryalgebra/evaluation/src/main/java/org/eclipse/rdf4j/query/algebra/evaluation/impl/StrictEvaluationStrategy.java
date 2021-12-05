@@ -489,6 +489,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		final Var objVar = statementPattern.getObjectVar();
 		final Var conVar = statementPattern.getContextVar();
 
+		int bindingSetSizeEstimate = getBindingSetSizeEstimate(subjVar, predVar, objVar, conVar);
+
 		final Value subjValue = getVarValue(subjVar, bindings);
 		final Value predValue = getVarValue(predVar, bindings);
 		final Value objValue = getVarValue(objVar, bindings);
@@ -633,22 +635,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				protected BindingSet convert(Statement st) {
 					if (bindings.size() == 0) {
 
-						int newSize = 0;
-
-						if (subjVar != null && !subjVar.isConstant()) {
-							newSize++;
-						}
-						if (predVar != null && !predVar.isConstant()) {
-							newSize++;
-						}
-						if (objVar != null && !objVar.isConstant()) {
-							newSize++;
-						}
-						if (conVar != null && !conVar.isConstant() && st.getContext() != null) {
-							newSize++;
-						}
-
-						ModifiableBindingSet result = new DynamicQueryBindingSet(newSize);
+						ModifiableBindingSet result = new DynamicQueryBindingSet(bindingSetSizeEstimate);
 
 						if (subjVar != null && !subjVar.isConstant()) {
 							result.addBinding(subjVar.getName(), st.getSubject());
@@ -716,6 +703,23 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				}
 			}
 		}
+	}
+
+	private int getBindingSetSizeEstimate(Var subjVar, Var predVar, Var objVar, Var conVar) {
+		int estimate = 0;
+		if (subjVar != null && !subjVar.isConstant()) {
+			estimate++;
+		}
+		if (predVar != null && !predVar.isConstant()) {
+			estimate++;
+		}
+		if (objVar != null && !objVar.isConstant()) {
+			estimate++;
+		}
+		if (conVar != null && !conVar.isConstant()) {
+			estimate++;
+		}
+		return estimate;
 	}
 
 	protected boolean isUnbound(Var var, BindingSet bindings) {
