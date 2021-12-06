@@ -41,13 +41,13 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	/**
 	 * The index of the next element that will be returned by a call to {@link #next()}.
 	 */
-	private volatile int currentIndex = 0;
+	private int currentIndex = 0;
 
 	/**
 	 * The index of the last element that was returned by a call to {@link #next()} or {@link #previous()}. Equal to -1
 	 * if there is no such element.
 	 */
-	private volatile int lastReturned = -1;
+	private int lastReturned = -1;
 
 	/*--------------*
 	 * Constructors *

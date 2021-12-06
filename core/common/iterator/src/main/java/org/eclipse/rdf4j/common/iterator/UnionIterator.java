@@ -23,7 +23,7 @@ public class UnionIterator<E> extends LookAheadIterator<E> {
 
 	private final Iterator<? extends Iterable<? extends E>> argIter;
 
-	private volatile Iterator<? extends E> currentIter;
+	private Iterator<? extends E> currentIter;
 
 	/*--------------*
 	 * Constructors *

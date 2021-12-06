@@ -20,9 +20,9 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	 * Variables *
 	 *-----------*/
 
-	private volatile E nextElement;
+	private E nextElement;
 
-	private volatile IOException closeException;
+	private IOException closeException;
 
 	/*--------------*
 	 * Constructors *

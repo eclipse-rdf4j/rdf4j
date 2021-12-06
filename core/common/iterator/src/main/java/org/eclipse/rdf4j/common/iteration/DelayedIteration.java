@@ -22,7 +22,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 * Variables *
 	 *-----------*/
 
-	private volatile Iteration<? extends E, ? extends X> iter;
+	private Iteration<? extends E, ? extends X> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -56,11 +56,9 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 		Iteration<? extends E, ? extends X> resultIter = iter;
 		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
-			synchronized (this) {
-				resultIter = iter;
-				if (resultIter == null) {
-					resultIter = iter = createIteration();
-				}
+			resultIter = iter;
+			if (resultIter == null) {
+				resultIter = iter = createIteration();
 			}
 		}
 
@@ -78,11 +76,9 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 		Iteration<? extends E, ? extends X> resultIter = iter;
 		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
-			synchronized (this) {
-				resultIter = iter;
-				if (resultIter == null) {
-					resultIter = iter = createIteration();
-				}
+			resultIter = iter;
+			if (resultIter == null) {
+				resultIter = iter = createIteration();
 			}
 		}
 

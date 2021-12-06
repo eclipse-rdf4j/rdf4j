@@ -26,7 +26,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 	private final Iterator<? extends Iteration<? extends E, X>> argIter;
 
-	private volatile Iteration<? extends E, X> currentIter;
+	private Iteration<? extends E, X> currentIter;
 
 	/*--------------*
 	 * Constructors *
@@ -72,7 +72,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 			// Current Iteration exhausted, continue with the next one
 			Iterations.closeCloseable(nextCurrentIter);
-			
+
 			if (argIter.hasNext()) {
 				currentIter = argIter.next();
 			} else {
