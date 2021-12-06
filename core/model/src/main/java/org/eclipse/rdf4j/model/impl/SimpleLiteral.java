@@ -49,6 +49,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 * The literal's language tag.
 	 */
 	private String language;
+	transient private Optional<String> optionalLanguage = Optional.empty();
 
 	/**
 	 * The literal's datatype.
@@ -157,12 +158,16 @@ public class SimpleLiteral extends AbstractLiteral {
 			throw new IllegalArgumentException("Language tag cannot be empty");
 		}
 		this.language = language;
+		this.optionalLanguage = Optional.of(language);
 		setDatatype(RDF.LANGSTRING);
 	}
 
 	@Override
 	public Optional<String> getLanguage() {
-		return Optional.ofNullable(language);
+		if (optionalLanguage == null) {
+			optionalLanguage = Optional.ofNullable(language);
+		}
+		return optionalLanguage;
 	}
 
 	protected void setDatatype(IRI datatype) {

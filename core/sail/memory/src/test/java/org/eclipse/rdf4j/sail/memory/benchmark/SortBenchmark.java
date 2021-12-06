@@ -49,12 +49,14 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 0)
 @BenchmarkMode({ Mode.AverageTime })
 // use G1GC because the workload is multi-threaded
-@Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseG1GC" })
+@Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseSerialGC" })
+//@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UnlockExperimentalVMOptions","-XX:+UseEpsilonGC", "-XX:+AlwaysPreTouch" })
+
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
+@Measurement(iterations = 20)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class SortBenchmark {
 
@@ -115,6 +117,8 @@ public class SortBenchmark {
 
 	}
 
+	static int count = 0;
+
 	@Benchmark
 	public List<BindingSet> sortByQuery() {
 
@@ -123,7 +127,9 @@ public class SortBenchmark {
 					.prepareTupleQuery(query9)
 					.evaluate()
 					.stream()) {
-				return stream.limit(1).collect(Collectors.toList());
+				List<BindingSet> collect = stream.limit(1).collect(Collectors.toList());
+//				System.out.println("\nCount: " + (++count));
+				return collect;
 			}
 		}
 	}

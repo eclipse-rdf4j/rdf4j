@@ -14,8 +14,10 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -49,14 +51,14 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 
 	private UUID strategyKey;
 
-	private final Order order;
+	private final OrderElem[] order;
 
 	private transient ValueComparator cmp;
 
 	public OrderComparator(EvaluationStrategy strategy, Order order, ValueComparator vcmp) {
 		this.strategy = strategy;
-		this.order = order;
 		this.cmp = vcmp;
+		this.order = order.getElements().toArray(OrderElem[]::new);
 	}
 
 	@Override
@@ -92,8 +94,13 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 			Set<String> o1BindingNames = o1.getBindingNames();
 			Set<String> o2BindingNames = o2.getBindingNames();
 
-			ArrayList<String> o1bindingNamesOrdered = new ArrayList<>(o1BindingNames);
-			Collections.sort(o1bindingNamesOrdered);
+			List<String> o1bindingNamesOrdered;
+			if (o1BindingNames.size() == 1) {
+				o1bindingNamesOrdered = List.copyOf(o1BindingNames);
+			} else {
+				o1bindingNamesOrdered = new ArrayList<>(o1BindingNames);
+				o1bindingNamesOrdered.sort(String::compareTo);
+			}
 
 			// binding set sizes are equal. compare on binding names.
 			int compareOnBindingNames = compareOnBindingNames(o1BindingNames, o2BindingNames, o1bindingNamesOrdered);
@@ -109,7 +116,7 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 		}
 	}
 
-	private int compareOnValues(BindingSet o1, BindingSet o2, ArrayList<String> o1bindingNamesOrdered) {
+	private int compareOnValues(BindingSet o1, BindingSet o2, List<String> o1bindingNamesOrdered) {
 		for (String bindingName : o1bindingNamesOrdered) {
 			Value v1 = o1.getValue(bindingName);
 			Value v2 = o2.getValue(bindingName);
@@ -123,11 +130,10 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 	}
 
 	private int compareOnBindingNames(Set<String> o1BindingNames, Set<String> o2BindingNames,
-			ArrayList<String> o1bindingNamesOrdered) {
+			List<String> o1bindingNamesOrdered) {
 		if (!o1BindingNames.equals(o2BindingNames)) {
 
-			final ArrayList<String> o2bindingNamesOrdered = new ArrayList<>(o2BindingNames);
-			Collections.sort(o2bindingNamesOrdered);
+			List<String> o2bindingNamesOrdered = o2BindingNames.stream().sorted().collect(Collectors.toList());
 
 			for (int i = 0; i < o1bindingNamesOrdered.size(); i++) {
 				String o1bn = o1bindingNamesOrdered.get(i);
@@ -142,7 +148,7 @@ public class OrderComparator implements Comparator<BindingSet>, Serializable {
 	}
 
 	private int compareByOrder(BindingSet o1, BindingSet o2) {
-		for (OrderElem element : order.getElements()) {
+		for (OrderElem element : order) {
 			Value v1 = evaluate(element.getExpr(), o1);
 			Value v2 = evaluate(element.getExpr(), o2);
 

@@ -74,7 +74,8 @@ public class Literals {
 		if (l instanceof SimpleLiteral) {
 			return ((SimpleLiteral) l).getXsdDatatype();
 		}
-		return Optional.empty();
+		// we return null to signify that the literal does not support the new XSD Datatype enum
+		return null;
 	}
 
 	/**

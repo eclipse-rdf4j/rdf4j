@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
@@ -269,7 +270,14 @@ public class DynamicQueryBindingSet implements ModifiableBindingSet {
 		@Override
 		public Set<String> getBindingNames() {
 			if (namesSetCache == null) {
-				namesSetCache = Set.copyOf(names);
+				if (names.isEmpty()) {
+					namesSetCache = Collections.emptySet();
+				}
+				if (names.size() == 1) {
+					namesSetCache = Collections.singleton(names.get(0));
+				} else {
+					namesSetCache = Set.copyOf(names);
+				}
 			}
 			return namesSetCache;
 		}

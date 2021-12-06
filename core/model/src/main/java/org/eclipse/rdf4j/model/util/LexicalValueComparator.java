@@ -62,7 +62,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		boolean u1 = o1.isIRI();
 		boolean u2 = o2.isIRI();
 		if (u1 && u2) {
-			return compareURIs((IRI) o1, (IRI) o2);
+			return compareIRI((IRI) o1, (IRI) o2);
 		}
 		if (u1) {
 			return -1;
@@ -92,7 +92,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		return leftBNode.getID().compareTo(rightBNode.getID());
 	}
 
-	private int compareURIs(IRI leftURI, IRI rightURI) {
+	private int compareIRI(IRI leftURI, IRI rightURI) {
 		return leftURI.toString().compareTo(rightURI.toString());
 	}
 
@@ -112,8 +112,8 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 				Optional<XSD.Datatype> leftXmlDatatype = Literals.getXsdDatatype(leftLit);
 				Optional<XSD.Datatype> rightXmlDatatype = Literals.getXsdDatatype(rightLit);
 
-				if (leftXmlDatatype.isPresent() && rightXmlDatatype.isPresent()) {
-					result = compareDatatypes(leftXmlDatatype.get(), rightXmlDatatype.get());
+				if (leftXmlDatatype != null && rightXmlDatatype != null) {
+					result = compareDatatypes(leftXmlDatatype, rightXmlDatatype, leftDatatype, rightDatatype);
 				} else {
 					result = compareDatatypes(leftDatatype, rightDatatype);
 				}
@@ -160,7 +160,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)) {
 			if (XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
 				// both are numeric datatypes
-				return compareURIs(leftDatatype, rightDatatype);
+				return compareIRI(leftDatatype, rightDatatype);
 			} else {
 				return -1;
 			}
@@ -169,7 +169,7 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 		} else if (XMLDatatypeUtil.isCalendarDatatype(leftDatatype)) {
 			if (XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
 				// both are calendar datatypes
-				return compareURIs(leftDatatype, rightDatatype);
+				return compareIRI(leftDatatype, rightDatatype);
 			} else {
 				return -1;
 			}
@@ -177,33 +177,48 @@ public class LexicalValueComparator implements Serializable, Comparator<Value> {
 			return 1;
 		} else {
 			// incompatible or unordered datatypes
-			return compareURIs(leftDatatype, rightDatatype);
+			return compareIRI(leftDatatype, rightDatatype);
 		}
 	}
 
-	private int compareDatatypes(XSD.Datatype leftDatatype, XSD.Datatype rightDatatype) {
-		if (leftDatatype.isNumericDatatype()) {
-			if (rightDatatype.isNumericDatatype()) {
+	private int compareDatatypes(Optional<XSD.Datatype> leftDatatype, Optional<XSD.Datatype> rightDatatype, IRI leftIRI,
+			IRI rightIRI) {
+		if (isNumericDatatype(leftDatatype)) {
+			if (isNumericDatatype(rightDatatype)) {
 				// both are numeric datatypes
-				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+				return compareIRI(leftIRI, rightIRI);
 			} else {
 				return -1;
 			}
-		} else if (rightDatatype.isNumericDatatype()) {
+		} else if (isNumericDatatype(rightDatatype)) {
 			return 1;
-		} else if (leftDatatype.isCalendarDatatype()) {
-			if (rightDatatype.isCalendarDatatype()) {
+		} else if (isCalendarDatatype(leftDatatype)) {
+			if (isCalendarDatatype(rightDatatype)) {
 				// both are calendar datatypes
-				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+				return compareIRI(leftIRI, rightIRI);
 			} else {
 				return -1;
 			}
-		} else if (rightDatatype.isCalendarDatatype()) {
+		} else if (isCalendarDatatype(rightDatatype)) {
 			return 1;
 		} else {
 			// incompatible or unordered datatypes
-			return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+			return compareIRI(leftIRI, rightIRI);
 		}
+	}
+
+	private boolean isNumericDatatype(Optional<XSD.Datatype> leftDatatype) {
+		if (leftDatatype.isPresent()) {
+			return leftDatatype.get().isNumericDatatype();
+		}
+		return false;
+	}
+
+	private boolean isCalendarDatatype(Optional<XSD.Datatype> leftDatatype) {
+		if (leftDatatype.isPresent()) {
+			return leftDatatype.get().isCalendarDatatype();
+		}
+		return false;
 	}
 
 	private int compareTriples(Triple leftTriple, Triple rightTriple) {

@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
+import java.util.Objects;
 import java.util.Optional;
 
 import javax.xml.datatype.DatatypeConstants;
@@ -165,8 +166,8 @@ public class QueryEvaluationUtil {
 		IRI leftDatatype = leftLit.getDatatype();
 		IRI rightDatatype = rightLit.getDatatype();
 
-		XSD.Datatype leftXsdDatatype = Literals.getXsdDatatype(leftLit).orElse(null);
-		XSD.Datatype rightXsdDatatype = Literals.getXsdDatatype(rightLit).orElse(null);
+		XSD.Datatype leftXsdDatatype = getXsdDatatype(leftLit);
+		XSD.Datatype rightXsdDatatype = getXsdDatatype(rightLit);
 
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
@@ -386,6 +387,15 @@ public class QueryEvaluationUtil {
 			default:
 				throw new IllegalArgumentException("Unknown operator: " + operator);
 			}
+		}
+	}
+
+	private static XSD.Datatype getXsdDatatype(Literal leftLit) {
+		Optional<XSD.Datatype> xsdDatatype = Literals.getXsdDatatype(leftLit);
+		if (xsdDatatype != null) {
+			return xsdDatatype.orElse(null);
+		} else {
+			return null;
 		}
 	}
 
