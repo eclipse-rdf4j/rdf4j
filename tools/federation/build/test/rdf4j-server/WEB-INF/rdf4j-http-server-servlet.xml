@@ -16,7 +16,7 @@
 		<property name="longName" value="RDF4J Server"/>
 		<!--  'version' property no longer declared here, but read at runtime from META-INF maven properties -->
 	</bean>
-	<bean id="rdf4jRepositoryManager" class="org.eclipse.rdf4j.repository.manager.LocalRepositoryManager" init-method="initialize" destroy-method="shutDown" scope="singleton">
+	<bean id="rdf4jRepositoryManager" class="org.eclipse.rdf4j.repository.manager.LocalRepositoryManager" init-method="init" destroy-method="shutDown" scope="singleton">
 		<constructor-arg>
 			<bean factory-bean="commonAppConfig" factory-method="getDataDir"/>
 		</constructor-arg>
