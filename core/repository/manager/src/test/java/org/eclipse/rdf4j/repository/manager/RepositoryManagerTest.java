@@ -54,7 +54,7 @@ public class RepositoryManagerTest {
 			}
 
 			@Override
-			public Collection<RepositoryInfo> getAllRepositoryInfos(boolean skipSystemRepo) throws RepositoryException {
+			public Collection<RepositoryInfo> getAllRepositoryInfos() throws RepositoryException {
 				return null;
 			}
 

@@ -190,7 +190,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		} else {
 			manager = new RemoteRepositoryManager(param);
 		}
-		manager.initialize();
+		manager.init();
 		return manager;
 	}
 
@@ -264,9 +264,9 @@ public class WorkbenchServlet extends AbstractServlet {
 				LOGGER.info("Setting user '{}' and their password.", user);
 				rrm.setUsernameAndPassword(user, password);
 			}
-			// initialize() required to push credentials to internal HTTP
+			// init() required to push credentials to internal HTTP
 			// client.
-			rrm.initialize();
+			rrm.init();
 		}
 	}
 }

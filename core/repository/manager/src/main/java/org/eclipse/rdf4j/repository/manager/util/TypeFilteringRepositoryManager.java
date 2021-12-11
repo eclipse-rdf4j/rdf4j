@@ -59,8 +59,8 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
-		delegate.initialize();
+	public void init() throws RepositoryException {
+		delegate.init();
 	}
 
 	@Override
@@ -130,18 +130,6 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	@Deprecated
-	public boolean removeRepositoryConfig(String repositoryID) throws RepositoryException, RepositoryConfigException {
-		boolean result = false;
-
-		if (isCorrectType(repositoryID)) {
-			result = delegate.removeRepositoryConfig(repositoryID);
-		}
-
-		return result;
-	}
-
-	@Override
 	public Repository getRepository(String id) throws RepositoryConfigException, RepositoryException {
 		Repository result = null;
 
@@ -195,10 +183,10 @@ public class TypeFilteringRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public Collection<RepositoryInfo> getAllRepositoryInfos(boolean skipSystemRepo) throws RepositoryException {
+	public Collection<RepositoryInfo> getAllRepositoryInfos() throws RepositoryException {
 		List<RepositoryInfo> result = new ArrayList<>();
 
-		for (RepositoryInfo repInfo : delegate.getAllRepositoryInfos(skipSystemRepo)) {
+		for (RepositoryInfo repInfo : delegate.getAllRepositoryInfos()) {
 			try {
 				if (isCorrectType(repInfo.getId())) {
 					result.add(repInfo);

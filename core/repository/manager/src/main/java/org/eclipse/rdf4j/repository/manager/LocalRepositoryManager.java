@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.manager;
 
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORYID;
-import static org.eclipse.rdf4j.repository.config.RepositoryConfigSchema.REPOSITORY_CONTEXT;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -23,10 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -35,30 +29,21 @@ import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.repository.DelegatingRepository;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolverClient;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.config.DelegatingRepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.config.RepositoryFactory;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryRegistry;
-import org.eclipse.rdf4j.repository.event.base.RepositoryConnectionListenerAdapter;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -75,10 +60,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  */
 public class LocalRepositoryManager extends RepositoryManager {
 
-	/*-----------*
-	 * Constants *
-	 *-----------*/
-
 	public static final String REPOSITORIES_DIR = "repositories";
 
 	private static final RDFFormat CONFIG_FORMAT = RDFFormat.TURTLE;
@@ -88,10 +69,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 	private static final WriterConfig CFG_CONFIG = new WriterConfig().set(BasicWriterSettings.BASE_DIRECTIVE, false)
 			.set(BasicWriterSettings.PRETTY_PRINT, true)
 			.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
 
 	/**
 	 * The base dir to resolve any relative paths against.
@@ -103,12 +80,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	/** dependent life cycle */
 	private volatile SPARQLServiceResolver serviceResolver;
-
-	private boolean upgraded;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	/**
 	 * Creates a new RepositoryManager that operates on the specfified base directory.
@@ -323,7 +294,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public synchronized List<RepositoryInfo> getAllRepositoryInfos(boolean skipSystemRepo) throws RepositoryException {
+	public synchronized List<RepositoryInfo> getAllRepositoryInfos() throws RepositoryException {
 		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
 		String[] dirs = repositoriesDir.list((File repositories, String name) -> {
 			File dataDir = new File(repositories, name);
@@ -344,10 +315,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 	public synchronized void addRepositoryConfig(RepositoryConfig config)
 			throws RepositoryException, RepositoryConfigException {
 		Objects.requireNonNull(config).validate();
-		addRepositoryConfig(config, true);
-	}
-
-	private synchronized void addRepositoryConfig(RepositoryConfig config, boolean updateSystem) {
 		File dataDir = getRepositoryDir(config.getID());
 		if (!dataDir.exists()) {
 			dataDir.mkdirs();
@@ -375,11 +342,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	@Override
 	public synchronized boolean removeRepository(String repositoryID)
 			throws RepositoryException, RepositoryConfigException {
-		return removeRepository(repositoryID, true);
-	}
-
-	private boolean removeRepository(String repositoryID, boolean updateSystem) {
-		boolean removed = updateSystem ? super.removeRepository(repositoryID) : false;
+		boolean removed = super.removeRepository(repositoryID);
 		File dataDir = getRepositoryDir(repositoryID);
 		if (dataDir.isDirectory()) {
 			logger.debug("Cleaning up data dir {} for repository {}", dataDir.getAbsolutePath(), repositoryID);
@@ -391,119 +354,5 @@ public class LocalRepositoryManager extends RepositoryManager {
 			return true;
 		}
 		return removed;
-	}
-
-	class ConfigChangeListener extends RepositoryConnectionListenerAdapter {
-
-		private final Map<RepositoryConnection, Set<Resource>> modifiedContextsByConnection = new HashMap<>();
-
-		private final Map<RepositoryConnection, Boolean> modifiedAllContextsByConnection = new HashMap<>();
-
-		private final Map<RepositoryConnection, Set<Resource>> removedContextsByConnection = new HashMap<>();
-
-		private Set<Resource> getModifiedContexts(RepositoryConnection conn) {
-			Set<Resource> result = modifiedContextsByConnection.get(conn);
-			if (result == null) {
-				result = new HashSet<>();
-				modifiedContextsByConnection.put(conn, result);
-			}
-			return result;
-		}
-
-		private Set<Resource> getRemovedContexts(RepositoryConnection conn) {
-			Set<Resource> result = removedContextsByConnection.get(conn);
-			if (result == null) {
-				result = new HashSet<>();
-				removedContextsByConnection.put(conn, result);
-			}
-			return result;
-		}
-
-		private void registerModifiedContexts(RepositoryConnection conn, Resource... contexts) {
-			Set<Resource> modifiedContexts = getModifiedContexts(conn);
-			// wildcard used for context
-			if (contexts == null) {
-				modifiedAllContextsByConnection.put(conn, true);
-			} else {
-				for (Resource context : contexts) {
-					modifiedContexts.add(context);
-				}
-			}
-		}
-
-		@Override
-		public void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-				Resource... contexts) {
-			registerModifiedContexts(conn, contexts);
-		}
-
-		@Override
-		public void clear(RepositoryConnection conn, Resource... contexts) {
-			registerModifiedContexts(conn, contexts);
-		}
-
-		@Override
-		public void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
-				Resource... contexts) {
-			if (object != null && object.equals(RepositoryConfigSchema.REPOSITORY_CONTEXT)) {
-				if (subject == null) {
-					modifiedAllContextsByConnection.put(conn, true);
-				} else {
-					Set<Resource> removedContexts = getRemovedContexts(conn);
-					removedContexts.add(subject);
-				}
-			}
-			registerModifiedContexts(conn, contexts);
-		}
-
-		@Override
-		public void rollback(RepositoryConnection conn) {
-			modifiedContextsByConnection.remove(conn);
-			modifiedAllContextsByConnection.remove(conn);
-		}
-
-		@Override
-		public void commit(RepositoryConnection con) {
-			// refresh all contexts when a wildcard was used
-			// REMIND: this could still be improved if we knew whether or not a
-			// *repositoryconfig* context was actually modified
-			Boolean fullRefreshNeeded = modifiedAllContextsByConnection.remove(con);
-			if (fullRefreshNeeded != null && fullRefreshNeeded.booleanValue()) {
-				logger.debug("Reacting to commit on SystemRepository for all contexts");
-				refresh();
-			}
-			// refresh only modified contexts that actually contain repository
-			// configurations
-			else {
-				Set<Resource> modifiedContexts = modifiedContextsByConnection.remove(con);
-				Set<Resource> removedContexts = removedContextsByConnection.remove(con);
-				if (removedContexts != null && !removedContexts.isEmpty()) {
-					modifiedContexts.removeAll(removedContexts);
-				}
-			}
-			for (String repositoryID : getRepositoryIDs()) {
-				removeRepository(repositoryID, false);
-			}
-		}
-
-		private boolean isRepositoryConfigContext(RepositoryConnection con, Resource context)
-				throws RepositoryException {
-			logger.debug("Is {} a repository config context?", context);
-			return con.hasStatement(context, RDF.TYPE, REPOSITORY_CONTEXT, true, (Resource) null);
-		}
-
-		private String getRepositoryID(RepositoryConnection con, Resource context) throws RepositoryException {
-			String result = null;
-
-			try (RepositoryResult<Statement> idStatements = con.getStatements(null, REPOSITORYID, null, true,
-					context)) {
-				if (idStatements.hasNext()) {
-					Statement idStatement = idStatements.next();
-					result = idStatement.getObject().stringValue();
-				}
-			}
-
-			return result;
-		}
 	}
 }

@@ -42,10 +42,6 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
  */
 public class RemoteRepositoryManager extends RepositoryManager {
 
-	/*------------------------*
-	 * Static utility methods *
-	 *------------------------*/
-
 	/**
 	 * Creates an initialized {@link RemoteRepositoryManager} with the specified server URL.
 	 */
@@ -66,10 +62,6 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		return manager;
 	}
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	/** dependent life cycle */
 	private volatile SharedHttpClientSessionManager client;
 
@@ -82,10 +74,6 @@ public class RemoteRepositoryManager extends RepositoryManager {
 
 	private String password;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
 	/**
 	 * Creates a new RepositoryManager that operates on the specified base directory.
 	 *
@@ -95,10 +83,6 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		super();
 		this.serverURL = serverURL;
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	/**
 	 * @return Returns the {@link SharedHttpClientSessionManager}
@@ -212,7 +196,7 @@ public class RemoteRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public Collection<RepositoryInfo> getAllRepositoryInfos(boolean skipSystemRepo) throws RepositoryException {
+	public Collection<RepositoryInfo> getAllRepositoryInfos() throws RepositoryException {
 		List<RepositoryInfo> result = new ArrayList<>();
 
 		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()

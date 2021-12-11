@@ -178,7 +178,7 @@ public class Connect extends ConsoleCommand {
 			installed = true;
 		} else {
 			try {
-				newManager.initialize();
+				newManager.init();
 				disconnect.execute(false);
 
 				this.state.setManager(newManager);
