@@ -113,7 +113,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 		}
 
 		subject = new LocalRepositoryManager(datadir);
-		subject.initialize();
+		subject.init();
 		Repository rep2 = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep2);
 		assertTrue("Expected repository to be initialized.", rep2.isInitialized());
@@ -142,7 +142,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 		}
 
 		subject = new LocalRepositoryManager(datadir);
-		subject.initialize();
+		subject.init();
 		Repository rep2 = subject.getRepository(TEST_REPO);
 		assertNotNull("Expected repository to exist.", rep2);
 		assertTrue("Expected repository to be initialized.", rep2.isInitialized());

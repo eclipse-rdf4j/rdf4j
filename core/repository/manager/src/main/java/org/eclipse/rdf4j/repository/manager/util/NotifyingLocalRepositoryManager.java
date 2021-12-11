@@ -38,8 +38,8 @@ public class NotifyingLocalRepositoryManager extends LocalRepositoryManager {
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
-		super.initialize();
+	public void init() throws RepositoryException {
+		super.init();
 		fireInitialized();
 	}
 
