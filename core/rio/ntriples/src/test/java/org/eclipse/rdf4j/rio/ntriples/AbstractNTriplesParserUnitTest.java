@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.ntriples;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.InputStream;
@@ -22,10 +23,13 @@ import java.util.TreeSet;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
+import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.Test;
 
@@ -492,6 +496,41 @@ public abstract class AbstractNTriplesParserUnitTest {
 		assertEquals(2, model.size());
 		assertEquals(new TreeSet<>(Arrays.asList("o:1", "o:2")), Models.objectStrings(model));
 		assertEquals(Arrays.asList(commentStr), cc.comments);
+	}
+
+	@Test
+	public void testLinenumberDatatypeValidation() throws Exception {
+		RDFParser ntriplesParser = createRDFParser();
+		ntriplesParser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
+		ntriplesParser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
+		ParseErrorCollector collector = new ParseErrorCollector();
+		ntriplesParser.setParseErrorListener(collector);
+
+		ntriplesParser.parse(
+				new StringReader("<urn:test:o> <urn:test:p> \"invalid\"^^<" + XSD.DATETIME.stringValue() + "> ."),
+				NTRIPLES_TEST_URL);
+		List<String> errors = collector.getErrors();
+
+		assertEquals(1, errors.size());
+		assertTrue("Unknown line number", errors.get(0).contains("(1, 32)"));
+	}
+
+	@Test
+	public void testLinenumberLanguagetagValidation() throws Exception {
+		RDFParser ntriplesParser = createRDFParser();
+		ntriplesParser.getParserConfig().addNonFatalError(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES);
+		ntriplesParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);
+		ntriplesParser.getParserConfig().set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, true);
+		ParseErrorCollector collector = new ParseErrorCollector();
+		ntriplesParser.setParseErrorListener(collector);
+
+		ntriplesParser.parse(
+				new StringReader("<urn:test:o> <urn:test:p> \"hello\"@inv+alid ."),
+				NTRIPLES_TEST_URL);
+		List<String> errors = collector.getErrors();
+
+		assertEquals(1, errors.size());
+		assertTrue("Unknown line number", errors.get(0).contains("(1, 32)"));
 	}
 
 	protected abstract RDFParser createRDFParser();

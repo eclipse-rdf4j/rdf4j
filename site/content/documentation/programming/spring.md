@@ -1,6 +1,6 @@
 ---
 title: "Integration with Spring"
-weight: 6
+weight: 7
 toc: true
 autonumbering: true
 ---
@@ -14,7 +14,7 @@ A self-contained demo application can be found at {{< javadoc "rdf4j-spring-demo
 
 To use RDF as the data backend of a spring application built with maven, use these dependencies: 
 
-```$xml
+```xml
     <dependency>
         <groupId>org.eclipse.rdf4j</groupId>
         <artifactId>rdf4j-spring</artifactId>
