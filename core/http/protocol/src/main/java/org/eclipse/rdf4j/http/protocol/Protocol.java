@@ -81,13 +81,14 @@ public abstract class Protocol {
 	 * Protocol version.
 	 *
 	 * <ul>
+	 * <li>13: since RDF4J 4.0.0</li>
 	 * <li>12: since RDF4J 3.5.0</li>
 	 * <li>11: since RDF4J 3.3.0</li>
 	 * <li>10: since RDF4J 3.1.0</li>
 	 * <li>9: since RDF4J 3.0.0</li>
 	 * </ul>
 	 */
-	public static final String VERSION = "12";
+	public static final String VERSION = "13";
 
 	/**
 	 * Parameter name for the 'subject' parameter of a statement query.

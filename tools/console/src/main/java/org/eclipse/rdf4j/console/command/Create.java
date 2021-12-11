@@ -31,7 +31,6 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
-import org.eclipse.rdf4j.console.LockRemover;
 import org.eclipse.rdf4j.console.Util;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -215,12 +214,8 @@ public class Create extends ConsoleCommand {
 							this.state.getManager().addRepositoryConfig(repConfig);
 							writeInfo("Repository created");
 						} catch (RepositoryReadOnlyException e) {
-							if (LockRemover.tryToRemoveLock(this.state.getManager().getSystemRepository(), consoleIO)) {
-								this.state.getManager().addRepositoryConfig(repConfig);
-								writeInfo("Repository created");
-							} else {
-								writeError("Failed to create repository", e);
-							}
+							this.state.getManager().addRepositoryConfig(repConfig);
+							writeInfo("Repository created");
 						}
 					} else {
 						writeln("Create aborted");

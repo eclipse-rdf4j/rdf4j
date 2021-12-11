@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.manager;
 
-import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
@@ -33,7 +32,6 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -160,35 +158,6 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		initialized = true;
 	}
 
-	@Deprecated
-	protected Repository createSystemRepository() throws RepositoryException {
-		return null;
-	}
-
-	/**
-	 * Gets the SYSTEM repository.
-	 *
-	 * @deprecated Repository configuration is no longer stored in a centralized system repository, instead using a file
-	 *             <code>config.ttl</code> per repository, stored in that repository's datadir.
-	 */
-	@Deprecated
-	public Repository getSystemRepository() {
-		if (!isInitialized()) {
-			throw new IllegalStateException("Repository Manager is not initialized");
-		}
-		synchronized (initializedRepositories) {
-			Repository systemRepository = initializedRepositories.get(SystemRepository.ID);
-			if (systemRepository != null && systemRepository.isInitialized()) {
-				return systemRepository;
-			}
-			systemRepository = createSystemRepository();
-			if (systemRepository != null) {
-				initializedRepositories.put(SystemRepository.ID, systemRepository);
-			}
-			return systemRepository;
-		}
-	}
-
 	/**
 	 * Generates an ID for a new repository based on the specified base name. The base name may for example be a
 	 * repository name entered by the user. The generated ID will contain a variant of this name that does not occur as
@@ -254,34 +223,22 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		return getRepositoryInfo(repositoryID) != null;
 	}
 
-	public RepositoryConfig getRepositoryConfig(String repositoryID)
-			throws RepositoryConfigException, RepositoryException {
-		Repository systemRepository = getSystemRepository();
-		if (systemRepository == null) {
-			return null;
-		} else {
-			return RepositoryConfigUtil.getRepositoryConfig(systemRepository, repositoryID);
-		}
-	}
+	public abstract RepositoryConfig getRepositoryConfig(String repositoryID)
+			throws RepositoryConfigException, RepositoryException;
 
 	/**
-	 * Adds or updates the configuration of a repository to the manager's system repository. The system repository may
-	 * already contain a configuration for a repository with the same ID as specified by <var>config</var>, in which
-	 * case all previous configuration data for that repository will be cleared before the new configuration is added.
+	 * Adds or updates the configuration of a repository to the manager. The manager may already contain a configuration
+	 * for a repository with the same ID as specified by <var>config</var>, in which case all previous configuration
+	 * data for that repository will be cleared before the new configuration is added.
 	 *
-	 * @param config The repository configuration that should be added to or updated in the system repository.
-	 * @throws RepositoryException       If the manager failed to update it's system repository.
+	 * @param config The repository configuration that should be added to or updated in the manager.
+	 * @throws RepositoryException       If the manager failed to update.
 	 * @throws RepositoryConfigException If the manager doesn't know how to update a configuration due to inconsistent
-	 *                                   configuration data in the system repository. For example, this happens when
-	 *                                   there are multiple existing configurations with the concerning ID.
+	 *                                   configuration data. For example, this happens when there are multiple existing
+	 *                                   configurations with the concerning ID.
 	 */
-	public void addRepositoryConfig(RepositoryConfig config) throws RepositoryException, RepositoryConfigException {
-		// update SYSTEM repository if there is one for 2.2 compatibility
-		Repository systemRepository = getSystemRepository();
-		if (systemRepository != null && !SystemRepository.ID.equals(config.getID())) {
-			RepositoryConfigUtil.updateRepositoryConfigs(systemRepository, config);
-		}
-	}
+	public abstract void addRepositoryConfig(RepositoryConfig config)
+			throws RepositoryException, RepositoryConfigException;
 
 	/**
 	 * Removes the configuration for the specified repository from the manager's system repository if such a
@@ -301,25 +258,12 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		boolean isRemoved = hasRepositoryConfig(repositoryID);
 
 		synchronized (initializedRepositories) {
-			// update SYSTEM repository if there is one for 2.2 compatibility
-			Repository systemRepository = getSystemRepository();
-			if (systemRepository != null) {
-				RepositoryConfigUtil.removeRepositoryConfigs(systemRepository, repositoryID);
-			}
-
 			if (isRemoved) {
 				logger.debug("Shutdown repository {} after removal of configuration.", repositoryID);
 				Repository repository = initializedRepositories.remove(repositoryID);
 
 				if (repository != null && repository.isInitialized()) {
 					repository.shutDown();
-				}
-
-				try {
-					cleanUpRepository(repositoryID);
-				} catch (IOException e) {
-					throw new RepositoryException("Unable to clean up resources for removed repository " + repositoryID,
-							e);
 				}
 			}
 		}
@@ -365,25 +309,12 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		boolean isRemoved = hasRepositoryConfig(repositoryID);
 
 		synchronized (initializedRepositories) {
-			// update SYSTEM repository if there is one for 2.2 compatibility
-			Repository systemRepository = getSystemRepository();
-			if (systemRepository != null) {
-				RepositoryConfigUtil.removeRepositoryConfigs(systemRepository, repositoryID);
-			}
-
 			if (isRemoved) {
 				logger.debug("Shutdown repository {} after removal of configuration.", repositoryID);
 				Repository repository = initializedRepositories.remove(repositoryID);
 
 				if (repository != null && repository.isInitialized()) {
 					repository.shutDown();
-				}
-
-				try {
-					cleanUpRepository(repositoryID);
-				} catch (IOException e) {
-					throw new RepositoryException("Unable to clean up resources for removed repository " + repositoryID,
-							e);
 				}
 			}
 		}
@@ -412,9 +343,6 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 				result = null;
 			}
 
-			if (result == null && SystemRepository.ID.equals(identity)) {
-				result = getSystemRepository();
-			}
 			if (result == null) {
 				// First call (or old object thrown away), create and initialize the
 				// repository.
@@ -569,12 +497,10 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 					String repositoryID = entry.getKey();
 					Repository repository = entry.getValue();
 
-					if (!SystemRepository.ID.equals(repositoryID)) {
-						// remove from initialized repositories
-						iter.remove();
-						// refresh single repository
-						refreshRepository(repositoryID, repository);
-					}
+					// remove from initialized repositories
+					iter.remove();
+					// refresh single repository
+					refreshRepository(repositoryID, repository);
 				}
 			}
 		} catch (RepositoryException re) {
@@ -614,38 +540,6 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		} catch (RepositoryException e) {
 			logger.error("Failed to shut down repository", e);
 		}
-
-		cleanupIfRemoved(repositoryID);
-	}
-
-	void cleanupIfRemoved(String repositoryID) {
-		try {
-			if (!hasRepositoryConfig(repositoryID)) {
-				logger.debug("Cleaning up repository {}, its configuration has been removed", repositoryID);
-
-				cleanUpRepository(repositoryID);
-			} else {
-				logger.debug("Repository {} should not be cleaned up.", repositoryID);
-			}
-		} catch (RepositoryException e) {
-			logger.error("Failed to process repository configuration changes", e);
-		} catch (RepositoryConfigException e) {
-			logger.warn("Unable to determine if configuration for {} is still present in the system repository",
-					repositoryID);
-		} catch (IOException e) {
-			logger.warn("Unable to remove data dir for removed repository {} ", repositoryID);
-		}
-	}
-
-	/**
-	 * Clean up a removed repository. Note that the configuration for this repository is no longer present in the system
-	 * repository.
-	 *
-	 * @param repositoryID the ID of the repository to clean up
-	 * @throws IOException
-	 */
-	@Deprecated
-	protected void cleanUpRepository(String repositoryID) throws IOException {
 	}
 
 	/**
