@@ -19,6 +19,22 @@ For details on what’s new and how to upgrade, see the [release and upgrade not
 - [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
 
 
+## RDF4J 4.0.0 Milestone 1
+
+RDF4J 4.0.0 Milestone 1 is the first milestone build of our upcoming 4.0 release. Java 11 or later is required. 
+For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/4.0.0-M1).
+
+- [RDF4J 4.0.0-M1 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.0.0-M1-sdk.zip)<br/>
+  Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
+
+- [RDF4J 4.0.0-M1 onejar](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.0.0-M1-onejar.jar)<br/>
+  Single jar file for easy inclusion of the full RDF4J toolkit in your Java project.
+
+- [RDF4J artifacts](https://search.maven.org/search?q=org.eclipse.rdf4j) on the [Maven Central Repository](http://search.maven.org/)
+
+Please note: RDF4J Milestone builds are put out for early adopter testing and
+for soliciting community feedback. They are not intended as stable releases and
+we do not recommend their use in production environments.
 
 ## Apache Maven
 
