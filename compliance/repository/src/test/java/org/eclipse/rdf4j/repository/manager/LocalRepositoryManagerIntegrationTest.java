@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.repository.manager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -19,8 +18,6 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
@@ -173,71 +170,6 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 		;
 		assertThat(subject.isSafeToRemove(TEST_REPO)).isTrue();
 		;
-	}
-
-	@Test
-	@Deprecated
-	public void testAddToSystemRepository() {
-		RepositoryConfig config = subject.getRepositoryConfig(TEST_REPO);
-		subject.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
-		subject.shutDown();
-		subject = new LocalRepositoryManager(datadir);
-		subject.initialize();
-		try (RepositoryConnection con = subject.getSystemRepository().getConnection()) {
-			Model model = new TreeModel();
-			config.setID("changed");
-			config.export(model, con.getValueFactory().createBNode());
-			con.begin();
-			con.add(model, con.getValueFactory().createBNode());
-			con.commit();
-		}
-		assertTrue(subject.hasRepositoryConfig("changed"));
-	}
-
-	@Test
-	@Deprecated
-	public void testModifySystemRepository() {
-		RepositoryConfig config = subject.getRepositoryConfig(TEST_REPO);
-		subject.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
-		subject.shutDown();
-		subject = new LocalRepositoryManager(datadir);
-		subject.initialize();
-		try (RepositoryConnection con = subject.getSystemRepository().getConnection()) {
-			Model model = new TreeModel();
-			config.setTitle("Changed");
-			config.export(model, con.getValueFactory().createBNode());
-			Resource ctx = RepositoryConfigUtil.getContext(con, config.getID());
-			con.begin();
-			con.clear(ctx);
-			con.add(model, ctx == null ? con.getValueFactory().createBNode() : ctx);
-			con.commit();
-		}
-		assertEquals("Changed", subject.getRepositoryConfig(TEST_REPO).getTitle());
-	}
-
-	@Test
-	@Deprecated
-	public void testRemoveFromSystemRepository() {
-		RepositoryConfig config = subject.getRepositoryConfig(TEST_REPO);
-		subject.addRepositoryConfig(new RepositoryConfig(SystemRepository.ID, new SystemRepositoryConfig()));
-		subject.shutDown();
-		subject = new LocalRepositoryManager(datadir);
-		subject.initialize();
-		try (RepositoryConnection con = subject.getSystemRepository().getConnection()) {
-			Model model = new TreeModel();
-			config.setID("changed");
-			config.export(model, con.getValueFactory().createBNode());
-			con.begin();
-			con.add(model, con.getValueFactory().createBNode());
-			con.commit();
-		}
-		assertTrue(subject.hasRepositoryConfig("changed"));
-		try (RepositoryConnection con = subject.getSystemRepository().getConnection()) {
-			con.begin();
-			con.clear(RepositoryConfigUtil.getContext(con, config.getID()));
-			con.commit();
-		}
-		assertFalse(subject.hasRepositoryConfig(config.getID()));
 	}
 
 	/**

@@ -9,14 +9,11 @@ package org.eclipse.rdf4j.runtime;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import java.net.MalformedURLException;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.junit.Before;
@@ -35,9 +32,6 @@ public class TestRepositoryManagerFederator {
 	@Before
 	public void setUp() throws Exception {
 		RepositoryManager manager = mock(RepositoryManager.class);
-		Repository system = mock(Repository.class);
-		when(system.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
-		when(manager.getSystemRepository()).thenReturn(system);
 		federator = new RepositoryManagerFederator(manager);
 	}
 

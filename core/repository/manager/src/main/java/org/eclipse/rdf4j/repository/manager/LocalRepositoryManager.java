@@ -121,21 +121,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 		this.baseDir = baseDir;
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
-	@Override
-	@Deprecated
-	protected SystemRepository createSystemRepository() throws RepositoryException {
-		File systemDir = getRepositoryDir(SystemRepository.ID);
-		SystemRepository systemRepos = new SystemRepository(systemDir);
-		systemRepos.init();
-
-		systemRepos.addRepositoryConnectionListener(new ConfigChangeListener());
-		return systemRepos;
-	}
-
 	/**
 	 * Gets the base dir against which to resolve relative paths.
 	 */
@@ -237,16 +222,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	@Deprecated
-	public SystemRepository getSystemRepository() {
-		if (getRepositoryDir(SystemRepository.ID).isDirectory()) {
-			return (SystemRepository) super.getSystemRepository();
-		} else {
-			return null;
-		}
-	}
-
-	@Override
 	protected Repository createRepository(String id) throws RepositoryConfigException, RepositoryException {
 		Repository repository = null;
 
@@ -324,11 +299,8 @@ public class LocalRepositoryManager extends RepositoryManager {
 			} catch (IOException e) {
 				throw new RepositoryConfigException(e);
 			}
-		} else if (id.equals(SystemRepository.ID)) {
-			return new RepositoryConfig(id, new SystemRepositoryConfig());
-		} else {
-			return super.getRepositoryConfig(id);
 		}
+		return null;
 	}
 
 	@Override
@@ -357,21 +329,13 @@ public class LocalRepositoryManager extends RepositoryManager {
 			File dataDir = new File(repositories, name);
 			return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();
 		});
-		if (dirs == null || dirs.length == 0) {
-			SystemRepository systemRepository = getSystemRepository();
-			if (systemRepository != null) {
-				dirs = RepositoryConfigUtil.getRepositoryIDs(systemRepository).toArray(new String[0]);
-			}
-		}
 		if (dirs == null) {
 			return Collections.emptyList();
 		}
 		List<RepositoryInfo> result = new ArrayList<>();
 		for (String name : dirs) {
 			RepositoryInfo repInfo = getRepositoryInfo(name);
-			if (!skipSystemRepo || !repInfo.getId().equals(SystemRepository.ID)) {
-				result.add(repInfo);
-			}
+			result.add(repInfo);
 		}
 		return result;
 	}
@@ -392,10 +356,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 			throw new RepositoryConfigException("Could not create directory: " + dataDir);
 		}
 		File configFile = new File(dataDir, CFG_FILE);
-		if (!upgraded && !configFile.exists()) {
-			upgraded = true;
-			upgrade();
-		}
 		Model model = getModelFactory().createEmptyModel();
 		String ns = configFile.toURI().toString() + "#";
 		config.export(model, SimpleValueFactory.getInstance().createIRI(ns, config.getID()));
@@ -409,9 +369,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 			Files.move(part.toPath(), configFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
 		} catch (IOException e) {
 			throw new RepositoryConfigException(e);
-		}
-		if (updateSystem) {
-			super.addRepositoryConfig(config);
 		}
 	}
 
@@ -434,29 +391,6 @@ public class LocalRepositoryManager extends RepositoryManager {
 			return true;
 		}
 		return removed;
-	}
-
-	private synchronized void upgrade() {
-		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
-		String[] dirs = repositoriesDir.list((File repositories, String name) -> {
-			File dataDir = new File(repositories, name);
-			return dataDir.isDirectory() && new File(dataDir, CFG_FILE).exists();
-		});
-		if (dirs != null && dirs.length > 0) {
-			return; // already upgraded
-		}
-		SystemRepository systemRepository = getSystemRepository();
-		if (systemRepository == null) {
-			return; // no legacy SYSTEM
-		}
-		Set<String> ids = RepositoryConfigUtil.getRepositoryIDs(systemRepository);
-		List<RepositoryConfig> configs = new ArrayList<>();
-		for (String id : ids) {
-			configs.add(getRepositoryConfig(id));
-		}
-		for (RepositoryConfig config : configs) {
-			addRepositoryConfig(config);
-		}
 	}
 
 	class ConfigChangeListener extends RepositoryConnectionListenerAdapter {
@@ -546,57 +480,9 @@ public class LocalRepositoryManager extends RepositoryManager {
 				if (removedContexts != null && !removedContexts.isEmpty()) {
 					modifiedContexts.removeAll(removedContexts);
 				}
-				if (modifiedContexts != null) {
-					logger.debug("React to commit on SystemRepository for contexts {}", modifiedContexts);
-					try {
-						try (RepositoryConnection cleanupCon = getSystemRepository().getConnection()) {
-							// refresh all modified contexts
-							for (Resource context : modifiedContexts) {
-								logger.debug("Processing modified context {}.", context);
-								try {
-									if (isRepositoryConfigContext(cleanupCon, context)) {
-										String repositoryID = getRepositoryID(cleanupCon, context);
-										if (SystemRepository.ID.equals(repositoryID)) {
-											continue;
-										}
-										logger.debug("Reacting to modified repository config for {}", repositoryID);
-										Repository repository = removeInitializedRepository(repositoryID);
-										if (repository != null) {
-											logger.debug("Modified repository {} has been initialized, refreshing...",
-													repositoryID);
-											// refresh single repository
-											refreshRepository(repositoryID, repository);
-										} else {
-											logger.debug("Modified repository {} has not been initialized, skipping...",
-													repositoryID);
-										}
-									} else {
-										logger.debug("Context {} doesn't contain repository config information.",
-												context);
-									}
-								} catch (RepositoryException re) {
-									logger.error("Failed to process repository configuration changes", re);
-								}
-							}
-						}
-					} catch (RepositoryException re) {
-						logger.error("Failed to process repository configuration changes", re);
-					}
-				}
-			}
-			// update config.ttl files with what is now in SYSTEM repository
-			SystemRepository systemRepository = getSystemRepository();
-			for (String repositoryID : RepositoryConfigUtil.getRepositoryIDs(systemRepository)) {
-				if (!SystemRepository.ID.equals(repositoryID)) {
-					addRepositoryConfig(RepositoryConfigUtil.getRepositoryConfig(con.getRepository(), repositoryID),
-							false);
-				}
 			}
 			for (String repositoryID : getRepositoryIDs()) {
-				if (!SystemRepository.ID.equals(repositoryID)
-						&& !RepositoryConfigUtil.hasRepositoryConfig(systemRepository, repositoryID)) {
-					removeRepository(repositoryID, false);
-				}
+				removeRepository(repositoryID, false);
 			}
 		}
 

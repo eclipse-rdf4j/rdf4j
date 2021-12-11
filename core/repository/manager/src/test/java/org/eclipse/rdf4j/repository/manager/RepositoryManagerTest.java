@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.junit.Before;
 import org.junit.Test;
@@ -60,6 +61,17 @@ public class RepositoryManagerTest {
 			@Override
 			protected Repository createRepository(String id) throws RepositoryConfigException, RepositoryException {
 				return null;
+			}
+
+			@Override
+			public RepositoryConfig getRepositoryConfig(String repositoryID)
+					throws RepositoryConfigException, RepositoryException {
+				return null;
+			}
+
+			@Override
+			public void addRepositoryConfig(RepositoryConfig config)
+					throws RepositoryException, RepositoryConfigException {
 			}
 		};
 	}
