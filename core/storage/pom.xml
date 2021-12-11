@@ -220,6 +220,25 @@
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-sail-lmdb</artifactId>
+			<version>${project.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.eclipse.rdf4j</groupId>
+					<artifactId>rdf4j-queryalgebra-model</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.eclipse.rdf4j</groupId>
+					<artifactId>rdf4j-model</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.eclipse.rdf4j</groupId>
+					<artifactId>rdf4j-query</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-sail-nativerdf</artifactId>
 			<version>${project.version}</version>
 			<exclusions>
