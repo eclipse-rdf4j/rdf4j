@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.model;
 
+import java.io.ObjectStreamException;
+
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
@@ -22,11 +24,13 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 
 	private volatile long internalID;
 
+	private volatile boolean initialized = false;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
-	protected LmdbIRI(ValueStoreRevision revision, long internalID) {
+	public LmdbIRI(ValueStoreRevision revision, long internalID) {
 		super();
 		setInternalID(internalID, revision);
 	}
@@ -38,6 +42,7 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 	public LmdbIRI(ValueStoreRevision revision, String uri, long internalID) {
 		super(uri);
 		setInternalID(internalID, revision);
+		this.initialized = true;
 	}
 
 	public LmdbIRI(ValueStoreRevision revision, String namespace, String localname) {
@@ -69,6 +74,40 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 	}
 
 	@Override
+	public void setIRIString(String iriString) {
+		super.setIRIString(iriString);
+	}
+
+	@Override
+	public String getNamespace() {
+		init();
+		return super.getNamespace();
+	}
+
+	@Override
+	public String getLocalName() {
+		init();
+		return super.getLocalName();
+	}
+
+	@Override
+	public String stringValue() {
+		init();
+		return super.stringValue();
+	}
+
+	protected void init() {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					revision.resolveValue(internalID, this);
+				}
+				initialized = true;
+			}
+		}
+	}
+
+	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;
@@ -83,7 +122,11 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 				return internalID == otherLmdbURI.internalID;
 			}
 		}
-
 		return super.equals(o);
+	}
+
+	protected Object writeReplace() throws ObjectStreamException {
+		init();
+		return this;
 	}
 }

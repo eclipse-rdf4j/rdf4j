@@ -74,19 +74,19 @@ class ValueStore extends AbstractValueFactory {
 	 * Constants *
 	 *-----------*/
 
-	private static final byte ID_KEY = 0x0;
+	private static final byte URI_VALUE = 0x0; // 00
 
-	private static final byte HASH_KEY = 0x1;
+	private static final byte LITERAL_VALUE = 0x1; // 01
 
-	private static final byte HASHID_KEY = 0x2;
+	private static final byte BNODE_VALUE = 0x2; // 10
 
-	private static final byte URI_VALUE = 0x3;
+	private static final byte NAMESPACE_VALUE = 0x3; // 11
 
-	private static final byte BNODE_VALUE = 0x4;
+	private static final byte ID_KEY = 0x4;
 
-	private static final byte LITERAL_VALUE = 0x5;
+	private static final byte HASH_KEY = 0x5;
 
-	private static final byte NAMESPACE_VALUE = 0x6;
+	private static final byte HASHID_KEY = 0x6;
 
 	/*-----------*
 	 * Variables *
@@ -174,7 +174,8 @@ class ValueStore extends AbstractValueFactory {
 				MDBVal valueData = MDBVal.calloc(stack);
 				if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0 &&
 						mdb_cursor_get(cursor, keyData, valueData, MDB_PREV) == 0) {
-					nextId = data2id(keyData.mv_data()) + 1;
+					// remove lower 2 type bits
+					nextId = (data2id(keyData.mv_data()) >> 2) + 1;
 				} else {
 					nextId = 1;
 				}
@@ -198,7 +199,7 @@ class ValueStore extends AbstractValueFactory {
 				String ns = valueStore.data2namespace(data);
 				System.out.println("[" + id + "] " + ns);
 			} else {
-				Value value = valueStore.data2value(id, data);
+				Value value = valueStore.data2value(id, data, null);
 				System.out.println("[" + id + "] " + value.toString());
 			}
 		}
@@ -231,9 +232,11 @@ class ValueStore extends AbstractValueFactory {
 		dbi = openDatabase(env, null, MDB_CREATE, null);
 	}
 
-	private long nextId() throws IOException {
+	private long nextId(byte type) throws IOException {
 		long result = nextId;
 		nextId++;
+		// encode type in lower 2 bits of id
+		result = (result << 2) | type;
 		return result;
 	}
 
@@ -288,6 +291,39 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	/**
+	 * Gets the value for the specified ID which is lazy initialized at a later point in time.
+	 *
+	 * @param id A value ID.
+	 * @return The value for the ID, or <tt>null</tt> no such value could be found.
+	 * @throws IOException If an I/O error occurred.
+	 */
+	public LmdbValue getLazyValue(long id) throws IOException {
+		// Check value cache
+		Long cacheID = id;
+		LmdbValue resultValue = valueCache.get(cacheID);
+
+		if (resultValue == null) {
+			switch ((byte) (id & 0x3)) {
+			case URI_VALUE:
+				resultValue = new LmdbIRI(revision, id);
+				break;
+			case LITERAL_VALUE:
+				resultValue = new LmdbLiteral(revision, id);
+				break;
+			case BNODE_VALUE:
+				resultValue = new LmdbBNode(revision, id);
+				break;
+			default:
+				throw new IOException("Unsupported value with type id " + (id & 0x3));
+			}
+			// Store value in cache
+			valueCache.put(cacheID, resultValue);
+		}
+
+		return resultValue;
+	}
+
+	/**
 	 * Gets the value for the specified ID.
 	 *
 	 * @param id A value ID.
@@ -304,13 +340,33 @@ class ValueStore extends AbstractValueFactory {
 			byte[] data = getData(id);
 
 			if (data != null) {
-				resultValue = data2value(id, data);
+				resultValue = data2value(id, data, null);
 				// Store value in cache
 				valueCache.put(cacheID, resultValue);
 			}
 		}
 
 		return resultValue;
+	}
+
+	/**
+	 * Initializes the value for the specified ID.
+	 *
+	 * @param id    A value ID.
+	 * @param value Existing value that should be resolved.
+	 * @return <code>true</code> if value could be successfully resolved, else <code>false</code>
+	 */
+	public boolean resolveValue(long id, LmdbValue value) {
+		try {
+			byte[] data = getData(id);
+			if (data != null) {
+				data2value(id, data, value);
+				return true;
+			}
+		} catch (IOException e) {
+			// should not happen
+		}
+		return false;
 	}
 
 	private long findId(byte[] data, boolean create) throws IOException {
@@ -326,7 +382,7 @@ class ValueStore extends AbstractValueFactory {
 					return null;
 				}
 				// id was not found, create a new one
-				long newId = nextId();
+				long newId = nextId(data[0]);
 				writeTransaction((stack2, writeTxn) -> {
 					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
 
@@ -362,7 +418,7 @@ class ValueStore extends AbstractValueFactory {
 					if (!create) {
 						return null;
 					}
-					long newId = nextId();
+					long newId = nextId(data[0]);
 					writeTransaction((stack2, writeTxn) -> {
 						dataVal.mv_size(data.length);
 						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
@@ -416,7 +472,7 @@ class ValueStore extends AbstractValueFactory {
 				}
 
 				// id was not found, create a new one
-				long newId = nextId();
+				long newId = nextId(data[0]);
 				writeTransaction((stack2, writeTxn) -> {
 					// encode ID
 					ByteBuffer idBb = id2data(idBuffer(stack), newId).flip();
@@ -750,20 +806,20 @@ class ValueStore extends AbstractValueFactory {
 		return data[0] == NAMESPACE_VALUE;
 	}
 
-	private LmdbValue data2value(long id, byte[] data) throws IOException {
+	private LmdbValue data2value(long id, byte[] data, LmdbValue value) throws IOException {
 		switch (data[0]) {
 		case URI_VALUE:
-			return data2uri(id, data);
+			return data2uri(id, data, (LmdbIRI) value);
 		case BNODE_VALUE:
-			return data2bnode(id, data);
+			return data2bnode(id, data, (LmdbBNode) value);
 		case LITERAL_VALUE:
-			return data2literal(id, data);
+			return data2literal(id, data, (LmdbLiteral) value);
 		default:
 			throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
 		}
 	}
 
-	private LmdbIRI data2uri(long id, byte[] data) throws IOException {
+	private LmdbIRI data2uri(long id, byte[] data, LmdbIRI value) throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
 		bb.get();
@@ -771,15 +827,25 @@ class ValueStore extends AbstractValueFactory {
 		String namespace = getNamespace(nsID);
 		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
 
-		return new LmdbIRI(revision, namespace, localName, id);
+		if (value == null) {
+			return new LmdbIRI(revision, namespace, localName, id);
+		} else {
+			value.setIRIString(namespace + localName);
+			return value;
+		}
 	}
 
-	private LmdbBNode data2bnode(long id, byte[] data) throws IOException {
+	private LmdbBNode data2bnode(long id, byte[] data, LmdbBNode value) throws IOException {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
-		return new LmdbBNode(revision, nodeID, id);
+		if (value == null) {
+			return new LmdbBNode(revision, nodeID, id);
+		} else {
+			value.setID(nodeID);
+			return value;
+		}
 	}
 
-	private LmdbLiteral data2literal(long id, byte[] data) throws IOException {
+	private LmdbLiteral data2literal(long id, byte[] data, LmdbLiteral value) throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
 		bb.get();
@@ -801,12 +867,25 @@ class ValueStore extends AbstractValueFactory {
 		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
 				StandardCharsets.UTF_8);
 
-		if (lang != null) {
-			return new LmdbLiteral(revision, label, lang, id);
-		} else if (datatype != null) {
-			return new LmdbLiteral(revision, label, datatype, id);
+		if (value == null) {
+			if (lang != null) {
+				return new LmdbLiteral(revision, label, lang, id);
+			} else if (datatype != null) {
+				return new LmdbLiteral(revision, label, datatype, id);
+			} else {
+				return new LmdbLiteral(revision, label, XSD.STRING, id);
+			}
 		} else {
-			return new LmdbLiteral(revision, label, XSD.STRING, id);
+			value.setLabel(label);
+			if (lang != null) {
+				value.setLanguage(lang);
+				value.setDatatype(RDF.LANGSTRING);
+			} else if (datatype != null) {
+				value.setDatatype(datatype);
+			} else {
+				value.setDatatype(XSD.STRING);
+			}
+			return value;
 		}
 	}
 
