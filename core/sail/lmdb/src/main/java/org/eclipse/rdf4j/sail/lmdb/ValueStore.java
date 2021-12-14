@@ -38,6 +38,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.zip.CRC32;
 
@@ -107,7 +108,7 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
 	 */
-	private final ConcurrentCache<Long, LmdbValue> valueCache;
+	private final LmdbValue[] valueCache;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
@@ -154,7 +155,7 @@ class ValueStore extends AbstractValueFactory {
 		this.dbSize = config.getValueDBSize();
 		open();
 
-		valueCache = new ConcurrentCache<>(config.getValueCacheSize());
+		valueCache = new LmdbValue[config.getValueCacheSize()];
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
@@ -291,6 +292,35 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	/**
+	 * Get value from cache by ID.
+	 *
+	 * Thread-safety with synchronized is not required here.
+	 *
+	 * @param id ID of a value object
+	 * @return the value object or <code>null</code> if not found
+	 */
+	LmdbValue cachedValue(long id) {
+		LmdbValue value = valueCache[(int) (id % valueCache.length)];
+		if (value != null && value.getInternalID() == id) {
+			return value;
+		}
+		return null;
+	}
+
+	/**
+	 * Cache value by ID.
+	 *
+	 * Thread-safety with synchronized is not required here.
+	 *
+	 * @param id    ID of a value object
+	 * @param value ID of a value object
+	 * @return the value object or <code>null</code> if not found
+	 */
+	void cacheValue(long id, LmdbValue value) {
+		valueCache[(int) (id % valueCache.length)] = value;
+	}
+
+	/**
 	 * Gets the value for the specified ID which is lazy initialized at a later point in time.
 	 *
 	 * @param id A value ID.
@@ -300,7 +330,7 @@ class ValueStore extends AbstractValueFactory {
 	public LmdbValue getLazyValue(long id) throws IOException {
 		// Check value cache
 		Long cacheID = id;
-		LmdbValue resultValue = valueCache.get(cacheID);
+		LmdbValue resultValue = cachedValue(cacheID);
 
 		if (resultValue == null) {
 			switch ((byte) (id & 0x3)) {
@@ -317,7 +347,7 @@ class ValueStore extends AbstractValueFactory {
 				throw new IOException("Unsupported value with type id " + (id & 0x3));
 			}
 			// Store value in cache
-			valueCache.put(cacheID, resultValue);
+			cacheValue(cacheID, resultValue);
 		}
 
 		return resultValue;
@@ -333,7 +363,7 @@ class ValueStore extends AbstractValueFactory {
 	public LmdbValue getValue(long id) throws IOException {
 		// Check value cache
 		Long cacheID = id;
-		LmdbValue resultValue = valueCache.get(cacheID);
+		LmdbValue resultValue = cachedValue(cacheID);
 
 		if (resultValue == null) {
 			// Value not in cache, fetch it from file
@@ -342,7 +372,7 @@ class ValueStore extends AbstractValueFactory {
 			if (data != null) {
 				resultValue = data2value(id, data, null);
 				// Store value in cache
-				valueCache.put(cacheID, resultValue);
+				cacheValue(cacheID, resultValue);
 			}
 		}
 
@@ -664,7 +694,7 @@ class ValueStore extends AbstractValueFactory {
 				new File(dir, "data.mdb").delete();
 				new File(dir, "lock.mdb").delete();
 
-				valueCache.clear();
+				Arrays.fill(valueCache, null);
 				valueIDCache.clear();
 				namespaceCache.clear();
 				namespaceIDCache.clear();
