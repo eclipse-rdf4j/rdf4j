@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -36,8 +37,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
- * Evaluate the StatementPattern - taking care of graph/datasets - avoiding
- * redoing work every call of evaluate if possible.
+ * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
+ * possible.
  */
 public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
 
@@ -47,6 +48,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private final Function<Value, Resource[]> contextSup;
 	private final BiConsumer<MutableBindingSet, Statement> converter;
 	private final QueryEvaluationContext context;
+	private final Predicate<BindingSet> unboundTest;
 
 	// We try to do as much work as possible in the constructor.
 	// With the aim of making the evaluate method as cheap as possible.
@@ -79,7 +81,26 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 		contextSup = extractContextsFromDatasets(statementPattern.getContextVar(), emptyGraph, graphs);
 		converter = makeConverter(context, statementPattern);
+		final Var subjVar = statementPattern.getSubjectVar();
+		final Var predVar = statementPattern.getPredicateVar();
+		final Var objVar = statementPattern.getObjectVar();
+		final Var conVar = statementPattern.getContextVar();
+		Predicate<BindingSet> isSubjBound = unbound(subjVar, context);
+		Predicate<BindingSet> isPredBound = unbound(predVar, context);
+		Predicate<BindingSet> isObjBound = unbound(objVar, context);
+		Predicate<BindingSet> isConBound = unbound(conVar, context);
 
+		unboundTest = isSubjBound.or(isPredBound).or(isObjBound).or(isConBound);
+	}
+
+	private static Predicate<BindingSet> unbound(final Var var, QueryEvaluationContext context) {
+		if (var == null) {
+			return (bindings) -> false;
+		} else {
+			Function<BindingSet, Boolean> hasBinding = context.hasBinding(var.getName());
+			Function<BindingSet, Binding> getBinding = context.getBinding(var.getName());
+			return (bindings) -> hasBinding.apply(bindings) && getBinding.apply(bindings) == null;
+		}
 	}
 
 	private static BiConsumer<Value, MutableBindingSet> makeSetVariable(Var var, QueryEvaluationContext context) {
@@ -101,19 +122,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
 			return new EmptyIteration<>();
-		}
-
-		final Var subjVar = statementPattern.getSubjectVar();
-		final Var predVar = statementPattern.getPredicateVar();
-		final Var objVar = statementPattern.getObjectVar();
-		final Var conVar = statementPattern.getContextVar();
-		if (isUnbound(subjVar, bindings) || isUnbound(predVar, bindings) || isUnbound(objVar, bindings)
-				|| isUnbound(conVar, bindings)) {
+		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
 			// https://www.w3.org/TR/sparql11-query/#assignment
 			return new EmptyIteration<>();
 		}
 
+		final Var conVar = statementPattern.getContextVar();
 		final Value contextValue = StrictEvaluationStrategy.getVarValue(conVar, bindings);
 
 		Resource[] contexts = contextSup.apply(contextValue);
@@ -121,9 +136,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return new EmptyIteration<>();
 		}
 
+		final Var subjVar = statementPattern.getSubjectVar();
+		final Var predVar = statementPattern.getPredicateVar();
 		final Value subjValue = StrictEvaluationStrategy.getVarValue(subjVar, bindings);
 		final Value predValue = StrictEvaluationStrategy.getVarValue(predVar, bindings);
-		final Value objValue = StrictEvaluationStrategy.getVarValue(objVar, bindings);
 		// Check that the subject is a Resource and the predicate can be an IRI
 		// if not we can't return any value.
 		Resource subjResouce;
@@ -135,6 +151,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			// Invalid value type for subject, predicate and/or context
 			return new EmptyIteration<>();
 		}
+		final Var objVar = statementPattern.getObjectVar();
+		return evaluateTheNormalCase(bindings, subjVar, predVar, objVar, conVar, contexts, subjValue, predValue,
+				subjResouce, predIri);
+	}
+
+	private CloseableIteration<BindingSet, QueryEvaluationException> evaluateTheNormalCase(BindingSet bindings,
+			final Var subjVar, final Var predVar, final Var objVar, final Var conVar, Resource[] contexts,
+			final Value subjValue, final Value predValue, Resource subjResouce, IRI predIri) {
+		final Value objValue = StrictEvaluationStrategy.getVarValue(objVar, bindings);
 
 		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = tripleSource
 				.getStatements(subjResouce, predIri, objValue, contexts);
@@ -156,10 +181,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	/**
-	 * Generate a predicate that tests for Named contexts are matched by retrieving
-	 * all statements from the store and filtering out the statements that do not
-	 * have a context. Or the same variable might have been used multiple times in
-	 * this StatementPattern, verify value equality in those cases.
+	 * Generate a predicate that tests for Named contexts are matched by retrieving all statements from the store and
+	 * filtering out the statements that do not have a context. Or the same variable might have been used multiple times
+	 * in this StatementPattern, verify value equality in those cases.
 	 */
 	protected static Predicate<Statement> filterContextOrEqualVariables(StatementPattern statementPattern,
 			final Var subjVar, final Var predVar, final Var objVar, final Var conVar, final Value subjValue,
@@ -172,8 +196,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	/**
-	 * Build one predicate that filters the statements for ?s ?p ?s cases. But only
-	 * generates code that is actually needed else returns null.
+	 * Build one predicate that filters the statements for ?s ?p ?s cases. But only generates code that is actually
+	 * needed else returns null.
 	 */
 	private static Predicate<Statement> filterSameVariable(final Var subjVar, final Var predVar, final Var objVar,
 			final Var conVar, final Value subjValue, final Value predValue, final Value objValue,
@@ -282,10 +306,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 		}
 		/*
-		 * TODO activate this to have an exclusive (rather than inclusive)
-		 * interpretation of the default graph in SPARQL querying. else if
-		 * (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new
-		 * Resource[] { (Resource)null }; }
+		 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default graph in SPARQL
+		 * querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new Resource[] {
+		 * (Resource)null }; }
 		 */
 		else {
 			return new Resource[0];
@@ -305,21 +328,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return contexts;
 	}
 
-	private static boolean isUnbound(Var var, BindingSet bindings) {
-		if (var == null) {
-			return false;
-		} else {
-			return bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null;
-		}
-	}
-
 	/**
-	 * Converts statements into the required bindingsets. A lot of work is done in
-	 * the constructor and then uses invokedynamic code with lambdas for the actual
-	 * conversion.
+	 * Converts statements into the required bindingsets. A lot of work is done in the constructor and then uses
+	 * invokedynamic code with lambdas for the actual conversion.
 	 * 
-	 * This allows avoiding of significant work during the iteration. Which pays of
-	 * if the iteration is long, otherwise it of course is an unneeded expense.
+	 * This allows avoiding of significant work during the iteration. Which pays of if the iteration is long, otherwise
+	 * it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatmentToBindingSetIterator
 			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
@@ -351,15 +365,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	/**
-	 * We are going to chain biconsumer functions allowing us to avoid a lot of
-	 * equals etc. code
+	 * We are going to chain biconsumer functions allowing us to avoid a lot of equals etc. code
 	 * 
-	 * We need to test every binding with hasBinding etc. as these are not
-	 * guaranteed to be equivalent between calls of evaluate(bs).
+	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
+	 * evaluate(bs).
 	 * 
 	 * @return a converter from statement into MutableBindingSet
 	 */
-	private static BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context, StatementPattern statementPattern) {
+	private static BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context,
+			StatementPattern statementPattern) {
 		final Var subjVar = statementPattern.getSubjectVar();
 		final Var predVar = statementPattern.getPredicateVar();
 		final Var objVar = statementPattern.getObjectVar();
@@ -417,8 +431,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	/**
-	 * A convience function to chain the consumers together if one exists otherwise
-	 * returns the new one.
+	 * A convience function to chain the consumers together if one exists otherwise returns the new one.
 	 * 
 	 * @param co  an earlier chain
 	 * @param and the consumer to add to the chain
