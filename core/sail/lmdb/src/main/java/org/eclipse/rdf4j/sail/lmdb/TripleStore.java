@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.lmdb.Varint.writeListUnsigned;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
@@ -511,9 +512,12 @@ class TripleStore implements Closeable {
 								keyData.mv_data(maxKeyBuf);
 								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 								if (rc != 0) {
-									break;
+									// directly go to last value
+									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+								} else {
+									// go to previous value of selected key
+									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 								}
-								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 								if (rc == 0) {
 									Varint.readListUnsigned(keyData.mv_data(), values);
 									int pos = 0;

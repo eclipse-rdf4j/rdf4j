@@ -43,9 +43,9 @@ public class LmdbRecordIterator implements RecordIterator {
 
 	private boolean closed = false;
 
-	private final MDBVal keyData = MDBVal.calloc();
+	private final MDBVal keyData = MDBVal.malloc();
 
-	private final MDBVal valueData = MDBVal.calloc();
+	private final MDBVal valueData = MDBVal.malloc();
 
 	private ByteBuffer minKeyBuf;
 
@@ -61,7 +61,7 @@ public class LmdbRecordIterator implements RecordIterator {
 			index.getMinKey(minKeyBuf, subj, pred, obj, context);
 			minKeyBuf.flip();
 
-			this.maxKey = MDBVal.calloc();
+			this.maxKey = MDBVal.malloc();
 			ByteBuffer maxKeyBuf = MemoryUtil.memAlloc(TripleStore.MAX_KEY_LENGTH);
 			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
 			maxKeyBuf.flip();
