@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 
 /**
  * A step in the query evaluation that works on ValueExpresions.
@@ -52,6 +53,25 @@ public interface QueryValueEvaluationStep {
 
 		public boolean isConstant() {
 			return true;
+		}
+	}
+
+	/**
+	 * A minimal implementation that falls back to calling evaluate in the strategy.
+	 */
+	public static final class Minimal implements QueryValueEvaluationStep {
+		private final ValueExpr ve;
+		private final EvaluationStrategy strategy;
+
+		public Minimal(EvaluationStrategy strategy, ValueExpr ve) {
+			super();
+			this.strategy = strategy;
+			this.ve = ve;
+		}
+
+		@Override
+		public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+			return strategy.evaluate(ve, bindings);
 		}
 	}
 }

@@ -888,51 +888,51 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		if (expr instanceof Var) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof ValueConstant) {
 			return prepare((ValueConstant) expr, context);
 		} else if (expr instanceof BNodeGenerator) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Bound) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Str) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Label) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Lang) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof LangMatches) {
 			return prepare((LangMatches) expr, context);
 		} else if (expr instanceof Datatype) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Namespace) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof LocalName) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof IsResource) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof IsURI) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof IsBNode) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof IsLiteral) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof IsNumeric) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof IRIFunction) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Regex) {
 			return prepare((Regex) expr, context);
 		} else if (expr instanceof Coalesce) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Like) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof FunctionCall) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof And) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Or) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Not) {
 			return prepare((Not) expr, context);
 		} else if (expr instanceof SameTerm) {
@@ -942,19 +942,19 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (expr instanceof MathExpr) {
 			return prepare((MathExpr) expr, context);
 		} else if (expr instanceof In) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof CompareAny) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof CompareAll) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Exists) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof If) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof ListMemberOperator) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof ValueExprTripleRef) {
-			return new QueryValueEvaluationStepImplementation(this, expr, context);
+			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
@@ -2068,6 +2068,14 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	/**
+	 * Return a QueryEvaluationStep that applies constant propegation.
+	 * 
+	 * @param node      that will be evaluated/prepared
+	 * @param operation the task to be done
+	 * @param context   in which the evaluation takes place
+	 * @return a potentially constant step
+	 */
 	protected QueryValueEvaluationStep supplyUnaryValueEvaluation(UnaryValueOperator node,
 			java.util.function.Function<Value, Value> operation, QueryEvaluationContext context) {
 		QueryValueEvaluationStep argStep = precompile(node.getArg(), context);

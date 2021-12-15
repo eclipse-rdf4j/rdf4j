@@ -93,7 +93,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 
 	/**
 	 * Prepare a QueryEvaluationStep that tries to do as much work once per query avoiding repeated calls to the same
-	 * code as much as possible
+	 * code as much as possible. This depends on java invoke dynamic for performance.
 	 * 
 	 * @param expr that is to be evaluated later
 	 * @return a QueryEvaluationStep that may avoid doing repeating the same work over and over.
@@ -152,26 +152,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	}
 
 	default QueryValueEvaluationStep precompile(ValueExpr arg, QueryEvaluationContext context) {
-		return new QueryValueEvaluationStepImplementation(this, arg, context);
-	}
-
-	final class QueryValueEvaluationStepImplementation implements QueryValueEvaluationStep {
-		private final ValueExpr ve;
-		private final EvaluationStrategy strategy;
-		private final QueryEvaluationContext context;
-
-		public QueryValueEvaluationStepImplementation(EvaluationStrategy strategy, ValueExpr ve,
-				QueryEvaluationContext context) {
-			super();
-			this.strategy = strategy;
-			this.ve = ve;
-			this.context = context;
-		}
-
-		@Override
-		public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
-			return strategy.evaluate(ve, bindings);
-		}
+		return new QueryValueEvaluationStep.Minimal(this, arg);
 	}
 
 	default <T> Set<T> makeSet() {

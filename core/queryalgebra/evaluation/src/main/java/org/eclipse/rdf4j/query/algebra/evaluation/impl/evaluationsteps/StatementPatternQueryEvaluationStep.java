@@ -36,8 +36,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
- * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
- * possible.
+ * Evaluate the StatementPattern - taking care of graph/datasets - avoiding
+ * redoing work every call of evaluate if possible.
  */
 public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
 
@@ -78,18 +78,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			emptyGraph = false;
 		}
 		contextSup = extractContextsFromDatasets(statementPattern.getContextVar(), emptyGraph, graphs);
-		converter = makeConverter(context);
+		converter = makeConverter(context, statementPattern);
 
 	}
 
-	private BiConsumer<Value, MutableBindingSet> makeSetVariable(Var var, QueryEvaluationContext context) {
+	private static BiConsumer<Value, MutableBindingSet> makeSetVariable(Var var, QueryEvaluationContext context) {
 		if (var == null) {
 			return null;
 		} else
 			return context.addBinding(var.getName());
 	}
 
-	private Function<BindingSet, Boolean> makeIsVariableSet(Var var, QueryEvaluationContext context) {
+	private static Function<BindingSet, Boolean> makeIsVariableSet(Var var, QueryEvaluationContext context) {
 		if (var == null) {
 			return (bindings) -> false;
 		} else {
@@ -138,11 +138,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = tripleSource
 				.getStatements(subjResouce, predIri, objValue, contexts);
-		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subjVar, predVar, objVar,
-				conVar,
-				subjValue,
-				predValue, objValue, contexts);
+		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subjVar, predVar, objVar, conVar,
+				subjValue, predValue, objValue, contexts);
 		if (filter != null) {
+			// Only if there is filter code to execute do we make this filter iteration.
 			stIter1 = new FilterIteration<Statement, QueryEvaluationException>(stIter1) {
 
 				@Override
@@ -157,15 +156,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	/**
-	 * Generate a predicate that tests for Named contexts are matched by retrieving all statements from the store and
-	 * filtering out the statements that do not have a context. Or the same variable might have been used multiple times
-	 * in this StatementPattern, verify value equality in those cases.
+	 * Generate a predicate that tests for Named contexts are matched by retrieving
+	 * all statements from the store and filtering out the statements that do not
+	 * have a context. Or the same variable might have been used multiple times in
+	 * this StatementPattern, verify value equality in those cases.
 	 */
 	protected static Predicate<Statement> filterContextOrEqualVariables(StatementPattern statementPattern,
-			final Var subjVar,
-			final Var predVar,
-			final Var objVar, final Var conVar, final Value subjValue, final Value predValue, final Value objValue,
-			Resource[] contexts) {
+			final Var subjVar, final Var predVar, final Var objVar, final Var conVar, final Value subjValue,
+			final Value predValue, final Value objValue, Resource[] contexts) {
 		Predicate<Statement> filter = null;
 		if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
 			filter = (st) -> st.getContext() != null;
@@ -173,6 +171,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return filterSameVariable(subjVar, predVar, objVar, conVar, subjValue, predValue, objValue, filter);
 	}
 
+	/**
+	 * Build one predicate that filters the statements for ?s ?p ?s cases. But only
+	 * generates code that is actually needed else returns null.
+	 */
 	private static Predicate<Statement> filterSameVariable(final Var subjVar, final Var predVar, final Var objVar,
 			final Var conVar, final Value subjValue, final Value predValue, final Value objValue,
 			Predicate<Statement> filter) {
@@ -233,6 +235,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	/**
+	 * 
 	 * @param statementPattern
 	 * @param contextValue
 	 * @return the contexts that are valid for this statement pattern or null
@@ -279,9 +282,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 		}
 		/*
-		 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default graph in SPARQL
-		 * querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new Resource[] {
-		 * (Resource)null }; }
+		 * TODO activate this to have an exclusive (rather than inclusive)
+		 * interpretation of the default graph in SPARQL querying. else if
+		 * (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new
+		 * Resource[] { (Resource)null }; }
 		 */
 		else {
 			return new Resource[0];
@@ -310,54 +314,52 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	/**
-	 * Converts statements into the required bindingsets. A lot of work is done in the constructor and then uses
-	 * invokedynamic code with lambdas for the actual conversion.
+	 * Converts statements into the required bindingsets. A lot of work is done in
+	 * the constructor and then uses invokedynamic code with lambdas for the actual
+	 * conversion.
 	 * 
-	 * This allows avoiding of significant work during the iteration. Which pays of if the iteration is long, otherwise
-	 * it of course is an unneeded expense.
+	 * This allows avoiding of significant work during the iteration. Which pays of
+	 * if the iteration is long, otherwise it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatmentToBindingSetIterator
 			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
-		private final BiConsumer<MutableBindingSet, Statement> action;
-		private final BindingSet bindings;
-		private final QueryEvaluationContext context;
+		private final Function<Statement, MutableBindingSet> convertingFunction;
 
 		private ConvertStatmentToBindingSetIterator(
 				Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
 			super(iter);
-			this.action = action;
-			this.bindings = bindings;
-			this.context = context;
+			if (bindings.isEmpty()) {
+				convertingFunction = (st) -> {
+					MutableBindingSet made = context.createBindingSet();
+					action.accept(made, st);
+					return made;
+				};
+			} else {
+				convertingFunction = (st) -> {
+					MutableBindingSet made = context.createBindingSet(bindings);
+					action.accept(made, st);
+					return made;
+				};
+			}
 		}
 
 		@Override
 		protected BindingSet convert(Statement st) {
-			MutableBindingSet bindings = makeBindingSet(this.bindings);
-			action.accept(bindings, st);
-			return bindings;
+			return convertingFunction.apply(st);
 		}
-
-		private MutableBindingSet makeBindingSet(BindingSet bindings) {
-
-			if (bindings.isEmpty()) {
-				return context.createBindingSet();
-			} else {
-				return context.createBindingSet(bindings);
-			}
-		}
-
 	}
 
 	/**
-	 * We are going to chain biconsumer functions allowing us to avoid a lot of equals etc. code
+	 * We are going to chain biconsumer functions allowing us to avoid a lot of
+	 * equals etc. code
 	 * 
-	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
-	 * evaluate(bs).
+	 * We need to test every binding with hasBinding etc. as these are not
+	 * guaranteed to be equivalent between calls of evaluate(bs).
 	 * 
 	 * @return a converter from statement into MutableBindingSet
 	 */
-	private BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context) {
+	private static BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context, StatementPattern statementPattern) {
 		final Var subjVar = statementPattern.getSubjectVar();
 		final Var predVar = statementPattern.getPredicateVar();
 		final Var objVar = statementPattern.getObjectVar();
@@ -365,16 +367,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		BiConsumer<MutableBindingSet, Statement> co = null;
 
 		if (subjVar != null && !subjVar.isConstant()) {
-			Function<BindingSet, Boolean> subjectIsSet = makeIsVariableSet(subjVar, context);
 			BiConsumer<Value, MutableBindingSet> setSubject = makeSetVariable(subjVar, context);
+			Function<BindingSet, Boolean> subjectIsSet = makeIsVariableSet(subjVar, context);
 			co = andThen(co, (result, st) -> addValueToBinding(result, st.getSubject(), subjectIsSet, setSubject));
 		}
-		// We should not overwrite previous set values so if pred == subj we don't need to call this again.
+		// We should not overwrite previous set values so if pred == subj we don't need
+		// to call this again.
 		// etc.
-		if (predVar != null && !predVar.isConstant()
-				&& !predVar.equals(subjVar)) {
-			Function<BindingSet, Boolean> predicateIsSet = makeIsVariableSet(predVar, context);
+		if (predVar != null && !predVar.isConstant() && !predVar.equals(subjVar)) {
 			BiConsumer<Value, MutableBindingSet> setPredicate = makeSetVariable(predVar, context);
+			Function<BindingSet, Boolean> predicateIsSet = makeIsVariableSet(predVar, context);
 			co = andThen(co,
 					(result, st) -> addValueToBinding(result, st.getPredicate(), predicateIsSet, setPredicate));
 		}
@@ -385,8 +387,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 		if (conVar != null && !conVar.isConstant() && !conVar.equals(subjVar) && !conVar.equals(predVar)
 				&& !conVar.equals(objVar)) {
-			Function<BindingSet, Boolean> contextIsSet = makeIsVariableSet(conVar, context);
 			BiConsumer<Value, MutableBindingSet> setContext = makeSetVariable(conVar, context);
+			Function<BindingSet, Boolean> contextIsSet = makeIsVariableSet(conVar, context);
 			co = andThen(co, (result, st) -> {
 				if (st.getContext() != null) {
 					addValueToBinding(result, st.getContext(), contextIsSet, setContext);
@@ -400,8 +402,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return co;
 	}
 
-	private void addValueToBinding(MutableBindingSet result, Value value,
-			Function<BindingSet, Boolean> varIsSet, BiConsumer<Value, MutableBindingSet> setVal) {
+	private static void addValueToBinding(MutableBindingSet result, Value value, Function<BindingSet, Boolean> varIsSet,
+			BiConsumer<Value, MutableBindingSet> setVal) {
 		if (!varIsSet.apply(result)) {
 			setVal.accept(value, result);
 		}
@@ -414,6 +416,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return pred.and(and);
 	}
 
+	/**
+	 * A convience function to chain the consumers together if one exists otherwise
+	 * returns the new one.
+	 * 
+	 * @param co  an earlier chain
+	 * @param and the consumer to add to the chain
+	 * @return a chain or the new (and) one
+	 */
 	private static BiConsumer<MutableBindingSet, Statement> andThen(BiConsumer<MutableBindingSet, Statement> co,
 			BiConsumer<MutableBindingSet, Statement> and) {
 		if (co == null)
