@@ -55,14 +55,45 @@ public class QueryBenchmark {
 	private static final String query7_pathexpression1;
 	private static final String query8_pathexpression2;
 
+	private static final String common_themes;
+	private static final String different_datasets_with_similar_distributions;
+	private static final String long_chain;
+	private static final String lots_of_optional;
+	private static final String minus;
+	private static final String nested_optionals;
+	private static final String particularly_large_join_surface;
+	private static final String query_distinct_predicates;
+	private static final String simple_filter_not;
+	private static final String wild_card_chain_with_common_ends;
+
 	static {
 		try {
+			common_themes = IOUtils.toString(getResourceAsStream("benchmarkFiles/common-themes.qr"),
+					StandardCharsets.UTF_8);
+			different_datasets_with_similar_distributions = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/different-datasets-with-similar-distributions.qr"),
+					StandardCharsets.UTF_8);
+			long_chain = IOUtils.toString(getResourceAsStream("benchmarkFiles/long-chain.qr"), StandardCharsets.UTF_8);
+			lots_of_optional = IOUtils.toString(getResourceAsStream("benchmarkFiles/lots-of-optional.qr"),
+					StandardCharsets.UTF_8);
+			minus = IOUtils.toString(getResourceAsStream("benchmarkFiles/minus.qr"), StandardCharsets.UTF_8);
+			nested_optionals = IOUtils.toString(getResourceAsStream("benchmarkFiles/nested-optionals.qr"),
+					StandardCharsets.UTF_8);
+			particularly_large_join_surface = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/particularly-large-join-surface.qr"), StandardCharsets.UTF_8);
 			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
 			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
 			query7_pathexpression1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query7-pathexpression1.qr"),
 					StandardCharsets.UTF_8);
 			query8_pathexpression2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query8-pathexpression2.qr"),
 					StandardCharsets.UTF_8);
+			query_distinct_predicates = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/query-distinct-predicates.qr"), StandardCharsets.UTF_8);
+			simple_filter_not = IOUtils.toString(getResourceAsStream("benchmarkFiles/simple-filter-not.qr"),
+					StandardCharsets.UTF_8);
+			wild_card_chain_with_common_ends = IOUtils.toString(
+					getResourceAsStream("benchmarkFiles/wild-card-chain-with-common-ends.qr"), StandardCharsets.UTF_8);
+
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -141,6 +172,116 @@ public class QueryBenchmark {
 					.count();
 		}
 	}
+
+//	@Benchmark
+//	public long common_themes() {
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			return connection
+//				.prepareTupleQuery(common_themes)
+//				.evaluate()
+//				.stream()
+//				.count();
+//		}
+//	}
+
+	@Benchmark
+	public long different_datasets_with_similar_distributions() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(different_datasets_with_similar_distributions)
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+	@Benchmark
+	public long long_chain() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(long_chain)
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+	@Benchmark
+	public long lots_of_optional() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(lots_of_optional)
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+	@Benchmark
+	public long minus() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(minus)
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+	@Benchmark
+	public long nested_optionals() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(nested_optionals)
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+//	@Benchmark
+//	public long particularly_large_join_surface() {
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			return connection
+//				.prepareTupleQuery(particularly_large_join_surface)
+//				.evaluate()
+//				.stream()
+//				.count();
+//		}
+//	}
+
+	@Benchmark
+	public long query_distinct_predicates() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(query_distinct_predicates)
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+	@Benchmark
+	public long simple_filter_not() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(simple_filter_not)
+					.evaluate()
+					.stream()
+					.count();
+		}
+	}
+
+//	@Benchmark
+//	public long wild_card_chain_with_common_ends() {
+//		try (SailRepositoryConnection connection = repository.getConnection()) {
+//			return connection
+//				.prepareTupleQuery(wild_card_chain_with_common_ends)
+//				.evaluate()
+//				.stream()
+//				.count();
+//		}
+//	}
 
 	private static InputStream getResourceAsStream(String filename) {
 		return QueryBenchmark.class.getClassLoader().getResourceAsStream(filename);
