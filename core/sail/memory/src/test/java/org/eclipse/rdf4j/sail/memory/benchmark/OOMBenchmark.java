@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.openjdk.jmh.annotations.AuxCounters;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -40,44 +41,37 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.runner.Runner;
-import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 10)
+@Warmup(iterations = 0)
 @BenchmarkMode({ Mode.AverageTime })
-// use G1GC because the workload is multi-threaded
-@Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UnlockExperimentalVMOptions","-XX:+UseEpsilonGC", "-XX:+AlwaysPreTouch" })
-
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 20)
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseEpsilonGC",
+		"-XX:+AlwaysPreTouch" })
+@Measurement(iterations = 1, time = 99999999)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class SortBenchmark {
+public class OOMBenchmark {
 
 	private SailRepository repository;
 
 	private static final String query9;
+	private static final String query10;
+	int count = 0;
 
 	static {
 		try {
-
 			query9 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query9.qr"), StandardCharsets.UTF_8);
+			query10 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query10.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	List<Value> valuesList;
-
 //	public static void main(String[] args) throws RunnerException {
 //		Options opt = new OptionsBuilder()
-//				.include("SortBenchmark.*") // adapt to run other benchmark tests
+//				.include("OOMBenchmark.*") // adapt to run other benchmark tests
 //				// .addProfiler("stack", "lines=20;period=1;top=20")
 //				.forks(1)
 //				.build();
@@ -96,18 +90,12 @@ public class SortBenchmark {
 			connection.commit();
 		}
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
-				valuesList = stream
-						.map(Statement::getObject)
-						.collect(Collectors.toList());
-			}
-		}
+		count = 0;
 
 	}
 
 	private static InputStream getResourceAsStream(String name) {
-		return SortBenchmark.class.getClassLoader().getResourceAsStream(name);
+		return OOMBenchmark.class.getClassLoader().getResourceAsStream(name);
 	}
 
 	@TearDown(Level.Trial)
@@ -117,10 +105,8 @@ public class SortBenchmark {
 
 	}
 
-	static int count = 0;
-
 	@Benchmark
-	public List<BindingSet> sortByQuery() {
+	public List<BindingSet> simpleSortQuery() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			try (Stream<BindingSet> stream = connection
@@ -128,37 +114,25 @@ public class SortBenchmark {
 					.evaluate()
 					.stream()) {
 				List<BindingSet> collect = stream.limit(1).collect(Collectors.toList());
-//				System.out.println("\nCount: " + (++count));
+				System.out.println("\nCount: " + (++count));
 				return collect;
 			}
 		}
 	}
 
 	@Benchmark
-	public Value sortGetStatements() {
+	public Long complexSortQuery() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
-				Value[] values = stream
-						.map(Statement::getObject)
-						.toArray(Value[]::new);
-
-				Arrays.parallelSort(values, new ValueComparator());
-
-				return values[0];
+			try (Stream<BindingSet> stream = connection
+					.prepareTupleQuery(query10)
+					.evaluate()
+					.stream()) {
+				long ret = stream.count();
+				System.out.println("\nCount: " + (++count));
+				return ret;
 			}
 		}
-	}
-
-	@Benchmark
-	public Value sortDirectly() {
-
-		Value[] values = new ArrayList<>(valuesList).toArray(new Value[0]);
-
-		Arrays.parallelSort(values, new ValueComparator());
-
-		return values[0];
-
 	}
 
 }

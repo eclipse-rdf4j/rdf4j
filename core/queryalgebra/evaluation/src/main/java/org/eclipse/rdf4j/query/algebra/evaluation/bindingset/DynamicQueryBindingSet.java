@@ -1,11 +1,19 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Distribution License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
-package org.eclipse.rdf4j.query.algebra.evaluation;
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
+ *  All rights reserved. This program and the accompanying materials
+ *  are made available under the terms of the Eclipse Distribution License v1.0
+ *  which accompanies this distribution, and is available at
+ *  http://www.eclipse.org/org/documents/edl-v10.php.
+ ******************************************************************************/
+package org.eclipse.rdf4j.query.algebra.evaluation.bindingset;
+
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -17,13 +25,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.function.Consumer;
-
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.AbstractBindingSet;
-import org.eclipse.rdf4j.query.Binding;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.ModifiableBindingSet;
-import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 public class DynamicQueryBindingSet implements ModifiableBindingSet {
 
@@ -232,9 +233,14 @@ public class DynamicQueryBindingSet implements ModifiableBindingSet {
 			names = new ArrayList<>(size);
 			values = new ArrayList<>(size);
 
-			for (Binding binding : bindingSet) {
-				names.add(binding.getName());
-				values.add(binding.getValue());
+			if (bindingSet instanceof UpgradeableStatementBackedBindingSet) {
+				((UpgradeableStatementBackedBindingSet) bindingSet).fillListBasedBindingSet(names, values);
+			} else {
+
+				for (Binding binding : bindingSet) {
+					names.add(binding.getName());
+					values.add(binding.getValue());
+				}
 			}
 		}
 
@@ -315,8 +321,7 @@ public class DynamicQueryBindingSet implements ModifiableBindingSet {
 			namesSetCache = null;
 			if (names.isEmpty()) {
 				for (Binding binding : bindingSet) {
-					names.add(binding.getName());
-					values.add(binding.getValue());
+					addDistinctBinding(binding.getName(), binding.getValue());
 				}
 			} else {
 				for (Binding binding : bindingSet) {
@@ -336,13 +341,8 @@ public class DynamicQueryBindingSet implements ModifiableBindingSet {
 		@Override
 		public void addBinding(String name, Value value) {
 			namesSetCache = null;
-			if (names.isEmpty()) {
-				names.add(name);
-				values.add(value);
-			} else {
-				if (!hasBinding(name)) {
-					addDistinctBinding(name, value);
-				}
+			if (names.isEmpty() || !hasBinding(name)) {
+				addDistinctBinding(name, value);
 			}
 		}
 
@@ -419,7 +419,7 @@ public class DynamicQueryBindingSet implements ModifiableBindingSet {
 			}
 
 			for (int i = 0; i < names.size(); i++) {
-				if (names.get(i).equals(name)) {
+				if (names.get(i).hashCode() == name.hashCode() && names.get(i).equals(name)) {
 					return i;
 				}
 			}

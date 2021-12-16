@@ -118,14 +118,14 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
-import org.eclipse.rdf4j.query.algebra.evaluation.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.bindingset.DynamicQueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.bindingset.UpgradeableStatementBackedBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -172,6 +172,7 @@ import com.google.common.base.Stopwatch;
  */
 public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedServiceResolverClient, UUIDable {
 	public static final ValueExprEvaluationException VALUE_EXPR_EVALUATION_EXCEPTION = new ValueExprEvaluationException();
+	public static final EmptyIteration<BindingSet, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
 
 	/*-----------*
 	 * Constants *
@@ -363,7 +364,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		if (subj != null && obj != null) {
 			if (!subj.equals(obj)) {
-				return new EmptyIteration<>();
+				return EMPTY_ITERATION;
 			}
 		}
 
@@ -438,7 +439,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				if (exists) {
 					return new SingletonIteration<>(bindings);
 				} else {
-					return new EmptyIteration<>();
+					return EMPTY_ITERATION;
 				}
 
 			}
@@ -489,8 +490,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		final Var objVar = statementPattern.getObjectVar();
 		final Var conVar = statementPattern.getContextVar();
 
-		int bindingSetSizeEstimate = getBindingSetSizeEstimate(subjVar, predVar, objVar, conVar);
-
 		final Value subjValue = getVarValue(subjVar, bindings);
 		final Value predValue = getVarValue(predVar, bindings);
 		final Value objValue = getVarValue(objVar, bindings);
@@ -504,7 +503,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		if (isUnbound(subjVar, bindings) || isUnbound(predVar, bindings) || isUnbound(objVar, bindings)
 				|| isUnbound(conVar, bindings)) {
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		}
 
 		boolean allGood = false;
@@ -527,7 +526,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 				if (emptyGraph) {
 					// Search zero contexts
-					return new EmptyIteration<>();
+					return EMPTY_ITERATION;
 				} else if (graphs == null || graphs.isEmpty()) {
 					// store default behaviour
 					if (contextValue != null) {
@@ -551,7 +550,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 					} else {
 						// Statement pattern specifies a context that is not part of
 						// the dataset
-						return new EmptyIteration<>();
+						return EMPTY_ITERATION;
 					}
 				} else {
 					contexts = new Resource[graphs.size()];
@@ -584,7 +583,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				}
 			} catch (ClassCastException e) {
 				// Invalid value type for subject, predicate and/or context
-				return new EmptyIteration<>();
+				return EMPTY_ITERATION;
 			}
 
 			// The same variable might have been used multiple times in this
@@ -628,31 +627,23 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				}
 			};
 
-			// Return an iterator that converts the statements to var bindings
-			resultingIterator = new ConvertingIteration<Statement, BindingSet, QueryEvaluationException>(stIter3) {
+			if (bindings.size() == 0) {
+				UpgradeableStatementBackedBindingSet.Factory bindingSetFactory = new UpgradeableStatementBackedBindingSet.Factory(
+						subjVar, predVar, objVar, conVar);
 
-				@Override
-				protected BindingSet convert(Statement st) {
-					if (bindings.size() == 0) {
+				resultingIterator = new ConvertingIteration<>(stIter3) {
 
-						ModifiableBindingSet result = new DynamicQueryBindingSet(bindingSetSizeEstimate);
+					@Override
+					protected BindingSet convert(Statement st) {
+						return bindingSetFactory.getBindingSet(st);
+					}
+				};
 
-						if (subjVar != null && !subjVar.isConstant()) {
-							result.addBinding(subjVar.getName(), st.getSubject());
-						}
-						if (predVar != null && !predVar.isConstant()) {
-							result.addBinding(predVar.getName(), st.getPredicate());
-						}
-						if (objVar != null && !objVar.isConstant()) {
-							result.addBinding(objVar.getName(), st.getObject());
-						}
-						if (conVar != null && !conVar.isConstant() && st.getContext() != null) {
-							result.addBinding(conVar.getName(), st.getContext());
-						}
+			} else {
+				resultingIterator = new ConvertingIteration<>(stIter3) {
 
-						return result;
-
-					} else {
+					@Override
+					protected BindingSet convert(Statement st) {
 						ModifiableBindingSet result = new DynamicQueryBindingSet(bindings);
 
 						if (subjVar != null && !subjVar.isConstant() && !result.hasBinding(subjVar.getName())) {
@@ -671,9 +662,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 						return result;
 					}
+				};
 
-				}
-			};
+			}
+
 			allGood = true;
 
 			return resultingIterator;
@@ -724,6 +716,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	protected boolean isUnbound(Var var, BindingSet bindings) {
 		if (var == null) {
+			return false;
+		} else if (var.isAnonymous()) {
+			assert !(bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null);
 			return false;
 		} else {
 			return bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null;
@@ -874,7 +869,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// a type error in an extension argument should be silently ignored
 			// and
 			// result in zero bindings.
-			result = new EmptyIteration<>();
+			result = EMPTY_ITERATION;
 		}
 
 		result = new ExtensionIterator(extension, result, this);
@@ -1053,7 +1048,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet, BindingSet bindings)
 			throws QueryEvaluationException {
-		return new EmptyIteration<>();
+		return EMPTY_ITERATION;
 	}
 
 	@Override
@@ -1936,7 +1931,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		// the evaluation of the TripleRef should be suitably forwarded down the sail and filter/construct
 		// the correct solution out of the results of that call
 		if (extValue != null && !(extValue instanceof Resource)) {
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		}
 
 		// whether the TripleSouce support access to RDF star

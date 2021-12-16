@@ -17,17 +17,31 @@ import com.google.common.base.Stopwatch;
 
 public class Temp {
 
+//	public static void main(String[] args) throws IOException, InterruptedException {
+//		ParallelQueryBenchmark benchmark = new ParallelQueryBenchmark();
+//		benchmark.beforeClass();
+//		Stopwatch stopwatch = Stopwatch.createStarted();
+//		while (stopwatch.elapsed(TimeUnit.MINUTES) < 5) {
+//			benchmark.mixedReadWorkload(new Blackhole(
+//					"Today's password is swordfish. I understand instantiating Blackholes directly is dangerous."));
+//			System.out.println(".");
+//		}
+//
+//		System.out.println("Done");
+//		benchmark.afterClass();
+//	}
+
 	public static void main(String[] args) throws IOException, InterruptedException {
-		SortBenchmark parallelQueryBenchmark = new SortBenchmark();
-		parallelQueryBenchmark.beforeClass();
+		SortBenchmark benchmark = new SortBenchmark();
+		benchmark.beforeClass();
 		Stopwatch stopwatch = Stopwatch.createStarted();
 		while (stopwatch.elapsed(TimeUnit.MINUTES) < 5) {
-			parallelQueryBenchmark.sortByQuery();
+			benchmark.sortByQuery();
 			System.out.println(".");
 		}
 
 		System.out.println("Done");
-		parallelQueryBenchmark.afterClass();
+		benchmark.afterClass();
 	}
 
 }
