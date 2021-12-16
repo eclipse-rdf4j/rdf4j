@@ -15,6 +15,7 @@ import java.io.StringReader;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -33,13 +34,14 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 public class ShaclSailSupportedPredicatesDocumentationIT extends AbstractShaclTest {
 
-	private static HashSet<IRI> staticShaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
+	private static final Set<IRI> STATIC_SHACL_PREDICATES = new ConcurrentSkipListSet<>(
+			ShaclSail.getSupportedShaclPredicates());
 
 	@AfterAll
 	public static void afterClass() {
 
 		assertTrue("No test uses the following predicate that the ShaclSail announces as supported: "
-				+ Arrays.toString(staticShaclPredicates.toArray()), staticShaclPredicates.isEmpty());
+				+ Arrays.toString(STATIC_SHACL_PREDICATES.toArray()), STATIC_SHACL_PREDICATES.isEmpty());
 	}
 
 	@ParameterizedTest
@@ -60,7 +62,7 @@ public class ShaclSailSupportedPredicatesDocumentationIT extends AbstractShaclTe
 		for (IRI predicate : predicatesInUseInTest) {
 			assertTrue("Predicate used in test but not listed in ShaclSail: " + predicate,
 					shaclPredicates.contains(predicate));
-			staticShaclPredicates.remove(predicate);
+			STATIC_SHACL_PREDICATES.remove(predicate);
 		}
 
 	}
