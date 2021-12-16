@@ -15,7 +15,7 @@ import java.io.StringReader;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -34,7 +34,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 public class ShaclSailSupportedPredicatesDocumentationIT extends AbstractShaclTest {
 
-	private static final Set<IRI> STATIC_SHACL_PREDICATES = new ConcurrentSkipListSet<>(
+	private static final Set<IRI> STATIC_SHACL_PREDICATES = new CopyOnWriteArraySet<>(
 			ShaclSail.getSupportedShaclPredicates());
 
 	@AfterAll
