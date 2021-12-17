@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 
 /**
@@ -64,12 +67,13 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	/**
 	 * The index of the last statement that has been returned.
 	 */
-	private int statementIdx;
+	private int statementIndex;
 
 	/**
 	 * True if there are no more elements to retrieve.
 	 */
 	private boolean exhausted;
+	private int matchingStatements;
 
 	/*--------------*
 	 * Constructors *
@@ -102,7 +106,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 		}
 		this.snapshot = snapshot;
 		this.noIsolation = snapshot < 0;
-		this.statementIdx = 0;
+		this.statementIndex = 0;
 	}
 
 	/*---------*
@@ -120,7 +124,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 		while (!exhausted) {
 			// First getting the size to check if we are out-of-bounds is more expensive (cache wise) than having a
 			// method in MemStatementList that does this for us.
-			MemStatement statement = statementList.getIfExists(statementIdx++);
+			MemStatement statement = statementList.getIfExists(statementIndex++);
 			if (statement == null) {
 				exhausted = true;
 				break;
@@ -133,6 +137,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 			if ((statement.matchesSPO(subject, predicate, object)) && matchesContext(statement)
 					&& matchesExplicitAndSnapshot(statement)) {
+				matchingStatements++;
 				return statement;
 			}
 		}
@@ -160,4 +165,60 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 				(noIsolation || st.isInSnapshot(snapshot));
 	}
 
+	/**
+	 * Returnes true if this iterator was particularly costly and should be cached
+	 * 
+	 * @return
+	 */
+	public boolean considerForCaching() {
+		if (exhausted) { // we will only consider caching if the iterator has been completely consumed
+			if (statementIndex > 100) { // minimum 100 statements need to have been checked by the iterator
+				if (matchingStatements == 0) { // if the iterator was effectively empty we can always cache it
+					return true;
+				} else if (matchingStatements < 100) { // we will not cache iterators that returned more than 99
+														// statements
+					double ratio = (statementIndex + 0.0) / matchingStatements;
+					return ratio > 100; // for every returned statement we need to have checked 100 non-matching
+										// statements
+				}
+			}
+		}
+		return false;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof MemStatementIterator)) {
+			return false;
+		}
+		MemStatementIterator<?> that = (MemStatementIterator<?>) o;
+		return explicit == that.explicit && explicitNotSpecified == that.explicitNotSpecified
+				&& snapshot == that.snapshot && noIsolation == that.noIsolation && Objects.equals(subject, that.subject)
+				&& Objects.equals(predicate, that.predicate) && Objects.equals(object, that.object)
+				&& Arrays.equals(contexts, that.contexts);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = Objects.hash(subject, predicate, object, explicit, explicitNotSpecified, snapshot, noIsolation);
+		result = 31 * result + Arrays.hashCode(contexts);
+		return result;
+	}
+
+	@Override
+	public String toString() {
+		return "MemStatementIterator{" +
+				"subject=" + subject +
+				", predicate=" + predicate +
+				", object=" + object +
+				", contexts=" + Arrays.toString(contexts) +
+				", explicit=" + explicit +
+				", explicitNotSpecified=" + explicitNotSpecified +
+				", snapshot=" + snapshot +
+				", noIsolation=" + noIsolation +
+				'}';
+	}
 }
