@@ -111,7 +111,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 					|| (rightArg instanceof OwnedTupleExpr && ((OwnedTupleExpr) rightArg).hasQuery())) {
 				TupleExpr leftArg = join.getArg(i - 1);
 				collectedBindingNames.addAll(leftArg.getBindingNames());
-				result = new HashJoinIteration(this, result, collectedBindingNames, evaluate(rightArg, bindings),
+				result = new HashJoinIteration(result, collectedBindingNames, evaluate(rightArg, bindings),
 						rightArg.getBindingNames(), false);
 			} else {
 				result = new ParallelJoinCursor(this, result, join.getArg(i)); // NOPMD
@@ -142,7 +142,7 @@ public class FederationStrategy extends StrictEvaluationStrategy {
 				CloseableIteration<BindingSet, QueryEvaluationException> result;
 				if (problemVars.isEmpty()) {
 					// left join is "well designed"
-					result = new ParallelLeftJoinCursor(FederationStrategy.this, leftJoin, bindings);
+					result = new ParallelLeftJoinCursor(FederationStrategy.this, leftJoin, bindings, context);
 					executor.execute((Runnable) result);
 				} else {
 					result = new BadlyDesignedLeftJoinIterator(FederationStrategy.this, leftJoin, bindings, problemVars,

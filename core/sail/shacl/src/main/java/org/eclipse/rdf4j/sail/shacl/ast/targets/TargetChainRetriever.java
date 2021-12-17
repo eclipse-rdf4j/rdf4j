@@ -213,7 +213,11 @@ public class TargetChainRetriever implements PlanNode {
 					BindingSet nextBinding = results.next();
 
 					if (nextBinding.size() == 1) {
-						next = new ValidationTuple(nextBinding.iterator().next().getValue(), scope, false);
+						Iterator<Binding> iterator = nextBinding.iterator();
+						if (iterator.hasNext())
+							next = new ValidationTuple(iterator.next().getValue(), scope, false);
+						else
+							next = new ValidationTuple((Value) null, scope, false);
 					} else {
 						Value[] values = StreamSupport.stream(nextBinding.spliterator(), false)
 								.sorted(Comparator.comparing(Binding::getName))

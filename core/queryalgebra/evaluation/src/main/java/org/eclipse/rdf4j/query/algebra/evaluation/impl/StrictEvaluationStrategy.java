@@ -7,10 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
@@ -146,7 +144,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.util.UUIDable;
 
@@ -311,13 +308,18 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
 			ret = new ResultSizeCountingIterator(ret, expr);
 		}
-
 		return ret;
 	}
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
-		return precompile(expr, new QueryEvaluationContext.Minimal(dataset));
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
+		if (expr instanceof QueryRoot) {
+			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
+					.findAllVariablesUsedInQuery((QueryRoot) expr);
+			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables);
+		}
+		return precompile(expr, context);
 	}
 
 	@Override
@@ -493,25 +495,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 
-		String[] allVariables = findAllVariablesUsedInQuery(node);
-		QueryEvaluationContext newContext = new ArrayBindingBasedQueryEvaluationContext(context, allVariables);
-		QueryEvaluationStep arg = precompile(node.getArg(), newContext);
+		QueryEvaluationStep arg = precompile(node.getArg(), context);
 		return new QueryRootQueryEvaluationStep(arg);
-	}
-
-	private String[] findAllVariablesUsedInQuery(QueryRoot node) {
-		Set<String> varNames = new HashSet<>();
-		AbstractQueryModelVisitor<QueryEvaluationException> queryModelVisitorBase = new AbstractQueryModelVisitor<QueryEvaluationException>() {
-
-			@Override
-			public void meet(Var node) throws QueryEvaluationException {
-				super.meet(node);
-				varNames.add(node.getName());
-			}
-		};
-		node.visit(queryModelVisitorBase);
-		String[] varNamesArr = varNames.toArray(new String[0]);
-		return varNamesArr;
 	}
 
 	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
@@ -548,11 +533,25 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		QueryValueEvaluationStep ves;
+		try {
+			ves = precompile(node.getCondition(), context);
+		} catch (QueryEvaluationException e) {
+			// If we have a failed compilation we always return false.
+			// Which means empty. so let's short circuit that.
+//			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
+			return new QueryEvaluationStep() {
+				@Override
+				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+					return new EmptyIteration<>();
+				}
+			};
+		}
 		return new QueryEvaluationStep() {
 
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return new FilterIterator(node, arg.evaluate(bs), StrictEvaluationStrategy.this);
+				return new FilterIterator(node, arg.evaluate(bs), ves, StrictEvaluationStrategy.this);
 			}
 		};
 	}
@@ -569,7 +568,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 
-		return new BindingSetAssignmentQueryEvaluationStep(node);
+		return new BindingSetAssignmentQueryEvaluationStep(node, context);
 	}
 
 	private final class QueryRootQueryEvaluationStep implements QueryEvaluationStep {
@@ -1851,6 +1850,15 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	public boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings) throws QueryEvaluationException {
+		try {
+			Value value = expr.evaluate(bindings);
+			return QueryEvaluationUtil.getEffectiveBooleanValue(value);
+		} catch (ValueExprEvaluationException e) {
+			return false;
+		}
+	}
+
 	protected boolean isReducedOrDistinct(QueryModelNode node) {
 		QueryModelNode parent = node.getParentNode();
 		if (parent instanceof Slice) {
@@ -1948,6 +1956,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			return iterator.hasNext();
 		}
 
 		@Override

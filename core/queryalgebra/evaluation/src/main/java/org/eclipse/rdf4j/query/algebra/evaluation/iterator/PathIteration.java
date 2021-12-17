@@ -104,7 +104,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 				BindingSet potentialNextElement = currentIter.next();
 				MutableBindingSet nextElement;
 				// if it is not a compatible type of BindingSet
-				if (potentialNextElement instanceof MutableBindingSet) {
+				if (potentialNextElement instanceof QueryBindingSet) {
 					nextElement = (MutableBindingSet) potentialNextElement;
 				} else {
 					nextElement = new QueryBindingSet(potentialNextElement);

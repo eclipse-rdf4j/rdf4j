@@ -129,6 +129,9 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	boolean isTrue(ValueExpr expr, BindingSet bindings)
 			throws ValueExprEvaluationException, QueryEvaluationException;
 
+	boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings)
+			throws ValueExprEvaluationException, QueryEvaluationException;
+
 	/**
 	 * Enable or disable results size tracking for the query plan. Useful to determine which parts of a query plan
 	 * generated the most data.

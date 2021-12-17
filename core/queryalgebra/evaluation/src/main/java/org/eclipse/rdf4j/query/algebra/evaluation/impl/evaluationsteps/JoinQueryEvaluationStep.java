@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
-import java.util.HashSet;
-import java.util.Set;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -39,13 +36,9 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					strategy);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
-			Set<String> leftBindingNames = join.getLeftArg().getBindingNames();
-			Set<String> rightBindingNames = join.getRightArg().getBindingNames();
-			Set<String> joinAttributeNames = new HashSet<>(leftBindingNames);
-			joinAttributeNames.retainAll(rightBindingNames);
-			String[] joinAttributes = joinAttributeNames.toArray(new String[0]);
-			eval = (bindings) -> new HashJoinIteration(strategy, leftPrepared, rightPrepared, bindings, false,
-					joinAttributes);
+			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+			eval = (bindings) -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
+					joinAttributes, context);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else {
 			eval = (bindings) -> new JoinIterator(strategy, leftPrepared, rightPrepared, join, bindings);

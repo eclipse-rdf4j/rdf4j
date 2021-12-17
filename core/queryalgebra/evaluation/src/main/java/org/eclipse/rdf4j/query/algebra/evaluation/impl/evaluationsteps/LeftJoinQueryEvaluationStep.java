@@ -45,7 +45,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 				@Override
 				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-					return new HashJoinIteration(strategy, left, right, bs, true, joinAttributes);
+					return new HashJoinIteration(left, right, bs, true, joinAttributes, context);
 				}
 			};
 		}

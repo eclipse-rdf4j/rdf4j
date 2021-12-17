@@ -8,22 +8,26 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.Iterator;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationStep {
 	private final BindingSetAssignment node;
+	private final Function<BindingSet, MutableBindingSet> bsMaker;
 
-	public BindingSetAssignmentQueryEvaluationStep(BindingSetAssignment node) {
+	public BindingSetAssignmentQueryEvaluationStep(BindingSetAssignment node, QueryEvaluationContext context) {
 		this.node = node;
+		bsMaker = context::createBindingSet;
 	}
 
 	@Override
@@ -41,13 +45,13 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 
 			@Override
 			protected BindingSet getNextElement() throws QueryEvaluationException {
-				QueryBindingSet nextResult = null;
+				MutableBindingSet nextResult = null;
 				while (nextResult == null && assignments.hasNext()) {
 					final BindingSet assignedBindings = assignments.next();
 
 					for (String name : assignedBindings.getBindingNames()) {
 						if (nextResult == null) {
-							nextResult = new QueryBindingSet(bindings);
+							nextResult = bsMaker.apply(bindings);
 						}
 
 						final Value assignedValue = assignedBindings.getValue(name);

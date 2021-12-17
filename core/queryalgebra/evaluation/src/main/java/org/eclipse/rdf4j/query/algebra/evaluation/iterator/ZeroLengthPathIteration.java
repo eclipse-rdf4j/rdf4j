@@ -34,13 +34,13 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private static final Literal SUBJECT = SimpleValueFactory.getInstance().createLiteral("subject");
 
-	private static final String ANON_SUBJECT_VAR = "zero-length-internal-start";
+	public static final String ANON_SUBJECT_VAR = "zero-length-internal-start";
 
-	private static final String ANON_PREDICATE_VAR = "zero-length-internal-pred";
+	public static final String ANON_PREDICATE_VAR = "zero-length-internal-pred";
 
-	private static final String ANON_OBJECT_VAR = "zero-length-internal-end";
+	public static final String ANON_OBJECT_VAR = "zero-length-internal-end";
 
-	private static final String ANON_SEQUENCE_VAR = "zero-length-internal-seq";
+	public static final String ANON_SEQUENCE_VAR = "zero-length-internal-seq";
 
 	private QueryBindingSet result;
 

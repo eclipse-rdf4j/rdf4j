@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.QueueCursor;
 
 /**
@@ -64,15 +65,19 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 	private final QueueCursor<CloseableIteration<BindingSet, QueryEvaluationException>> rightQueue = new QueueCursor<>(
 			1024, new WeakReference<>(this));
 
+	private final QueryEvaluationContext context;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
-	public ParallelLeftJoinCursor(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings)
+	public ParallelLeftJoinCursor(EvaluationStrategy strategy, LeftJoin join, BindingSet bindings,
+			QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		super();
 		this.strategy = strategy;
 		this.join = join;
+		this.context = context;
 		this.scopeBindingNames = join.getBindingNames();
 		this.leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 	}
@@ -111,7 +116,8 @@ public class ParallelLeftJoinCursor extends LookAheadIteration<BindingSet, Query
 		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(join.getRightArg(),
 				leftBindings);
 		if (condition != null) {
-			result = new FilterCursor(result, condition, scopeBindingNames, strategy);
+			result = new FilterCursor(result, condition, scopeBindingNames, strategy,
+					strategy.precompile(condition, context));
 		}
 		CloseableIteration<BindingSet, QueryEvaluationException> alt = new SingletonIteration<>(leftBindings);
 		rightQueue.put(new AlternativeCursor<>(result, alt));

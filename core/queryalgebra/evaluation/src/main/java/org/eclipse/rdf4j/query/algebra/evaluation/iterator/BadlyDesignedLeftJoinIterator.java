@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -41,6 +42,7 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 		super(strategy, join, getFilteredBindings(inputBindings, problemVars), context);
 		this.inputBindings = inputBindings;
 		this.problemVars = problemVars;
+
 	}
 
 	/*---------*
@@ -67,7 +69,7 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 		if (result != null) {
 			// Make sure the provided problemVars are part of the returned results
 			// (necessary in case of e.g. LeftJoin and Union arguments)
-			QueryBindingSet extendedResult = null;
+			MutableBindingSet extendedResult = null;
 
 			for (String problemVar : problemVars) {
 				if (!result.hasBinding(problemVar)) {

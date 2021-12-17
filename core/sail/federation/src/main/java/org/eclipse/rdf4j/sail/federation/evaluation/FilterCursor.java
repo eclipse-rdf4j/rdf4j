@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 
 /**
@@ -26,14 +27,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 public class FilterCursor extends FilterIterator {
 
 	public FilterCursor(CloseableIteration<BindingSet, QueryEvaluationException> result, ValueExpr condition,
-			final Set<String> scopeBindingNames, EvaluationStrategy strategy) throws QueryEvaluationException {
+			final Set<String> scopeBindingNames, EvaluationStrategy strategy, QueryValueEvaluationStep ves)
+			throws QueryEvaluationException {
 		super(new Filter(new EmptySet() {
 
 			@Override
 			public Set<String> getBindingNames() {
 				return scopeBindingNames;
 			}
-		}, condition), result, strategy);
+		}, condition), result, ves, strategy);
 	}
 
 }

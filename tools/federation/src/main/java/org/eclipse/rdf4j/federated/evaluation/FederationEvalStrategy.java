@@ -563,10 +563,13 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			return new QueryEvaluationStep() {
+				QueryEvaluationStep leftES = precompile(leftJoin.getLeftArg(), context);
+				QueryEvaluationStep rightES = precompile(leftJoin.getRightArg(), context);
 
 				@Override
 				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-					return new HashJoinIteration(FederationEvalStrategy.this, leftJoin, bindings);
+					String[] hashJoinAttributeNames = HashJoinIteration.hashJoinAttributeNames(leftJoin);
+					return new HashJoinIteration(leftES, rightES, bindings, true, hashJoinAttributeNames, context);
 				}
 
 			};

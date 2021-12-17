@@ -52,24 +52,20 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public ArrayBindingSet(BindingSet toCopy, String... names) {
-		if (toCopy instanceof ArrayBindingSet) {
+		if (toCopy instanceof ArrayBindingSet && ((ArrayBindingSet) toCopy).bindingNames == names) {
 			ArrayBindingSet abs = (ArrayBindingSet) toCopy;
-			this.bindingNames = Arrays.copyOf(abs.bindingNames, abs.bindingNames.length + names.length);
-			System.arraycopy(names, 0, bindingNames, abs.bindingNames.length, names.length);
-			this.values = Arrays.copyOf(abs.values, abs.bindingNames.length + names.length);
+			this.bindingNames = names;
+			this.values = Arrays.copyOf(abs.values, abs.values.length);
 			this.whichBindingsHaveBeenSet = Arrays.copyOf(abs.whichBindingsHaveBeenSet,
-					abs.bindingNames.length + names.length);
+					abs.whichBindingsHaveBeenSet.length);
 		} else {
-			final int toCopySize = toCopy.size();
-			this.bindingNames = new String[toCopySize + names.length];
-			this.whichBindingsHaveBeenSet = new boolean[toCopySize + names.length];
-			final Iterator<String> iter = toCopy.getBindingNames().iterator();
-			for (int i = 0; iter.hasNext(); i++) {
-				this.bindingNames[i] = iter.next();
-			}
-			System.arraycopy(names, 0, bindingNames, toCopySize, names.length);
+			LinkedHashSet<String> newNames = new LinkedHashSet<String>();
+			newNames.addAll(Arrays.asList(names));
+			newNames.addAll(toCopy.getBindingNames());
+			this.bindingNames = newNames.toArray(new String[0]);
+			this.whichBindingsHaveBeenSet = new boolean[this.bindingNames.length];
 			this.values = new Value[bindingNames.length];
-			for (int i = 0; i < toCopySize; i++) {
+			for (int i = 0; i < bindingNames.length; i++) {
 				this.values[i] = toCopy.getValue(bindingNames[i]);
 				this.whichBindingsHaveBeenSet[i] = toCopy.hasBinding(bindingNames[i]);
 			}
@@ -125,7 +121,14 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(variableName)) {
 				final int idx = i;
-				return (a) -> new SimpleBinding(variableName, a.values[idx]);
+				return (a) -> {
+					Value value = a.values[idx];
+					if (value != null) {
+						return new SimpleBinding(variableName, value);
+					} else {
+						return null;
+					}
+				};
 			}
 		}
 		return null;
@@ -135,7 +138,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(bindingName)) {
 				final int idx = i;
-				return (a) -> a.values[idx] != null;
+				return (a) -> a.whichBindingsHaveBeenSet[idx];
 			}
 		}
 		return null;
@@ -212,7 +215,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		@Override
 		public boolean hasNext() {
 			for (; index < values.length; index++) {
-				if (whichBindingsHaveBeenSet[index]) {
+				if (whichBindingsHaveBeenSet[index] && values[index] != null) {
 					return true;
 				}
 			}
@@ -221,7 +224,13 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		@Override
 		public Binding next() {
-			return new SimpleBinding(bindingNames[index], values[index++]);
+
+			String name = bindingNames[index];
+			Value value = values[index++];
+			if (value != null)
+				return new SimpleBinding(name, value);
+			else
+				return null;
 		}
 
 		@Override
