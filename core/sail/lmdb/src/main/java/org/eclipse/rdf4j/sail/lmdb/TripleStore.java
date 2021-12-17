@@ -21,7 +21,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
-import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
@@ -41,6 +40,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.nmdb_env_set_maxreaders;
 
 import java.io.Closeable;
 import java.io.File;
@@ -142,6 +142,8 @@ class TripleStore implements Closeable {
 
 	private long env;
 	private long writeTxn = 0;
+	private TxnRef readTxnRef;
+	private final Pool pool = new Pool();
 
 	static final Comparator<ByteBuffer> COMPARATOR = new Comparator<ByteBuffer>() {
 		@Override
@@ -179,6 +181,7 @@ class TripleStore implements Closeable {
 
 		mdb_env_set_mapsize(env, config.getTripleDBSize());
 		mdb_env_set_maxdbs(env, 6);
+		nmdb_env_set_maxreaders(env, 256);
 
 		// Open environment
 		int flags = MDB_NOTLS;
@@ -186,6 +189,8 @@ class TripleStore implements Closeable {
 			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
 		}
 		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
+
+		readTxnRef = new TxnRef(env, Mode.RESET);
 
 		File propFile = new File(this.dir, PROPERTIES_FILE);
 		String indexSpecStr = config.getTripleIndexes();
@@ -325,8 +330,8 @@ class TripleStore implements Closeable {
 					TripleIndex addedIndex = new TripleIndex(fieldSeq);
 					RecordIterator[] sourceIter = { null };
 					try {
-						sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
-								new TxnRef(txn, Mode.NONE));
+						sourceIter[0] = new LmdbRecordIterator(pool, sourceIndex, false, -1, -1, -1, -1,
+								new TxnRef(txn));
 
 						RecordIterator it = sourceIter[0];
 						Record record;
@@ -450,9 +455,7 @@ class TripleStore implements Closeable {
 
 	private RecordIterator getTriplesUsingIndex(long subj, long pred, long obj, long context,
 			TripleIndex index, boolean rangeSearch) {
-		TxnRef txnRef = getReadTxn();
-		txnRef.begin();
-		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, txnRef);
+		return new LmdbRecordIterator(pool, index, rangeSearch, subj, pred, obj, context, readTxnRef);
 	}
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
@@ -668,6 +671,9 @@ class TripleStore implements Closeable {
 		if (writeTxn != 0) {
 			if (commit) {
 				mdb_txn_commit(writeTxn);
+				// invalidate open read transaction so that they are not re-used
+				// otherwise iterators won't see the updated data
+				readTxnRef.invalidate();
 			} else {
 				mdb_txn_abort(writeTxn);
 			}
@@ -695,18 +701,6 @@ class TripleStore implements Closeable {
 		try (OutputStream out = new FileOutputStream(propFile)) {
 			properties.store(out, "triple indexes meta-data, DO NOT EDIT!");
 		}
-	}
-
-	public TxnRef getReadTxn() {
-		// TODO check if an already existing write txn should be used here if available
-		long readTxn;
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
-
-			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-			readTxn = pp.get(0);
-		}
-		return new TxnRef(readTxn, Mode.ABORT);
 	}
 
 	private static class ExplicitStatementFilter implements RecordIterator {
@@ -938,6 +932,7 @@ class TripleStore implements Closeable {
 
 		void close() {
 			mdb_dbi_close(env, dbi);
+			pool.close();
 		}
 
 		void clear(long txn) throws IOException {
