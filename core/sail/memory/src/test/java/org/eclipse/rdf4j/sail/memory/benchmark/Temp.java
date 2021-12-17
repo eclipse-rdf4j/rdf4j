@@ -31,12 +31,25 @@ public class Temp {
 //		benchmark.afterClass();
 //	}
 
+//	public static void main(String[] args) throws IOException, InterruptedException {
+//		SortBenchmark benchmark = new SortBenchmark();
+//		benchmark.beforeClass();
+//		Stopwatch stopwatch = Stopwatch.createStarted();
+//		while (stopwatch.elapsed(TimeUnit.MINUTES) < 5) {
+//			benchmark.sortByQuery();
+//			System.out.println(".");
+//		}
+//
+//		System.out.println("Done");
+//		benchmark.afterClass();
+//	}
+
 	public static void main(String[] args) throws IOException, InterruptedException {
-		SortBenchmark benchmark = new SortBenchmark();
+		QueryBenchmark benchmark = new QueryBenchmark();
 		benchmark.beforeClass();
 		Stopwatch stopwatch = Stopwatch.createStarted();
 		while (stopwatch.elapsed(TimeUnit.MINUTES) < 5) {
-			benchmark.sortByQuery();
+			benchmark.complexQuery();
 			System.out.println(".");
 		}
 

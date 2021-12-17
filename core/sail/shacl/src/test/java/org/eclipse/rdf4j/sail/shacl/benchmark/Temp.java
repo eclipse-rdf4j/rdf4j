@@ -1,12 +1,17 @@
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
+import java.util.concurrent.TimeUnit;
+
+import com.google.common.base.Stopwatch;
+
 public class Temp {
 
 	public static void main(String[] args) {
 		ComplexLargeBenchmark complexLargeBenchmark = new ComplexLargeBenchmark();
-		for (int i = 0; i < 50; i++) {
-			System.out.println(i);
-			complexLargeBenchmark.noPreloadingBulkParallelCached();
+		Stopwatch stopwatch = Stopwatch.createStarted();
+		while (stopwatch.elapsed(TimeUnit.MINUTES) < 5) {
+			System.out.println(stopwatch.elapsed());
+			complexLargeBenchmark.noPreloadingNonEmptyParallel();
 		}
 	}
 }
