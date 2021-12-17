@@ -8,14 +8,14 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.bindingset;
 
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
-
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
 
 class StatementBackedBindingSet extends UpgradeableReadOnlyBindingSet {
 
@@ -27,7 +27,7 @@ class StatementBackedBindingSet extends UpgradeableReadOnlyBindingSet {
 	private final Statement statement;
 
 	public StatementBackedBindingSet(String subjectName, String predicateName, String objectName, String contextName,
-									 Statement statement, Set<String> names, Set<String> namesWithoutContext) {
+			Statement statement, Set<String> names, Set<String> namesWithoutContext) {
 		this.subjectName = subjectName;
 		this.predicateName = predicateName;
 		this.objectName = objectName;
@@ -47,18 +47,18 @@ class StatementBackedBindingSet extends UpgradeableReadOnlyBindingSet {
 
 				while (next == null && index < 4) {
 					switch (index) {
-						case 0:
-							next = getSimpleBinding(subjectName, statement.getSubject());
-							break;
-						case 1:
-							next = getSimpleBinding(predicateName, statement.getPredicate());
-							break;
-						case 2:
-							next = getSimpleBinding(objectName, statement.getObject());
-							break;
-						case 3:
-							next = getSimpleBinding(contextName, statement.getContext());
-							break;
+					case 0:
+						next = getSimpleBinding(subjectName, statement.getSubject());
+						break;
+					case 1:
+						next = getSimpleBinding(predicateName, statement.getPredicate());
+						break;
+					case 2:
+						next = getSimpleBinding(objectName, statement.getObject());
+						break;
+					case 3:
+						next = getSimpleBinding(contextName, statement.getContext());
+						break;
 					}
 					index++;
 				}
@@ -148,7 +148,7 @@ class StatementBackedBindingSet extends UpgradeableReadOnlyBindingSet {
 
 	private static boolean fastEquals(String name1NonNull, String name2Nullable) {
 		return name2Nullable != null && name1NonNull.hashCode() == name2Nullable.hashCode()
-			&& name1NonNull.equals(name2Nullable);
+				&& name1NonNull.equals(name2Nullable);
 	}
 
 	@Override

@@ -72,7 +72,7 @@ public class UpgradeableStatementBackedBindingSet
 		private static String getName(Var var, Set<String> names) {
 			if (var != null && !(var.isAnonymous() && var.isConstant())) {
 
-				if(var.isConstant()){
+				if (var.isConstant()) {
 					System.out.println();
 				}
 				String name = var.getName();

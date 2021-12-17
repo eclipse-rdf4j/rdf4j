@@ -94,14 +94,6 @@ public class Utils {
 		}
 	}
 
-	private static InputStream getResourceAsStream(String resourceName) {
-		InputStream resourceAsStream = Utils.class.getClassLoader().getResourceAsStream(resourceName);
-		if (resourceAsStream != null) {
-			return new BufferedInputStream(resourceAsStream);
-		}
-		return null;
-	}
-
 	public static void loadShapeData(SailRepository repo, URL resourceName)
 			throws RDF4JException, UnsupportedRDFormatException, IOException {
 

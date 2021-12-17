@@ -7,14 +7,6 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.bindingset;
 
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.AbstractBindingSet;
-import org.eclipse.rdf4j.query.Binding;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.ModifiableBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.impl.SimpleBinding;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -25,6 +17,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.function.Consumer;
+
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 public class DynamicQueryBindingSet implements ModifiableBindingSet {
 
