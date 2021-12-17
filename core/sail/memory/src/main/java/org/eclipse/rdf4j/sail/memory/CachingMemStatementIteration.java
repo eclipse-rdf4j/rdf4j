@@ -28,14 +28,20 @@ public class CachingMemStatementIteration<X extends Exception> extends LookAhead
 	private Exception e;
 
 	public CachingMemStatementIteration(MemStatementIterator<X> iterator, MemorySailStore memorySailStore) {
-		if (memorySailStore.shouldBeCached(iterator)) {
-			CloseableIteration<MemStatement, X> memStatementXCloseableIteration = null;
+		if (memorySailStore.shouldBeCached(iterator.getMinimal())) {
+			CloseableIteration<MemStatement, X> cachedIterator = null;
 			try {
-				memStatementXCloseableIteration = memorySailStore.cacheIterator(iterator);
+				cachedIterator = memorySailStore.cacheIterator(iterator);
 			} catch (Exception e) {
 				this.e = e;
+			} finally {
+				try {
+					iterator.close();
+				} catch (Exception ex) {
+					this.e = ex;
+				}
 			}
-			this.iterator = memStatementXCloseableIteration;
+			this.iterator = cachedIterator;
 			this.usesCache = true;
 		} else {
 			this.iterator = iterator;
@@ -64,7 +70,7 @@ public class CachingMemStatementIteration<X extends Exception> extends LookAhead
 				iterator.close();
 			} finally {
 				if (!usesCache && ((MemStatementIterator<X>) iterator).considerForCaching()) {
-					memorySailStore.addCacheableIteration(((MemStatementIterator<X>) iterator));
+					memorySailStore.incrementIteratorFrequencyMap(((MemStatementIterator<X>) iterator).getMinimal());
 				}
 			}
 		}

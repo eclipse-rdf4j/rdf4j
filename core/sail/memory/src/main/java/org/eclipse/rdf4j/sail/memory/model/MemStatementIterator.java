@@ -167,58 +167,120 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 	/**
 	 * Returnes true if this iterator was particularly costly and should be cached
-	 * 
+	 *
 	 * @return
 	 */
 	public boolean considerForCaching() {
 		if (exhausted) { // we will only consider caching if the iterator has been completely consumed
-			if (statementIndex > 100) { // minimum 100 statements need to have been checked by the iterator
+			if (statementIndex > 1000) { // minimum 1000 statements need to have been checked by the iterator
 				if (matchingStatements == 0) { // if the iterator was effectively empty we can always cache it
 					return true;
 				} else if (matchingStatements < 100) { // we will not cache iterators that returned more than 99
-														// statements
+					// statements
 					double ratio = (statementIndex + 0.0) / matchingStatements;
 					return ratio > 100; // for every returned statement we need to have checked 100 non-matching
-										// statements
+					// statements
 				}
 			}
 		}
 		return false;
 	}
 
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (!(o instanceof MemStatementIterator)) {
-			return false;
-		}
-		MemStatementIterator<?> that = (MemStatementIterator<?>) o;
-		return explicit == that.explicit && explicitNotSpecified == that.explicitNotSpecified
-				&& snapshot == that.snapshot && noIsolation == that.noIsolation && Objects.equals(subject, that.subject)
-				&& Objects.equals(predicate, that.predicate) && Objects.equals(object, that.object)
-				&& Arrays.equals(contexts, that.contexts);
+	public Minimal<X> getMinimal() {
+		return new Minimal<X>(this);
 	}
 
-	@Override
-	public int hashCode() {
-		int result = Objects.hash(subject, predicate, object, explicit, explicitNotSpecified, snapshot, noIsolation);
-		result = 31 * result + Arrays.hashCode(contexts);
-		return result;
-	}
+	public static class Minimal<X extends Exception> {
 
-	@Override
-	public String toString() {
-		return "MemStatementIterator{" +
-				"subject=" + subject +
-				", predicate=" + predicate +
-				", object=" + object +
-				", contexts=" + Arrays.toString(contexts) +
-				", explicit=" + explicit +
-				", explicitNotSpecified=" + explicitNotSpecified +
-				", snapshot=" + snapshot +
-				", noIsolation=" + noIsolation +
-				'}';
+		private final MemResource subject;
+		private final MemIRI predicate;
+		private final MemValue object;
+		private final MemResource[] contexts;
+
+		private final boolean explicit;
+		private final boolean explicitNotSpecified;
+
+		private final int snapshot;
+		private final boolean noIsolation;
+		private final int statementIndex;
+		private final int matchingStatements;
+
+		public Minimal(MemStatementIterator<X> memStatementIterator) {
+			this.subject = memStatementIterator.subject;
+			this.predicate = memStatementIterator.predicate;
+			this.object = memStatementIterator.object;
+			this.contexts = memStatementIterator.contexts;
+			this.explicit = memStatementIterator.explicit;
+			this.explicitNotSpecified = memStatementIterator.explicitNotSpecified;
+			this.snapshot = memStatementIterator.snapshot;
+			this.noIsolation = memStatementIterator.noIsolation;
+			this.statementIndex = memStatementIterator.statementIndex;
+			this.matchingStatements = memStatementIterator.matchingStatements;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof MemStatementIterator)) {
+				return false;
+			}
+			MemStatementIterator<?> that = (MemStatementIterator<?>) o;
+			return explicit == that.explicit && explicitNotSpecified == that.explicitNotSpecified
+					&& snapshot == that.snapshot && noIsolation == that.noIsolation
+					&& Objects.equals(subject, that.subject)
+					&& Objects.equals(predicate, that.predicate) && Objects.equals(object, that.object)
+					&& Arrays.equals(contexts, that.contexts);
+		}
+
+		private int cachedHashCode = 0;
+
+		@Override
+		public int hashCode() {
+			if (cachedHashCode == 0) {
+				int cachedHashCode = Objects.hash(subject, predicate, object, explicit, explicitNotSpecified, snapshot,
+						noIsolation);
+				cachedHashCode = 31 * cachedHashCode + Arrays.hashCode(contexts);
+				this.cachedHashCode = cachedHashCode;
+			}
+			return cachedHashCode;
+		}
+
+		@Override
+		public String toString() {
+			return "MemStatementIterator{" +
+					"subject=" + subject +
+					", predicate=" + predicate +
+					", object=" + object +
+					", contexts=" + Arrays.toString(contexts) +
+					", explicit=" + explicit +
+					", explicitNotSpecified=" + explicitNotSpecified +
+					", snapshot=" + snapshot +
+					", noIsolation=" + noIsolation +
+					'}';
+		}
+
+		public Stats getStats() {
+			return new Stats(statementIndex, matchingStatements);
+		}
+
+		static class Stats {
+			private final int checkedStatements;
+			private final int matchingStatements;
+
+			public Stats(int checkStatements, int matchingStatements) {
+				this.checkedStatements = checkStatements;
+				this.matchingStatements = matchingStatements;
+			}
+
+			@Override
+			public String toString() {
+				return "Stats{" +
+						"checkedStatements=" + checkedStatements +
+						", matchingStatements=" + matchingStatements +
+						'}';
+			}
+		}
 	}
 }

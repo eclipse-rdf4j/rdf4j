@@ -66,13 +66,14 @@ class MemorySailStore implements SailStore {
 	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
 	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 	public static final MemResource[] EMPTY_CONTEXT = new MemResource[0];
+	public static final int CACHE_FREQUENCY_THRESHOLD = 10;
 	private final Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
 
 	// a map that tracks the number of times a cacheable iterator has been used
-	private final ConcurrentHashMap<MemStatementIterator<? extends Exception>, Integer> cacheCount = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<MemStatementIterator.Minimal<? extends Exception>, Integer> iteratorFrequencyMap = new ConcurrentHashMap<>();
 
 	// a cache for commonly used iterators that are particularly costly
-	private final Cache<MemStatementIterator<? extends Exception>, List<MemStatement>> iteratorCache = CacheBuilder
+	private final Cache<MemStatementIterator.Minimal<? extends Exception>, List<MemStatement>> iteratorCache = CacheBuilder
 			.newBuilder()
 			.softValues()
 			.build();
@@ -155,8 +156,16 @@ class MemorySailStore implements SailStore {
 	}
 
 	private void invalidateCache() {
-		cacheCount.clear();
-		iteratorCache.invalidateAll();
+		if (!(iteratorFrequencyMap.isEmpty() && iteratorCache.size() == 0)) {
+			logger.debug("Invalidated cache");
+
+			if (logger.isTraceEnabled()) {
+				StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+				logger.debug("Invalidated cache called from {}", stackTrace[2]);
+			}
+			iteratorFrequencyMap.clear();
+			iteratorCache.invalidateAll();
+		}
 	}
 
 	@Override
@@ -438,31 +447,37 @@ class MemorySailStore implements SailStore {
 		}
 	}
 
-	<X extends Exception> void addCacheableIteration(MemStatementIterator<X> iterator) {
-		cacheCount.compute(iterator, (key, value) -> {
+	<X extends Exception> void incrementIteratorFrequencyMap(MemStatementIterator.Minimal<X> iterator) {
+		Integer compute = iteratorFrequencyMap.compute(iterator, (key, value) -> {
 			if (value == null) {
 				return 0;
 			}
 			return value + 1;
 		});
+		if (logger.isDebugEnabled()) {
+			logger.debug("Incremented iteratorFrequencyMap to {}\n{} \n{}", compute, iterator, iterator.getStats());
+		}
 	}
 
-	<X extends Exception> boolean shouldBeCached(MemStatementIterator<X> iterator) {
-		Integer integer = cacheCount.get(iterator);
-		return integer != null && integer > 10;
+	<X extends Exception> boolean shouldBeCached(MemStatementIterator.Minimal<X> iterator) {
+		Integer integer = iteratorFrequencyMap.get(iterator);
+		return integer != null && integer > CACHE_FREQUENCY_THRESHOLD;
 	}
 
 	public <X extends Exception> CloseableIteration<MemStatement, X> cacheIterator(MemStatementIterator<X> iterator)
 			throws Exception {
-		List<MemStatement> cached = iteratorCache.getIfPresent(iterator);
+
+		MemStatementIterator.Minimal<X> minimal = iterator.getMinimal();
+
+		List<MemStatement> cached = iteratorCache.getIfPresent(minimal);
 
 		if (cached == null) {
-			logger.debug("Filling cache for MemStatementIterator {}", iterator);
+			logger.debug("Filling cache {}", iterator);
 			cached = new ArrayList<>();
 			while (iterator.hasNext()) {
 				cached.add(iterator.next());
 			}
-			iteratorCache.put(iterator, cached);
+			iteratorCache.put(minimal, cached);
 		}
 
 		return new CloseableIteratorIteration<>(cached.iterator());
@@ -566,8 +581,8 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void flush() throws SailException {
-			invalidateCache();
 			if (txnLock) {
+				invalidateCache();
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
 				if (requireCleanup) {
 					scheduleSnapshotCleanup();
