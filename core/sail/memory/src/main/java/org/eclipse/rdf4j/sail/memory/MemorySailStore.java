@@ -70,10 +70,10 @@ class MemorySailStore implements SailStore {
 	private final Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
 
 	// a map that tracks the number of times a cacheable iterator has been used
-	private final ConcurrentHashMap<MemStatementIterator.Minimal<? extends Exception>, Integer> iteratorFrequencyMap = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<MemStatementIterator<? extends Exception>, Integer> iteratorFrequencyMap = new ConcurrentHashMap<>();
 
 	// a cache for commonly used iterators that are particularly costly
-	private final Cache<MemStatementIterator.Minimal<? extends Exception>, List<MemStatement>> iteratorCache = CacheBuilder
+	private final Cache<MemStatementIterator<? extends Exception>, List<MemStatement>> iteratorCache = CacheBuilder
 			.newBuilder()
 			.softValues()
 			.build();
@@ -156,7 +156,7 @@ class MemorySailStore implements SailStore {
 	}
 
 	private void invalidateCache() {
-		if (!(iteratorFrequencyMap.isEmpty() && iteratorCache.size() == 0)) {
+		if (!(iteratorFrequencyMap.isEmpty())) {
 			logger.debug("Invalidated cache");
 
 			if (logger.isTraceEnabled()) {
@@ -447,7 +447,7 @@ class MemorySailStore implements SailStore {
 		}
 	}
 
-	<X extends Exception> void incrementIteratorFrequencyMap(MemStatementIterator.Minimal<X> iterator) {
+	<X extends Exception> void incrementIteratorFrequencyMap(MemStatementIterator<X> iterator) {
 		Integer compute = iteratorFrequencyMap.compute(iterator, (key, value) -> {
 			if (value == null) {
 				return 0;
@@ -459,7 +459,7 @@ class MemorySailStore implements SailStore {
 		}
 	}
 
-	<X extends Exception> boolean shouldBeCached(MemStatementIterator.Minimal<X> iterator) {
+	<X extends Exception> boolean shouldBeCached(MemStatementIterator<X> iterator) {
 		Integer integer = iteratorFrequencyMap.get(iterator);
 		return integer != null && integer > CACHE_FREQUENCY_THRESHOLD;
 	}
@@ -467,17 +467,17 @@ class MemorySailStore implements SailStore {
 	public <X extends Exception> CloseableIteration<MemStatement, X> cacheIterator(MemStatementIterator<X> iterator)
 			throws Exception {
 
-		MemStatementIterator.Minimal<X> minimal = iterator.getMinimal();
-
-		List<MemStatement> cached = iteratorCache.getIfPresent(minimal);
+		List<MemStatement> cached = iteratorCache.getIfPresent(iterator);
 
 		if (cached == null) {
-			logger.debug("Filling cache {}", iterator);
-			cached = new ArrayList<>();
-			while (iterator.hasNext()) {
-				cached.add(iterator.next());
+			try (iterator) {
+				logger.debug("Filling cache {}", iterator);
+				cached = new ArrayList<>();
+				while (iterator.hasNext()) {
+					cached.add(iterator.next());
+				}
 			}
-			iteratorCache.put(minimal, cached);
+			iteratorCache.put(iterator, cached);
 		}
 
 		return new CloseableIteratorIteration<>(cached.iterator());
