@@ -460,8 +460,12 @@ class MemorySailStore implements SailStore {
 	}
 
 	<X extends Exception> boolean shouldBeCached(MemStatementIterator<X> iterator) {
-		Integer integer = iteratorFrequencyMap.get(iterator);
-		return integer != null && integer > CACHE_FREQUENCY_THRESHOLD;
+		if (!iteratorFrequencyMap.isEmpty()) {
+			Integer integer = iteratorFrequencyMap.get(iterator);
+			return integer != null && integer > CACHE_FREQUENCY_THRESHOLD;
+		} else {
+			return false;
+		}
 	}
 
 	public <X extends Exception> CloseableIteration<MemStatement, X> cacheIterator(MemStatementIterator<X> iterator)

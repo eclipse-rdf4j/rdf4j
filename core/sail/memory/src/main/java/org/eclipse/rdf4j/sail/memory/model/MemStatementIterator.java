@@ -207,8 +207,8 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 		MemStatementIterator<?> that = (MemStatementIterator<?>) o;
 		return explicit == that.explicit && explicitNotSpecified == that.explicitNotSpecified
 				&& snapshot == that.snapshot && noIsolation == that.noIsolation
-				&& Objects.equals(subject, that.subject)
-				&& Objects.equals(predicate, that.predicate) && Objects.equals(object, that.object)
+				&& subject == that.subject
+				&& predicate == that.predicate && object == that.object
 				&& Arrays.equals(contexts, that.contexts);
 	}
 
@@ -219,7 +219,18 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 		if (cachedHashCode == 0) {
 			int cachedHashCode = Objects.hash(subject, predicate, object, explicit, explicitNotSpecified, snapshot,
 					noIsolation);
-			cachedHashCode = 31 * cachedHashCode + Arrays.hashCode(contexts);
+			if (contexts != null) {
+				if (contexts.length == 1) {
+					if (contexts[0] == null) {
+						cachedHashCode += 23;
+					} else {
+						cachedHashCode = 29 * cachedHashCode + contexts[0].hashCode();
+					}
+				} else if (contexts.length > 0) {
+					cachedHashCode = 31 * cachedHashCode + Arrays.hashCode(contexts);
+				}
+			}
+
 			this.cachedHashCode = cachedHashCode;
 		}
 		return cachedHashCode;
