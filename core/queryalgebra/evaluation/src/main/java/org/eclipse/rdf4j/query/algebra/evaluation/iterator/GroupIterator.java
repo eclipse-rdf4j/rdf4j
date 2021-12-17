@@ -75,14 +75,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private final Group group;
 
-	private final File tempFile;
 	private final DB db;
 	/**
 	 * Number of items cached before internal collections are synced to disk. If set to 0, no disk-syncing is done and
 	 * all internal caching is kept in memory.
 	 */
 	private final long iterationCacheSyncThreshold;
-	private boolean initialized = false;
 
 	private final QueryEvaluationContext context;
 
@@ -106,16 +104,17 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		if (this.iterationCacheSyncThreshold > 0) {
 			try {
-				this.tempFile = File.createTempFile("group-eval", null);
+				this.db = DBMaker
+						.newFileDB(File.createTempFile("group-eval", null))
+						.deleteFilesAfterClose()
+						.closeOnJvmShutdown()
+						.make();
 			} catch (IOException e) {
 				throw new QueryEvaluationException("could not initialize temp db", e);
 			}
-			this.db = DBMaker.newFileDB(tempFile).deleteFilesAfterClose().closeOnJvmShutdown().make();
 		} else {
-			this.tempFile = null;
 			this.db = null;
 		}
-		super.setIterator(createIterator());
 	}
 
 	/*---------*
@@ -124,18 +123,16 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
-		if (!initialized) {
+		if (!super.hasIterator()) {
 			super.setIterator(createIterator());
-			initialized = true;
 		}
 		return super.hasNext();
 	}
 
 	@Override
 	public BindingSet next() throws QueryEvaluationException {
-		if (!initialized) {
+		if (!super.hasIterator()) {
 			super.setIterator(createIterator());
-			initialized = true;
 		}
 		return super.next();
 	}

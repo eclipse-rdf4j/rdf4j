@@ -33,12 +33,12 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 		setIterator(iter);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
 	protected void setIterator(Iterator<? extends E> iter) {
 		this.iter = Objects.requireNonNull(iter, "Iterator was null");
+	}
+
+	protected boolean hasIterator() {
+		return iter != null;
 	}
 
 	@Override
