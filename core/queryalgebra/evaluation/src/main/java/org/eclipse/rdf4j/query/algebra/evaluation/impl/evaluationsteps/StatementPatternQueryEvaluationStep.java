@@ -89,8 +89,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Predicate<BindingSet> isPredBound = unbound(predVar, context);
 		Predicate<BindingSet> isObjBound = unbound(objVar, context);
 		Predicate<BindingSet> isConBound = unbound(conVar, context);
-
-		unboundTest = isSubjBound.or(isPredBound).or(isObjBound).or(isConBound);
+		Predicate<BindingSet> isNotEmpty = Predicate.not(BindingSet::isEmpty);
+		unboundTest = isNotEmpty.and(isSubjBound.or(isPredBound).or(isObjBound).or(isConBound));
 	}
 
 	private static Predicate<BindingSet> unbound(final Var var, QueryEvaluationContext context) {
