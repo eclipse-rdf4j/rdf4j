@@ -5,14 +5,15 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.lucene.config;
+package org.eclipse.rdf4j.sail.lucene.impl.config;
 
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
-import org.eclipse.rdf4j.sail.lucene.LuceneIndex;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.eclipse.rdf4j.sail.lucene.config.AbstractLuceneSailConfig;
+import org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex;
 
 /**
  * A {@link SailFactory} that creates {@link LuceneSail}s based on RDF configuration data.

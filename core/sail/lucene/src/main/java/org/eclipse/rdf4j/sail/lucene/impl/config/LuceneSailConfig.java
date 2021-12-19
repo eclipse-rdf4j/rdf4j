@@ -5,15 +5,12 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.lucene.config;
+package org.eclipse.rdf4j.sail.lucene.impl.config;
 
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
+import org.eclipse.rdf4j.sail.lucene.config.AbstractLuceneSailConfig;
 
 public class LuceneSailConfig extends AbstractLuceneSailConfig {
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	public LuceneSailConfig() {
 		super(LuceneSailFactory.SAIL_TYPE);

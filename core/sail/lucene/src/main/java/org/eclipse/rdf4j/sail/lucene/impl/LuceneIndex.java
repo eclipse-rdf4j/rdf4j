@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.lucene;
+package org.eclipse.rdf4j.sail.lucene.impl;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -81,6 +81,16 @@ import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lucene.AbstractLuceneIndex;
+import org.eclipse.rdf4j.sail.lucene.AbstractReaderMonitor;
+import org.eclipse.rdf4j.sail.lucene.BulkUpdater;
+import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
+import org.eclipse.rdf4j.sail.lucene.DocumentResult;
+import org.eclipse.rdf4j.sail.lucene.DocumentScore;
+import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.eclipse.rdf4j.sail.lucene.SearchDocument;
+import org.eclipse.rdf4j.sail.lucene.SearchFields;
+import org.eclipse.rdf4j.sail.lucene.SimpleBulkUpdater;
 import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
 import org.locationtech.spatial4j.context.SpatialContext;
 import org.locationtech.spatial4j.context.SpatialContextFactory;

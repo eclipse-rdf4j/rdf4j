@@ -5,12 +5,14 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.lucene;
+package org.eclipse.rdf4j.sail.lucene.impl;
 
 import java.util.Set;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.search.ScoreDoc;
+import org.eclipse.rdf4j.sail.lucene.DocumentResult;
+import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 
 public class LuceneDocumentResult implements DocumentResult {
 
