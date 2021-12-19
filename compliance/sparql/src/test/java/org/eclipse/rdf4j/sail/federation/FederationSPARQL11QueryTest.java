@@ -8,11 +8,11 @@
 package org.eclipse.rdf4j.sail.federation;
 
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11QueryComplianceTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11QueryComplianceTest;
 
 public class FederationSPARQL11QueryTest extends SPARQL11QueryComplianceTest {
 	public FederationSPARQL11QueryTest(String displayName, String testURI, String name, String queryFileURL,

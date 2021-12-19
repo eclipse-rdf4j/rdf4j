@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
-import org.eclipse.rdf4j.sail.EvaluationStrategyTest;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.testsuite.sail.EvaluationStrategyTest;
 
 /**
   *

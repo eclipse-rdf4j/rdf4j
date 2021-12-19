@@ -10,10 +10,10 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
-import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+import org.eclipse.rdf4j.testsuite.repository.RDFSchemaRepositoryConnectionTest;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 

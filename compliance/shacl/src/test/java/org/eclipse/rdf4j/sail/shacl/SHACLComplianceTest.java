@@ -11,9 +11,9 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.shacl.manifest.AbstractSHACLTest;
-import org.eclipse.rdf4j.shacl.manifest.SHACLManifestTestSuiteFactory;
-import org.eclipse.rdf4j.shacl.manifest.SHACLManifestTestSuiteFactory.TestFactory;
+import org.eclipse.rdf4j.testsuite.shacl.manifest.AbstractSHACLTest;
+import org.eclipse.rdf4j.testsuite.shacl.manifest.SHACLManifestTestSuiteFactory;
+import org.eclipse.rdf4j.testsuite.shacl.manifest.SHACLManifestTestSuiteFactory.TestFactory;
 
 import junit.framework.TestSuite;
 

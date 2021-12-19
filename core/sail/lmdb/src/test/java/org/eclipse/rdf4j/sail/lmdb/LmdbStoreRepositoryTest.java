@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 

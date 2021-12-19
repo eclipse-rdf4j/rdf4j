@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.repository.http;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.SparqlSetBindingTest;
+import org.eclipse.rdf4j.testsuite.repository.SparqlSetBindingTest;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 

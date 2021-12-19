@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.SparqlRegexTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.testsuite.repository.SparqlRegexTest;
 
 public class MemorySparqlRegexTest extends SparqlRegexTest {
 
