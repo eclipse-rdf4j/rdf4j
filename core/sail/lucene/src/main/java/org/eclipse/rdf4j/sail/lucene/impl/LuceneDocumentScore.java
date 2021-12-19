@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.lucene;
+package org.eclipse.rdf4j.sail.lucene.impl;
 
 import java.util.Collections;
 import java.util.List;
@@ -13,6 +13,8 @@ import java.util.Set;
 
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.highlight.Highlighter;
+import org.eclipse.rdf4j.sail.lucene.DocumentScore;
+import org.eclipse.rdf4j.sail.lucene.SearchFields;
 
 import com.google.common.collect.Iterables;
 

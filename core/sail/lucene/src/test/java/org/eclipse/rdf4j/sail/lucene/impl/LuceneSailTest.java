@@ -5,12 +5,13 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.lucene;
+package org.eclipse.rdf4j.sail.lucene.impl;
 
 import java.io.IOException;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.store.RAMDirectory;
+import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 
 public class LuceneSailTest extends AbstractGenericLuceneTest {
 

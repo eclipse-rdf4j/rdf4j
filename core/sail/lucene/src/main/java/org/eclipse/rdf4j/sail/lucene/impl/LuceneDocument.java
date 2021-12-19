@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.lucene;
+package org.eclipse.rdf4j.sail.lucene.impl;
 
 import java.io.IOException;
 import java.text.ParseException;
@@ -25,6 +25,9 @@ import org.apache.lucene.geo.Rectangle;
 import org.apache.lucene.geo.SimpleWKTShapeParser;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.spatial.SpatialStrategy;
+import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.eclipse.rdf4j.sail.lucene.SearchDocument;
+import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

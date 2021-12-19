@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.sail.lucene;
+package org.eclipse.rdf4j.sail.lucene.impl;
 
 import java.io.IOException;
 import java.nio.file.Paths;
@@ -13,6 +13,7 @@ import java.util.Properties;
 
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.NIOFSDirectory;
+import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 
 /**
  * LuceneIndex which uses a NIOFSDirectory instead of MMapDirectory to avoid the JVM crash (see

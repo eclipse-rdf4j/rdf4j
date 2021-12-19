@@ -22,9 +22,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.lucene.LuceneIndex;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
+import org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**

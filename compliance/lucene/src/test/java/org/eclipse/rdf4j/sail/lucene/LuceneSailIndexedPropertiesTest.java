@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex;
+
 /**
  * @author jeen
  *
@@ -17,7 +19,7 @@ public class LuceneSailIndexedPropertiesTest extends AbstractLuceneSailIndexedPr
 	 * (non-Javadoc)
 	 *
 	 * @see
-	 * org.eclipse.rdf4j.sail.lucene.AbstractLuceneSailIndexedPropertiesTest#configure(org.eclipse.rdf4j.sail.lucene.
+	 * org.eclipse.rdf4j.sail.lucene.impl.AbstractLuceneSailIndexedPropertiesTest#configure(org.eclipse.rdf4j.sail.lucene.impl.
 	 * LuceneSail)
 	 */
 	@Override
