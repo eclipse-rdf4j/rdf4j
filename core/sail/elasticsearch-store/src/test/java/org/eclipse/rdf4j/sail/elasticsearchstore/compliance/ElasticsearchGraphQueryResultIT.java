@@ -12,12 +12,12 @@ import java.io.IOException;
 
 import org.assertj.core.util.Files;
 import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
-import org.eclipse.rdf4j.repository.GraphQueryResultTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
+import org.eclipse.rdf4j.testsuite.repository.GraphQueryResultTest;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 

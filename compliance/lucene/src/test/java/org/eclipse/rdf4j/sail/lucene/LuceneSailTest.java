@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.util.Repositories;
 import org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex;
+import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailTest;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -28,7 +29,8 @@ public class LuceneSailTest extends AbstractLuceneSailTest {
 	/*
 	 * (non-Javadoc)
 	 *
-	 * @see org.eclipse.rdf4j.sail.lucene.impl.AbstractLuceneSailTest#configure(org.eclipse.rdf4j.sail.lucene.impl.LuceneSail)
+	 * @see org.eclipse.rdf4j.sail.lucene.impl.AbstractLuceneSailTest#configure(org.eclipse.rdf4j.sail.lucene.impl.
+	 * LuceneSail)
 	 */
 	@Override
 	protected void configure(LuceneSail sail) throws IOException {

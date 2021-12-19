@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model;
 
 import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.testsuite.model.ModelNamespacesTest;
 
 /**
  * Tests for {@link Namespace} support in {@link TreeModel} using the abstract tests defined in

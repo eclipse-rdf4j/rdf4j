@@ -11,10 +11,10 @@ import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
-import org.eclipse.rdf4j.repository.RDFSchemaRepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.testsuite.repository.RDFSchemaRepositoryConnectionTest;
+import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Ignore;

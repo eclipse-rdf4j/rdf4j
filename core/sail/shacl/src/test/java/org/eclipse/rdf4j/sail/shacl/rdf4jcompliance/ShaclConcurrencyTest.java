@@ -9,10 +9,10 @@
 package org.eclipse.rdf4j.sail.shacl.rdf4jcompliance;
 
 import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.SailConcurrencyTest;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.eclipse.rdf4j.testsuite.sail.SailConcurrencyTest;
 import org.junit.Ignore;
 import org.junit.Test;
 

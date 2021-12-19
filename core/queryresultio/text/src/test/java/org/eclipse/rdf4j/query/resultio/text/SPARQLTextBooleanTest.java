@@ -8,9 +8,9 @@
  */
 package org.eclipse.rdf4j.query.resultio.text;
 
-import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOBooleanTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOBooleanTest;
 
 /**
  * @author Peter Ansell
