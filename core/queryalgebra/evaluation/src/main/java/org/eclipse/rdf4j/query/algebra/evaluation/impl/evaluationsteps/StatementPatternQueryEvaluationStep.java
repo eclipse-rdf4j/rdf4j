@@ -85,6 +85,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		final Var predVar = statementPattern.getPredicateVar();
 		final Var objVar = statementPattern.getObjectVar();
 		final Var conVar = statementPattern.getContextVar();
+
 		unboundTest = makeUnboundTest(context, subjVar, predVar, objVar, conVar);
 	}
 
@@ -153,7 +154,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
 			return new EmptyIteration<>();
-		} else if (unboundTest.test(bindings)) {
+		} else if (!bindings.isEmpty() && unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
 			// https://www.w3.org/TR/sparql11-query/#assignment
 			return new EmptyIteration<>();

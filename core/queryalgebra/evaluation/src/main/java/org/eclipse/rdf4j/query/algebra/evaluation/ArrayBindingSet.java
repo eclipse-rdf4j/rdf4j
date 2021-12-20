@@ -269,4 +269,14 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			}
 		}
 	}
+
+	@Override
+	public boolean isEmpty() {
+		for (int index = 0; index < values.length; index++) {
+			if (whichBindingsHaveBeenSet[index]) {
+				return false;
+			}
+		}
+		return true;
+	}
 }
