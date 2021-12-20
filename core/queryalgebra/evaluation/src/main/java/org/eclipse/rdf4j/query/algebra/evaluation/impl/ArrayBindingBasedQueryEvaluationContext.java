@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -54,7 +55,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
-	public Function<BindingSet, Boolean> hasBinding(String variableName) {
+	public Predicate<BindingSet> hasBinding(String variableName) {
 		Function<ArrayBindingSet, Boolean> directHasVariable = new ArrayBindingSet(allVariables)
 				.getDirectHasBinding(variableName);
 		return (bs) -> {

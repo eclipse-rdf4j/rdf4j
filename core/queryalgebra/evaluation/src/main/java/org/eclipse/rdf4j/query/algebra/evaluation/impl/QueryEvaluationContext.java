@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import java.util.Date;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -70,7 +71,7 @@ public interface QueryEvaluationContext {
 		return new QueryBindingSet();
 	}
 
-	public default Function<BindingSet, Boolean> hasBinding(String variableName) {
+	public default Predicate<BindingSet> hasBinding(String variableName) {
 		return (bs) -> bs.hasBinding(variableName);
 	}
 
