@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -98,8 +97,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return (bindings) -> false;
 		} else {
 			Predicate<BindingSet> hasBinding = context.hasBinding(var.getName());
-			Function<BindingSet, Binding> getBinding = context.getBinding(var.getName());
-			return (bindings) -> hasBinding.test(bindings) && getBinding.apply(bindings) == null;
+			Function<BindingSet, Value> getValue = context.getValue(var.getName());
+			Predicate<BindingSet> getBindingIsNull = (binding) -> getValue.apply(binding) == null;
+			return hasBinding.and(getBindingIsNull);
 		}
 	}
 
