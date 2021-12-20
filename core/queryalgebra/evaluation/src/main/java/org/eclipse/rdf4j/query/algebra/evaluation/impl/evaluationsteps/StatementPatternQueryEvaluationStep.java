@@ -85,53 +85,21 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		final Var predVar = statementPattern.getPredicateVar();
 		final Var objVar = statementPattern.getObjectVar();
 		final Var conVar = statementPattern.getContextVar();
-
-		unboundTest = makeUnboundTest(context, subjVar, predVar, objVar, conVar);
+		Predicate<BindingSet> isSubjBound = unbound(subjVar, context);
+		Predicate<BindingSet> isPredBound = unbound(predVar, context);
+		Predicate<BindingSet> isObjBound = unbound(objVar, context);
+		Predicate<BindingSet> isConBound = unbound(conVar, context);
+		Predicate<BindingSet> isNotEmpty = Predicate.not(BindingSet::isEmpty);
+		unboundTest = isNotEmpty.and(isSubjBound.or(isPredBound).or(isObjBound).or(isConBound));
 	}
 
-	/**
-	 * We only need to test Var for unbound-ness that are present. e.g. for the pattern GRAPH ex:g { ?s a ?o }. we only
-	 * need to test the ?s and ?o variable. The others (predVar, conVar) always return false. As they always would
-	 * return false they can be removed from the or expression. If a var isContant then it can not be unbound and again
-	 * can be removed from the expression.
-	 * 
-	 * @param context to access fast field accessors in the BindingSet
-	 * @param subjVar the subject variable
-	 * @param predVar the predicate variable
-	 * @param objVar  the object variable
-	 * @param conVar  the context/graph variable
-	 * @return the predicate that tests if a BindingSet has unbound values in it
-	 */
-	private static Predicate<BindingSet> makeUnboundTest(QueryEvaluationContext context, final Var subjVar,
-			final Var predVar, final Var objVar,
-			final Var conVar) {
-		Predicate<BindingSet> unBoundTestProtoype = null;
-		unBoundTestProtoype = unbound(subjVar, context, unBoundTestProtoype);
-		unBoundTestProtoype = unbound(predVar, context, unBoundTestProtoype);
-		unBoundTestProtoype = unbound(objVar, context, unBoundTestProtoype);
-		unBoundTestProtoype = unbound(conVar, context, unBoundTestProtoype);
-		if (unBoundTestProtoype == null) {
-			return (bs) -> false;
-		} else {
-			return unBoundTestProtoype;
-		}
-	}
-
-	private static Predicate<BindingSet> unbound(final Var var, QueryEvaluationContext context,
-			Predicate<BindingSet> unBoundTestProtoype) {
+	private static Predicate<BindingSet> unbound(final Var var, QueryEvaluationContext context) {
 		if (var == null) {
-			return unBoundTestProtoype;
-		} else if (var.isConstant()) {
-			return unBoundTestProtoype;
+			return (bindings) -> false;
 		} else {
 			Predicate<BindingSet> hasBinding = context.hasBinding(var.getName());
 			Function<BindingSet, Binding> getBinding = context.getBinding(var.getName());
-			Predicate<BindingSet> boundTest = (bindings) -> hasBinding.test(bindings)
-					&& getBinding.apply(bindings) == null;
-			if (unBoundTestProtoype == null)
-				return boundTest;
-			else
-				return unBoundTestProtoype.or(boundTest);
+			return (bindings) -> hasBinding.test(bindings) && getBinding.apply(bindings) == null;
 		}
 	}
 
@@ -142,11 +110,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return context.addBinding(var.getName());
 	}
 
-	private static Predicate<BindingSet> makeIsVariableSet(Var var, QueryEvaluationContext context) {
+	private static Predicate<BindingSet> makeIsVariableNotSet(Var var, QueryEvaluationContext context) {
 		if (var == null) {
-			return (bindings) -> false;
+			return (bindings) -> true;
 		} else {
-			return context.hasBinding(var.getName());
+			return Predicate.not(context.hasBinding(var.getName()));
 		}
 	}
 
@@ -154,7 +122,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
 			return new EmptyIteration<>();
-		} else if (!bindings.isEmpty() && unboundTest.test(bindings)) {
+		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
 			// https://www.w3.org/TR/sparql11-query/#assignment
 			return new EmptyIteration<>();
@@ -414,30 +382,30 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		if (subjVar != null && !subjVar.isConstant()) {
 			BiConsumer<Value, MutableBindingSet> setSubject = makeSetVariable(subjVar, context);
-			Predicate<BindingSet> subjectIsSet = makeIsVariableSet(subjVar, context);
-			co = andThen(co, (result, st) -> addValueToBinding(result, st.getSubject(), subjectIsSet, setSubject));
+			Predicate<BindingSet> subjectIsNotSet = makeIsVariableNotSet(subjVar, context);
+			co = andThen(co, (result, st) -> addValueToBinding(result, st.getSubject(), subjectIsNotSet, setSubject));
 		}
 		// We should not overwrite previous set values so if pred == subj we don't need
 		// to call this again.
 		// etc.
 		if (predVar != null && !predVar.isConstant() && !predVar.equals(subjVar)) {
 			BiConsumer<Value, MutableBindingSet> setPredicate = makeSetVariable(predVar, context);
-			Predicate<BindingSet> predicateIsSet = makeIsVariableSet(predVar, context);
+			Predicate<BindingSet> predicateIsNotSet = makeIsVariableNotSet(predVar, context);
 			co = andThen(co,
-					(result, st) -> addValueToBinding(result, st.getPredicate(), predicateIsSet, setPredicate));
+					(result, st) -> addValueToBinding(result, st.getPredicate(), predicateIsNotSet, setPredicate));
 		}
 		if (objVar != null && !objVar.isConstant() && !objVar.equals(subjVar) && !objVar.equals(predVar)) {
 			BiConsumer<Value, MutableBindingSet> setObject = makeSetVariable(objVar, context);
-			Predicate<BindingSet> objectIsSet = makeIsVariableSet(objVar, context);
-			co = andThen(co, (result, st) -> addValueToBinding(result, st.getObject(), objectIsSet, setObject));
+			Predicate<BindingSet> objectIsNotSet = makeIsVariableNotSet(objVar, context);
+			co = andThen(co, (result, st) -> addValueToBinding(result, st.getObject(), objectIsNotSet, setObject));
 		}
 		if (conVar != null && !conVar.isConstant() && !conVar.equals(subjVar) && !conVar.equals(predVar)
 				&& !conVar.equals(objVar)) {
 			BiConsumer<Value, MutableBindingSet> setContext = makeSetVariable(conVar, context);
-			Predicate<BindingSet> contextIsSet = makeIsVariableSet(conVar, context);
+			Predicate<BindingSet> contextIsNotSet = makeIsVariableNotSet(conVar, context);
 			co = andThen(co, (result, st) -> {
 				if (st.getContext() != null) {
-					addValueToBinding(result, st.getContext(), contextIsSet, setContext);
+					addValueToBinding(result, st.getContext(), contextIsNotSet, setContext);
 				}
 			});
 		}
@@ -448,9 +416,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return co;
 	}
 
-	private static void addValueToBinding(MutableBindingSet result, Value value, Predicate<BindingSet> varIsSet,
+	private static void addValueToBinding(MutableBindingSet result, Value value, Predicate<BindingSet> varIsNotSet,
 			BiConsumer<Value, MutableBindingSet> setVal) {
-		if (!varIsSet.test(result)) {
+		if (varIsNotSet.test(result)) {
 			setVal.accept(value, result);
 		}
 	}
