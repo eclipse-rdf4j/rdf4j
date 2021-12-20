@@ -431,14 +431,14 @@ class TripleStore implements Closeable {
 		return null;
 	}
 
-	public RecordIterator getTriples(long subj, long pred, long obj, long context, boolean explicit,
-			boolean readTransaction) throws IOException {
+	public RecordIterator getTriples(long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
 		RecordIterator recordIt = getTriples(subj, pred, obj, context);
 
-		if (readTransaction && explicit) {
+		if (explicit) {
 			// Filter implicit statements from the result
 			recordIt = new ExplicitStatementFilter(recordIt);
-		} else if (!explicit) {
+		} else {
 			// Filter out explicit statements from the result
 			recordIt = new ImplicitStatementFilter(recordIt);
 		}
@@ -617,7 +617,7 @@ class TripleStore implements Closeable {
 	 */
 	public Map<Long, Long> removeTriplesByContext(long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
-		RecordIterator records = getTriples(subj, pred, obj, context, explicit, true);
+		RecordIterator records = getTriples(subj, pred, obj, context, explicit);
 		return removeTriples(records);
 	}
 
