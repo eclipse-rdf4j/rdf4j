@@ -134,6 +134,18 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		return null;
 	}
 
+	public Function<ArrayBindingSet, Value> getDirectGetValue(String variableName) {
+		for (int i = 0; i < this.bindingNames.length; i++) {
+			if (bindingNames[i].equals(variableName)) {
+				final int idx = i;
+				return (a) -> {
+					return a.values[idx];
+				};
+			}
+		}
+		return null;
+	}
+
 	public Function<ArrayBindingSet, Boolean> getDirectHasBinding(String bindingName) {
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(bindingName)) {

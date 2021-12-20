@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
@@ -48,6 +47,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private final BiConsumer<MutableBindingSet, Statement> converter;
 	private final QueryEvaluationContext context;
 	private final Predicate<BindingSet> unboundTest;
+	private final Function<BindingSet, Value> getContextVar;
+	private final Function<BindingSet, Value> getSubjectVar;
+	private final Function<BindingSet, Value> getPredicateVar;
+	private final Function<BindingSet, Value> getObjectVar;
 
 	// We try to do as much work as possible in the constructor.
 	// With the aim of making the evaluate method as cheap as possible.
@@ -90,6 +93,20 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Predicate<BindingSet> isConBound = unbound(conVar, context);
 		Predicate<BindingSet> isNotEmpty = Predicate.not(BindingSet::isEmpty);
 		unboundTest = isNotEmpty.and(isSubjBound.or(isPredBound).or(isObjBound).or(isConBound));
+		getContextVar = makeGetVarValue(conVar, context);
+		getSubjectVar = makeGetVarValue(subjVar, context);
+		getPredicateVar = makeGetVarValue(predVar, context);
+		getObjectVar = makeGetVarValue(objVar, context);
+	}
+
+	private static Function<BindingSet, Value> makeGetVarValue(Var var, QueryEvaluationContext context) {
+		if (var == null) {
+			return (b) -> null;
+		} else if (var.hasValue()) {
+			return (b) -> var.getValue();
+		} else {
+			return context.getValue(var.getName());
+		}
 	}
 
 	private static Predicate<BindingSet> unbound(final Var var, QueryEvaluationContext context) {
@@ -128,18 +145,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return new EmptyIteration<>();
 		}
 
-		final Var conVar = statementPattern.getContextVar();
-		final Value contextValue = StrictEvaluationStrategy.getVarValue(conVar, bindings);
+		final Value contextValue = getContextVar.apply(bindings);
 
 		Resource[] contexts = contextSup.apply(contextValue);
 		if (contexts == null) {
 			return new EmptyIteration<>();
 		}
 
-		final Var subjVar = statementPattern.getSubjectVar();
-		final Var predVar = statementPattern.getPredicateVar();
-		final Value subjValue = StrictEvaluationStrategy.getVarValue(subjVar, bindings);
-		final Value predValue = StrictEvaluationStrategy.getVarValue(predVar, bindings);
+		final Value subjValue = getSubjectVar.apply(bindings);
+		final Value predValue = getPredicateVar.apply(bindings);
 		// Check that the subject is a Resource and the predicate can be an IRI
 		// if not we can't return any value.
 		Resource subjResouce;
@@ -151,20 +165,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			// Invalid value type for subject, predicate and/or context
 			return new EmptyIteration<>();
 		}
-		final Var objVar = statementPattern.getObjectVar();
-		return evaluateTheNormalCase(bindings, subjVar, predVar, objVar, conVar, contexts, subjValue, predValue,
-				subjResouce, predIri);
+
+		return evaluateTheNormalCase(bindings, contexts, subjValue, predValue, subjResouce, predIri);
 	}
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> evaluateTheNormalCase(BindingSet bindings,
-			final Var subjVar, final Var predVar, final Var objVar, final Var conVar, Resource[] contexts,
-			final Value subjValue, final Value predValue, Resource subjResouce, IRI predIri) {
-		final Value objValue = StrictEvaluationStrategy.getVarValue(objVar, bindings);
+			Resource[] contexts, final Value subjValue, final Value predValue, Resource subjResouce, IRI predIri) {
+		final Value objValue = getObjectVar.apply(bindings);
 
 		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = tripleSource
 				.getStatements(subjResouce, predIri, objValue, contexts);
-		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subjVar, predVar, objVar, conVar,
-				subjValue, predValue, objValue, contexts);
+		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subjValue, predValue, objValue,
+				contexts);
 		if (filter != null) {
 			// Only if there is filter code to execute do we make this filter iteration.
 			stIter1 = new FilterIteration<Statement, QueryEvaluationException>(stIter1) {
@@ -186,23 +198,25 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * in this StatementPattern, verify value equality in those cases.
 	 */
 	protected static Predicate<Statement> filterContextOrEqualVariables(StatementPattern statementPattern,
-			final Var subjVar, final Var predVar, final Var objVar, final Var conVar, final Value subjValue,
-			final Value predValue, final Value objValue, Resource[] contexts) {
+			final Value subjValue, final Value predValue, final Value objValue, Resource[] contexts) {
 		Predicate<Statement> filter = null;
 		if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
 			filter = (st) -> st.getContext() != null;
 		}
-		return filterSameVariable(subjVar, predVar, objVar, conVar, subjValue, predValue, objValue, filter);
+		return filterSameVariable(statementPattern, subjValue, predValue, objValue, filter);
 	}
 
 	/**
 	 * Build one predicate that filters the statements for ?s ?p ?s cases. But only generates code that is actually
 	 * needed else returns null.
 	 */
-	private static Predicate<Statement> filterSameVariable(final Var subjVar, final Var predVar, final Var objVar,
-			final Var conVar, final Value subjValue, final Value predValue, final Value objValue,
-			Predicate<Statement> filter) {
+	private static Predicate<Statement> filterSameVariable(final StatementPattern statementPattern,
+			final Value subjValue, final Value predValue, final Value objValue, Predicate<Statement> filter) {
 
+		Var subjVar = statementPattern.getSubjectVar();
+		Var predVar = statementPattern.getPredicateVar();
+		Var objVar = statementPattern.getObjectVar();
+		Var conVar = statementPattern.getContextVar();
 		if (subjVar != null && subjValue == null) {
 			boolean subEqPredVar = subjVar.equals(predVar);
 			boolean subEqObjVar = subjVar.equals(objVar);

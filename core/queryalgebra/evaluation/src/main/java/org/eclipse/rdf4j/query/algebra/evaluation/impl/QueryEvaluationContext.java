@@ -80,8 +80,9 @@ public interface QueryEvaluationContext {
 	}
 
 	public default Function<BindingSet, Value> getValue(String variableName) {
+		Function<BindingSet, Binding> getBinding = getBinding(variableName);
 		return (bs) -> {
-			Binding binding = getBinding(variableName).apply(bs);
+			Binding binding = getBinding.apply(bs);
 			if (binding == null) {
 				return null;
 			} else {

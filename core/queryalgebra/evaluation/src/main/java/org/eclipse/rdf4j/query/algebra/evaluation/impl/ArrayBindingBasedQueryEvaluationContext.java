@@ -82,6 +82,20 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public Function<BindingSet, Value> getValue(String variableName) {
+		ArrayBindingSet abs = new ArrayBindingSet(allVariables);
+		Function<ArrayBindingSet, Value> directAccessForVariable = abs
+				.getDirectGetValue(variableName);
+		return (bs) -> {
+			if (bs instanceof ArrayBindingSet) {
+				return directAccessForVariable.apply((ArrayBindingSet) bs);
+			} else {
+				return bs.getValue(variableName);
+			}
+		};
+	}
+
+	@Override
 	public BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
 		ArrayBindingSet abs = new ArrayBindingSet(allVariables);
 		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = abs
