@@ -887,7 +887,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		if (expr instanceof Var) {
-			return new QueryValueEvaluationStep.Minimal(this, expr);
+			return prepare((Var) expr, context);
 		} else if (expr instanceof ValueConstant) {
 			return prepare((ValueConstant) expr, context);
 		} else if (expr instanceof BNodeGenerator) {
@@ -1053,6 +1053,31 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		return value;
+	}
+
+	protected QueryValueEvaluationStep prepare(Var var, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+
+		Value value = var.getValue();
+
+		if (value != null) {
+			return new ConstantQueryValueEvaluationStep(value);
+		} else {
+			java.util.function.Function<BindingSet, Value> getValue = context.getValue(var.getName());
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value value = getValue.apply(bindings);
+					if (value == null) {
+						throw new ValueExprEvaluationException();
+					}
+					return value;
+				}
+			};
+		}
+
 	}
 
 	@Deprecated(forRemoval = true)
