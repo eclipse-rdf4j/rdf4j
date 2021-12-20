@@ -11,13 +11,17 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.LMDB;
@@ -47,14 +51,34 @@ class TxnRef {
 		this.pool = mode == Mode.RESET ? new Txn[128] : null;
 	}
 
-	private Txn createTxnInternal() {
+	private long startReadTxn() {
 		long readTxn;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
 			readTxn = pp.get(0);
 		}
-		return new Txn(readTxn);
+		return readTxn;
+	}
+
+	private Txn createTxnInternal() {
+		Txn newTxn = null;
+		if (mode == Mode.RESET) {
+			synchronized (state) {
+				if (poolIndex >= 0) {
+					newTxn = pool[poolIndex--];
+				}
+			}
+			if (newTxn == null) {
+				newTxn = new Txn(startReadTxn());
+			} else {
+				LMDB.mdb_txn_renew(newTxn.txn);
+				newTxn.refCount = 0;
+			}
+		} else {
+			newTxn = new Txn(startReadTxn());
+		}
+		return newTxn;
 	}
 
 	long create() {
@@ -72,22 +96,7 @@ class TxnRef {
 		} else {
 			currentTxn = s.currentTxn;
 			if (currentTxn == null) {
-				if (mode == Mode.RESET) {
-					synchronized (state) {
-						if (poolIndex >= 0) {
-							currentTxn = pool[poolIndex--];
-						}
-					}
-					if (currentTxn == null) {
-						currentTxn = createTxnInternal();
-					} else {
-						LMDB.mdb_txn_renew(currentTxn.txn);
-						currentTxn.refCount = 0;
-					}
-				} else {
-					currentTxn = createTxnInternal();
-				}
-				s.currentTxn = currentTxn;
+				s.currentTxn = currentTxn = createTxnInternal();
 			}
 		}
 		currentTxn.refCount++;
@@ -138,6 +147,19 @@ class TxnRef {
 				}
 			}
 		}
+	}
+
+	<T> T doWith(Transaction<T> transaction) throws IOException {
+		T ret;
+		try (MemoryStack stack = stackPush()) {
+			long txn = create();
+			try {
+				ret = transaction.exec(stack, txn);
+			} finally {
+				free(txn);
+			}
+		}
+		return ret;
 	}
 
 	void invalidate() {

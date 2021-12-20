@@ -462,16 +462,16 @@ class TripleStore implements Closeable {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 
 		if (index.getPatternScore(subj, pred, obj, context) == 0) {
-			return LmdbUtil.<Long>readTransaction(env, (stack, txn) -> {
-				MDBStat stat = MDBStat.callocStack(stack);
+			return readTxnRef.doWith((stack, txn) -> {
+				MDBStat stat = MDBStat.mallocStack(stack);
 				mdb_stat(txn, index.getDB(), stat);
-				return stat.ms_entries();
+				return (double) stat.ms_entries();
 			});
 		} else {
 			// TODO currently uses a scan to determine range size
 			long[] startValues = new long[4];
-			return LmdbUtil.<Long>readTransaction(env, (stack, txn) -> {
-				MDBVal maxKey = MDBVal.calloc(stack);
+			return readTxnRef.doWith((stack, txn) -> {
+				MDBVal maxKey = MDBVal.malloc(stack);
 				ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
 				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
 				maxKeyBuf.flip();
@@ -533,12 +533,11 @@ class TripleStore implements Closeable {
 												* 1000;
 									}
 								}
-								return rangeSize;
+								return (double) rangeSize;
 							}
 						}
 					}
-					// System.out.println(Arrays.asList(subj, pred, obj,context) + ": " + rangeSize);
-					return rangeSize;
+					return (double) rangeSize;
 				} finally {
 					if (cursor != 0) {
 						mdb_cursor_close(cursor);
