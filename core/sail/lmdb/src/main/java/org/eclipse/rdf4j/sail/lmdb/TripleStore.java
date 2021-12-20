@@ -166,7 +166,7 @@ class TripleStore implements Closeable {
 		}
 	};
 
-	public TripleStore(File dir, LmdbStoreConfig config) throws IOException, SailException {
+	TripleStore(File dir, LmdbStoreConfig config) throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = config.getForceSync();
 
@@ -762,16 +762,12 @@ class TripleStore implements Closeable {
 	class TripleIndex {
 
 		private final char[] fieldSeq;
-		private int dbi;
-		private int[] indexMap;
+		private final int dbi;
+		private final int[] indexMap;
 
 		public TripleIndex(String fieldSeq) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.indexMap = getIndexes(this.fieldSeq);
-			open();
-		}
-
-		private void open() throws IOException {
 			// open database and use native sort order without comparator
 			dbi = openDatabase(env, new String(fieldSeq), MDB_CREATE, null);
 		}

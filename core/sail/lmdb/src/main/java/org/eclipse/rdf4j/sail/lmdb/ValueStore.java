@@ -71,10 +71,6 @@ import org.lwjgl.util.lmdb.MDBVal;
  */
 class ValueStore extends AbstractValueFactory {
 
-	/*-----------*
-	 * Constants *
-	 *-----------*/
-
 	private static final byte URI_VALUE = 0x0; // 00
 
 	private static final byte LITERAL_VALUE = 0x1; // 01
@@ -89,9 +85,6 @@ class ValueStore extends AbstractValueFactory {
 
 	private static final byte HASHID_KEY = 0x6;
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
 	/***
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
@@ -141,15 +134,7 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private long nextId;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
-	public ValueStore(File dir) throws IOException {
-		this(dir, new LmdbStoreConfig());
-	}
-
-	public ValueStore(File dir, LmdbStoreConfig config) throws IOException {
+	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
 		this.forceSync = config.getForceSync();
 		this.dbSize = config.getValueDBSize();
@@ -161,6 +146,7 @@ class ValueStore extends AbstractValueFactory {
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
 
 		setNewRevision();
+
 		// read maximum id from store
 		LmdbUtil.<Long>readTransaction(env, (stack, txn) -> {
 			long cursor = 0;
@@ -188,27 +174,6 @@ class ValueStore extends AbstractValueFactory {
 			}
 		});
 	}
-
-	public static void main(String[] args) throws Exception {
-		File dataDir = new File(args[0]);
-		ValueStore valueStore = new ValueStore(dataDir);
-
-		int maxID = (int) valueStore.nextId - 1;
-		for (int id = 1; id <= maxID; id++) {
-			byte[] data = valueStore.getData(id);
-			if (valueStore.isNamespaceData(data)) {
-				String ns = valueStore.data2namespace(data);
-				System.out.println("[" + id + "] " + ns);
-			} else {
-				Value value = valueStore.data2value(id, data, null);
-				System.out.println("[" + id + "] " + value.toString());
-			}
-		}
-	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	private void open() throws IOException {
 		// create directory if it not exists

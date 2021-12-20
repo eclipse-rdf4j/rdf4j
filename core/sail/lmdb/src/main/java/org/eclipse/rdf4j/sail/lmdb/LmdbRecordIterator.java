@@ -29,7 +29,7 @@ import org.lwjgl.util.lmdb.MDBVal;
  * A record iterator that wraps a native LMDB iterator.
  *
  */
-public class LmdbRecordIterator implements RecordIterator {
+class LmdbRecordIterator implements RecordIterator {
 	private final Pool pool;
 
 	private final TripleIndex index;
@@ -58,9 +58,8 @@ public class LmdbRecordIterator implements RecordIterator {
 
 	private boolean fetchNext = false;
 
-	public LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context,
-			TxnRef txnRef) {
+	LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, TxnRef txnRef) {
 		this.pool = pool;
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();

@@ -13,7 +13,7 @@ import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
- * A simple pool for {@link MDBVal} and {@link java.nio.Buffer} instances
+ * A simple pool for {@link MDBVal} and {@link ByteBuffer} instances.
  */
 class Pool {
 
@@ -22,7 +22,7 @@ class Pool {
 	private volatile int valPoolIndex = -1;
 	private volatile int keyPoolIndex = -1;
 
-	synchronized MDBVal getVal() {
+	MDBVal getVal() {
 		synchronized (valPool) {
 			if (valPoolIndex >= 0) {
 				return valPool[valPoolIndex--];
