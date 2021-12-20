@@ -76,7 +76,7 @@ public class RegexValueEvaluationStepSupplier {
 			fargStep = strategy.precompile(flagsArg, context);
 		}
 		if (argStep.isConstant() && pargStep.isConstant() && (flagsArg == null || fargStep.isConstant())) {
-			return allRegexPartsAreConstant(pargStep, fargStep, flagsArg);
+			return allRegexPartsAreConstant(argStep, pargStep, fargStep, flagsArg);
 		} else if (pargStep.isConstant() && (flagsArg == null || fargStep.isConstant())) {
 			return regexAndFlagsAreConstant(argStep, pargStep, fargStep, flagsArg);
 		} else {
@@ -116,9 +116,10 @@ public class RegexValueEvaluationStepSupplier {
 		throw new ValueExprEvaluationException();
 	}
 
-	private static QueryValueEvaluationStep allRegexPartsAreConstant(QueryValueEvaluationStep pargStep,
+	private static QueryValueEvaluationStep allRegexPartsAreConstant(QueryValueEvaluationStep argStep,
+			QueryValueEvaluationStep pargStep,
 			QueryValueEvaluationStep fargStep, ValueExpr flagsArg) {
-		Value arg = pargStep.evaluate(EmptyBindingSet.getInstance());
+		Value arg = argStep.evaluate(EmptyBindingSet.getInstance());
 		Value parg = pargStep.evaluate(EmptyBindingSet.getInstance());
 		Value farg = null;
 		if (flagsArg != null) {
@@ -142,7 +143,6 @@ public class RegexValueEvaluationStepSupplier {
 		if (farg != null) {
 			flags = ((Literal) farg).getLabel();
 		}
-		// TODO should this Pattern be cached?
 		int f = 0;
 		for (char c : flags.toCharArray()) {
 			switch (c) {
