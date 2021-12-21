@@ -267,29 +267,22 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		try {
 			assert disk == null;
 			dataDir = Files.createTempDirectory("model").toFile();
-			logger.debug("memory overflow using temp directory {}", dataDir);
-			store = createSailStore(dataDir);
-			disk = new SailSourceModel(store) {
+			Runtime.getRuntime().addShutdownHook(new Thread() {
 
 				@Override
-				protected void finalize() throws Throwable {
-					logger.debug("finalizing {}", dataDir);
-					if (disk == this) {
-						try {
-							store.close();
-						} catch (SailException e) {
-							logger.error(e.toString(), e);
-						} finally {
-							FileUtil.deleteDir(dataDir);
-							dataDir = null;
-							store = null;
-							disk = null;
-						}
+				public void run() {
+					try {
+						FileUtil.deleteDir(dataDir);
+					} catch (IOException e) {
+						logger.error(e.toString(), e);
 					}
-					super.finalize();
 				}
-			};
+			});
+			logger.debug("memory overflow using temp directory {}", dataDir);
+			store = createSailStore(dataDir);
+
 			disk.addAll(memory);
+
 			memory = new LinkedHashModel(memory.getNamespaces(), LARGE_BLOCK);
 			logger.debug("overflow synced to disk");
 		} catch (IOException | SailException e) {

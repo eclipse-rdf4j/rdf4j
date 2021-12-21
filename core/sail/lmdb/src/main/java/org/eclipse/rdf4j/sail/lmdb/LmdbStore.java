@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.ref.Cleaner;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -96,6 +97,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 */
 	private final LockManager disabledIsolationLockManager = new LockManager(debugEnabled());
 
+	private static final Cleaner REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW = Cleaner.create();
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -238,7 +240,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				@Override
 				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta
-					return new LmdbSailStore(dataDir, config);
+					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, config);
+					REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW.register(lmdbSailStore, lmdbSailStore::close);
+					return lmdbSailStore;
+
 				}
 			}) {
 
