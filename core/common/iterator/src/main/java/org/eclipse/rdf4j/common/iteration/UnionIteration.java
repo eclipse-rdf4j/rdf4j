@@ -26,7 +26,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 	private final Iterator<? extends Iteration<? extends E, X>> argIter;
 
-	private volatile Iteration<? extends E, X> currentIter;
+	private Iteration<? extends E, X> currentIter;
 
 	/*--------------*
 	 * Constructors *
@@ -73,13 +73,11 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 			// Current Iteration exhausted, continue with the next one
 			Iterations.closeCloseable(nextCurrentIter);
 
-			synchronized (this) {
-				if (argIter.hasNext()) {
-					currentIter = argIter.next();
-				} else {
-					// All elements have been returned
-					return null;
-				}
+			if (argIter.hasNext()) {
+				currentIter = argIter.next();
+			} else {
+				// All elements have been returned
+				return null;
 			}
 		}
 	}
@@ -93,13 +91,11 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 		} finally {
 			try {
 				List<Throwable> collectedExceptions = new ArrayList<>();
-				synchronized (this) {
-					while (argIter.hasNext()) {
-						try {
-							Iterations.closeCloseable(argIter.next());
-						} catch (Throwable e) {
-							collectedExceptions.add(e);
-						}
+				while (argIter.hasNext()) {
+					try {
+						Iterations.closeCloseable(argIter.next());
+					} catch (Throwable e) {
+						collectedExceptions.add(e);
 					}
 				}
 				if (!collectedExceptions.isEmpty()) {

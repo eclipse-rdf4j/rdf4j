@@ -45,7 +45,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 
 	private final ValueFactory vf;
 
-	private volatile boolean isInitialized;
+	private boolean isInitialized;
 
 	public TupleFunctionFederatedService(TupleFunctionRegistry tupleFunctionRegistry, ValueFactory vf) {
 		this.tupleFunctionRegistry = tupleFunctionRegistry;

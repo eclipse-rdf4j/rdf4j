@@ -20,7 +20,7 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	 * Variables *
 	 *-----------*/
 
-	private volatile E nextElement;
+	private E nextElement;
 
 	/*--------------*
 	 * Constructors *
