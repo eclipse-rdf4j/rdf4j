@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
-import org.eclipse.rdf4j.query.algebra.Like;
 import org.eclipse.rdf4j.query.algebra.LocalName;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Max;
@@ -377,18 +376,6 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	@Override
 	public void meet(Lang theOp) throws Exception {
 		unaryMeet("lang", theOp);
-	}
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public void meet(Like theOp) throws Exception {
-		theOp.getArg().visit(this);
-		mBuffer.append(" like \"").append(theOp.getPattern()).append("\"");
-		if (!theOp.isCaseSensitive()) {
-			mBuffer.append(" ignore case");
-		}
 	}
 
 	/**
