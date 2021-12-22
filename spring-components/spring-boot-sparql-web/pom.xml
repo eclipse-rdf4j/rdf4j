@@ -35,12 +35,6 @@
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-config</artifactId>
 			<version>${project.version}</version>
-			<exclusions>
-				<exclusion>
-					<groupId>${project.groupId}</groupId>
-					<artifactId>rdf4j-util</artifactId>
-				</exclusion>
-			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
