@@ -326,8 +326,9 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	@Override
+	@Deprecated(forRemoval = true)
 	public void meet(Like node) throws X {
-		meetUnaryValueOperator(node);
+		// From SERQL should not be seen
 	}
 
 	@Override
