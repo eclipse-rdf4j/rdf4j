@@ -17,7 +17,6 @@ import java.util.Iterator;
 import java.util.Optional;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
