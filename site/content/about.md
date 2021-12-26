@@ -59,6 +59,10 @@ Ontotext are a long-term contributor to the RDF4J project.
 
 [Blazegraph](http://www.blazegraph.com/) (formerly known as Bigdata) is an enterprise graph database by Systap, LLC that provides a horizontally scaling storage and retrieval solution for very large volumes of RDF.
 
+#### Oracle RDF Graph Adapter for RDF4J
+
+[Oracle RDF Graph Adapter for Eclipse RDF4J](https://docs.oracle.com/en/database/oracle/oracle-database/21/rdfrm/rdf-semantic-graph-support-eclipse-rdf4j.html) utilizes the popular Eclipse RDF4J framework to provide Java developers support to use the RDF Semantic Graph feature of Oracle Database.
+
 #### MarkLogic RDF4J API
 
 The [MarkLogic RDF4J API](https://github.com/marklogic/marklogic-rdf4j) is a full-featured, easy-to-use interface, that provides access to the MarkLogic triplestore via the RDF4J APIs. It offers several additional features such as permissions, and combination queries. More details can be found in the [MarkLogic Developer documentation](https://docs.marklogic.com/guide/semantics/clientAPIs#id_23335).
