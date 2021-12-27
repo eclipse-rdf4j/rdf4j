@@ -52,12 +52,18 @@ import org.slf4j.LoggerFactory;
  */
 public class NativeStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 
+	private static final Logger logger = LoggerFactory.getLogger(NativeStore.class);
+
+	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-sail-nativerdf", "devel");
+
+	private static final Cleaner REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW = Cleaner.create();
+
 	/**
 	 * When we are close to running out of memory we start using a native store instead of a model in memory.
 	 * Performance craters to near zero. So it is dubious if this is worth the effort. The class is static to avoid
 	 * taking a pointer which might make it hard to get a phantom reference.
 	 */
-	private final static class MemoryOverflowIntoNativeStore extends MemoryOverflowModel {
+	final static class MemoryOverflowIntoNativeStore extends MemoryOverflowModel {
 		private static final long serialVersionUID = 1L;
 
 		/**
@@ -80,8 +86,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 					try {
 						FileUtils.deleteDirectory(dataDir);
 					} catch (IOException e) {
-						LoggerFactory.getLogger(getClass())
-								.error("Could not remove data dir of overlow model store", e);
+						NativeStore.logger.error("Could not remove data dir of overflow model store", e);
 					}
 				}
 			}
@@ -97,14 +102,6 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			return nativeSailStore;
 		}
 	}
-
-	private static final Logger logger = LoggerFactory.getLogger(NativeStore.class);
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
-	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-sail-nativerdf", "devel");
 
 	/**
 	 * Specifies which triple indexes this native store must use.
@@ -161,7 +158,6 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	 */
 	private final LockManager disabledIsolationLockManager = new LockManager(debugEnabled());
 
-	private static final Cleaner REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW = Cleaner.create();
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
