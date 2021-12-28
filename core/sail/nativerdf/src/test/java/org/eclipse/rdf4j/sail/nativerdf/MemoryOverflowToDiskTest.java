@@ -17,11 +17,13 @@ import java.nio.file.Files;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 public class MemoryOverflowToDiskTest {
 
 	@Test
-	public void testCleaner() throws IOException, InterruptedException {
+	@Timeout(5)
+	public void testCleanerRemovesTempDirWhenMemoryOverflowModelGetsGCed() throws IOException, InterruptedException {
 		File file = Files.createTempDirectory("model").toFile();
 
 		Model model = createModel(file);
@@ -32,7 +34,6 @@ public class MemoryOverflowToDiskTest {
 		while (file.exists()) {
 			System.gc();
 			Thread.sleep(10);
-			System.out.println();
 		}
 
 		assertFalse(file.exists());
