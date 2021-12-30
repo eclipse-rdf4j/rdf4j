@@ -20,8 +20,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link AbstractSail}.
@@ -35,7 +35,7 @@ public class AbstractSailTest {
 
 	private final Random random = new Random(43252333);
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 
 		subject = new AbstractSail() {

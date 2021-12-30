@@ -129,6 +129,8 @@ public class MemStatementList {
 
 		// remove all deprecated statements from the end of the list
 		for (; i >= 0; i--) {
+			if (Thread.currentThread().isInterrupted())
+				return;
 			if (statements[i].getTillSnapshot() <= currentSnapshot) {
 				--size;
 				statements[i] = null;
@@ -140,6 +142,9 @@ public class MemStatementList {
 
 		// remove all deprecated statements that are not at the end of the list
 		for (; i >= 0; i--) {
+			if (Thread.currentThread().isInterrupted())
+				return;
+
 			if (statements[i].getTillSnapshot() <= currentSnapshot) {
 				// replace statement with last statement in the list
 				--size;
@@ -155,5 +160,6 @@ public class MemStatementList {
 			System.arraycopy(statements, 0, newArray, 0, size);
 		}
 		statements = newArray;
+
 	}
 }

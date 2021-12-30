@@ -27,6 +27,6 @@ public class WritePrefBenchmark extends ReadWriteLockManagerBenchmark {
 
 	@Override
 	AbstractReadWriteLockManager getReadWriteLockManager() {
-		return new WritePrefReadWriteLockManager(false);
+		return new WritePrefReadWriteLockManager("");
 	}
 }

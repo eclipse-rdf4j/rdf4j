@@ -1,133 +1,65 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Distribution License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
+ *  All rights reserved. This program and the accompanying materials
+ *  are made available under the terms of the Eclipse Distribution License v1.0
+ *  which accompanies this distribution, and is available at
+ *  http://www.eclipse.org/org/documents/edl-v10.php.
+ ******************************************************************************/
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
+
 /**
- * A read/write lock manager with writer preference. As soon as a write lock is requested, this lock manager will block
- * any read lock requests until the writer's request has been satisfied.
+ * A read/write lock manager with writer preference.
  *
- * @author Arjohn Kampman
- * @author James Leigh
+ * @author Håvard M. Ottestad
  */
 public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager {
 
-	/*
-	 * ----------- Variables -----------
-	 */
-
-	/**
-	 * Flag indicating whether a write lock has been requested.
-	 */
-	private volatile boolean writeRequested = false;
-
-	/*
-	 * -------------- Constructors --------------
-	 */
-
-	/**
-	 * Creates a MultiReadSingleWriteLockManager.
-	 */
 	public WritePrefReadWriteLockManager() {
 		super();
 	}
 
-	/**
-	 * Creates a new MultiReadSingleWriteLockManager, optionally with lock tracking enabled.
-	 *
-	 * @param trackLocks Controls whether the lock manager will keep track of active locks. Enabling lock tracking will
-	 *                   add some overhead, but can be very useful for debugging.
-	 */
 	public WritePrefReadWriteLockManager(boolean trackLocks) {
 		super(trackLocks);
 	}
 
-	WritePrefReadWriteLockManager(boolean trackLocks, int waitToCollect) {
+	public WritePrefReadWriteLockManager(boolean trackLocks, int waitToCollect) {
 		super(trackLocks, waitToCollect);
 	}
 
-	/*
-	 * --------- Methods ---------
-	 */
-
-	/**
-	 * Gets a read lock, if available. This method will return <var>null</var> if the read lock is not immediately
-	 * available.
-	 */
-	@Override
-	public Lock tryReadLock() {
-		if (writeRequested || isWriterActive()) {
-			return null;
-		}
-		synchronized (this) {
-			if (isWriterActive()) {
-				return null;
-			}
-
-			return createReadLock();
-		}
+	public WritePrefReadWriteLockManager(String alias, LockDiagnostics... lockDiagnostics) {
+		super(alias, lockDiagnostics);
 	}
 
-	/**
-	 * Gets a read lock. This method blocks when a write lock is in use or has been requested until the write lock is
-	 * released.
-	 */
+	public WritePrefReadWriteLockManager(String alias, int waitToCollect, LockDiagnostics... lockDiagnostics) {
+		super(alias, waitToCollect, lockDiagnostics);
+	}
+
 	@Override
-	public Lock getReadLock() throws InterruptedException {
+	int getWriterPreference() {
+		return 1000;
+	}
+
+	@Override
+	Lock createReadLockInner() throws InterruptedException {
+		while (stampedLock.isWriteLocked()) {
+			spinWaitAtReadLock();
+		}
+
 		while (true) {
-			Lock lock = tryReadLock();
-			if (lock != null) {
-				return lock;
+			readersLocked.increment();
+			if (!stampedLock.isWriteLocked()) {
+				// Everything is good! We have acquired a read-lock and there are no active writers.
+				break;
+			} else {
+				// Release our read lock so we don't block any writers.
+				readersUnlocked.increment();
+				spinWaitAtReadLock();
 			}
-			waitForActiveWriter();
 		}
-	}
 
-	/**
-	 * Gets an exclusive write lock, if available. This method will return <var>null</var> if the write lock is not
-	 * immediately available.
-	 */
-	@Override
-	public Lock tryWriteLock() {
-		if (isWriterActive() || isReaderActive()) {
-			return null;
-		}
-		synchronized (this) {
-			if (isWriterActive() || isReaderActive()) {
-				return null;
-			}
-
-			return createWriteLock();
-		}
-	}
-
-	/**
-	 * Gets an exclusive write lock. This method blocks when the write lock is in use or has already been requested
-	 * until the write lock is released. This method also block when read locks are active until all of them are
-	 * released.
-	 */
-	@Override
-	public synchronized Lock getWriteLock() throws InterruptedException {
-		writeRequested = true;
-		try {
-			// Wait for the write lock to be released
-			while (isWriterActive()) {
-				waitForActiveWriter();
-			}
-
-			// Wait for the read locks to be released
-			while (isReaderActive()) {
-				waitForActiveReaders();
-			}
-
-			return createWriteLock();
-		} finally {
-			writeRequested = false;
-		}
+		return new ReadLock(readersUnlocked);
 	}
 }

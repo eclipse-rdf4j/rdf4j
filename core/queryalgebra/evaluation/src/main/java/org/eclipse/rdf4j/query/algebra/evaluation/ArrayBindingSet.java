@@ -57,33 +57,53 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.whichBindingsHaveBeenSet = new boolean[names.length];
 	}
 
-	public ArrayBindingSet(BindingSet toCopy, String... names) {
-		if (toCopy instanceof ArrayBindingSet && ((ArrayBindingSet) toCopy).bindingNames == names) {
-			ArrayBindingSet abs = (ArrayBindingSet) toCopy;
-			this.bindingNames = names;
-			this.values = Arrays.copyOf(abs.values, abs.values.length);
-			this.whichBindingsHaveBeenSet = Arrays.copyOf(abs.whichBindingsHaveBeenSet,
-					abs.whichBindingsHaveBeenSet.length);
+	public ArrayBindingSet(BindingSet toCopy, LinkedHashSet<String> names, String[] namesArray) {
+		assert !(toCopy instanceof ArrayBindingSet);
+
+		Set<String> toCopyBindingNames = toCopy.getBindingNames();
+
+		if (names.containsAll(toCopyBindingNames)) {
+			this.bindingNames = namesArray;
+			this.whichBindingsHaveBeenSet = new boolean[this.bindingNames.length];
+			this.values = new Value[this.bindingNames.length];
+			for (int i = 0; i < this.bindingNames.length; i++) {
+				Binding binding = toCopy.getBinding(this.bindingNames[i]);
+				if (binding != null) {
+					this.values[i] = binding.getValue();
+					this.whichBindingsHaveBeenSet[i] = true;
+				}
+			}
 		} else {
-			LinkedHashSet<String> newNames = new LinkedHashSet<String>();
-			newNames.addAll(Arrays.asList(names));
-			newNames.addAll(toCopy.getBindingNames());
+			LinkedHashSet<String> newNames = new LinkedHashSet<>();
+			newNames.addAll(names);
+			newNames.addAll(toCopyBindingNames);
 			this.bindingNames = newNames.toArray(new String[0]);
 			this.whichBindingsHaveBeenSet = new boolean[this.bindingNames.length];
-			this.values = new Value[bindingNames.length];
-			for (int i = 0; i < bindingNames.length; i++) {
-				this.values[i] = toCopy.getValue(bindingNames[i]);
-				this.whichBindingsHaveBeenSet[i] = toCopy.hasBinding(bindingNames[i]);
+			this.values = new Value[this.bindingNames.length];
+			for (int i = 0; i < this.bindingNames.length; i++) {
+				Binding binding = toCopy.getBinding(this.bindingNames[i]);
+				if (binding != null) {
+					this.values[i] = binding.getValue();
+					this.whichBindingsHaveBeenSet[i] = true;
+				}
 			}
 		}
 	}
 
 	public ArrayBindingSet(ArrayBindingSet toCopy, String... names) {
-		this.bindingNames = Arrays.copyOf(toCopy.bindingNames, toCopy.bindingNames.length + names.length);
-		System.arraycopy(names, 0, bindingNames, toCopy.bindingNames.length, names.length);
-		this.values = Arrays.copyOf(toCopy.values, toCopy.bindingNames.length + names.length);
+
+		if (names == toCopy.bindingNames) {
+			this.bindingNames = names;
+		} else {
+			LinkedHashSet<String> newNames = new LinkedHashSet<>();
+			newNames.addAll(Arrays.asList(names));
+			newNames.addAll(toCopy.getBindingNames());
+			this.bindingNames = newNames.toArray(new String[0]);
+		}
+
+		this.values = Arrays.copyOf(toCopy.values, toCopy.values.length);
 		this.whichBindingsHaveBeenSet = Arrays.copyOf(toCopy.whichBindingsHaveBeenSet,
-				toCopy.bindingNames.length + names.length);
+				toCopy.whichBindingsHaveBeenSet.length);
 	}
 
 	/**

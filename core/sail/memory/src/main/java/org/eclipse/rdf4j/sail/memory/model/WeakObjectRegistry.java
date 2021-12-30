@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Supplier;
 
@@ -38,7 +39,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	 * The hash map that is used to store the objects.
 	 */
 	private final Map<E, WeakReference<E>>[] objectMap;
-	private final StampedLock[] locks;
+	private final AdderBasedReadWriteLock[] locks;
 
 	/*--------------*
 	 * Constructors *
@@ -56,9 +57,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 			objectMap[i] = new WeakHashMap<>();
 		}
 
-		locks = new StampedLock[objectMap.length];
-		for (int i = 0; i < locks.length; i++) {
-			locks[i] = new StampedLock();
+		locks = new AdderBasedReadWriteLock[objectMap.length];
+		for (int index = 0; index < locks.length; index++) {
+			locks[index] = new AdderBasedReadWriteLock();
 		}
 	}
 
@@ -89,7 +90,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		}
 
 		int index = getIndex(key);
-		long readLock = locks[index].readLock();
+		boolean readLock = locks[index].readLock();
 		try {
 			Map<E, WeakReference<E>> weakReferenceMap = objectMap[index];
 
@@ -101,7 +102,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 			}
 
 		} finally {
-			locks[index].unlockRead(readLock);
+			locks[index].unlockReader(readLock);
 		}
 
 	}
@@ -124,13 +125,13 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	public static class AutoCloseableIterator<E> implements Iterator<E>, AutoCloseable {
 
 		private final Iterator<Map<E, WeakReference<E>>> iterator;
-		private final StampedLock[] locks;
+		private final AdderBasedReadWriteLock[] locks;
 
 		Iterator<E> currentIterator;
-		Long[] readLocks;
+		boolean[] readLocks;
 		boolean init = false;
 
-		public AutoCloseableIterator(Map<E, WeakReference<E>>[] objectMap, StampedLock[] locks) {
+		public AutoCloseableIterator(Map<E, WeakReference<E>>[] objectMap, AdderBasedReadWriteLock[] locks) {
 			this.iterator = Arrays.asList(objectMap).iterator();
 			this.locks = locks;
 		}
@@ -139,9 +140,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 			if (!init) {
 				init = true;
 				if (locks != null) {
-					readLocks = new Long[locks.length];
-					for (int i = 0; i < locks.length; i++) {
-						readLocks[i] = locks[i].readLock();
+					readLocks = new boolean[locks.length];
+					for (int index = 0; index < locks.length; index++) {
+						readLocks[index] = locks[index].readLock();
 					}
 				}
 				currentIterator = iterator.next().keySet().iterator();
@@ -178,10 +179,10 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		public void close() {
 			if (init) {
 				if (locks != null) {
-					for (int i = 0; i < locks.length; i++) {
-						if (readLocks[i] != 0) {
-							locks[i].unlockRead(readLocks[i]);
-							readLocks[i] = 0L;
+					for (int index = 0; index < locks.length; index++) {
+						if (readLocks[index]) {
+							locks[index].unlockReader(readLocks[index]);
+							readLocks[index] = false;
 						}
 					}
 				}
@@ -226,7 +227,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 			return true;
 
 		} finally {
-			locks[index].unlockWrite(writeLock);
+			locks[index].unlockWriter(writeLock);
 		}
 
 	}
@@ -235,7 +236,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		int index = getIndex(key);
 		Map<E, WeakReference<E>> weakReferenceMap = objectMap[index];
 
-		long readLock = locks[index].readLock();
+		boolean readLock = locks[index].readLock();
 		try {
 			WeakReference<E> ref = weakReferenceMap.get(key);
 			if (ref != null) {
@@ -246,7 +247,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 				}
 			}
 		} finally {
-			locks[index].unlockRead(readLock);
+			locks[index].unlockReader(readLock);
 		}
 
 		// we could not find the object, so we will use the supplier to create a new object and add that
@@ -268,7 +269,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 			return object;
 
 		} finally {
-			locks[index].unlockWrite(writeLock);
+			locks[index].unlockWriter(writeLock);
 		}
 
 	}
@@ -283,21 +284,82 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 			return ref != null && ref.get() != null;
 
 		} finally {
-			locks[index].unlockWrite(writeLock);
+			locks[index].unlockWriter(writeLock);
 		}
 	}
 
 	@Override
 	public void clear() {
 
-		for (int i = 0; i < objectMap.length; i++) {
-			long writeLock = locks[i].writeLock();
+		for (int index = 0; index < objectMap.length; index++) {
+			long writeLock = locks[index].writeLock();
 			try {
-				objectMap[i].clear();
+				objectMap[index].clear();
 			} finally {
-				locks[i].unlockWrite(writeLock);
+				locks[index].unlockWriter(writeLock);
 			}
 		}
 
 	}
+
+	private static class AdderBasedReadWriteLock {
+
+		// StampedLock for handling writers.
+		private final StampedLock lock = new StampedLock();
+
+		// LongAdder for handling readers. When the count is equal then there are no active readers.
+		private final LongAdder readersLocked = new LongAdder();
+		private final LongAdder readersUnlocked = new LongAdder();
+
+		public boolean readLock() {
+			while (true) {
+				readersLocked.increment();
+				if (!lock.isWriteLocked()) {
+					// Everything is good! We have acquired a read-lock and there are no active writers.
+					return true;
+				} else {
+					// Release our read lock so we don't block any writers.
+					readersUnlocked.increment();
+					Thread.onSpinWait();
+				}
+			}
+		}
+
+		public void unlockReader(boolean locked) {
+			if (locked) {
+				readersUnlocked.increment();
+			} else {
+				throw new IllegalMonitorStateException();
+			}
+		}
+
+		public long writeLock() {
+			// Acquire a write-lock.
+			long writeStamp = lock.writeLock();
+
+			// Wait for active readers to finish.
+			while (true) {
+				// The order is important here.
+				long unlockedSum = readersUnlocked.sum();
+				long lockedSum = readersLocked.sum();
+				if (unlockedSum == lockedSum) {
+					// No active readers.
+					return writeStamp;
+				} else {
+					Thread.onSpinWait();
+				}
+
+			}
+		}
+
+		public void unlockWriter(long stamp) {
+			if (stamp != 0) {
+				lock.unlockWrite(stamp);
+			} else {
+				throw new IllegalMonitorStateException();
+			}
+		}
+
+	}
+
 }

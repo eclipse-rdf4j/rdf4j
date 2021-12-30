@@ -48,7 +48,7 @@ public class ReadWriteLockManagerBenchmark extends BaseLockManagerBenchmark {
 	}
 
 	AbstractReadWriteLockManager getReadWriteLockManager() {
-		return new ReadPrefReadWriteLockManager(false);
+		return new ReadPrefReadWriteLockManager("");
 	}
 
 	@Benchmark
@@ -107,45 +107,45 @@ public class ReadWriteLockManagerBenchmark extends BaseLockManagerBenchmark {
 		});
 
 	}
-//
-//	@Benchmark
-//	public void readPriority(Blackhole blackhole) throws Exception {
-//
-//		AbstractReadWriteLockManager lockManager = getReadWriteLockManager();
-//
-//		threads(100, () -> {
-//			try {
-//				Lock readLock1 = lockManager.getReadLock();
-//
-//				long before = System.currentTimeMillis();
-//				readLock1.release();
-//				blackhole.consume(readLock1);
-//
-//				for (int i = 0; i < 100; i++) {
-//					Lock readLock2 = lockManager.getReadLock();
-//					readLock2.release();
-//					Thread.onSpinWait();
-//					blackhole.consume(readLock2);
-//
-//				}
-//
-//				Lock readLock3 = lockManager.getReadLock();
-//				long after = System.currentTimeMillis();
-//				readLock3.release();
-//				blackhole.consume(readLock3);
-//
-//				Lock lock = lockManager.getWriteLock();
-//				Thread.sleep(after - before);
-//				lock.release();
-//				blackhole.consume(lock);
-//
-//			} catch (InterruptedException e) {
-//				e.printStackTrace();
-//			}
-//
-//		});
-//
-//	}
+
+	@Benchmark
+	public void readPriority(Blackhole blackhole) throws Exception {
+
+		AbstractReadWriteLockManager lockManager = getReadWriteLockManager();
+
+		threads(100, () -> {
+			try {
+				Lock readLock1 = lockManager.getReadLock();
+
+				long before = System.currentTimeMillis();
+				readLock1.release();
+				blackhole.consume(readLock1);
+
+				for (int i = 0; i < 100; i++) {
+					Lock readLock2 = lockManager.getReadLock();
+					readLock2.release();
+					Thread.onSpinWait();
+					blackhole.consume(readLock2);
+
+				}
+
+				Lock readLock3 = lockManager.getReadLock();
+				long after = System.currentTimeMillis();
+				readLock3.release();
+				blackhole.consume(readLock3);
+
+				Lock lock = lockManager.getWriteLock();
+				Thread.sleep(after - before);
+				lock.release();
+				blackhole.consume(lock);
+
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+
+		});
+
+	}
 
 // Very slow!
 //	@Benchmark

@@ -42,4 +42,29 @@ public interface ReadWriteLockManager {
 	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
 	 */
 	Lock getWriteLock() throws InterruptedException;
+
+	/**
+	 * Returns {@code false} if there are no active write locks, otherwise returns {@code true}.
+	 */
+	boolean isWriterActive();
+
+	/**
+	 * Returns {@code false} if there are no active read locks, otherwise returns {@code true}.
+	 */
+	boolean isReaderActive();
+
+	/**
+	 * Blocks until all write locks have been released.
+	 *
+	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
+	 */
+	void waitForActiveWriter() throws InterruptedException;
+
+	/**
+	 * Blocks until all read locks have been released.
+	 *
+	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
+	 */
+	void waitForActiveReaders() throws InterruptedException;
+
 }
