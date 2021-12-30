@@ -7,12 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.concurrent.locks;
 
+import java.lang.ref.Cleaner;
 import java.lang.ref.WeakReference;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.WeakHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.StampedLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,18 +41,10 @@ public class LockManager {
 
 	private static final AtomicLong seq = new AtomicLong();
 
-	private static class WeakLockReference {
+	// the underlying lock object
+	final StampedLock lock = new StampedLock();
 
-		String alias;
-
-		String acquiredName;
-
-		long acquiredId;
-
-		Throwable stack;
-
-		WeakReference<Lock> reference;
-	}
+	LockMonitoring lockMonitoring;
 
 	private final Logger logger = LoggerFactory.getLogger(LockManager.class);
 
@@ -61,11 +59,6 @@ public class LockManager {
 	 * locks
 	 */
 	private int waitToCollect;
-
-	/**
-	 * Set of active locks.
-	 */
-	private final Set<WeakLockReference> activeLocks = new HashSet<>();
 
 	/**
 	 * Create a new set of locks.
@@ -95,6 +88,25 @@ public class LockManager {
 	public LockManager(boolean trackLocks, int collectionFrequency) {
 		this.trackLocks = trackLocks || Properties.lockTrackingEnabled();
 		this.waitToCollect = collectionFrequency;
+
+		lockMonitoring = new LockMonitoring(this.trackLocks, () -> new Lock() {
+
+			transient long stamp = lock.readLock();
+
+			@Override
+			public boolean isActive() {
+				return stamp != 0;
+			}
+
+			@Override
+			public void release() {
+				if (stamp == 0)
+					return;
+				lock.unlockRead(stamp);
+				stamp = 0;
+			}
+
+		});
 	}
 
 	/**
@@ -103,9 +115,7 @@ public class LockManager {
 	 * @return <code>true</code> of one or more locks that have not be released.
 	 */
 	public boolean isActiveLock() {
-		synchronized (activeLocks) {
-			return !activeLocks.isEmpty();
-		}
+		return lock.isReadLocked();
 	}
 
 	/**
@@ -116,43 +126,32 @@ public class LockManager {
 	 *                              when this exception is thrown.
 	 */
 	public void waitForActiveLocks() throws InterruptedException {
-		long now = -1;
-		boolean checkForChange = false;
-		while (true) {
-			boolean nochange = false;
-			Set<WeakLockReference> before = null;
+		int loopCounter = 0;
+		long activeLocksSignature = 0;
 
-			synchronized (activeLocks) {
-				if (activeLocks.isEmpty()) {
-					return;
+		while (isActiveLock()) {
+			loopCounter++;
+
+			// if we get a non-zero write lock then we know that we don't have any active readers
+			long writeLock = lock.tryWriteLock(waitToCollect, TimeUnit.MILLISECONDS);
+
+			if (writeLock == 0) {
+				if (lockMonitoring.hasAbandonedLocks()) {
+					lockMonitoring.forceReleaseAbandonedLocks();
+				} else if (loopCounter > 10) {
+					System.gc();
+					long previousActiveLocksSignature = activeLocksSignature;
+					activeLocksSignature = lockMonitoring.getActiveLocksSignature();
+					if (previousActiveLocksSignature != 0 && previousActiveLocksSignature == activeLocksSignature) {
+						lockMonitoring.logStalledLocks();
+					}
 				}
 
-				// The call to releaseAbandoned() further down in the code is only called if "System.currentTimeMillis()
-				// - now >= waitToCollect / 2". We optimize the code so we only create a `before` HashSet if we are
-				// actually going to use it.
-				checkForChange = now > -1 && System.currentTimeMillis() - now >= waitToCollect / 2;
-
-				if (checkForChange) {
-					before = new HashSet<>(activeLocks);
-				}
-				if (now < 0) {
-					now = System.currentTimeMillis();
-				}
-
-				activeLocks.wait(waitToCollect);
-				if (activeLocks.isEmpty()) {
-					return;
-				}
-
-				if (checkForChange) {
-					nochange = before.equals(activeLocks);
-				}
+			} else {
+				lock.unlockWrite(writeLock);
+				return;
 			}
-			// guard against so-called spurious wakeup
-			if (nochange && System.currentTimeMillis() - now >= waitToCollect / 2) {
-				releaseAbandoned();
-				now = -1;
-			}
+
 		}
 
 	}
@@ -164,127 +163,10 @@ public class LockManager {
 	 * @param alias a short string used to log abandon locks
 	 * @return an active lock
 	 */
-	public synchronized Lock createLock(String alias) {
-		final WeakLockReference weak = new WeakLockReference();
-		weak.alias = alias;
-		weak.acquiredName = Thread.currentThread().getName();
-		weak.acquiredId = Thread.currentThread().getId();
-		if (trackLocks) {
-			weak.stack = new Throwable(alias + " lock " + seq.incrementAndGet() + " acquired in " + weak.acquiredName);
-		}
-		Lock lock = new Lock() {
+	public Lock createLock(String alias) {
 
-			@Override
-			public synchronized boolean isActive() {
-				synchronized (activeLocks) {
-					return activeLocks.contains(weak);
-				}
-			}
+		return lockMonitoring.getLock(alias);
 
-			@Override
-			public synchronized void release() {
-				synchronized (activeLocks) {
-					if (activeLocks.remove(weak)) {
-						activeLocks.notifyAll();
-					}
-				}
-			}
-
-			@Override
-			public String toString() {
-				if (weak.stack == null) {
-					return weak.alias + " lock acquired in " + weak.acquiredName;
-				} else {
-					return weak.stack.getMessage();
-				}
-			}
-		};
-		weak.reference = new WeakReference<>(lock);
-		synchronized (activeLocks) {
-			activeLocks.add(weak);
-		}
-		return lock;
-	}
-
-	private void releaseAbandoned() {
-		System.gc();
-		Thread.yield();
-		synchronized (activeLocks) {
-			if (!activeLocks.isEmpty()) {
-				boolean stalled = true;
-				Iterator<WeakLockReference> iter = activeLocks.iterator();
-				while (iter.hasNext()) {
-					WeakLockReference lock = iter.next();
-					if (lock.reference.get() == null) {
-						iter.remove();
-						activeLocks.notifyAll();
-						stalled = false;
-						logAbandonedLock(lock);
-					}
-				}
-				if (stalled) {
-					// No active locks were found to be abandoned
-					// wait longer next time before running gc
-					if (waitToCollect < MAX_WAIT_TO_COLLECT) {
-						waitToCollect = Math.max(waitToCollect, waitToCollect * 2);
-					}
-					logStalledLock(activeLocks);
-				}
-			}
-		}
-	}
-
-	private void logAbandonedLock(WeakLockReference lock) {
-		if (lock.stack == null && logger.isWarnEnabled()) {
-			String msg = lock.alias
-					+ " lock abandoned; lock was acquired in {}; consider setting the {} system property";
-			logger.warn(msg, lock.acquiredName, Properties.TRACK_LOCKS);
-		} else if (logger.isWarnEnabled()) {
-			String msg = lock.alias + " lock abandoned; lock was acquired in " + lock.acquiredName;
-			logger.warn(msg, lock.stack);
-		}
-	}
-
-	private void logStalledLock(Collection<WeakLockReference> activeLocks) {
-		Thread current = Thread.currentThread();
-		if (activeLocks.size() == 1) {
-			WeakLockReference lock = activeLocks.iterator().next();
-			if (logger.isWarnEnabled()) {
-				String msg = "Thread " + current.getName() + " is waiting on an active " + lock.alias
-						+ " lock acquired in " + lock.acquiredName;
-				if (lock.acquiredId == current.getId()) {
-					if (lock.stack == null) {
-						logger.warn(msg, new Throwable());
-					} else {
-						logger.warn(msg, new Throwable(lock.stack));
-					}
-				} else {
-					if (lock.stack == null) {
-						logger.info(msg);
-					} else {
-						logger.info(msg, new Throwable(lock.stack));
-					}
-				}
-			}
-		} else {
-			String alias = null;
-			boolean warn = false;
-			for (WeakLockReference lock : activeLocks) {
-				warn |= lock.acquiredId == current.getId();
-				if (alias == null) {
-					alias = lock.alias;
-				} else if (!alias.contains(lock.alias)) {
-					alias = alias + ", " + lock.alias;
-				}
-			}
-			String msg = "Thread " + current.getName() + " is waiting on " + activeLocks.size() + " active " + alias
-					+ " locks";
-			if (warn) {
-				logger.warn(msg);
-			} else {
-				logger.info(msg);
-			}
-		}
 	}
 
 }
