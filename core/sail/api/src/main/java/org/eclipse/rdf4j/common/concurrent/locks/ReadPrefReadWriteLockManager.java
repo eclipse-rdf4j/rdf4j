@@ -70,7 +70,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 * released.
 	 */
 	@Override
-	public Lock getReadLock() {
+	public Lock getReadLock() throws InterruptedException {
 		return createReadLock();
 	}
 
@@ -98,7 +98,7 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 	 * released.
 	 */
 	@Override
-	public Lock getWriteLock() {
+	public Lock getWriteLock() throws InterruptedException {
 		return createWriteLock();
 	}
 }

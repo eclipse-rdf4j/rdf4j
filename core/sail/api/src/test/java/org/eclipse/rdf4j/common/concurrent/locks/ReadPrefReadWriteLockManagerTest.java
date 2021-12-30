@@ -20,49 +20,44 @@ public class ReadPrefReadWriteLockManagerTest {
 		ReadPrefReadWriteLockManager readPrefReadWriteLockManager = new ReadPrefReadWriteLockManager();
 
 		CountDownLatch acquireReadLockFirst = new CountDownLatch(1);
-		CountDownLatch acquireReadLockWhileWriteLockWaiting = new CountDownLatch(1);
 
 		Stream<Runnable> runnableStream = Stream.of(
 				() -> {
-					Lock readLock = readPrefReadWriteLockManager.getReadLock();
-					acquireReadLockFirst.countDown();
 					try {
-						acquireReadLockWhileWriteLockWaiting.await();
+						Lock readLock = readPrefReadWriteLockManager.getReadLock();
+						acquireReadLockFirst.countDown();
+
+						// try to force the other thread to begin acquiring a write lock before we continue
+						Thread.yield();
+						Thread.sleep(100);
+
+						Lock readLock2 = readPrefReadWriteLockManager.getReadLock();
+
+						readLock.release();
+						readLock2.release();
+
 					} catch (InterruptedException e) {
 						throw new IllegalStateException(e);
 					}
-					Lock readLock1 = readPrefReadWriteLockManager.getReadLock();
-
-					readLock.release();
-					readLock1.release();
 				},
 				() -> {
 
 					try {
 						acquireReadLockFirst.await();
+						readPrefReadWriteLockManager.getWriteLock();
 					} catch (InterruptedException e) {
 						throw new IllegalStateException(e);
 					}
-					acquireReadLockWhileWriteLockWaiting.countDown();
-					readPrefReadWriteLockManager.getWriteLock();
-
-				},
-				() -> {
-
 				}
 
 		);
 
-		runnableStream.parallel().forEach(r -> {
-			Thread thread = new Thread(r);
-			thread.start();
-			try {
-				thread.join();
-			} catch (InterruptedException e) {
-				throw new IllegalStateException(e);
-			}
-		});
+		runAsThreads(runnableStream);
 
+	}
+
+	private void runAsThreads(Stream<Runnable> runnableStream) {
+		runnableStream.parallel().forEach(Runnable::run);
 	}
 
 }
