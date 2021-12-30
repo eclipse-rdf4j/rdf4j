@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
@@ -30,9 +32,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 	 */
 	public LockingIteration(Lock lock, Iteration<? extends E, X> iter) {
 		super(iter);
-
-		assert lock != null;
-		this.lock = lock;
+		this.lock = Objects.requireNonNull(lock);
 	}
 
 	@Override
