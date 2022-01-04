@@ -37,7 +37,6 @@ import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.cache.CacheUtils;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
-import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor;
@@ -147,18 +146,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}, federationContext.getFederatedServiceResolver());
 		this.federationContext = federationContext;
 		this.executor = federationContext.getManager().getExecutor();
-		this.cache = createSourceSelectionCache();
-	}
-
-	/**
-	 * Create the {@link SourceSelectionCache}
-	 *
-	 * @return the {@link SourceSelectionCache}
-	 * @see FedXConfig#getSourceSelectionCacheSpec()
-	 */
-	protected SourceSelectionCache createSourceSelectionCache() {
-		String cacheSpec = federationContext.getConfig().getSourceSelectionCacheSpec();
-		return new SourceSelectionMemoryCache(cacheSpec);
+		this.cache = federationContext.getSourceSelectionCache();
 	}
 
 	@Override

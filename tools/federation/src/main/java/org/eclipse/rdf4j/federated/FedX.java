@@ -33,9 +33,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * FedX serves as implementation of the federation layer. It implements Sesame's Sail interface and can thus be used as
- * a normal repository in a Sesame environment. The federation layer enables transparent access to the underlying
- * members as if they were a central repository.
+ * FedX serves as implementation of the federation layer. It implements RDF4J's Sail interface and can thus be used as a
+ * normal repository in a RDF4J environment. The federation layer enables transparent access to the underlying members
+ * as if they were a central repository.
  * <p>
  *
  * For initialization of the federation and usage see {@link FederationManager}.
@@ -105,6 +105,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 		try {
 			return federationContext.getConfig()
 					.getWriteStrategyFactory()
+					.getDeclaredConstructor()
 					.newInstance()
 					.create(members, federationContext);
 		} catch (Exception e) {

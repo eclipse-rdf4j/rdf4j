@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
@@ -78,8 +77,8 @@ public class FederationManager {
 	private FederationContext federationContext;
 	private FedX federation;
 	private ExecutorService executor;
-	private FederationEvalStrategy strategy;
-	private FederationType type;
+	private FederationEvaluationStrategyFactory strategyFactory;
+	private FederationType federationType;
 	private ControlledWorkerScheduler<BindingSet> joinScheduler;
 	private ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
 	private ControlledWorkerScheduler<BindingSet> unionScheduler;
@@ -93,8 +92,25 @@ public class FederationManager {
 		this.federationContext = federationContext;
 		this.executor = Executors.newCachedThreadPool(new NamingThreadFactory("FedX Executor"));
 
-		updateStrategy();
+		updateFederationType();
 		reset();
+	}
+
+	/**
+	 * 
+	 * @return the initialized and configured {@link FederationEvaluationStrategyFactory}
+	 */
+	/* package */ FederationEvaluationStrategyFactory getFederationEvaluationStrategyFactory() {
+		if (strategyFactory == null) {
+			strategyFactory = new FederationEvaluationStrategyFactory();
+		}
+		strategyFactory.setFederationType(federationType);
+		strategyFactory.setFederationContext(federationContext);
+		return strategyFactory;
+	}
+
+	public void setFederationEvaluationStrategy(FederationEvaluationStrategyFactory strategyFactory) {
+		this.strategyFactory = strategyFactory;
 	}
 
 	/**
@@ -150,11 +166,6 @@ public class FederationManager {
 		return this.federation;
 	}
 
-	/* package */ FederationEvalStrategy getStrategy() {
-		// TODO this method will be removed once the instantiation is changed to use a factory
-		return strategy;
-	}
-
 	public ControlledWorkerScheduler<BindingSet> getJoinScheduler() {
 		return joinScheduler;
 	}
@@ -168,7 +179,7 @@ public class FederationManager {
 	}
 
 	public FederationType getFederationType() {
-		return type;
+		return federationType;
 	}
 
 	/**
@@ -196,7 +207,7 @@ public class FederationManager {
 
 		if (updateStrategy == null || updateStrategy.length == 0
 				|| (updateStrategy.length == 1 && updateStrategy[0] == true)) {
-			updateStrategy();
+			updateFederationType();
 		}
 	}
 
@@ -212,7 +223,7 @@ public class FederationManager {
 			addEndpoint(e, false);
 		}
 
-		updateStrategy();
+		updateFederationType();
 	}
 
 	/**
@@ -234,7 +245,7 @@ public class FederationManager {
 
 		if (updateStrategy == null || updateStrategy.length == 0
 				|| (updateStrategy.length == 1 && updateStrategy[0] == true)) {
-			updateStrategy();
+			updateFederationType();
 		}
 	}
 
@@ -251,7 +262,7 @@ public class FederationManager {
 			removeEndpoint(e, false);
 		}
 
-		updateStrategy();
+		updateFederationType();
 	}
 
 	/**
@@ -309,7 +320,7 @@ public class FederationManager {
 	 * @see SynchronousWorkerUnion
 	 */
 	public WorkerUnionBase<BindingSet> createWorkerUnion(QueryInfo queryInfo) {
-		if (type == FederationType.LOCAL) {
+		if (federationType == FederationType.LOCAL) {
 			return new SynchronousWorkerUnion<>(queryInfo);
 		}
 		return new ControlledWorkerUnion<>(unionScheduler, queryInfo);
@@ -320,8 +331,9 @@ public class FederationManager {
 	 * Update the federation evaluation strategy using the classification of endpoints as provided by
 	 * {@link Endpoint#getEndpointClassification()}:
 	 * <p>
-	 *
-	 * Which strategy is applied depends on {@link FederationEvaluationStrategyFactory}.
+	 * Which strategy is applied depends on the {@link FederationEvaluationStrategyFactory}, see
+	 * {@link #getFederationEvaluationStrategyFactory()}.
+	 * </p>
 	 *
 	 * Default strategies:
 	 * <ul>
@@ -331,7 +343,7 @@ public class FederationManager {
 	 * </ul>
 	 *
 	 */
-	public void updateStrategy() {
+	private void updateFederationType() {
 
 		int localCount = 0, remoteCount = 0;
 		for (Endpoint e : federation.getMembers()) {
@@ -344,26 +356,24 @@ public class FederationManager {
 
 		boolean updated = false;
 		if (remoteCount == 0) {
-			if (type != FederationType.LOCAL) {
-				type = FederationType.LOCAL;
+			if (federationType != FederationType.LOCAL) {
+				federationType = FederationType.LOCAL;
 				updated = true;
 			}
 		} else if (localCount == 0) {
-			if (type != FederationType.REMOTE) {
-				type = FederationType.REMOTE;
+			if (federationType != FederationType.REMOTE) {
+				federationType = FederationType.REMOTE;
 				updated = true;
 			}
 		} else {
-			if (type != FederationType.HYBRID) {
-				type = FederationType.HYBRID;
+			if (federationType != FederationType.HYBRID) {
+				federationType = FederationType.HYBRID;
 				updated = true;
 			}
 		}
 
 		if (updated) {
-			strategy = FederationEvaluationStrategyFactory.getEvaluationStrategy(type, federationContext);
-			log.info("Federation updated. Type: " + type + ", evaluation strategy is "
-					+ strategy.getClass().getSimpleName());
+			log.info("Federation updated. Type: " + federationType);
 		}
 
 	}

@@ -103,7 +103,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 		final TupleExpr _orgQuery = query;
 
-		FederationEvalStrategy strategy = federationContext.createStrategy();
+		FederationEvalStrategy strategy = federationContext.createStrategy(dataset);
 
 		long start = 0;
 		QueryInfo queryInfo = null;
@@ -229,7 +229,7 @@ public class FedXConnection extends AbstractSailConnection {
 	@Override
 	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
 
-		FederationEvalStrategy strategy = federationContext.createStrategy();
+		FederationEvalStrategy strategy = federationContext.createStrategy(new SimpleDataset());
 		final WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<>(
 				new QueryInfo("getContextIDsInternal", null, QueryType.UNKNOWN, 0,
 						federationContext.getConfig().getIncludeInferredDefault(), federationContext, strategy,
@@ -291,9 +291,10 @@ public class FedXConnection extends AbstractSailConnection {
 			final Resource... contexts) throws SailException {
 
 		try {
-			FederationEvalStrategy strategy = federationContext.createStrategy();
+			Dataset dataset = new SimpleDataset();
+			FederationEvalStrategy strategy = federationContext.createStrategy(dataset);
 			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
-					new SimpleDataset());
+					dataset);
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
 			CloseableIteration<Statement, QueryEvaluationException> res = strategy.getStatements(queryInfo, subj, pred,
 					obj, contexts);

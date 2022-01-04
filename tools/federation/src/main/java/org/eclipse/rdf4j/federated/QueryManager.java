@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.query.BooleanQuery;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
@@ -302,12 +303,13 @@ public class QueryManager {
 		if (!(query instanceof ParsedQuery)) {
 			throw new MalformedQueryException("Not a ParsedQuery: " + query.getClass());
 		}
-		FederationEvalStrategy strategy = federationContext.createStrategy();
+		Dataset dataset = ((ParsedQuery) query).getDataset();
+		FederationEvalStrategy strategy = federationContext.createStrategy(dataset);
 		// we use a dummy query info object here
 		QueryInfo qInfo = new QueryInfo(queryString, null, QueryType.SELECT,
 				federationContext.getConfig().getEnforceMaxQueryTime(),
 				federationContext.getConfig().getIncludeInferredDefault(), federationContext, strategy,
-				((ParsedQuery) query).getDataset());
+				dataset);
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,
