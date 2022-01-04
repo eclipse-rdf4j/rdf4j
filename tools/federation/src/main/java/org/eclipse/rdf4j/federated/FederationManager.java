@@ -150,7 +150,8 @@ public class FederationManager {
 		return this.federation;
 	}
 
-	public FederationEvalStrategy getStrategy() {
+	/* package */ FederationEvalStrategy getStrategy() {
+		// TODO this method will be removed once the instantiation is changed to use a factory
 		return strategy;
 	}
 
@@ -308,11 +309,10 @@ public class FederationManager {
 	 * @see SynchronousWorkerUnion
 	 */
 	public WorkerUnionBase<BindingSet> createWorkerUnion(QueryInfo queryInfo) {
-		FederationEvalStrategy strategy = getStrategy();
 		if (type == FederationType.LOCAL) {
-			return new SynchronousWorkerUnion<>(strategy, queryInfo);
+			return new SynchronousWorkerUnion<>(queryInfo);
 		}
-		return new ControlledWorkerUnion<>(strategy, unionScheduler, queryInfo);
+		return new ControlledWorkerUnion<>(unionScheduler, queryInfo);
 
 	}
 

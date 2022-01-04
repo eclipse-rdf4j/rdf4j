@@ -461,7 +461,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		// TODO why not collect in parallel?
-		WorkerUnionBase<Statement> union = new SynchronousWorkerUnion<>(this, queryInfo);
+		WorkerUnionBase<Statement> union = new SynchronousWorkerUnion<>(queryInfo);
 
 		for (StatementSource source : sources) {
 			Endpoint e = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
@@ -619,7 +619,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			throws QueryEvaluationException {
 
 		ControlledWorkerScheduler<BindingSet> unionScheduler = federationContext.getManager().getUnionScheduler();
-		ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<>(this, unionScheduler,
+		ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<>(unionScheduler,
 				union.getQueryInfo());
 		int numberOfArguments = union.getNumberOfArguments();
 		QueryEvaluationStep[] args = new QueryEvaluationStep[numberOfArguments];

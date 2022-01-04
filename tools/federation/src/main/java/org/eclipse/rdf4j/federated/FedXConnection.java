@@ -103,7 +103,7 @@ public class FedXConnection extends AbstractSailConnection {
 
 		final TupleExpr _orgQuery = query;
 
-		FederationEvalStrategy strategy = federationContext.getStrategy();
+		FederationEvalStrategy strategy = federationContext.createStrategy();
 
 		long start = 0;
 		QueryInfo queryInfo = null;
@@ -113,7 +113,7 @@ public class FedXConnection extends AbstractSailConnection {
 				log.warn("Query string is null. Please check your FedX setup.");
 			}
 			queryInfo = new QueryInfo(queryString, getOriginalBaseURI(bindings), getOriginalQueryType(bindings),
-					getOriginalMaxExecutionTime(bindings), includeInferred, federationContext, dataset);
+					getOriginalMaxExecutionTime(bindings), includeInferred, federationContext, strategy, dataset);
 
 			// check if we have pass-through result handler information for single source queries
 			if (query instanceof PassThroughTupleExpr) {
@@ -229,10 +229,10 @@ public class FedXConnection extends AbstractSailConnection {
 	@Override
 	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
 
-		FederationEvalStrategy strategy = federationContext.getStrategy();
-		final WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<>(strategy,
+		FederationEvalStrategy strategy = federationContext.createStrategy();
+		final WorkerUnionBase<Resource> union = new SynchronousWorkerUnion<>(
 				new QueryInfo("getContextIDsInternal", null, QueryType.UNKNOWN, 0,
-						federationContext.getConfig().getIncludeInferredDefault(), federationContext,
+						federationContext.getConfig().getIncludeInferredDefault(), federationContext, strategy,
 						new SimpleDataset()));
 
 		for (final Endpoint e : federation.getMembers()) {
@@ -291,8 +291,8 @@ public class FedXConnection extends AbstractSailConnection {
 			final Resource... contexts) throws SailException {
 
 		try {
-			FederationEvalStrategy strategy = federationContext.getStrategy();
-			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, includeInferred, federationContext,
+			FederationEvalStrategy strategy = federationContext.createStrategy();
+			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,
 					new SimpleDataset());
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
 			CloseableIteration<Statement, QueryEvaluationException> res = strategy.getStatements(queryInfo, subj, pred,

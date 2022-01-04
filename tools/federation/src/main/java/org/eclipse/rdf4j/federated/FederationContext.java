@@ -59,10 +59,6 @@ public class FederationContext {
 		return this.endpointManager;
 	}
 
-	public FederationEvalStrategy getStrategy() {
-		return manager.getStrategy();
-	}
-
 	public Monitoring getMonitoringService() {
 		return this.monitoring;
 	}
@@ -73,5 +69,13 @@ public class FederationContext {
 
 	public FedXConfig getConfig() {
 		return this.fedXConfig;
+	}
+
+	/**
+	 * Create a fresh {@link FederationEvalStrategy} using information from this federation context.
+	 */
+	public FederationEvalStrategy createStrategy() {
+		// TODO this needs to be changed in a next step to use a factory
+		return manager.getStrategy();
 	}
 }
