@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.endpoint.provider.NativeRepositoryInformation;
 import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryInformation;
 import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.model.Model;
@@ -98,6 +99,7 @@ public class FedXFactory {
 
 	protected RepositoryResolver repositoryResolver;
 	protected FederatedServiceResolver federatedServiceResolver;
+	protected FederationEvaluationStrategyFactory strategyFactory;
 	protected List<Endpoint> members = new ArrayList<>();
 	protected FedXConfig config = FedXConfig.DEFAULT_CONFIG;
 	protected File fedxBaseDir;
@@ -113,6 +115,11 @@ public class FedXFactory {
 
 	public FedXFactory withFederatedServiceResolver(FederatedServiceResolver federatedServiceResolver) {
 		this.federatedServiceResolver = federatedServiceResolver;
+		return this;
+	}
+
+	public FedXFactory withFederationEvaluationStrategyFactory(FederationEvaluationStrategyFactory strategyFactory) {
+		this.strategyFactory = strategyFactory;
 		return this;
 	}
 
@@ -192,6 +199,10 @@ public class FedXFactory {
 		}
 
 		FedX federation = new FedX(members);
+		if (this.strategyFactory != null) {
+			federation.setFederationEvaluationStrategy(strategyFactory);
+		}
+
 		FedXRepository repo = new FedXRepository(federation, this.config);
 		if (this.repositoryResolver != null) {
 			repo.setRepositoryResolver(repositoryResolver);
@@ -202,6 +213,7 @@ public class FedXFactory {
 		if (this.fedxBaseDir != null) {
 			repo.setDataDir(fedxBaseDir);
 		}
+
 		return repo;
 	}
 }

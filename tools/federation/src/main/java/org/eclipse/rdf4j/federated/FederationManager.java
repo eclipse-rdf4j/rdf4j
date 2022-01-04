@@ -77,7 +77,6 @@ public class FederationManager {
 	private FederationContext federationContext;
 	private FedX federation;
 	private ExecutorService executor;
-	private FederationEvaluationStrategyFactory strategyFactory;
 	private FederationType federationType;
 	private ControlledWorkerScheduler<BindingSet> joinScheduler;
 	private ControlledWorkerScheduler<BindingSet> leftJoinScheduler;
@@ -101,16 +100,10 @@ public class FederationManager {
 	 * @return the initialized and configured {@link FederationEvaluationStrategyFactory}
 	 */
 	/* package */ FederationEvaluationStrategyFactory getFederationEvaluationStrategyFactory() {
-		if (strategyFactory == null) {
-			strategyFactory = new FederationEvaluationStrategyFactory();
-		}
+		FederationEvaluationStrategyFactory strategyFactory = new FederationEvaluationStrategyFactory();
 		strategyFactory.setFederationType(federationType);
 		strategyFactory.setFederationContext(federationContext);
 		return strategyFactory;
-	}
-
-	public void setFederationEvaluationStrategy(FederationEvaluationStrategyFactory strategyFactory) {
-		this.strategyFactory = strategyFactory;
 	}
 
 	/**

@@ -15,6 +15,7 @@ import java.util.List;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
@@ -53,6 +54,8 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	private RepositoryResolver repositoryResolver;
 
+	private FederationEvaluationStrategyFactory strategyFactory;
+
 	private File dataDir;
 
 	public FedX(List<Endpoint> endpoints) {
@@ -64,6 +67,23 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	public void setFederationContext(FederationContext federationContext) {
 		this.federationContext = federationContext;
+	}
+
+	/**
+	 * Note: consumers must obtain the instance through
+	 * {@link FederationManager#getFederationEvaluationStrategyFactory()}
+	 * 
+	 * @return the {@link FederationEvaluationStrategyFactory}
+	 */
+	/* package */ FederationEvaluationStrategyFactory getFederationEvaluationStrategyFactory() {
+		if (strategyFactory == null) {
+			strategyFactory = new FederationEvaluationStrategyFactory();
+		}
+		return strategyFactory;
+	}
+
+	public void setFederationEvaluationStrategy(FederationEvaluationStrategyFactory strategyFactory) {
+		this.strategyFactory = strategyFactory;
 	}
 
 	/**
