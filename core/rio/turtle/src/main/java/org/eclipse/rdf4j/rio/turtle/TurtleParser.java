@@ -278,12 +278,11 @@ public class TurtleParser extends AbstractRDFParser {
 		skipWSC();
 
 		// Read the namespace URI
-		IRI namespace = parseURI();
+		String namespaceStr = parseURI().toString();
+
+		String prefixStr = prefixID.toString();
 
 		// Store and report this namespace mapping
-		String prefixStr = prefixID.toString();
-		String namespaceStr = namespace.toString();
-
 		setNamespace(prefixStr, namespaceStr);
 
 		if (rdfHandler != null) {

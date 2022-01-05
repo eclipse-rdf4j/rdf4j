@@ -34,9 +34,7 @@ public class TransactionalIsolationSlowIT {
 
 	@Test
 	public void testIsolation2_multithreaded_READ_COMMITTED() throws Throwable {
-
 		for (int i = 0; i < 1000; i++) {
-
 			ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
 			SailRepository sailRepository = new SailRepository(shaclSail);
@@ -172,9 +170,7 @@ public class TransactionalIsolationSlowIT {
 
 	@Test
 	public void testIsolation2_multithreaded_SNAPSHOT() throws Throwable {
-
 		for (int i = 0; i < 1000; i++) {
-
 			ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
 			SailRepository sailRepository = new SailRepository(shaclSail);
