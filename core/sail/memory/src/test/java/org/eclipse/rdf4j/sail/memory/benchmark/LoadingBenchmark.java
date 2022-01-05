@@ -60,8 +60,7 @@ public class LoadingBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("LoadingBenchmark.load") // adapt to run other benchmark tests
-				// .addProfiler("stack", "lines=20;period=1;top=20")
+				.include("LoadingBenchmark.*") // adapt to run other benchmark tests
 				.forks(1)
 				.build();
 
