@@ -30,6 +30,11 @@ public interface LmdbValue extends Value {
 	long getInternalID();
 
 	/**
+	 * Initializes this value if it was a lazy value (ID-only value) before.
+	 */
+	void init();
+
+	/**
 	 * Gets the revision of the value store that created this value. The value's internal ID is only valid when it's
 	 * value store revision is equal to the value store's current revision.
 	 *
