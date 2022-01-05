@@ -10,9 +10,7 @@ package org.eclipse.rdf4j.sail.memory;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
@@ -46,15 +44,13 @@ import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatement;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementIterator;
+import org.eclipse.rdf4j.sail.memory.model.MemStatementIteratorCache;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemTriple;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 
 /**
  * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.
@@ -66,17 +62,9 @@ class MemorySailStore implements SailStore {
 	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
 	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 	public static final MemResource[] EMPTY_CONTEXT = new MemResource[0];
-	public static final int CACHE_FREQUENCY_THRESHOLD = 10;
-	private final Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
+	private final static Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
 
-	// a map that tracks the number of times a cacheable iterator has been used
-	private final ConcurrentHashMap<MemStatementIterator<? extends Exception>, Integer> iteratorFrequencyMap = new ConcurrentHashMap<>();
-
-	// a cache for commonly used iterators that are particularly costly
-	private final Cache<MemStatementIterator<? extends Exception>, List<MemStatement>> iteratorCache = CacheBuilder
-			.newBuilder()
-			.softValues()
-			.build();
+	private final MemStatementIteratorCache iteratorCache = new MemStatementIteratorCache(10);
 
 	/**
 	 * Factory/cache for MemValue objects.
@@ -156,16 +144,7 @@ class MemorySailStore implements SailStore {
 	}
 
 	private void invalidateCache() {
-		if (!(iteratorFrequencyMap.isEmpty())) {
-			logger.debug("Invalidated cache");
-
-			if (logger.isTraceEnabled()) {
-				StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-				logger.debug("Invalidated cache called from {}", stackTrace[2]);
-			}
-			iteratorFrequencyMap.clear();
-			iteratorCache.invalidateAll();
-		}
+		iteratorCache.invalidateCache();
 	}
 
 	@Override
@@ -258,8 +237,7 @@ class MemorySailStore implements SailStore {
 	}
 
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(MemResource subj, MemIRI pred,
-			MemValue obj,
-			Boolean explicit, int snapshot, MemResource... contexts) {
+			MemValue obj, Boolean explicit, int snapshot, MemResource... contexts) {
 
 		MemResource[] memContexts;
 		MemStatementList smallestList;
@@ -315,8 +293,8 @@ class MemorySailStore implements SailStore {
 			return EMPTY_ITERATION;
 		}
 
-		return new CachingMemStatementIteration<>(
-				new MemStatementIterator<>(smallestList, subj, pred, obj, explicit, snapshot, memContexts), this);
+		return MemStatementIterator.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot, memContexts,
+				iteratorCache);
 	}
 
 	/**
@@ -445,46 +423,6 @@ class MemorySailStore implements SailStore {
 				toCheckSnapshotCleanupThread.start();
 			}
 		}
-	}
-
-	<X extends Exception> void incrementIteratorFrequencyMap(MemStatementIterator<X> iterator) {
-		Integer compute = iteratorFrequencyMap.compute(iterator, (key, value) -> {
-			if (value == null) {
-				return 0;
-			}
-			return value + 1;
-		});
-		if (logger.isDebugEnabled()) {
-			logger.debug("Incremented iteratorFrequencyMap to {}\n{} \n{}", compute, iterator, iterator.getStats());
-		}
-	}
-
-	<X extends Exception> boolean shouldBeCached(MemStatementIterator<X> iterator) {
-		if (!iteratorFrequencyMap.isEmpty()) {
-			Integer integer = iteratorFrequencyMap.get(iterator);
-			return integer != null && integer > CACHE_FREQUENCY_THRESHOLD;
-		} else {
-			return false;
-		}
-	}
-
-	public <X extends Exception> CloseableIteration<MemStatement, X> cacheIterator(MemStatementIterator<X> iterator)
-			throws Exception {
-
-		List<MemStatement> cached = iteratorCache.getIfPresent(iterator);
-
-		if (cached == null) {
-			try (iterator) {
-				logger.debug("Filling cache {}", iterator);
-				cached = new ArrayList<>();
-				while (iterator.hasNext()) {
-					cached.add(iterator.next());
-				}
-			}
-			iteratorCache.put(iterator, cached);
-		}
-
-		return new CloseableIteratorIteration<>(cached.iterator());
 	}
 
 	private final class MemorySailSource extends BackingSailSource {
