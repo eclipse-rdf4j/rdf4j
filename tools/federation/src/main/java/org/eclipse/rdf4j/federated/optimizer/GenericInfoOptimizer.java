@@ -12,9 +12,11 @@ import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
+import org.eclipse.rdf4j.federated.algebra.FederatedDescribeOperator;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -150,6 +152,17 @@ public class GenericInfoOptimizer extends AbstractQueryModelVisitor<Optimization
 			limit = node.getLimit();
 		}
 		super.meet(node);
+	}
+
+	@Override
+	public void meet(DescribeOperator node) throws OptimizationException {
+		/*
+		 * Replace with a FedX Describe Operator
+		 */
+		FederatedDescribeOperator newNode = new FederatedDescribeOperator(node.getArg(), queryInfo);
+		newNode.visitChildren(this);
+
+		node.replaceWith(newNode);
 	}
 
 	public boolean hasService() {
