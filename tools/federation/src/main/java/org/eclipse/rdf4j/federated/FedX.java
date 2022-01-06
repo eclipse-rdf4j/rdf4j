@@ -20,9 +20,11 @@ import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
+import org.eclipse.rdf4j.federated.write.DefaultWriteStrategyFactory;
 import org.eclipse.rdf4j.federated.write.ReadOnlyWriteStrategy;
 import org.eclipse.rdf4j.federated.write.RepositoryWriteStrategy;
 import org.eclipse.rdf4j.federated.write.WriteStrategy;
+import org.eclipse.rdf4j.federated.write.WriteStrategyFactory;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
@@ -56,6 +58,8 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	private FederationEvaluationStrategyFactory strategyFactory;
 
+	private WriteStrategyFactory writeStrategyFactory;
+
 	private File dataDir;
 
 	public FedX(List<Endpoint> endpoints) {
@@ -87,6 +91,21 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	}
 
 	/**
+	 * 
+	 * @param writeStrategyFactory the {@link WriteStrategyFactory}
+	 */
+	public void setWriteStrategyFactory(WriteStrategyFactory writeStrategyFactory) {
+		this.writeStrategyFactory = writeStrategyFactory;
+	}
+
+	/* package */ WriteStrategyFactory getWriteStrategyFactory() {
+		if (writeStrategyFactory == null) {
+			writeStrategyFactory = new DefaultWriteStrategyFactory();
+		}
+		return writeStrategyFactory;
+	}
+
+	/**
 	 * Add a member to the federation (internal).
 	 * <p>
 	 * If the federation is already initialized, the given endpoint is explicitly initialized as well.
@@ -114,19 +133,18 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 
 	/**
 	 * Compute and return the {@link WriteStrategy} depending on the current federation configuration.
-	 *
+	 * <p>
 	 * The default implementation uses the {@link RepositoryWriteStrategy} with the first discovered writable
 	 * {@link Endpoint}. In none is found, the {@link ReadOnlyWriteStrategy} is used.
+	 * </p>
 	 *
 	 * @return the {@link WriteStrategy}
 	 * @throws FedXRuntimeException if the {@link WriteStrategy} could not be created
+	 * @see FedXFactory#withWriteStrategyFactory(WriteStrategyFactory)
 	 */
-	public WriteStrategy getWriteStrategy() {
+	/* package */ WriteStrategy getWriteStrategy() {
 		try {
-			return federationContext.getConfig()
-					.getWriteStrategyFactory()
-					.getDeclaredConstructor()
-					.newInstance()
+			return getWriteStrategyFactory()
 					.create(members, federationContext);
 		} catch (Exception e) {
 			throw new FedXRuntimeException("Failed to instantiate write strategy: " + e.getMessage(), e);

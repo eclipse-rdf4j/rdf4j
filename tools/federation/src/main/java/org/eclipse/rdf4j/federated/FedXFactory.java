@@ -19,6 +19,8 @@ import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
+import org.eclipse.rdf4j.federated.write.DefaultWriteStrategyFactory;
+import org.eclipse.rdf4j.federated.write.WriteStrategyFactory;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
@@ -100,6 +102,7 @@ public class FedXFactory {
 	protected RepositoryResolver repositoryResolver;
 	protected FederatedServiceResolver federatedServiceResolver;
 	protected FederationEvaluationStrategyFactory strategyFactory;
+	protected WriteStrategyFactory writeStrategyFactory;
 	protected List<Endpoint> members = new ArrayList<>();
 	protected FedXConfig config = FedXConfig.DEFAULT_CONFIG;
 	protected File fedxBaseDir;
@@ -120,6 +123,18 @@ public class FedXFactory {
 
 	public FedXFactory withFederationEvaluationStrategyFactory(FederationEvaluationStrategyFactory strategyFactory) {
 		this.strategyFactory = strategyFactory;
+		return this;
+	}
+
+	/**
+	 * Specify the {@link WriteStrategyFactory} to be used. If not explicitly set, {@link DefaultWriteStrategyFactory}
+	 * is used.
+	 * 
+	 * @param writeStrategyFactory the {@link WriteStrategyFactory} to be used.
+	 * @return this factory
+	 */
+	public FedXFactory withWriteStrategyFactory(WriteStrategyFactory writeStrategyFactory) {
+		this.writeStrategyFactory = writeStrategyFactory;
 		return this;
 	}
 
@@ -201,6 +216,9 @@ public class FedXFactory {
 		FedX federation = new FedX(members);
 		if (this.strategyFactory != null) {
 			federation.setFederationEvaluationStrategy(strategyFactory);
+		}
+		if (this.writeStrategyFactory != null) {
+			federation.setWriteStrategyFactory(writeStrategyFactory);
 		}
 
 		FedXRepository repo = new FedXRepository(federation, this.config);

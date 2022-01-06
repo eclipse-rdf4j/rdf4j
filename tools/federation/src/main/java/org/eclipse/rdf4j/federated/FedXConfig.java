@@ -16,8 +16,6 @@ import org.eclipse.rdf4j.federated.evaluation.concurrent.TaskWrapper;
 import org.eclipse.rdf4j.federated.evaluation.iterator.ConsumingIteration;
 import org.eclipse.rdf4j.federated.monitoring.QueryLog;
 import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
-import org.eclipse.rdf4j.federated.write.DefaultWriteStrategyFactory;
-import org.eclipse.rdf4j.federated.write.WriteStrategyFactory;
 import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.Query;
 
@@ -56,8 +54,6 @@ public class FedXConfig {
 
 	private String sourceSelectionCacheSpec = null;
 
-	private Class<? extends WriteStrategyFactory> writeStrategyFactory = DefaultWriteStrategyFactory.class;
-
 	private TaskWrapper taskWrapper = null;
 
 	private String prefixDeclarations = null;
@@ -93,17 +89,6 @@ public class FedXConfig {
 	 */
 	public FedXConfig withLogQueries(boolean flag) {
 		this.isLogQueries = flag;
-		return this;
-	}
-
-	/**
-	 * Set the {@link WriteStrategyFactory} to be used.
-	 *
-	 * @param writeStrategyFactory
-	 * @return the current config
-	 */
-	public FedXConfig withWriteStrategyFactory(Class<? extends WriteStrategyFactory> writeStrategyFactory) {
-		this.writeStrategyFactory = writeStrategyFactory;
 		return this;
 	}
 
@@ -414,19 +399,6 @@ public class FedXConfig {
 	 */
 	public String getSourceSelectionCacheSpec() {
 		return this.sourceSelectionCacheSpec;
-	}
-
-	/**
-	 * Returns the class of the {@link WriteStrategyFactory} implementation.
-	 *
-	 * <p>
-	 * Default: {@link DefaultWriteStrategyFactory}
-	 * </p>
-	 *
-	 * @return the {@link WriteStrategyFactory} class
-	 */
-	public Class<? extends WriteStrategyFactory> getWriteStrategyFactory() {
-		return writeStrategyFactory;
 	}
 
 	/**
