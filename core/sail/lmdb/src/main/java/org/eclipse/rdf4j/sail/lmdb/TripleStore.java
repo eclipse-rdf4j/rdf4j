@@ -470,57 +470,61 @@ class TripleStore implements Closeable {
 						E(mdb_cursor_open(txn, dbi, pp));
 						cursor = pp.get(0);
 
-						MDBVal keyData = MDBVal.callocStack(stack);
+						MDBVal keyData = MDBVal.mallocStack(stack);
 						ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
 						index.getMinKey(keyBuf, subj, pred, obj, context);
 						keyBuf.flip();
 
 						// set cursor to min key
 						keyData.mv_data(keyBuf);
-						MDBVal valueData = MDBVal.callocStack(stack);
+						MDBVal valueData = MDBVal.mallocStack(stack);
+
+						GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
+
 						long rangeSize = 0;
 						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-						if (rc == 0) {
-							Varint.readListUnsigned(keyData.mv_data(), startValues);
-
-							rangeSize += 1;
-							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-							while (rc == 0) {
-								if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
-									// if (COMPARATOR.compare(keyData.mv_data(), maxKeyBuf) >= 0) {
-									break;
+						while (rc == 0) {
+							if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+								break;
+							} else if (!matcher.matches(keyData.mv_data())) {
+								// value doesn't match search key/mask, fetch next value
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+								continue;
+							} else {
+								if (rangeSize == 0) {
+									Varint.readListUnsigned(keyData.mv_data(), startValues);
 								}
-								rangeSize += 1;
+								rangeSize++;
+							}
 
-								if (rangeSize == 1000) {
-									long[] lastValues = new long[4];
-									long[] values = new long[4];
+							if (rangeSize == 1000) {
+								long[] lastValues = new long[4];
+								long[] values = new long[4];
 
-									Varint.readListUnsigned(keyData.mv_data(), lastValues);
+								Varint.readListUnsigned(keyData.mv_data(), lastValues);
 
-									keyData.mv_data(maxKeyBuf);
-									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-									if (rc != 0) {
-										// directly go to last value
-										rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-									} else {
-										// go to previous value of selected key
-										rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
-									}
-									if (rc == 0) {
-										Varint.readListUnsigned(keyData.mv_data(), values);
-										int pos = 0;
-										while (pos < values.length && values[pos] == lastValues[pos]) {
-											pos++;
-										}
-										if (pos < values.length) {
-											rangeSize += (values[pos] - lastValues[pos])
-													/ Math.max(1, lastValues[pos] - startValues[pos])
-													* 1000;
-										}
-									}
-									return (double) rangeSize;
+								keyData.mv_data(maxKeyBuf);
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+								if (rc != 0) {
+									// directly go to last value
+									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+								} else {
+									// go to previous value of selected key
+									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 								}
+								if (rc == 0) {
+									Varint.readListUnsigned(keyData.mv_data(), values);
+									int pos = 0;
+									while (pos < values.length && values[pos] == lastValues[pos]) {
+										pos++;
+									}
+									if (pos < values.length) {
+										rangeSize += (values[pos] - lastValues[pos])
+												/ Math.max(1, lastValues[pos] - startValues[pos])
+												* 1000;
+									}
+								}
+								return (double) rangeSize;
 							}
 						}
 						return (double) rangeSize;
