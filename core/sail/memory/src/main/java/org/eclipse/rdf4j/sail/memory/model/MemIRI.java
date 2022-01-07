@@ -112,7 +112,7 @@ public class MemIRI implements IRI, MemResource {
 			MemIRI o = (MemIRI) other;
 			return namespace.equals(o.getNamespace()) && localName.equals(o.getLocalName());
 		} else if (other instanceof IRI) {
-			String otherStr = other.toString();
+			String otherStr = ((IRI) other).stringValue();
 
 			return namespace.length() + localName.length() == otherStr.length() && otherStr.endsWith(localName)
 					&& otherStr.startsWith(namespace);
@@ -124,7 +124,7 @@ public class MemIRI implements IRI, MemResource {
 	@Override
 	public int hashCode() {
 		if (hashCode == 0) {
-			hashCode = toString().hashCode();
+			hashCode = stringValue().hashCode();
 		}
 
 		return hashCode;

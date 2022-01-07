@@ -118,7 +118,7 @@ public abstract class IRITest {
 
 		assertThat(iri.hashCode())
 				.as("computed according to contract")
-				.isEqualTo(iri.toString().hashCode()); // !!! .toString() >> .valueString()
+				.isEqualTo(iri.stringValue().hashCode());
 	}
 
 }
