@@ -31,12 +31,12 @@ public abstract class AbstractIRI implements IRI {
 	@Override
 	public boolean equals(Object o) {
 		return this == o || o instanceof IRI
-				&& toString().equals(o.toString()); // TODO stringValue() (https://github.com/eclipse/rdf4j/issues/2565)
+				&& stringValue().equals(o.toString());
 	}
 
 	@Override
 	public int hashCode() {
-		return toString().hashCode(); // TODO stringValue() (https://github.com/eclipse/rdf4j/issues/2565)
+		return stringValue().hashCode();
 	}
 
 	@Override
