@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.model;
 
+import java.io.ObjectStreamException;
+
 import org.eclipse.rdf4j.model.impl.SimpleBNode;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
@@ -26,11 +28,13 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 
 	private volatile long internalID;
 
+	private volatile boolean initialized = false;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
-	protected LmdbBNode(ValueStoreRevision revision, long internalID) {
+	public LmdbBNode(ValueStoreRevision revision, long internalID) {
 		super();
 		setInternalID(internalID, revision);
 	}
@@ -42,6 +46,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	public LmdbBNode(ValueStoreRevision revision, String nodeID, long internalID) {
 		super(nodeID);
 		setInternalID(internalID, revision);
+		this.initialized = true;
 	}
 
 	/*---------*
@@ -65,6 +70,28 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	}
 
 	@Override
+	public void setID(String id) {
+		super.setID(id);
+	}
+
+	@Override
+	public String getID() {
+		init();
+		return super.getID();
+	}
+
+	protected void init() {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					revision.resolveValue(internalID, this);
+				}
+				initialized = true;
+			}
+		}
+	}
+
+	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;
@@ -83,4 +110,8 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		return super.equals(o);
 	}
 
+	protected Object writeReplace() throws ObjectStreamException {
+		init();
+		return this;
+	}
 }

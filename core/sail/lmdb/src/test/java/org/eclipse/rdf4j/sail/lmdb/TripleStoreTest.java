@@ -50,20 +50,20 @@ public class TripleStoreTest {
 		tripleStore.commit();
 
 		assertEquals("Store should have 1 inferred statement", 1,
-				count(tripleStore.getTriples(1, 2, 3, 1, false, false)));
+				count(tripleStore.getTriples(1, 2, 3, 1, false)));
 
 		assertEquals("Store should have 0 explicit statements", 0,
-				count(tripleStore.getTriples(1, 2, 3, 1, true, true)));
+				count(tripleStore.getTriples(1, 2, 3, 1, true)));
 
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 2, 3, 1, true);
 		tripleStore.commit();
 
 		assertEquals("Store should have 0 inferred statements", 0,
-				count(tripleStore.getTriples(1, 2, 3, 1, false, false)));
+				count(tripleStore.getTriples(1, 2, 3, 1, false)));
 
 		assertEquals("Store should have 1 explicit statements", 1,
-				count(tripleStore.getTriples(1, 2, 3, 1, true, true)));
+				count(tripleStore.getTriples(1, 2, 3, 1, true)));
 	}
 
 	@After

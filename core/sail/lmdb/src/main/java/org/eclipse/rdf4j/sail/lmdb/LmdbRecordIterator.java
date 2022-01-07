@@ -23,14 +23,15 @@ import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * A record iterator that wraps a native LMDB iterator.
  *
  */
-public class LmdbRecordIterator implements RecordIterator {
+class LmdbRecordIterator implements RecordIterator {
+	private final Pool pool;
+
 	private final TripleIndex index;
 
 	private final long cursor;
@@ -41,28 +42,35 @@ public class LmdbRecordIterator implements RecordIterator {
 
 	private final TxnRef txnRef;
 
+	private final long txn;
+
 	private boolean closed = false;
 
-	private final MDBVal keyData = MDBVal.calloc();
+	private final MDBVal keyData;
 
-	private final MDBVal valueData = MDBVal.calloc();
+	private final MDBVal valueData;
 
 	private ByteBuffer minKeyBuf;
+
+	private ByteBuffer maxKeyBuf;
 
 	private int lastResult;
 
 	private boolean fetchNext = false;
 
-	public LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj, long context,
-			TxnRef txnRef) {
+	LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, TxnRef txnRef) {
+		this.pool = pool;
+		this.keyData = pool.getVal();
+		this.valueData = pool.getVal();
 		this.index = index;
 		if (rangeSearch) {
-			minKeyBuf = MemoryUtil.memAlloc(TripleStore.MAX_KEY_LENGTH);
+			minKeyBuf = pool.getKeyBuffer();
 			index.getMinKey(minKeyBuf, subj, pred, obj, context);
 			minKeyBuf.flip();
 
-			this.maxKey = MDBVal.calloc();
-			ByteBuffer maxKeyBuf = MemoryUtil.memAlloc(TripleStore.MAX_KEY_LENGTH);
+			this.maxKey = pool.getVal();
+			this.maxKeyBuf = pool.getKeyBuffer();
 			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
 			maxKeyBuf.flip();
 			this.maxKey.mv_data(maxKeyBuf);
@@ -78,10 +86,11 @@ public class LmdbRecordIterator implements RecordIterator {
 			this.groupMatcher = null;
 		}
 		this.txnRef = txnRef;
+		this.txn = txnRef.create();
 
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_cursor_open(txnRef.get(), index.getDB(), pp));
+			E(mdb_cursor_open(txn, index.getDB(), pp));
 			cursor = pp.get(0);
 		}
 
@@ -103,7 +112,7 @@ public class LmdbRecordIterator implements RecordIterator {
 		}
 		while (lastResult == 0) {
 			// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
-			if (maxKey != null && mdb_cmp(txnRef.get(), index.getDB(), keyData, maxKey) > 0) {
+			if (maxKey != null && mdb_cmp(txn, index.getDB(), keyData, maxKey) > 0) {
 				lastResult = MDB_NOTFOUND;
 			} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
 				// value doesn't match search key/mask, fetch next value
@@ -125,18 +134,16 @@ public class LmdbRecordIterator implements RecordIterator {
 		if (!closed) {
 			try {
 				mdb_cursor_close(cursor);
-				keyData.close();
-				valueData.close();
+				pool.free(keyData);
+				pool.free(valueData);
 				if (minKeyBuf != null) {
-					MemoryUtil.memFree(minKeyBuf);
+					pool.free(minKeyBuf);
 				}
 				if (maxKey != null) {
-					MemoryUtil.memFree(maxKey.mv_data());
-					maxKey.close();
+					pool.free(maxKeyBuf);
+					pool.free(maxKey);
 				}
-				if (txnRef != null) {
-					txnRef.end();
-				}
+				txnRef.free(txn);
 			} finally {
 				closed = true;
 			}
