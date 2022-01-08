@@ -111,17 +111,17 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		return i % objectMap.length;
 	}
 
-	public CloseableIterator<E> closeableIterator() {
-		return new WeakObjectRegistryIterator<>(objectMap, locks);
+	public AutoCloseableIterator<E> closeableIterator() {
+		return new AutoCloseableIterator<>(objectMap, locks);
 	}
 
 	@Override
 	public Iterator<E> iterator() {
 		logger.warn("This method is not thread safe! Use closeableIterator() instead.");
-		return new WeakObjectRegistryIterator<E>(objectMap, null);
+		return new AutoCloseableIterator<E>(objectMap, null);
 	}
 
-	private static class WeakObjectRegistryIterator<E> implements CloseableIterator<E> {
+	public static class AutoCloseableIterator<E> implements Iterator<E>, AutoCloseable {
 
 		private final Iterator<Map<E, WeakReference<E>>> iterator;
 		private final StampedLock[] locks;
@@ -130,7 +130,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		Long[] readLocks;
 		boolean init = false;
 
-		public WeakObjectRegistryIterator(Map<E, WeakReference<E>>[] objectMap, StampedLock[] locks) {
+		public AutoCloseableIterator(Map<E, WeakReference<E>>[] objectMap, StampedLock[] locks) {
 			this.iterator = Arrays.asList(objectMap).iterator();
 			this.locks = locks;
 		}

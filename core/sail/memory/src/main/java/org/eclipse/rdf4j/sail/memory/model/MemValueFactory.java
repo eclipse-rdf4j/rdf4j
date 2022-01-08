@@ -201,7 +201,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 *
 	 * @return An autocloseable iterator.
 	 */
-	public CloseableIterator<MemIRI> getMemIRIsIterator() {
+	public WeakObjectRegistry.AutoCloseableIterator<MemIRI> getMemIRIsIterator() {
 		return iriRegistry.closeableIterator();
 	}
 
@@ -210,7 +210,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 *
 	 * @return An autocloseable iterator.
 	 */
-	public CloseableIterator<MemBNode> getMemBNodesIterator() {
+	public WeakObjectRegistry.AutoCloseableIterator<MemBNode> getMemBNodesIterator() {
 		return bnodeRegistry.closeableIterator();
 	}
 
@@ -219,7 +219,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 *
 	 * @return An autocloseable iterator.
 	 */
-	public CloseableIterator<MemLiteral> getMemLiteralsIterator() {
+	public WeakObjectRegistry.AutoCloseableIterator<MemLiteral> getMemLiteralsIterator() {
 		return literalRegistry.closeableIterator();
 	}
 
@@ -261,20 +261,13 @@ public class MemValueFactory extends AbstractValueFactory {
 	 */
 	public MemIRI getOrCreateMemURI(IRI uri) {
 		return iriRegistry.getOrAdd(uri, () -> {
-			String namespace = uri.getNamespace();
-			assert namespace != null;
-			String sharedNamespace = namespaceRegistry.get(namespace);
 
-			if (sharedNamespace == null) {
-				// New namespace, add it to the registry
-				namespaceRegistry.add(namespace);
-			} else {
-				// Use the shared namespace
-				namespace = sharedNamespace;
-			}
+			String namespace = uri.getNamespace();
+
+			String sharedNamespace = namespaceRegistry.getOrAdd(namespace, () -> namespace);
 
 			// Create a MemURI and add it to the registry
-			return new MemIRI(this, namespace, uri.getLocalName());
+			return new MemIRI(this, sharedNamespace, uri.getLocalName());
 		});
 
 	}
@@ -352,16 +345,7 @@ public class MemValueFactory extends AbstractValueFactory {
 				correctLocalName = localName;
 			}
 
-			String sharedNamespace = namespaceRegistry.get(correctNamespace);
-
-			if (sharedNamespace == null) {
-				// New namespace, add it to the registry
-				namespaceRegistry.add(correctNamespace);
-				sharedNamespace = correctNamespace;
-			} else {
-				// Use the shared namespace
-				sharedNamespace = correctNamespace;
-			}
+			String sharedNamespace = namespaceRegistry.getOrAdd(correctNamespace, () -> correctNamespace);
 
 			// Create a MemURI and add it to the registry
 			return new MemIRI(this, sharedNamespace, correctLocalName);

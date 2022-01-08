@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *  All rights reserved. This program and the accompanying materials
  *  are made available under the terms of the Eclipse Distribution License v1.0
  *  which accompanies this distribution, and is available at
@@ -53,10 +53,10 @@ import com.google.common.collect.Lists;
  * @author Håvard M. Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", })
-@Measurement(iterations = 5)
+@Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MemValueFactoryConcurrentBenchmark extends BaseConcurrentBenchmark {
 
