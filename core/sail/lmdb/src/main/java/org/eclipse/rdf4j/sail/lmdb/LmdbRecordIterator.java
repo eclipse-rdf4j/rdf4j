@@ -44,6 +44,8 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final long txn;
 
+	private final int dbi;
+
 	private boolean closed = false;
 
 	private final MDBVal keyData;
@@ -59,7 +61,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private boolean fetchNext = false;
 
 	LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, TxnRef txnRef) {
+			long context, boolean explicit, TxnRef txnRef) {
 		this.pool = pool;
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
@@ -87,10 +89,11 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 		this.txnRef = txnRef;
 		this.txn = txnRef.create();
+		this.dbi = index.getDB(explicit);
 
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, index.getDB(), pp));
+			E(mdb_cursor_open(txn, dbi, pp));
 			cursor = pp.get(0);
 		}
 
@@ -112,7 +115,7 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 		while (lastResult == 0) {
 			// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
-			if (maxKey != null && mdb_cmp(txn, index.getDB(), keyData, maxKey) > 0) {
+			if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
 				lastResult = MDB_NOTFOUND;
 			} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
 				// value doesn't match search key/mask, fetch next value
