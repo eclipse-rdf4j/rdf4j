@@ -22,6 +22,7 @@ import org.junit.Test;
 /**
  * @author jeen
  */
+@SuppressWarnings({ "removal" })
 public class IsolationLevelsTest {
 
 	/**
@@ -32,9 +33,13 @@ public class IsolationLevelsTest {
 	@Test
 	public void testIsCompatibleWith() {
 		assertTrue(IsolationLevels.SNAPSHOT.isCompatibleWith(IsolationLevels.READ_COMMITTED));
+		assertTrue(IsolationLevels.SNAPSHOT.isCompatibleWith(IsolationLevel.READ_COMMITTED));
 		assertTrue(IsolationLevels.SERIALIZABLE.isCompatibleWith(IsolationLevels.READ_COMMITTED));
+		assertTrue(IsolationLevels.SERIALIZABLE.isCompatibleWith(IsolationLevel.READ_COMMITTED));
 		assertTrue(IsolationLevels.SNAPSHOT.isCompatibleWith(IsolationLevels.READ_UNCOMMITTED));
+		assertTrue(IsolationLevels.SNAPSHOT.isCompatibleWith(IsolationLevel.READ_UNCOMMITTED));
 		assertFalse(IsolationLevels.READ_COMMITTED.isCompatibleWith(IsolationLevels.SNAPSHOT));
+		assertFalse(IsolationLevels.READ_COMMITTED.isCompatibleWith(IsolationLevel.SNAPSHOT));
 	}
 
 	/**
