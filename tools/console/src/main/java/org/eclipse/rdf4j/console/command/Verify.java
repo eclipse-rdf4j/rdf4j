@@ -18,7 +18,7 @@ import java.nio.file.Paths;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
-import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.Util;
 import org.eclipse.rdf4j.console.VerificationListener;
@@ -186,7 +186,7 @@ public class Verify extends ConsoleCommand {
 				RDFFormat format = Rio.getParserFormatForFileName(reportFile).orElse(RDFFormat.TURTLE);
 
 				try (SailRepositoryConnection conn = repo.getConnection()) {
-					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					conn.begin(IsolationLevel.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 					conn.add(shaclURL, "", format, RDF4J.SHACL_SHAPE_GRAPH);
 					conn.commit();
 				}
@@ -208,7 +208,7 @@ public class Verify extends ConsoleCommand {
 						.orElseThrow(Rio.unsupportedFormat(dataPath));
 
 				try (SailRepositoryConnection conn = repo.getConnection()) {
-					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					conn.begin(IsolationLevel.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 					conn.add(dataURL, "", format);
 					conn.commit();
 				}
@@ -225,7 +225,7 @@ public class Verify extends ConsoleCommand {
 
 				try (SailRepositoryConnection conn = repo.getConnection()) {
 					// Bulk validation forces a full revalidation!
-					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+					conn.begin(IsolationLevel.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
 					conn.commit();
 				}
 

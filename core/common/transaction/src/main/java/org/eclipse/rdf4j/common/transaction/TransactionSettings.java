@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.transaction;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 
@@ -18,6 +20,35 @@ import java.util.List;
  * @since 4.0.0
  */
 public class TransactionSettings {
+
+	/**
+	 * A list of standard {@link IsolationLevel isolation levels} supported by RDF4J, in order of ascending strength.
+	 */
+	public static final List<IsolationLevel> STANDARD_ISOLATION_LEVELS = Arrays.asList(
+			IsolationLevel.NONE,
+			IsolationLevel.READ_UNCOMMITTED,
+			IsolationLevel.READ_COMMITTED,
+			IsolationLevel.SNAPSHOT_READ,
+			IsolationLevel.SNAPSHOT,
+			IsolationLevel.SERIALIZABLE
+	);
+
+	/**
+	 * Retrieve the first {@link TransactionSetting} from the supplied list that matches the supplied name.
+	 * 
+	 * @param name     the name of the transaction setting to retrieve
+	 * @param settings a list of {@link TransactionSetting}s to find a match in
+	 * @return the matching {@link TransactionSetting} or {@link Optional#empty()} if no match is found.
+	 */
+	public static Optional<? extends TransactionSetting> getSettingForName(String name,
+			List<? extends TransactionSetting> settings) {
+		for (TransactionSetting setting : settings) {
+			if (setting.getName().equals(name)) {
+				return Optional.of(setting);
+			}
+		}
+		return Optional.empty();
+	}
 
 	/**
 	 * Determines the first compatible isolation level in the list of supported levels, for the given level. Returns the
@@ -33,6 +64,7 @@ public class TransactionSettings {
 	 */
 	public static IsolationLevel getCompatibleIsolationLevel(IsolationLevel level,
 			List<? extends IsolationLevel> supportedLevels) {
+
 		if (supportedLevels == null) {
 			throw new IllegalArgumentException("list of supported levels may not be null");
 		}

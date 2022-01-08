@@ -11,7 +11,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
-import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -32,10 +31,10 @@ import org.junit.runners.Parameterized.Parameters;
 public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnectionTest {
 
 	@Parameters(name = "{0}")
-	public static final IsolationLevel[] parametersREAD_COMMITTED() {
-		return new IsolationLevel[] { IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,
-				IsolationLevels.SNAPSHOT_READ,
-				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE };
+	public static final IsolationLevel[] parameters() {
+		return new IsolationLevel[] { IsolationLevel.NONE, IsolationLevel.READ_COMMITTED,
+				IsolationLevel.SNAPSHOT_READ,
+				IsolationLevel.SNAPSHOT, IsolationLevel.SERIALIZABLE };
 	}
 
 	private IRI woman;
@@ -136,7 +135,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@Test
 	public void testInferencerUpdates() throws Exception {
-		testCon.begin(IsolationLevels.READ_COMMITTED);
+		testCon.begin(IsolationLevel.READ_COMMITTED);
 
 		testCon.add(bob, name, nameBob);
 		testCon.remove(bob, name, nameBob);
@@ -158,7 +157,7 @@ public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnec
 
 	@Test
 	public void testInferencerTransactionIsolation() throws Exception {
-		if (IsolationLevels.NONE.isCompatibleWith(level)) {
+		if (IsolationLevel.NONE.isCompatibleWith(level)) {
 			return;
 		}
 		testCon.begin();

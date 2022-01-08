@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.common.transaction.TransactionSettingRegistry;
+import org.eclipse.rdf4j.common.transaction.TransactionSettings;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
@@ -100,8 +101,9 @@ public class TransactionStartController extends AbstractController {
 
 				// FIXME we should make the isolation level an SPI impl as well so that it will work with non-standard
 				// isolation levels
-				if (settingsName.equals(IsolationLevels.NONE.getName())) {
-					isolationLevel[0] = IsolationLevels.valueOf(v[0]);
+				if (settingsName.equals(IsolationLevel.NONE.getName())) {
+					isolationLevel[0] = (IsolationLevel) TransactionSettings.getSettingForName(v[0],
+							TransactionSettings.STANDARD_ISOLATION_LEVELS).orElseThrow();
 					transactionSettings.add(isolationLevel[0]);
 				} else {
 					TransactionSettingRegistry.getInstance()

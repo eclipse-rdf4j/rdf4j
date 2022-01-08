@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.TransactionSettings;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -108,7 +109,8 @@ public abstract class RepositoryConnectionTest {
 
 	@Parameters(name = "{0}")
 	public static IsolationLevel[] parameters() {
-		return IsolationLevels.values();
+		return TransactionSettings.STANDARD_ISOLATION_LEVELS
+				.toArray(new IsolationLevel[TransactionSettings.STANDARD_ISOLATION_LEVELS.size()]);
 	}
 
 	/**
@@ -1312,7 +1314,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testEmptyCommit() throws Exception {
-		if (IsolationLevels.NONE.isCompatibleWith(level)) {
+		if (IsolationLevel.NONE.isCompatibleWith(level)) {
 			return;
 		}
 		assertThat(testCon.isEmpty()).isTrue();
@@ -1337,7 +1339,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testSizeRollback() throws Exception {
-		if (IsolationLevels.NONE.isCompatibleWith(level)) {
+		if (IsolationLevel.NONE.isCompatibleWith(level)) {
 			return;
 		}
 		assertThat(testCon.size()).isEqualTo(0L);
@@ -1356,7 +1358,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testSizeCommit() throws Exception {
-		if (IsolationLevels.NONE.isCompatibleWith(level)) {
+		if (IsolationLevel.NONE.isCompatibleWith(level)) {
 			return;
 		}
 		assertThat(testCon.size()).isEqualTo(0L);
