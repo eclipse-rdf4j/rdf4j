@@ -177,6 +177,18 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	@Override
+	public boolean isPlainLiteral() {
+		init();
+		return language != null || XSD.STRING.equals(datatype);
+	}
+
+	@Override
+	public boolean isSimpleLiteral() {
+		init();
+		return language == null && XSD.STRING.equals(datatype);
+	}
+
+	@Override
 	public String toString() {
 		init();
 		return super.toString();

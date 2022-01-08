@@ -42,52 +42,62 @@ public class ValueComparator implements Comparator<Value> {
 		// 1. (Lowest) no value assigned to the variable
 		if (o1 == null) {
 			return -1;
-		}
-		if (o2 == null) {
+		} else if (o2 == null) {
 			return 1;
+		} else {
+
+			return bnodeOrIriOrLiteralOrTriple(o1, o2);
+
 		}
 
+	}
+
+	private int bnodeOrIriOrLiteralOrTriple(Value o1, Value o2) {
 		// 2. Blank nodes
 		boolean b1 = o1.isBNode();
 		boolean b2 = o2.isBNode();
 		if (b1 && b2) {
 			return compareBNodes((BNode) o1, (BNode) o2);
-		}
-		if (b1) {
+		} else if (b1) {
 			return -1;
-		}
-		if (b2) {
+		} else if (b2) {
 			return 1;
-		}
+		} else {
+			return iriOrLiteralOrTriple(o1, o2);
 
+		}
+	}
+
+	private int iriOrLiteralOrTriple(Value o1, Value o2) {
 		// 3. IRIs
 		boolean iri1 = o1.isIRI();
 		boolean iri2 = o2.isIRI();
 		if (iri1 && iri2) {
-			return compareURIs((IRI) o1, (IRI) o2);
-		}
-		if (iri1) {
+			return compareIRI((IRI) o1, (IRI) o2);
+		} else if (iri1) {
 			return -1;
-		}
-		if (iri2) {
+		} else if (iri2) {
 			return 1;
-		}
+		} else {
 
+			return literalOfTriple(o1, o2);
+		}
+	}
+
+	private int literalOfTriple(Value o1, Value o2) {
 		// 4. Literals
 		boolean l1 = o1.isLiteral();
 		boolean l2 = o2.isLiteral();
 		if (l1 && l2) {
 			return compareLiterals((Literal) o1, (Literal) o2);
-		}
-		if (l1) {
+		} else if (l1) {
 			return -1;
-		}
-		if (l2) {
+		} else if (l2) {
 			return 1;
+		} else {
+			// 5. RDF-star triples
+			return compareTriples((Triple) o1, (Triple) o2);
 		}
-
-		// 5. RDF-star triples
-		return compareTriples((Triple) o1, (Triple) o2);
 	}
 
 	public void setStrict(boolean flag) {
@@ -102,7 +112,7 @@ public class ValueComparator implements Comparator<Value> {
 		return leftBNode.getID().compareTo(rightBNode.getID());
 	}
 
-	private int compareURIs(IRI leftURI, IRI rightURI) {
+	private int compareIRI(IRI leftURI, IRI rightURI) {
 		return leftURI.toString().compareTo(rightURI.toString());
 	}
 
@@ -142,8 +152,8 @@ public class ValueComparator implements Comparator<Value> {
 				Optional<XSD.Datatype> leftXmlDatatype = Literals.getXsdDatatype(leftLit);
 				Optional<XSD.Datatype> rightXmlDatatype = Literals.getXsdDatatype(rightLit);
 
-				if (leftXmlDatatype.isPresent() && rightXmlDatatype.isPresent()) {
-					result = compareDatatypes(leftXmlDatatype.get(), rightXmlDatatype.get());
+				if (leftXmlDatatype != null && rightXmlDatatype != null) {
+					result = compareDatatypes(leftXmlDatatype, rightXmlDatatype, leftDatatype, rightDatatype);
 				} else {
 					result = compareDatatypes(leftDatatype, rightDatatype);
 				}
@@ -181,16 +191,11 @@ public class ValueComparator implements Comparator<Value> {
 		return result;
 	}
 
-	/**
-	 * Compares two literal datatypes and indicates if one should be ordered after the other. This algorithm ensures
-	 * that compatible ordered datatypes (numeric and date/time) are grouped together so that
-	 * {@link QueryEvaluationUtil#compareLiterals(Literal, Literal, CompareOp)} is used in consecutive ordering steps.
-	 */
 	private int compareDatatypes(IRI leftDatatype, IRI rightDatatype) {
 		if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)) {
 			if (XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
 				// both are numeric datatypes
-				return compareURIs(leftDatatype, rightDatatype);
+				return compareIRI(leftDatatype, rightDatatype);
 			} else {
 				return -1;
 			}
@@ -199,7 +204,7 @@ public class ValueComparator implements Comparator<Value> {
 		} else if (XMLDatatypeUtil.isCalendarDatatype(leftDatatype)) {
 			if (XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
 				// both are calendar datatypes
-				return compareURIs(leftDatatype, rightDatatype);
+				return compareIRI(leftDatatype, rightDatatype);
 			} else {
 				return -1;
 			}
@@ -207,33 +212,48 @@ public class ValueComparator implements Comparator<Value> {
 			return 1;
 		} else {
 			// incompatible or unordered datatypes
-			return compareURIs(leftDatatype, rightDatatype);
+			return compareIRI(leftDatatype, rightDatatype);
 		}
 	}
 
-	private int compareDatatypes(XSD.Datatype leftDatatype, XSD.Datatype rightDatatype) {
-		if (leftDatatype.isNumericDatatype()) {
-			if (rightDatatype.isNumericDatatype()) {
+	private int compareDatatypes(Optional<XSD.Datatype> leftDatatype, Optional<XSD.Datatype> rightDatatype, IRI leftIRI,
+			IRI rightIRI) {
+		if (isNumericDatatype(leftDatatype)) {
+			if (isNumericDatatype(rightDatatype)) {
 				// both are numeric datatypes
-				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+				return compareIRI(leftIRI, rightIRI);
 			} else {
 				return -1;
 			}
-		} else if (rightDatatype.isNumericDatatype()) {
+		} else if (isNumericDatatype(rightDatatype)) {
 			return 1;
-		} else if (leftDatatype.isCalendarDatatype()) {
-			if (rightDatatype.isCalendarDatatype()) {
-				// both are calendar datatype
-				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+		} else if (isCalendarDatatype(leftDatatype)) {
+			if (isCalendarDatatype(rightDatatype)) {
+				// both are calendar datatypes
+				return compareIRI(leftIRI, rightIRI);
 			} else {
 				return -1;
 			}
-		} else if (rightDatatype.isCalendarDatatype()) {
+		} else if (isCalendarDatatype(rightDatatype)) {
 			return 1;
 		} else {
-			// incompatible or unordered datatype
-			return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+			// incompatible or unordered datatypes
+			return compareIRI(leftIRI, rightIRI);
 		}
+	}
+
+	private boolean isNumericDatatype(Optional<XSD.Datatype> leftDatatype) {
+		if (leftDatatype.isPresent()) {
+			return leftDatatype.get().isNumericDatatype();
+		}
+		return false;
+	}
+
+	private boolean isCalendarDatatype(Optional<XSD.Datatype> leftDatatype) {
+		if (leftDatatype.isPresent()) {
+			return leftDatatype.get().isCalendarDatatype();
+		}
+		return false;
 	}
 
 	private int compareTriples(Triple leftTriple, Triple rightTriple) {
