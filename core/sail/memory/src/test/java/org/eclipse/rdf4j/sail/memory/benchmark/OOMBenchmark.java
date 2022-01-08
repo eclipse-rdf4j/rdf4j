@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -12,8 +12,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -46,37 +47,40 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
+ * This is a special benchmark that counts the number of benchmark iterations that can be run before running out of
+ * memory. The benchmarks will all fail because they will all eventually run out of memory because the Epsilon garbage
+ * collector is a no-op collector. Each benchmark prints the number of iterations they manage before running out of
+ * memory, this is the measurement that we care about. A higher number of iterations means that we produce less garbage.
+ * It doesn't necessarily mean that we use less memory.
+ *
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 0)
 @BenchmarkMode({ Mode.AverageTime })
-// use G1GC because the workload is multi-threaded
-@Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseEpsilonGC",
+		"-XX:+AlwaysPreTouch" })
+@Measurement(iterations = 1, time = 99999999)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class SortBenchmark {
+public class OOMBenchmark {
 
 	private SailRepository repository;
 
 	private static final String query9;
+	int count = 0;
+	List<Value> valuesList;
 
 	static {
 		try {
-
 			query9 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query9.qr"), StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	List<Value> valuesList;
-
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("SortBenchmark.*") // adapt to run other benchmark tests
-				// .addProfiler("stack", "lines=20;period=1;top=20")
+				.include("OOMBenchmark.*") // adapt to run other benchmark tests
 				.forks(1)
 				.build();
 
@@ -84,7 +88,7 @@ public class SortBenchmark {
 	}
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void setup() throws IOException, InterruptedException {
 
 		repository = new SailRepository(new MemoryStore());
 
@@ -96,16 +100,23 @@ public class SortBenchmark {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
-				valuesList = stream
-						.map(Statement::getObject)
-						.collect(Collectors.toList());
+				valuesList = new ArrayList<>((int) stream.count());
 			}
+
+			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
+				stream
+						.map(Statement::getObject)
+						.sorted(new ValueComparator())
+						.forEach(valuesList::add);
+			}
+
 		}
 
 	}
 
-	private static InputStream getResourceAsStream(String name) {
-		return SortBenchmark.class.getClassLoader().getResourceAsStream(name);
+	@Setup(Level.Iteration)
+	public void setupIteration() {
+		count = 0;
 	}
 
 	@TearDown(Level.Trial)
@@ -116,30 +127,16 @@ public class SortBenchmark {
 	}
 
 	@Benchmark
-	public List<BindingSet> sortByQuery() {
+	public List<BindingSet> sortAllObjectsWithSparql() {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			try (Stream<BindingSet> stream = connection
 					.prepareTupleQuery(query9)
 					.evaluate()
 					.stream()) {
-				return stream.limit(1).collect(Collectors.toList());
-			}
-		}
-	}
-
-	@Benchmark
-	public Value sortGetStatements() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
-				Value[] values = stream
-						.map(Statement::getObject)
-						.toArray(Value[]::new);
-
-				Arrays.parallelSort(values, new ValueComparator());
-
-				return values[0];
+				List<BindingSet> collect = stream.limit(1).collect(Collectors.toList());
+				incrementAndPrintCount();
+				return collect;
 			}
 		}
 	}
@@ -147,12 +144,21 @@ public class SortBenchmark {
 	@Benchmark
 	public Value sortDirectly() {
 
-		Value[] values = new ArrayList<>(valuesList).toArray(new Value[0]);
+		Collections.shuffle(valuesList, new Random(47583672));
 
-		Arrays.parallelSort(values, new ValueComparator());
+		valuesList.sort(new ValueComparator());
+		incrementAndPrintCount();
 
-		return values[0];
+		return valuesList.get(0);
 
+	}
+
+	private void incrementAndPrintCount() {
+		System.out.println("\nCount: " + (++count));
+	}
+
+	private static InputStream getResourceAsStream(String name) {
+		return OOMBenchmark.class.getClassLoader().getResourceAsStream(name);
 	}
 
 }
