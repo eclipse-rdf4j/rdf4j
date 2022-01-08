@@ -9,7 +9,7 @@ jobs:
       matrix:
         jdk: [1.8, 15]
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
@@ -38,7 +38,7 @@ jobs:
   integration-tests:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
@@ -69,7 +69,7 @@ jobs:
   slow-tests:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
