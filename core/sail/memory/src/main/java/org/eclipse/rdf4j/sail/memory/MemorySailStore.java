@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatement;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementIterator;
+import org.eclipse.rdf4j.sail.memory.model.MemStatementIteratorCache;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemTriple;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
@@ -66,7 +67,9 @@ class MemorySailStore implements SailStore {
 	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
 	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 	public static final MemResource[] EMPTY_CONTEXT = new MemResource[0];
-	private final Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
+	private final static Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
+
+	private final MemStatementIteratorCache iteratorCache = new MemStatementIteratorCache(10);
 
 	// a map that tracks the number of times a cacheable iterator has been used
 	private final ConcurrentHashMap<MemStatementIterator<? extends Exception>, Integer> cacheCount = new ConcurrentHashMap<>();
@@ -155,8 +158,7 @@ class MemorySailStore implements SailStore {
 	}
 
 	private void invalidateCache() {
-		cacheCount.clear();
-		iteratorCache.invalidateAll();
+		iteratorCache.invalidateCache();
 	}
 
 	@Override
@@ -249,8 +251,7 @@ class MemorySailStore implements SailStore {
 	}
 
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(MemResource subj, MemIRI pred,
-			MemValue obj,
-			Boolean explicit, int snapshot, MemResource... contexts) {
+			MemValue obj, Boolean explicit, int snapshot, MemResource... contexts) {
 
 		MemResource[] memContexts;
 		MemStatementList smallestList;
@@ -306,8 +307,8 @@ class MemorySailStore implements SailStore {
 			return EMPTY_ITERATION;
 		}
 
-		return new CachingMemStatementIteration<>(
-				new MemStatementIterator<>(smallestList, subj, pred, obj, explicit, snapshot, memContexts), this);
+		return MemStatementIterator.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot, memContexts,
+				iteratorCache);
 	}
 
 	/**
@@ -568,6 +569,7 @@ class MemorySailStore implements SailStore {
 		public synchronized void flush() throws SailException {
 			invalidateCache();
 			if (txnLock) {
+				invalidateCache();
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
 				if (requireCleanup) {
 					scheduleSnapshotCleanup();

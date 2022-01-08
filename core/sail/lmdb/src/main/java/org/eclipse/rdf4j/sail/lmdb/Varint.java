@@ -85,26 +85,19 @@ public final class Varint {
 	 * @param bb    buffer for writing bytes
 	 * @param value value to encode
 	 */
-	public static void writeUnsigned(ByteBuffer bb, long value) {
+	public static void writeUnsigned(final ByteBuffer bb, final long value) {
 		if (value <= 240) {
-			byte a0 = (byte) value;
-			bb.put(a0);
+			bb.put((byte) value);
 		} else if (value <= 2287) {
-			byte a0 = (byte) ((value - 240) / 256 + 241);
-			byte a1 = (byte) ((value - 240) % 256);
-			bb.put(a0);
-			bb.put(a1);
+			bb.put((byte) ((value - 240) / 256 + 241));
+			bb.put((byte) ((value - 240) % 256));
 		} else if (value <= 67823) {
-			byte a0 = (byte) 249;
-			byte a1 = (byte) ((value - 2288) / 256);
-			byte a2 = (byte) ((value - 2288) % 256);
-			bb.put(a0);
-			bb.put(a1);
-			bb.put(a2);
+			bb.put((byte) 249);
+			bb.put((byte) ((value - 2288) / 256));
+			bb.put((byte) ((value - 2288) % 256));
 		} else {
 			int bytes = descriptor(value) + 1;
-			byte a0 = (byte) (250 + (bytes - 3));
-			bb.put(a0);
+			bb.put((byte) (250 + (bytes - 3)));
 			writeSignificantBits(bb, value, bytes);
 		}
 	}
@@ -248,9 +241,23 @@ public final class Varint {
 	 * @param bb     buffer for writing bytes
 	 * @param values array with values to write
 	 */
-	public static void writeListUnsigned(ByteBuffer bb, long[] values) {
+	public static void writeListUnsigned(final ByteBuffer bb, final long[] values) {
 		for (int i = 0; i < values.length; i++) {
-			writeUnsigned(bb, values[i]);
+			final long value = values[i];
+			if (value <= 240) {
+				bb.put((byte) value);
+			} else if (value <= 2287) {
+				bb.put((byte) ((value - 240) / 256 + 241));
+				bb.put((byte) ((value - 240) % 256));
+			} else if (value <= 67823) {
+				bb.put((byte) 249);
+				bb.put((byte) ((value - 2288) / 256));
+				bb.put((byte) ((value - 2288) % 256));
+			} else {
+				int bytes = descriptor(value) + 1;
+				bb.put((byte) (250 + (bytes - 3)));
+				writeSignificantBits(bb, value, bytes);
+			}
 		}
 	}
 

@@ -10,9 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v1
+      uses: actions/checkout@v2
     - name: pull-request
-      uses: repo-sync/pull-request@v2.0.1
+      uses: repo-sync/pull-request@v2.6.1
       with:
         destination_branch: "develop"         # If blank, default: main
         pr_title: "Merge main into develop"
