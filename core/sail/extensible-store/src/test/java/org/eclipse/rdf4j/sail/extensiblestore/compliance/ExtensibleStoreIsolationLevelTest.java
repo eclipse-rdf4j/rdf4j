@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
+import org.eclipse.rdf4j.testsuite.sail.SailIsolationLevelTest;
 
 public class ExtensibleStoreIsolationLevelTest extends SailIsolationLevelTest {
 

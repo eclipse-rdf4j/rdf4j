@@ -62,18 +62,18 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 			nextRecord.toQuad(quad);
 
 			long subjID = quad[TripleStore.SUBJ_IDX];
-			Resource subj = (Resource) valueStore.getValue(subjID);
+			Resource subj = (Resource) valueStore.getLazyValue(subjID);
 
 			long predID = quad[TripleStore.PRED_IDX];
-			IRI pred = (IRI) valueStore.getValue(predID);
+			IRI pred = (IRI) valueStore.getLazyValue(predID);
 
 			long objID = quad[TripleStore.OBJ_IDX];
-			Value obj = valueStore.getValue(objID);
+			Value obj = valueStore.getLazyValue(objID);
 
 			Resource context = null;
 			long contextID = quad[TripleStore.CONTEXT_IDX];
 			if (contextID != 0) {
-				context = (Resource) valueStore.getValue(contextID);
+				context = (Resource) valueStore.getLazyValue(contextID);
 			}
 
 			return valueStore.createStatement(subj, pred, obj, context);

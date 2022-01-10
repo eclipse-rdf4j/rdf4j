@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import java.io.IOException;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.SailConcurrencyTest;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.SailInterruptTest;
+import org.eclipse.rdf4j.testsuite.sail.SailConcurrencyTest;
+import org.eclipse.rdf4j.testsuite.sail.SailInterruptTest;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 

@@ -247,7 +247,7 @@ class LmdbSailStore implements SailStore {
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (long contextID : contextIDList) {
-			RecordIterator records = tripleStore.getTriples(subjID, predID, objID, contextID, explicit, false);
+			RecordIterator records = tripleStore.getTriples(subjID, predID, objID, contextID, explicit);
 			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
 		}
 

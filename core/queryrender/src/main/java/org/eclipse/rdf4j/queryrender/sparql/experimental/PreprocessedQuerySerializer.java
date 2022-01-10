@@ -830,12 +830,6 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	}
 
 	@Override
-	public void meet(Like node) throws RuntimeException {
-		super.meet(node);
-
-	}
-
-	@Override
 	public void meet(ListMemberOperator node) throws RuntimeException {
 		Iterator<ValueExpr> argIter = node.getArguments().iterator();
 		ValueExpr operand = argIter.next();

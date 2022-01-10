@@ -14,7 +14,7 @@ import java.io.IOException;
  * An iterator that iterates over records, for example those in a key-value database.
  *
  */
-public interface RecordIterator extends Closeable {
+interface RecordIterator extends Closeable {
 
 	/**
 	 * Returns the next record.

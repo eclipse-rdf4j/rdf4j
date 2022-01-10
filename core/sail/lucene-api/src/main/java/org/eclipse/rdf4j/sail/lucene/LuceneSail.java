@@ -246,11 +246,11 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	/**
 	 * Set this key to configure the SearchIndex class implementation. Default is
-	 * org.eclipse.rdf4j.sail.lucene.LuceneIndex.
+	 * org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex.
 	 */
 	public static final String INDEX_CLASS_KEY = "index";
 
-	public static final String DEFAULT_INDEX_CLASS = "org.eclipse.rdf4j.sail.lucene.LuceneIndex";
+	public static final String DEFAULT_INDEX_CLASS = "org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex";
 
 	/**
 	 * Set this key as sail parameter to configure the Lucene analyzer class implementation to use for text analysis.

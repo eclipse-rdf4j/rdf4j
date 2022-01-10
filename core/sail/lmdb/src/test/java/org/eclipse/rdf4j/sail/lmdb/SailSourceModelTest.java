@@ -17,10 +17,10 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-import org.eclipse.rdf4j.model.ModelTest;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.testsuite.model.ModelTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;

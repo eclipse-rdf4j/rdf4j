@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.memory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
@@ -45,6 +44,7 @@ import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatement;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementIterator;
+import org.eclipse.rdf4j.sail.memory.model.MemStatementIteratorCache;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemTriple;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
@@ -62,7 +62,9 @@ class MemorySailStore implements SailStore {
 	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
 	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 	public static final MemResource[] EMPTY_CONTEXT = new MemResource[0];
-	private final Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
+	private final static Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
+
+	private final MemStatementIteratorCache iteratorCache = new MemStatementIteratorCache(10);
 
 	/**
 	 * Factory/cache for MemValue objects.
@@ -132,12 +134,17 @@ class MemorySailStore implements SailStore {
 			try {
 				valueFactory.clear();
 				statements.clear();
+				invalidateCache();
 			} finally {
 				stLock.release();
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		}
+	}
+
+	private void invalidateCache() {
+		iteratorCache.invalidateCache();
 	}
 
 	@Override
@@ -230,8 +237,7 @@ class MemorySailStore implements SailStore {
 	}
 
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(MemResource subj, MemIRI pred,
-			MemValue obj,
-			Boolean explicit, int snapshot, MemResource... contexts) {
+			MemValue obj, Boolean explicit, int snapshot, MemResource... contexts) {
 
 		MemResource[] memContexts;
 		MemStatementList smallestList;
@@ -287,7 +293,8 @@ class MemorySailStore implements SailStore {
 			return EMPTY_ITERATION;
 		}
 
-		return new MemStatementIterator<>(smallestList, subj, pred, obj, explicit, snapshot, memContexts);
+		return MemStatementIterator.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot, memContexts,
+				iteratorCache);
 	}
 
 	/**
@@ -517,6 +524,7 @@ class MemorySailStore implements SailStore {
 		@Override
 		public synchronized void flush() throws SailException {
 			if (txnLock) {
+				invalidateCache();
 				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
 				if (requireCleanup) {
 					scheduleSnapshotCleanup();
@@ -579,6 +587,7 @@ class MemorySailStore implements SailStore {
 		@Override
 		public synchronized void clear(Resource... contexts) throws SailException {
 			acquireExclusiveTransactionLock();
+			invalidateCache();
 			requireCleanup = true;
 			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(null, null, null,
 					explicit, nextSnapshot, contexts)) {
@@ -592,12 +601,14 @@ class MemorySailStore implements SailStore {
 		@Override
 		public synchronized void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 			acquireExclusiveTransactionLock();
+			invalidateCache();
 			addStatement(subj, pred, obj, ctx, explicit);
 		}
 
 		@Override
 		public synchronized void deprecate(Statement statement) throws SailException {
 			acquireExclusiveTransactionLock();
+			invalidateCache();
 			requireCleanup = true;
 			if (statement instanceof MemStatement) {
 				MemStatement toDeprecate = (MemStatement) statement;
@@ -625,6 +636,7 @@ class MemorySailStore implements SailStore {
 					}
 				}
 			}
+
 		}
 
 		private void acquireExclusiveTransactionLock() throws SailException {
@@ -676,6 +688,7 @@ class MemorySailStore implements SailStore {
 			MemStatement st = new MemStatement(memSubj, memPred, memObj, memContext, explicit, nextSnapshot);
 			statements.add(st);
 			st.addToComponentLists();
+			invalidateCache();
 			return st;
 		}
 
@@ -692,6 +705,7 @@ class MemorySailStore implements SailStore {
 					st.setTillSnapshot(nextSnapshot);
 				}
 			}
+			invalidateCache();
 
 			return deprecated;
 		}

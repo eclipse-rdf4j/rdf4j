@@ -9,10 +9,10 @@
 package org.eclipse.rdf4j.sail.shacl.rdf4jcompliance;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
 
 public class ShaclRepositoryTest extends RepositoryTest {
 

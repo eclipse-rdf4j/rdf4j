@@ -79,7 +79,7 @@ The LuceneSail can currently be used with three SearchIndex implementations:
 
 |                   |  SearchIndex implementation                 | Maven module                          |
 |------------------ |---------------------------------------------|---------------------|
-| Apache Lucene     | `org.eclipse.rdf4j.sail.lucene.LuceneIndex` | `rdf4j-sail-lucene` |
+| Apache Lucene     | `org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex` | `rdf4j-sail-lucene` |
 | ElasticSearch     | `org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchIndex` | `rdf4j-sail-elasticsearch` |
 | Apache Solr       | `org.eclipse.rdf4j.sail.solr.SolrIndex`     | `rdf4j-sail-solr`   |
 

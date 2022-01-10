@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
-import org.eclipse.rdf4j.repository.manager.SystemRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
@@ -87,9 +86,7 @@ public class CreateServlet extends TransformationServlet {
 		if (federate) {
 			for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
 				String identity = info.getId();
-				if (!SystemRepository.ID.equals(identity)) {
-					builder.result(identity, info.getDescription(), info.getLocation());
-				}
+				builder.result(identity, info.getDescription(), info.getLocation());
 			}
 		}
 		builder.end();

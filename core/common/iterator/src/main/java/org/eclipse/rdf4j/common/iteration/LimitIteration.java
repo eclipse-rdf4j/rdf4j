@@ -28,7 +28,7 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	/**
 	 * The number of elements that have been returned so far.
 	 */
-	private volatile long returnCount;
+	private long returnCount;
 
 	/*--------------*
 	 * Constructors *

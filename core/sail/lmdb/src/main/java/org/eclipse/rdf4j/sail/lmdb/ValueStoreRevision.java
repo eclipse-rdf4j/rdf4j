@@ -47,4 +47,8 @@ public class ValueStoreRevision implements Serializable {
 	public ValueStore getValueStore() {
 		return valueStore;
 	}
+
+	public boolean resolveValue(long id, LmdbValue value) {
+		return valueStore.resolveValue(id, value);
+	}
 }

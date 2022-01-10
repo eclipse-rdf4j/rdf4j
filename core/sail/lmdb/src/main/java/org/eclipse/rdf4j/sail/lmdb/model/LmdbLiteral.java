@@ -7,11 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.model;
 
+import java.io.ObjectStreamException;
+import java.util.Optional;
+
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.impl.SimpleLiteral;
+import org.eclipse.rdf4j.model.base.AbstractLiteral;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
-public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
+public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	/*-----------*
 	 * Constants *
@@ -23,26 +28,41 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 	 * Variable *
 	 *----------*/
 
+	/**
+	 * The literal's label.
+	 */
+	private String label;
+
+	/**
+	 * The literal's language tag.
+	 */
+	private String language;
+
+	/**
+	 * The literal's datatype.
+	 */
+	private IRI datatype;
+
 	private volatile ValueStoreRevision revision;
 
 	private volatile long internalID;
+
+	private volatile boolean initialized = false;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
-	protected LmdbLiteral(ValueStoreRevision revision, long internalID) {
+	public LmdbLiteral(ValueStoreRevision revision, long internalID) {
 		super();
 		setInternalID(internalID, revision);
 	}
 
-	public LmdbLiteral(ValueStoreRevision revision, String label) {
-		this(revision, label, UNKNOWN_ID);
-	}
-
 	public LmdbLiteral(ValueStoreRevision revision, String label, long internalID) {
-		super(label);
+		this.label = label;
+		this.datatype = XSD.STRING;
 		setInternalID(internalID, revision);
+		this.initialized = true;
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, String lang) {
@@ -50,8 +70,11 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, long internalID) {
-		super(label, lang);
+		this.label = label;
+		this.language = lang;
+		this.datatype = RDF.LANGSTRING;
 		setInternalID(internalID, revision);
+		this.initialized = true;
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, IRI datatype) {
@@ -59,8 +82,10 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, IRI datatype, long internalID) {
-		super(label, datatype);
+		this.label = label;
+		this.datatype = datatype;
 		setInternalID(internalID, revision);
+		this.initialized = true;
 	}
 
 	/*---------*
@@ -84,6 +109,47 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 	}
 
 	@Override
+	public IRI getDatatype() {
+		init();
+		return datatype;
+	}
+
+	public void setDatatype(IRI datatype) {
+		this.datatype = datatype;
+	}
+
+	@Override
+	public String getLabel() {
+		init();
+		return label;
+	}
+
+	public void setLabel(String label) {
+		this.label = label;
+	}
+
+	@Override
+	public Optional<String> getLanguage() {
+		init();
+		return Optional.ofNullable(language);
+	}
+
+	public void setLanguage(String language) {
+		this.language = language;
+	}
+
+	protected void init() {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					revision.resolveValue(internalID, this);
+				}
+				initialized = true;
+			}
+		}
+	}
+
+	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;
@@ -100,6 +166,24 @@ public class LmdbLiteral extends SimpleLiteral implements LmdbValue {
 			}
 		}
 
+		init();
 		return super.equals(o);
+	}
+
+	@Override
+	public int hashCode() {
+		init();
+		return super.hashCode();
+	}
+
+	@Override
+	public String toString() {
+		init();
+		return super.toString();
+	}
+
+	protected Object writeReplace() throws ObjectStreamException {
+		init();
+		return this;
 	}
 }

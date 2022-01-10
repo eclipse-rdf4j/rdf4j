@@ -604,11 +604,6 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 	}
 
 	@Override
-	public void meet(Like node) throws RuntimeException {
-		super.meet(node);
-	}
-
-	@Override
 	public void meet(Load load) throws RuntimeException {
 		super.meet(load);
 	}

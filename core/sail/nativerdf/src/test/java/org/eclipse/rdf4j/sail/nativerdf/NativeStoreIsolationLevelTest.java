@@ -11,7 +11,7 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.SailIsolationLevelTest;
+import org.eclipse.rdf4j.testsuite.sail.SailIsolationLevelTest;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 

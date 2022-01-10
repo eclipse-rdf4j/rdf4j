@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
 
 public class MemoryStoreConnectionTest extends RepositoryConnectionTest {
 

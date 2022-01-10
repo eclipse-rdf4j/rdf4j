@@ -7,13 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
-import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultWriterTest;
 import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
+import org.eclipse.rdf4j.testsuite.query.resultio.AbstractTupleQueryResultWriterTest;
 
 /**
  * @author Jeen Broekstra

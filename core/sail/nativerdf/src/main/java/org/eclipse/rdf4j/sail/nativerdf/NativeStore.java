@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.ref.Cleaner;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,6 +17,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Comparator;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.io.MavenUtil;
@@ -52,11 +54,54 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	private static final Logger logger = LoggerFactory.getLogger(NativeStore.class);
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	private static final String VERSION = MavenUtil.loadVersion("org.eclipse.rdf4j", "rdf4j-sail-nativerdf", "devel");
+
+	private static final Cleaner REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW = Cleaner.create();
+
+	/**
+	 * When we are close to running out of memory we start using a native store instead of a model in memory.
+	 * Performance craters to near zero. So it is dubious if this is worth the effort. The class is static to avoid
+	 * taking a pointer which might make it hard to get a phantom reference.
+	 */
+	final static class MemoryOverflowIntoNativeStore extends MemoryOverflowModel {
+		private static final long serialVersionUID = 1L;
+
+		/**
+		 * The class is static to avoid taking a pointer which might make it hard to get a phantom reference.
+		 */
+		private static final class OverFlowStoreCleaner implements Runnable {
+			private final NativeSailStore nativeSailStore;
+			private final File dataDir;
+
+			private OverFlowStoreCleaner(NativeSailStore nativeSailStore, File dataDir) {
+				this.nativeSailStore = nativeSailStore;
+				this.dataDir = dataDir;
+			}
+
+			@Override
+			public void run() {
+				try {
+					nativeSailStore.close();
+				} finally {
+					try {
+						FileUtils.deleteDirectory(dataDir);
+					} catch (IOException e) {
+						NativeStore.logger.error("Could not remove data dir of overflow model store", e);
+					}
+				}
+			}
+		}
+
+		@Override
+		protected SailStore createSailStore(File dataDir) throws IOException, SailException {
+			// Model can't fit into memory, use another NativeSailStore to store delta
+			NativeSailStore nativeSailStore = new NativeSailStore(dataDir, "spoc");
+			// Once the model is no longer reachable (i.e. phantom reference we can close the
+			// backingstore.
+			REMOVE_STORES_USED_FOR_MEMORY_OVERFLOW.register(this, new OverFlowStoreCleaner(nativeSailStore, dataDir));
+			return nativeSailStore;
+		}
+	}
 
 	/**
 	 * Specifies which triple indexes this native store must use.
@@ -286,14 +331,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 			}
 			final NativeSailStore mainStore = new NativeSailStore(dataDir, tripleIndexes, forceSync, valueCacheSize,
 					valueIDCacheSize, namespaceCacheSize, namespaceIDCacheSize);
-			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowModel() {
-
-				@Override
-				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
-					// Model can't fit into memory, use another NativeSailStore to store delta
-					return new NativeSailStore(dataDir, getTripleIndexes());
-				}
-			}) {
+			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowIntoNativeStore()) {
 
 				@Override
 				public SailSource getExplicitSailSource() {

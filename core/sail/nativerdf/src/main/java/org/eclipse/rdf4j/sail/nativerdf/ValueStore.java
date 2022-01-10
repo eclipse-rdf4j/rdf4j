@@ -40,11 +40,10 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
  *
  * @author Arjohn Kampman
  *
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
 @InternalUseOnly
-@Deprecated
 public class ValueStore extends SimpleValueFactory {
 
 	/*-----------*
@@ -256,7 +255,7 @@ public class ValueStore extends SimpleValueFactory {
 					// Store id in cache
 					NativeValue nv = getNativeValue(value);
 					nv.setInternalID(id, revision);
-					valueIDCache.put(nv, new Integer(id));
+					valueIDCache.put(nv, Integer.valueOf(id));
 				}
 			}
 

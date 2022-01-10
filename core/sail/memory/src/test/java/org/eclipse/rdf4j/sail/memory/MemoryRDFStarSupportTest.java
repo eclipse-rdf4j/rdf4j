@@ -7,9 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
-import org.eclipse.rdf4j.repository.RDFStarSupportTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.testsuite.repository.RDFStarSupportTest;
 
 /**
  * @author jeen

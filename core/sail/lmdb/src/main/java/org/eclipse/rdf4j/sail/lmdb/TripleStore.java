@@ -15,12 +15,12 @@ import static org.eclipse.rdf4j.sail.lmdb.Varint.writeListUnsigned;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
-import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
@@ -40,6 +40,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.nmdb_env_set_maxreaders;
 
 import java.io.Closeable;
 import java.io.File;
@@ -93,10 +94,6 @@ class TripleStore implements Closeable {
 	static final int MAX_KEY_LENGTH = 4 * 9;
 
 	/**
-	 * Bit field indicating that a statement has been explicitly added (instead of being inferred).
-	 */
-	static final byte EXPLICIT_FLAG = (byte) 0x1; // 0000 0001
-	/**
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_INDEXES = "spoc,posc";
@@ -141,6 +138,8 @@ class TripleStore implements Closeable {
 
 	private long env;
 	private long writeTxn = 0;
+	private TxnRef readTxnRef;
+	private final Pool pool = new Pool();
 
 	static final Comparator<ByteBuffer> COMPARATOR = new Comparator<ByteBuffer>() {
 		@Override
@@ -163,7 +162,7 @@ class TripleStore implements Closeable {
 		}
 	};
 
-	public TripleStore(File dir, LmdbStoreConfig config) throws IOException, SailException {
+	TripleStore(File dir, LmdbStoreConfig config) throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = config.getForceSync();
 
@@ -177,7 +176,8 @@ class TripleStore implements Closeable {
 		}
 
 		mdb_env_set_mapsize(env, config.getTripleDBSize());
-		mdb_env_set_maxdbs(env, 6);
+		mdb_env_set_maxdbs(env, 12);
+		nmdb_env_set_maxreaders(env, 256);
 
 		// Open environment
 		int flags = MDB_NOTLS;
@@ -185,6 +185,8 @@ class TripleStore implements Closeable {
 			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
 		}
 		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
+
+		readTxnRef = new TxnRef(env, Mode.RESET);
 
 		File propFile = new File(this.dir, PROPERTIES_FILE);
 		String indexSpecStr = config.getTripleIndexes();
@@ -312,44 +314,47 @@ class TripleStore implements Closeable {
 
 		if (!addedIndexSpecs.isEmpty()) {
 			TripleIndex sourceIndex = indexes.get(0);
-			transaction(env, (stack, txn) -> {
-				MDBVal keyValue = MDBVal.callocStack(stack);
-				ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
-				keyValue.mv_data(keyBuf);
-				MDBVal dataValue = MDBVal.callocStack(stack);
-				long[] quad = new long[4];
-				for (String fieldSeq : addedIndexSpecs) {
-					logger.debug("Initializing new index '{}'...", fieldSeq);
+			for (boolean explicit : new boolean[] { true, false }) {
+				transaction(env, (stack, txn) -> {
+					MDBVal keyValue = MDBVal.callocStack(stack);
+					ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
+					keyValue.mv_data(keyBuf);
+					MDBVal dataValue = MDBVal.callocStack(stack);
+					long[] quad = new long[4];
+					for (String fieldSeq : addedIndexSpecs) {
+						logger.debug("Initializing new index '{}'...", fieldSeq);
 
-					TripleIndex addedIndex = new TripleIndex(fieldSeq);
-					RecordIterator[] sourceIter = { null };
-					try {
-						sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
-								new TxnRef(txn, Mode.NONE));
+						TripleIndex addedIndex = new TripleIndex(fieldSeq);
+						RecordIterator[] sourceIter = { null };
+						try {
+							sourceIter[0] = new LmdbRecordIterator(pool, sourceIndex, false, -1, -1, -1, -1,
+									explicit, new TxnRef(txn));
 
-						RecordIterator it = sourceIter[0];
-						Record record;
-						while ((record = it.next()) != null) {
-							record.toQuad(quad);
-							keyBuf.clear();
-							addedIndex.toKey(keyBuf, quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX], quad[CONTEXT_IDX]);
-							keyBuf.flip();
+							RecordIterator it = sourceIter[0];
+							Record record;
+							while ((record = it.next()) != null) {
+								record.toQuad(quad);
+								keyBuf.clear();
+								addedIndex.toKey(keyBuf, quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX],
+										quad[CONTEXT_IDX]);
+								keyBuf.flip();
 
-							dataValue.mv_data(record.val);
+								dataValue.mv_data(record.val);
 
-							mdb_put(txn, addedIndex.getDB(), keyValue, dataValue, 0);
+								mdb_put(txn, addedIndex.getDB(explicit), keyValue, dataValue, 0);
+							}
+						} finally {
+							if (sourceIter[0] != null) {
+								sourceIter[0].close();
+							}
 						}
-					} finally {
-						if (sourceIter[0] != null) {
-							sourceIter[0].close();
-						}
+
+						currentIndexes.put(fieldSeq, addedIndex);
 					}
 
-					currentIndexes.put(fieldSeq, addedIndex);
-				}
-
-				return null;
-			});
+					return null;
+				});
+			}
 
 			logger.debug("New index(es) initialized");
 		}
@@ -418,89 +423,79 @@ class TripleStore implements Closeable {
 		for (TripleIndex index : indexes) {
 			if (index.getFieldSeq()[0] == 'c') {
 				// found a context-first index
-				return getTriplesUsingIndex(-1, -1, -1, -1, index, false);
+				return getTriplesUsingIndex(-1, -1, -1, -1, true, index, false);
 			}
 		}
-
 		return null;
 	}
 
-	public RecordIterator getTriples(long subj, long pred, long obj, long context, boolean explicit,
-			boolean readTransaction) throws IOException {
-		RecordIterator recordIt = getTriples(subj, pred, obj, context);
-
-		if (readTransaction && explicit) {
-			// Filter implicit statements from the result
-			recordIt = new ExplicitStatementFilter(recordIt);
-		} else if (!explicit) {
-			// Filter out explicit statements from the result
-			recordIt = new ImplicitStatementFilter(recordIt);
-		}
-
-		return recordIt;
-	}
-
-	private RecordIterator getTriples(long subj, long pred, long obj, long context) {
+	public RecordIterator getTriples(long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		// System.out.println("get triples: " + Arrays.asList(subj, pred, obj,context));
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
-		return getTriplesUsingIndex(subj, pred, obj, context, index, doRangeSearch);
+		return getTriplesUsingIndex(subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
 
 	private RecordIterator getTriplesUsingIndex(long subj, long pred, long obj, long context,
-			TripleIndex index, boolean rangeSearch) {
-		TxnRef txnRef = getReadTxn();
-		txnRef.begin();
-		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, txnRef);
+			boolean explicit, TripleIndex index, boolean rangeSearch) {
+		return new LmdbRecordIterator(pool, index, rangeSearch, subj, pred, obj, context, explicit, readTxnRef);
 	}
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 
-		if (index.getPatternScore(subj, pred, obj, context) == 0) {
-			return LmdbUtil.<Long>readTransaction(env, (stack, txn) -> {
-				MDBStat stat = MDBStat.callocStack(stack);
-				mdb_stat(txn, index.getDB(), stat);
-				return stat.ms_entries();
-			});
-		} else {
-			// TODO currently uses a scan to determine range size
-			long[] startValues = new long[4];
-			return LmdbUtil.<Long>readTransaction(env, (stack, txn) -> {
-				MDBVal maxKey = MDBVal.calloc(stack);
-				ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
-				maxKeyBuf.flip();
-				maxKey.mv_data(maxKeyBuf);
+		double cardinality = 0;
+		for (boolean explicit : new boolean[] { true, false }) {
+			int dbi = index.getDB(explicit);
+			if (index.getPatternScore(subj, pred, obj, context) == 0) {
+				cardinality += readTxnRef.doWith((stack, txn) -> {
+					MDBStat stat = MDBStat.mallocStack(stack);
+					mdb_stat(txn, dbi, stat);
+					return (double) stat.ms_entries();
+				});
+			} else {
+				// TODO currently uses a scan to determine range size
+				long[] startValues = new long[4];
+				cardinality += readTxnRef.doWith((stack, txn) -> {
+					MDBVal maxKey = MDBVal.malloc(stack);
+					ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+					index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+					maxKeyBuf.flip();
+					maxKey.mv_data(maxKeyBuf);
 
-				int dbi = index.getDB();
-				long cursor = 0;
-				try {
-					PointerBuffer pp = stack.mallocPointer(1);
-					E(mdb_cursor_open(txn, dbi, pp));
-					cursor = pp.get(0);
+					long cursor = 0;
+					try {
+						PointerBuffer pp = stack.mallocPointer(1);
+						E(mdb_cursor_open(txn, dbi, pp));
+						cursor = pp.get(0);
 
-					MDBVal keyData = MDBVal.callocStack(stack);
-					ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-					index.getMinKey(keyBuf, subj, pred, obj, context);
-					keyBuf.flip();
+						MDBVal keyData = MDBVal.mallocStack(stack);
+						ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+						index.getMinKey(keyBuf, subj, pred, obj, context);
+						keyBuf.flip();
 
-					// set cursor to min key
-					keyData.mv_data(keyBuf);
-					MDBVal valueData = MDBVal.callocStack(stack);
-					long rangeSize = 0;
-					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-					if (rc == 0) {
-						Varint.readListUnsigned(keyData.mv_data(), startValues);
+						// set cursor to min key
+						keyData.mv_data(keyBuf);
+						MDBVal valueData = MDBVal.mallocStack(stack);
 
-						rangeSize += 1;
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+						GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
+
+						long rangeSize = 0;
+						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 						while (rc == 0) {
 							if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
-								// if (COMPARATOR.compare(keyData.mv_data(), maxKeyBuf) >= 0) {
 								break;
+							} else if (!matcher.matches(keyData.mv_data())) {
+								// value doesn't match search key/mask, fetch next value
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+								continue;
+							} else {
+								if (rangeSize == 0) {
+									Varint.readListUnsigned(keyData.mv_data(), startValues);
+								}
+								rangeSize++;
 							}
-							rangeSize += 1;
 
 							if (rangeSize == 1000) {
 								long[] lastValues = new long[4];
@@ -511,9 +506,12 @@ class TripleStore implements Closeable {
 								keyData.mv_data(maxKeyBuf);
 								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 								if (rc != 0) {
-									break;
+									// directly go to last value
+									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+								} else {
+									// go to previous value of selected key
+									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 								}
-								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 								if (rc == 0) {
 									Varint.readListUnsigned(keyData.mv_data(), values);
 									int pos = 0;
@@ -526,19 +524,19 @@ class TripleStore implements Closeable {
 												* 1000;
 									}
 								}
-								return rangeSize;
+								return (double) rangeSize;
 							}
 						}
+						return (double) rangeSize;
+					} finally {
+						if (cursor != 0) {
+							mdb_cursor_close(cursor);
+						}
 					}
-					// System.out.println(Arrays.asList(subj, pred, obj,context) + ": " + rangeSize);
-					return rangeSize;
-				} finally {
-					if (cursor != 0) {
-						mdb_cursor_close(cursor);
-					}
-				}
-			});
+				});
+			}
 		}
+		return cardinality;
 	}
 
 	protected TripleIndex getBestIndex(long subj, long pred, long obj, long context) {
@@ -557,29 +555,25 @@ class TripleStore implements Closeable {
 	}
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
-		Byte storedValue = null;
-
 		TripleIndex mainIndex = indexes.get(0);
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal keyVal = MDBVal.callocStack(stack), dataVal = MDBVal.callocStack(stack);
+			MDBVal keyVal = MDBVal.mallocStack(stack);
+			// use calloc to get an empty data value
+			MDBVal dataVal = MDBVal.callocStack(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 			mainIndex.toKey(keyBuf, subj, pred, obj, context);
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
-			if (mdb_get(writeTxn, mainIndex.getDB(), keyVal, dataVal) == 0) {
-				storedValue = dataVal.mv_data().get(0);
-			}
+			boolean foundExplicit = mdb_get(writeTxn, mainIndex.getDB(true), keyVal, dataVal) == 0;
+			boolean foundImplicit = !foundExplicit && mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == 0;
 
-			boolean stAdded = storedValue == null;
-			byte newValue = 0;
-			if (explicit) {
-				newValue |= EXPLICIT_FLAG;
-			}
-			if (storedValue == null || newValue != storedValue) {
-				dataVal.mv_data(stack.bytes(newValue));
-
-				mdb_put(writeTxn, mainIndex.getDB(), keyVal, dataVal, 0);
+			boolean stAdded = !(foundExplicit || foundImplicit);
+			if (stAdded || explicit && foundImplicit) {
+				if (explicit && foundImplicit) {
+					mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal);
+				}
+				mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, 0);
 
 				for (int i = 1; i < indexes.size(); i++) {
 					TripleIndex index = indexes.get(i);
@@ -590,7 +584,10 @@ class TripleStore implements Closeable {
 					// update buffer positions in MDBVal
 					keyVal.mv_data(keyBuf);
 
-					mdb_put(writeTxn, index.getDB(), keyVal, dataVal, 0);
+					if (explicit && foundImplicit) {
+						mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal);
+					}
+					mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
 				}
 			}
 
@@ -611,11 +608,11 @@ class TripleStore implements Closeable {
 	 */
 	public Map<Long, Long> removeTriplesByContext(long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
-		RecordIterator records = getTriples(subj, pred, obj, context, explicit, true);
-		return removeTriples(records);
+		RecordIterator records = getTriples(subj, pred, obj, context, explicit);
+		return removeTriples(records, explicit);
 	}
 
-	private Map<Long, Long> removeTriples(RecordIterator iter) throws IOException {
+	private Map<Long, Long> removeTriples(RecordIterator iter, boolean explicit) throws IOException {
 		final Map<Long, Long> perContextCounts = new HashMap<>();
 
 		try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -636,7 +633,7 @@ class TripleStore implements Closeable {
 					// update buffer positions in MDBVal
 					keyValue.mv_data(keyBuf);
 
-					mdb_del(writeTxn, index.getDB(), keyValue, null);
+					mdb_del(writeTxn, index.getDB(explicit), keyValue, null);
 				}
 
 				perContextCounts.merge(quad[CONTEXT_IDX], 1L, (c, one) -> c + one);
@@ -664,6 +661,9 @@ class TripleStore implements Closeable {
 		if (writeTxn != 0) {
 			if (commit) {
 				mdb_txn_commit(writeTxn);
+				// invalidate open read transaction so that they are not re-used
+				// otherwise iterators won't see the updated data
+				readTxnRef.invalidate();
 			} else {
 				mdb_txn_abort(writeTxn);
 			}
@@ -693,97 +693,26 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	public TxnRef getReadTxn() {
-		// TODO check if an already existing write txn should be used here if available
-		long readTxn;
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
-
-			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
-			readTxn = pp.get(0);
-		}
-		return new TxnRef(readTxn, Mode.ABORT);
-	}
-
-	private static class ExplicitStatementFilter implements RecordIterator {
-
-		private final RecordIterator wrappedIter;
-
-		public ExplicitStatementFilter(RecordIterator wrappedIter) {
-			this.wrappedIter = wrappedIter;
-		}
-
-		@Override
-		public Record next() throws IOException {
-			Record record;
-			while ((record = wrappedIter.next()) != null) {
-				byte flags = record.val.get(0);
-				boolean explicit = (flags & TripleStore.EXPLICIT_FLAG) != 0;
-				if (explicit) {
-					break;
-				}
-			}
-			return record;
-		}
-
-		@Override
-		public void close() throws IOException {
-			wrappedIter.close();
-		}
-	}
-
-	private static class ImplicitStatementFilter implements RecordIterator {
-
-		private final RecordIterator wrappedIter;
-
-		public ImplicitStatementFilter(RecordIterator wrappedIter) {
-			this.wrappedIter = wrappedIter;
-		}
-
-		@Override
-		public Record next() throws IOException {
-			Record record;
-			while ((record = wrappedIter.next()) != null) {
-				byte flags = record.val.get(0);
-				boolean explicit = (flags & TripleStore.EXPLICIT_FLAG) != 0;
-				if (!explicit) {
-					// Statement is implicit
-					break;
-				}
-			}
-
-			return record;
-		}
-
-		@Override
-		public void close() throws IOException {
-			wrappedIter.close();
-		}
-	}
-
 	class TripleIndex {
 
 		private final char[] fieldSeq;
-		private int dbi;
-		private int[] indexMap;
+		private final int dbiExplicit, dbiInferred;
+		private final int[] indexMap;
 
 		public TripleIndex(String fieldSeq) throws IOException {
 			this.fieldSeq = fieldSeq.toCharArray();
 			this.indexMap = getIndexes(this.fieldSeq);
-			open();
-		}
-
-		private void open() throws IOException {
 			// open database and use native sort order without comparator
-			dbi = openDatabase(env, new String(fieldSeq), MDB_CREATE, null);
+			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);
+			dbiInferred = openDatabase(env, fieldSeq + "-inf", MDB_CREATE, null);
 		}
 
 		public char[] getFieldSeq() {
 			return fieldSeq;
 		}
 
-		public int getDB() {
-			return dbi;
+		public int getDB(boolean explicit) {
+			return explicit ? dbiExplicit : dbiInferred;
 		}
 
 		protected int[] getIndexes(char[] fieldSeq) {
@@ -933,15 +862,19 @@ class TripleStore implements Closeable {
 		}
 
 		void close() {
-			mdb_dbi_close(env, dbi);
+			mdb_dbi_close(env, dbiExplicit);
+			mdb_dbi_close(env, dbiInferred);
+			pool.close();
 		}
 
 		void clear(long txn) throws IOException {
-			mdb_drop(txn, dbi, false);
+			mdb_drop(txn, dbiExplicit, false);
+			mdb_drop(txn, dbiInferred, false);
 		}
 
 		void destroy(long txn) throws IOException {
-			mdb_drop(txn, dbi, true);
+			mdb_drop(txn, dbiExplicit, true);
+			mdb_drop(txn, dbiInferred, true);
 		}
 	}
 }
