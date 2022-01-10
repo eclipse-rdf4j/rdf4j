@@ -39,9 +39,11 @@ public class BindingAssigner implements QueryOptimizer {
 
 		@Override
 		public void meet(Var var) {
-			if (!var.hasValue() && bindings.hasBinding(var.getName())) {
+			if (!var.hasValue()) {
 				Value value = bindings.getValue(var.getName());
-				var.setValue(value);
+				if (value != null) {
+					var.setValue(value);
+				}
 			}
 		}
 	}

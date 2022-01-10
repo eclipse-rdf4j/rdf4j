@@ -17,12 +17,13 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.bindingset.DynamicQueryBindingSet;
 
 public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
@@ -39,30 +40,30 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private static final String ANON_SEQUENCE_VAR = "zero-length-internal-seq";
 
-	private QueryBindingSet result;
+	private ModifiableBindingSet result;
 
-	private Var subjectVar;
+	private final Var subjectVar;
 
-	private Var objVar;
+	private final Var objVar;
 
-	private Value subj;
+	private final Value subj;
 
-	private Value obj;
+	private final Value obj;
 
-	private BindingSet bindings;
+	private final BindingSet bindings;
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> iter;
 
 	private Set<Value> reportedValues;
 
-	private Var contextVar;
+	private final Var contextVar;
 
 	private final EvaluationStrategy evaluationStrategy;
 
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
 			Value obj, Var contextVar, BindingSet bindings) {
 		this.evaluationStrategy = evaluationStrategyImpl;
-		result = new QueryBindingSet(bindings);
+		result = new DynamicQueryBindingSet(bindings);
 		this.subjectVar = subjectVar;
 		this.objVar = objVar;
 		this.contextVar = contextVar;
@@ -79,11 +80,11 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 			}
 			if (this.iter == null) {
 				// join with a sequence so we iterate over every entry twice
-				QueryBindingSet bs1 = new QueryBindingSet(1);
+				ModifiableBindingSet bs1 = new DynamicQueryBindingSet(1);
 				bs1.addBinding(ANON_SEQUENCE_VAR, SimpleValueFactory.getInstance().createLiteral("subject"));
-				QueryBindingSet bs2 = new QueryBindingSet(1);
+				ModifiableBindingSet bs2 = new DynamicQueryBindingSet(1);
 				bs2.addBinding(ANON_SEQUENCE_VAR, SimpleValueFactory.getInstance().createLiteral("object"));
-				List<BindingSet> seqList = Arrays.<BindingSet>asList(bs1, bs2);
+				List<BindingSet> seqList = Arrays.asList(bs1, bs2);
 				iter = new CrossProductIteration(createIteration(), seqList);
 			}
 
@@ -95,7 +96,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 				Value v = bs.getValue(endpointVarName);
 
 				if (add(reportedValues, v)) {
-					QueryBindingSet next = new QueryBindingSet(bindings);
+					ModifiableBindingSet next = new DynamicQueryBindingSet(bindings);
 					next.addBinding(subjectVar.getName(), v);
 					next.addBinding(objVar.getName(), v);
 					if (contextVar != null) {
@@ -127,7 +128,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 				}
 			}
 
-			QueryBindingSet next = result;
+			ModifiableBindingSet next = result;
 			result = null;
 			return next;
 		}

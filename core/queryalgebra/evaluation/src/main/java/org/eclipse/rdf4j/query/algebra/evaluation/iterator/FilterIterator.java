@@ -12,13 +12,14 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.bindingset.DynamicQueryBindingSet;
 
 public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationException> {
 
@@ -70,7 +71,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
 		try {
 			// Limit the bindings to the ones that are in scope for this filter
-			QueryBindingSet scopeBindings = new QueryBindingSet(bindings);
+			ModifiableBindingSet scopeBindings = new DynamicQueryBindingSet(bindings);
 
 			// FIXME J1 scopeBindingNames should include bindings from superquery if the filter
 			// is part of a subquery. This is a workaround: we should fix the settings of scopeBindingNames,

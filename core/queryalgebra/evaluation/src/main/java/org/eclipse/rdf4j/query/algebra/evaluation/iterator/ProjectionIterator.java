@@ -11,13 +11,14 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.bindingset.DynamicQueryBindingSet;
 
 public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
@@ -70,7 +71,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
 			BindingSet parentBindings, boolean includeAllParentBindings) {
-		final QueryBindingSet resultBindings = new QueryBindingSet();
+		ModifiableBindingSet resultBindings = new DynamicQueryBindingSet(projElemList.getElements().size());
 		if (includeAllParentBindings) {
 			resultBindings.addAll(parentBindings);
 		}

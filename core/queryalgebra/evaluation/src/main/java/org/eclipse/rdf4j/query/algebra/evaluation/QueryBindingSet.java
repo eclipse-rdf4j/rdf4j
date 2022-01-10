@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
@@ -26,7 +27,7 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
  * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that the
  * Binding objects are created lazily.
  */
-public class QueryBindingSet extends AbstractBindingSet {
+public class QueryBindingSet extends AbstractBindingSet implements ModifiableBindingSet {
 
 	private static final long serialVersionUID = -2010715346095527301L;
 
@@ -45,6 +46,10 @@ public class QueryBindingSet extends AbstractBindingSet {
 	public QueryBindingSet(BindingSet bindingSet) {
 		this(bindingSet.size());
 		addAll(bindingSet);
+	}
+
+	public QueryBindingSet(QueryBindingSet bindingSet) {
+		bindings = new HashMap<>(bindingSet.bindings);
 	}
 
 	public void addAll(BindingSet bindingSet) {

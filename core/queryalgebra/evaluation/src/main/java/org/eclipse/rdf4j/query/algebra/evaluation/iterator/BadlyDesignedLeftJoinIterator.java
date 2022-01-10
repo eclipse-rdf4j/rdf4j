@@ -10,11 +10,12 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.bindingset.DynamicQueryBindingSet;
 
 /**
  * @author Arjohn Kampman
@@ -56,12 +57,12 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 		if (result != null) {
 			// Make sure the provided problemVars are part of the returned results
 			// (necessary in case of e.g. LeftJoin and Union arguments)
-			QueryBindingSet extendedResult = null;
+			ModifiableBindingSet extendedResult = null;
 
 			for (String problemVar : problemVars) {
 				if (!result.hasBinding(problemVar)) {
 					if (extendedResult == null) {
-						extendedResult = new QueryBindingSet(result);
+						extendedResult = new DynamicQueryBindingSet(result);
 					}
 					extendedResult.addBinding(problemVar, inputBindings.getValue(problemVar));
 				}
@@ -79,8 +80,8 @@ public class BadlyDesignedLeftJoinIterator extends LeftJoinIterator {
 	 * Static util method *
 	 *--------------------*/
 
-	private static QueryBindingSet getFilteredBindings(BindingSet bindings, Set<String> problemVars) {
-		QueryBindingSet filteredBindings = new QueryBindingSet(bindings);
+	private static ModifiableBindingSet getFilteredBindings(BindingSet bindings, Set<String> problemVars) {
+		ModifiableBindingSet filteredBindings = new DynamicQueryBindingSet(bindings);
 		filteredBindings.removeAll(problemVars);
 		return filteredBindings;
 	}

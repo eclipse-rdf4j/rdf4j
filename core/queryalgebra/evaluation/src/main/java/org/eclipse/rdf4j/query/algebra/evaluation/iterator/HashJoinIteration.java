@@ -22,12 +22,13 @@ import org.eclipse.rdf4j.common.iterator.EmptyIterator;
 import org.eclipse.rdf4j.common.iterator.UnionIterator;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.ModifiableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.bindingset.DynamicQueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
@@ -146,7 +147,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		if (nextHashTableValues != null) {
 			BindingSet nextHashTableValue = nextHashTableValues.next();
 
-			QueryBindingSet result = new QueryBindingSet(currentScanElem);
+			ModifiableBindingSet result = new DynamicQueryBindingSet(currentScanElem);
 
 			for (String name : nextHashTableValue.getBindingNames()) {
 				if (!result.hasBinding(name)) {
