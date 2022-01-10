@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.model.datatypes;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URISyntaxException;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.regex.Pattern;
@@ -25,6 +24,7 @@ import javax.xml.namespace.QName;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -35,13 +35,20 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  */
 public class XMLDatatypeUtil {
 
+	private static final IllegalArgumentExceptionWithoutStackTrace VALUE_SMALLER_THAN_MINIMUM_VALUE_EXCEPTION = new IllegalArgumentExceptionWithoutStackTrace(
+			"Value smaller than minimum value");
+	private static final IllegalArgumentExceptionWithoutStackTrace VALUE_LARGER_THAN_MAXIMUM_VALUE_EXCEPTION = new IllegalArgumentExceptionWithoutStackTrace(
+			"Value larger than maximum value");
+	private static final IllegalArgumentExceptionWithoutStackTrace NAN_COMPARE_EXCEPTION = new IllegalArgumentExceptionWithoutStackTrace(
+			"NaN cannot be compared to other floats");
+
 	public static final String POSITIVE_INFINITY = "INF";
 
 	public static final String NEGATIVE_INFINITY = "-INF";
 
 	public static final String NaN = "NaN";
 
-	private static DatatypeFactory dtFactory;
+	private static final DatatypeFactory dtFactory;
 
 	static {
 		try {
@@ -57,46 +64,68 @@ public class XMLDatatypeUtil {
 			"-?P((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
 	private final static Pattern P_YEARMONTHDURATION = Pattern.compile("-?P((\\d)+Y)?((\\d)+M)?");
 	private final static Pattern P_TIMEZONE = Pattern.compile(".*(Z|[+-]((0\\d|1[0-3]):[0-5]\\d|14:00))$");
-	private final static Pattern P_DATE = Pattern.compile("-?\\d{4,}-\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_TIME = Pattern.compile("\\d\\d:\\d\\d:\\d\\d(\\.\\d+)?(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GDAY = Pattern.compile("---\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GMONTH = Pattern.compile("--\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GMONTHDAY = Pattern.compile("--\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GYEAR = Pattern.compile("-?\\d{4,}(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GYEARMONTH = Pattern.compile("-?\\d{4,}-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
+	private final static Pattern P_DATE = Pattern.compile("-?\\d{4,}-\\d\\d-\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_TIME = Pattern.compile("\\d\\d:\\d\\d:\\d\\d(\\.\\d+)?(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GDAY = Pattern.compile("---\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GMONTH = Pattern.compile("--\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GMONTHDAY = Pattern.compile("--\\d\\d-\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GYEAR = Pattern.compile("-?\\d{4,}(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GYEARMONTH = Pattern.compile("-?\\d{4,}-\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
 
-	private static final Set<IRI> primitiveDatatypes = createSet(XSD.DURATION, XSD.DATETIME, XSD.TIME, XSD.DATE,
-			XSD.GYEARMONTH, XSD.GYEAR, XSD.GMONTHDAY, XSD.GDAY, XSD.GMONTH, XSD.STRING, XSD.BOOLEAN, XSD.BASE64BINARY,
-			XSD.HEXBINARY, XSD.FLOAT, XSD.DECIMAL, XSD.DOUBLE, XSD.ANYURI, XSD.QNAME, XSD.NOTATION
-	);
+	private static final Set<IRI> primitiveDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.DURATION,
+			org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME, org.eclipse.rdf4j.model.vocabulary.XSD.TIME,
+			org.eclipse.rdf4j.model.vocabulary.XSD.DATE,
+			org.eclipse.rdf4j.model.vocabulary.XSD.GYEARMONTH, org.eclipse.rdf4j.model.vocabulary.XSD.GYEAR,
+			org.eclipse.rdf4j.model.vocabulary.XSD.GMONTHDAY, org.eclipse.rdf4j.model.vocabulary.XSD.GDAY,
+			org.eclipse.rdf4j.model.vocabulary.XSD.GMONTH, org.eclipse.rdf4j.model.vocabulary.XSD.STRING,
+			org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN, org.eclipse.rdf4j.model.vocabulary.XSD.BASE64BINARY,
+			org.eclipse.rdf4j.model.vocabulary.XSD.HEXBINARY, org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT,
+			org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL, org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE,
+			org.eclipse.rdf4j.model.vocabulary.XSD.ANYURI, org.eclipse.rdf4j.model.vocabulary.XSD.QNAME,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NOTATION);
 
-	private static final Set<IRI> derivedDatatypes = createSet(XSD.NORMALIZEDSTRING, XSD.TOKEN, XSD.LANGUAGE,
-			XSD.NMTOKEN, XSD.NMTOKENS, XSD.NAME, XSD.NCNAME, XSD.ID, XSD.IDREF, XSD.IDREFS, XSD.ENTITY, XSD.ENTITIES,
-			XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT, XSD.BYTE, XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER,
-			XSD.NON_NEGATIVE_INTEGER, XSD.POSITIVE_INTEGER, XSD.UNSIGNED_LONG, XSD.UNSIGNED_INT, XSD.UNSIGNED_SHORT,
-			XSD.UNSIGNED_BYTE, XSD.DAYTIMEDURATION, XSD.YEARMONTHDURATION, XSD.DATETIMESTAMP
-	);
+	private static final Set<IRI> derivedDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.NORMALIZEDSTRING,
+			org.eclipse.rdf4j.model.vocabulary.XSD.TOKEN, org.eclipse.rdf4j.model.vocabulary.XSD.LANGUAGE,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NMTOKEN,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NMTOKENS, org.eclipse.rdf4j.model.vocabulary.XSD.NAME,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NCNAME, org.eclipse.rdf4j.model.vocabulary.XSD.ID,
+			org.eclipse.rdf4j.model.vocabulary.XSD.IDREF, org.eclipse.rdf4j.model.vocabulary.XSD.IDREFS,
+			org.eclipse.rdf4j.model.vocabulary.XSD.ENTITY, org.eclipse.rdf4j.model.vocabulary.XSD.ENTITIES,
+			org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.LONG, org.eclipse.rdf4j.model.vocabulary.XSD.INT,
+			org.eclipse.rdf4j.model.vocabulary.XSD.SHORT, org.eclipse.rdf4j.model.vocabulary.XSD.BYTE,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG, org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT,
+			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT,
+			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE,
+			org.eclipse.rdf4j.model.vocabulary.XSD.DAYTIMEDURATION,
+			org.eclipse.rdf4j.model.vocabulary.XSD.YEARMONTHDURATION,
+			org.eclipse.rdf4j.model.vocabulary.XSD.DATETIMESTAMP);
 
-	private static final Set<IRI> integerDatatypes = createSet(XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT,
-			XSD.BYTE, XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER, XSD.NON_NEGATIVE_INTEGER, XSD.POSITIVE_INTEGER,
-			XSD.UNSIGNED_LONG, XSD.UNSIGNED_INT, XSD.UNSIGNED_SHORT, XSD.UNSIGNED_BYTE
-	);
+	private static final Set<IRI> integerDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.LONG, org.eclipse.rdf4j.model.vocabulary.XSD.INT,
+			org.eclipse.rdf4j.model.vocabulary.XSD.SHORT, org.eclipse.rdf4j.model.vocabulary.XSD.BYTE,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER,
+			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG, org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT,
+			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT,
+			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE);
 
-	private static final Set<IRI> calendarDatatypes = createSet(XSD.DATETIME, XSD.DATE, XSD.TIME, XSD.GYEARMONTH,
-			XSD.GMONTHDAY, XSD.GYEAR, XSD.GMONTH, XSD.GDAY, XSD.DATETIMESTAMP
-	);
+	private static final Set<IRI> calendarDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME,
+			org.eclipse.rdf4j.model.vocabulary.XSD.DATE, org.eclipse.rdf4j.model.vocabulary.XSD.TIME,
+			org.eclipse.rdf4j.model.vocabulary.XSD.GYEARMONTH,
+			org.eclipse.rdf4j.model.vocabulary.XSD.GMONTHDAY, org.eclipse.rdf4j.model.vocabulary.XSD.GYEAR,
+			org.eclipse.rdf4j.model.vocabulary.XSD.GMONTH, org.eclipse.rdf4j.model.vocabulary.XSD.GDAY,
+			org.eclipse.rdf4j.model.vocabulary.XSD.DATETIMESTAMP);
 
-	private static final Set<IRI> durationDatatypes = createSet(XSD.DURATION, XSD.DAYTIMEDURATION,
-			XSD.YEARMONTHDURATION
-	);
-
-	private static final Set<IRI> createSet(IRI... values) {
-		final Set<IRI> set = new HashSet<IRI>(values.length);
-		for (IRI value : values) {
-			set.add(value);
-		}
-		return set;
-	}
+	private static final Set<IRI> durationDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.DURATION,
+			org.eclipse.rdf4j.model.vocabulary.XSD.DAYTIMEDURATION,
+			org.eclipse.rdf4j.model.vocabulary.XSD.YEARMONTHDURATION);
 
 	/**
 	 * Checks whether the supplied datatype is a primitive XML Schema datatype.
@@ -147,7 +176,7 @@ public class XMLDatatypeUtil {
 	 * @return true if it is a decimal datatype
 	 */
 	public static boolean isDecimalDatatype(IRI datatype) {
-		return datatype.equals(XSD.DECIMAL) || isIntegerDatatype(datatype);
+		return datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL) || isIntegerDatatype(datatype);
 	}
 
 	/**
@@ -168,7 +197,8 @@ public class XMLDatatypeUtil {
 	 * @return true if it is a floating point type
 	 */
 	public static boolean isFloatingPointDatatype(IRI datatype) {
-		return datatype.equals(XSD.FLOAT) || datatype.equals(XSD.DOUBLE);
+		return datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT)
+				|| datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE);
 	}
 
 	/**
@@ -220,73 +250,146 @@ public class XMLDatatypeUtil {
 	public static boolean isValidValue(String value, IRI datatype) {
 		boolean result = true;
 
-		if (datatype.equals(XSD.DECIMAL)) {
+		if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL)) {
 			result = isValidDecimal(value);
-		} else if (datatype.equals(XSD.INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER)) {
 			result = isValidInteger(value);
-		} else if (datatype.equals(XSD.NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER)) {
 			result = isValidNegativeInteger(value);
-		} else if (datatype.equals(XSD.NON_POSITIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER)) {
 			result = isValidNonPositiveInteger(value);
-		} else if (datatype.equals(XSD.NON_NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER)) {
 			result = isValidNonNegativeInteger(value);
-		} else if (datatype.equals(XSD.POSITIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER)) {
 			result = isValidPositiveInteger(value);
-		} else if (datatype.equals(XSD.LONG)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.LONG)) {
 			result = isValidLong(value);
-		} else if (datatype.equals(XSD.INT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INT)) {
 			result = isValidInt(value);
-		} else if (datatype.equals(XSD.SHORT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.SHORT)) {
 			result = isValidShort(value);
-		} else if (datatype.equals(XSD.BYTE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BYTE)) {
 			result = isValidByte(value);
-		} else if (datatype.equals(XSD.UNSIGNED_LONG)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG)) {
 			result = isValidUnsignedLong(value);
-		} else if (datatype.equals(XSD.UNSIGNED_INT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT)) {
 			result = isValidUnsignedInt(value);
-		} else if (datatype.equals(XSD.UNSIGNED_SHORT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT)) {
 			result = isValidUnsignedShort(value);
-		} else if (datatype.equals(XSD.UNSIGNED_BYTE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE)) {
 			result = isValidUnsignedByte(value);
-		} else if (datatype.equals(XSD.FLOAT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT)) {
 			result = isValidFloat(value);
-		} else if (datatype.equals(XSD.DOUBLE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE)) {
 			result = isValidDouble(value);
-		} else if (datatype.equals(XSD.BOOLEAN)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN)) {
 			result = isValidBoolean(value);
-		} else if (datatype.equals(XSD.DATETIME)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME)) {
 			result = isValidDateTime(value);
-		} else if (datatype.equals(XSD.DATETIMESTAMP)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIMESTAMP)) {
 			result = isValidDateTimeStamp(value);
-		} else if (datatype.equals(XSD.DATE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATE)) {
 			result = isValidDate(value);
-		} else if (datatype.equals(XSD.TIME)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.TIME)) {
 			result = isValidTime(value);
-		} else if (datatype.equals(XSD.GDAY)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GDAY)) {
 			result = isValidGDay(value);
-		} else if (datatype.equals(XSD.GMONTH)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GMONTH)) {
 			result = isValidGMonth(value);
-		} else if (datatype.equals(XSD.GMONTHDAY)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GMONTHDAY)) {
 			result = isValidGMonthDay(value);
-		} else if (datatype.equals(XSD.GYEAR)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GYEAR)) {
 			result = isValidGYear(value);
-		} else if (datatype.equals(XSD.GYEARMONTH)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GYEARMONTH)) {
 			result = isValidGYearMonth(value);
-		} else if (datatype.equals(XSD.DURATION)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DURATION)) {
 			result = isValidDuration(value);
-		} else if (datatype.equals(XSD.DAYTIMEDURATION)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DAYTIMEDURATION)) {
 			result = isValidDayTimeDuration(value);
-		} else if (datatype.equals(XSD.YEARMONTHDURATION)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.YEARMONTHDURATION)) {
 			result = isValidYearMonthDuration(value);
-		} else if (datatype.equals(XSD.QNAME)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.QNAME)) {
 			result = isValidQName(value);
-		} else if (datatype.equals(XSD.ANYURI)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.ANYURI)) {
 			result = isValidAnyURI(value);
-		} else if (datatype.equals(XSD.LANGUAGE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.LANGUAGE)) {
 			result = Literals.isValidLanguageTag(value);
 		}
 
 		return result;
+	}
+
+	public static boolean isValidValue(String value, CoreDatatype datatype) {
+		if (datatype.isXSDDatatype()) {
+			switch (((CoreDatatype.XSD) datatype)) {
+			case DECIMAL:
+				return isValidDecimal(value);
+			case INTEGER:
+				return isValidInteger(value);
+			case NEGATIVE_INTEGER:
+				return isValidNegativeInteger(value);
+			case NON_POSITIVE_INTEGER:
+				return isValidNonPositiveInteger(value);
+			case NON_NEGATIVE_INTEGER:
+				return isValidNonNegativeInteger(value);
+			case POSITIVE_INTEGER:
+				return isValidPositiveInteger(value);
+			case LONG:
+				return isValidLong(value);
+			case INT:
+				return isValidInt(value);
+			case SHORT:
+				return isValidShort(value);
+			case BYTE:
+				return isValidByte(value);
+			case UNSIGNED_LONG:
+				return isValidUnsignedLong(value);
+			case UNSIGNED_INT:
+				return isValidUnsignedInt(value);
+			case UNSIGNED_SHORT:
+				return isValidUnsignedShort(value);
+			case UNSIGNED_BYTE:
+				return isValidUnsignedByte(value);
+			case FLOAT:
+				return isValidFloat(value);
+			case DOUBLE:
+				return isValidDouble(value);
+			case BOOLEAN:
+				return isValidBoolean(value);
+			case DATETIME:
+				return isValidDateTime(value);
+			case DATETIMESTAMP:
+				return isValidDateTimeStamp(value);
+			case DATE:
+				return isValidDate(value);
+			case TIME:
+				return isValidTime(value);
+			case GDAY:
+				return isValidGDay(value);
+			case GMONTH:
+				return isValidGMonth(value);
+			case GMONTHDAY:
+				return isValidGMonthDay(value);
+			case GYEAR:
+				return isValidGYear(value);
+			case GYEARMONTH:
+				return isValidGYearMonth(value);
+			case DURATION:
+				return isValidDuration(value);
+			case DAYTIMEDURATION:
+				return isValidDayTimeDuration(value);
+			case YEARMONTHDURATION:
+				return isValidYearMonthDuration(value);
+			case QNAME:
+				return isValidQName(value);
+			case ANYURI:
+				return isValidAnyURI(value);
+			case LANGUAGE:
+				return Literals.isValidLanguageTag(value);
+			}
+		}
+		return true;
+
 	}
 
 	/**
@@ -615,7 +718,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDate(String value) {
-		return P_DATE.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_DATE.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -625,7 +728,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidTime(String value) {
-		return P_TIME.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_TIME.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -635,7 +738,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGDay(String value) {
-		return P_GDAY.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GDAY.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -645,7 +748,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGMonth(String value) {
-		return P_GMONTH.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GMONTH.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -655,7 +758,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGMonthDay(String value) {
-		return P_GMONTHDAY.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GMONTHDAY.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -665,7 +768,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGYear(String value) {
-		return P_GYEAR.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GYEAR.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -675,7 +778,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGYearMonth(String value) {
-		return P_GYEARMONTH.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GYEARMONTH.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -696,12 +799,12 @@ public class XMLDatatypeUtil {
 		// check prefix
 		String prefix = split[0];
 		if (!"".equals(prefix)) {
-			if (!isPrefixStartChar(prefix.charAt(0))) {
+			if (isNotPrefixStartChar(prefix.charAt(0))) {
 				return false;
 			}
 
 			for (int i = 1; i < prefix.length(); i++) {
-				if (!isNameChar(prefix.charAt(i))) {
+				if (isNotNameChar(prefix.charAt(i))) {
 					return false;
 				}
 			}
@@ -711,12 +814,12 @@ public class XMLDatatypeUtil {
 
 		if (!"".equals(name)) {
 			// check name
-			if (!isNameStartChar(name.charAt(0))) {
+			if (isNotNameStartChar(name.charAt(0))) {
 				return false;
 			}
 
 			for (int i = 1; i < name.length(); i++) {
-				if (!isNameChar(name.charAt(i))) {
+				if (isNotNameChar(name.charAt(i))) {
 					return false;
 				}
 			}
@@ -743,21 +846,21 @@ public class XMLDatatypeUtil {
 		}
 	}
 
-	private static boolean isPrefixStartChar(int c) {
-		return ASCIIUtil.isLetter(c) || c >= 0x00C0 && c <= 0x00D6 || c >= 0x00D8 && c <= 0x00F6
-				|| c >= 0x00F8 && c <= 0x02FF || c >= 0x0370 && c <= 0x037D || c >= 0x037F && c <= 0x1FFF
-				|| c >= 0x200C && c <= 0x200D || c >= 0x2070 && c <= 0x218F || c >= 0x2C00 && c <= 0x2FEF
-				|| c >= 0x3001 && c <= 0xD7FF || c >= 0xF900 && c <= 0xFDCF || c >= 0xFDF0 && c <= 0xFFFD
-				|| c >= 0x10000 && c <= 0xEFFFF;
+	private static boolean isNotPrefixStartChar(int c) {
+		return !ASCIIUtil.isLetter(c) && (c < 0x00C0 || c > 0x00D6) && (c < 0x00D8 || c > 0x00F6)
+				&& (c < 0x00F8 || c > 0x02FF) && (c < 0x0370 || c > 0x037D) && (c < 0x037F || c > 0x1FFF)
+				&& (c < 0x200C || c > 0x200D) && (c < 0x2070 || c > 0x218F) && (c < 0x2C00 || c > 0x2FEF)
+				&& (c < 0x3001 || c > 0xD7FF) && (c < 0xF900 || c > 0xFDCF) && (c < 0xFDF0 || c > 0xFFFD)
+				&& (c < 0x10000 || c > 0xEFFFF);
 	}
 
-	private static boolean isNameStartChar(int c) {
-		return c == '_' || isPrefixStartChar(c);
+	private static boolean isNotNameStartChar(int c) {
+		return c != '_' && isNotPrefixStartChar(c);
 	}
 
-	private static boolean isNameChar(int c) {
-		return isNameStartChar(c) || ASCIIUtil.isNumber(c) || c == '-' || c == 0x00B7 || c >= 0x0300 && c <= 0x036F
-				|| c >= 0x203F && c <= 0x2040;
+	private static boolean isNotNameChar(int c) {
+		return isNotNameStartChar(c) && !ASCIIUtil.isNumber(c) && c != '-' && c != 0x00B7 && (c < 0x0300 || c > 0x036F)
+				&& (c < 0x203F || c > 0x2040);
 	}
 
 	/**
@@ -791,43 +894,89 @@ public class XMLDatatypeUtil {
 	public static String normalize(String value, IRI datatype) {
 		String result = value;
 
-		if (datatype.equals(XSD.DECIMAL)) {
+		if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL)) {
 			result = normalizeDecimal(value);
-		} else if (datatype.equals(XSD.INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER)) {
 			result = normalizeInteger(value);
-		} else if (datatype.equals(XSD.NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER)) {
 			result = normalizeNegativeInteger(value);
-		} else if (datatype.equals(XSD.NON_POSITIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER)) {
 			result = normalizeNonPositiveInteger(value);
-		} else if (datatype.equals(XSD.NON_NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER)) {
 			result = normalizeNonNegativeInteger(value);
-		} else if (datatype.equals(XSD.POSITIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER)) {
 			result = normalizePositiveInteger(value);
-		} else if (datatype.equals(XSD.LONG)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.LONG)) {
 			result = normalizeLong(value);
-		} else if (datatype.equals(XSD.INT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INT)) {
 			result = normalizeInt(value);
-		} else if (datatype.equals(XSD.SHORT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.SHORT)) {
 			result = normalizeShort(value);
-		} else if (datatype.equals(XSD.BYTE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BYTE)) {
 			result = normalizeByte(value);
-		} else if (datatype.equals(XSD.UNSIGNED_LONG)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG)) {
 			result = normalizeUnsignedLong(value);
-		} else if (datatype.equals(XSD.UNSIGNED_INT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT)) {
 			result = normalizeUnsignedInt(value);
-		} else if (datatype.equals(XSD.UNSIGNED_SHORT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT)) {
 			result = normalizeUnsignedShort(value);
-		} else if (datatype.equals(XSD.UNSIGNED_BYTE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE)) {
 			result = normalizeUnsignedByte(value);
-		} else if (datatype.equals(XSD.FLOAT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT)) {
 			result = normalizeFloat(value);
-		} else if (datatype.equals(XSD.DOUBLE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE)) {
 			result = normalizeDouble(value);
-		} else if (datatype.equals(XSD.BOOLEAN)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN)) {
 			result = normalizeBoolean(value);
-		} else if (datatype.equals(XSD.DATETIME)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME)) {
 			result = normalizeDateTime(value);
-		} else if (datatype.equals(XSD.ANYURI)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.ANYURI)) {
+			result = collapseWhiteSpace(value);
+		}
+
+		return result;
+	}
+
+	public static String normalize(String value, CoreDatatype.XSD datatype) {
+		String result = value;
+
+		if (datatype == CoreDatatype.XSD.DECIMAL) {
+			result = normalizeDecimal(value);
+		} else if (datatype == CoreDatatype.XSD.INTEGER) {
+			result = normalizeInteger(value);
+		} else if (datatype == CoreDatatype.XSD.NEGATIVE_INTEGER) {
+			result = normalizeNegativeInteger(value);
+		} else if (datatype == CoreDatatype.XSD.NON_POSITIVE_INTEGER) {
+			result = normalizeNonPositiveInteger(value);
+		} else if (datatype == CoreDatatype.XSD.NON_NEGATIVE_INTEGER) {
+			result = normalizeNonNegativeInteger(value);
+		} else if (datatype == CoreDatatype.XSD.POSITIVE_INTEGER) {
+			result = normalizePositiveInteger(value);
+		} else if (datatype == CoreDatatype.XSD.LONG) {
+			result = normalizeLong(value);
+		} else if (datatype == CoreDatatype.XSD.INT) {
+			result = normalizeInt(value);
+		} else if (datatype == CoreDatatype.XSD.SHORT) {
+			result = normalizeShort(value);
+		} else if (datatype == CoreDatatype.XSD.BYTE) {
+			result = normalizeByte(value);
+		} else if (datatype == CoreDatatype.XSD.UNSIGNED_LONG) {
+			result = normalizeUnsignedLong(value);
+		} else if (datatype == CoreDatatype.XSD.UNSIGNED_INT) {
+			result = normalizeUnsignedInt(value);
+		} else if (datatype == CoreDatatype.XSD.UNSIGNED_SHORT) {
+			result = normalizeUnsignedShort(value);
+		} else if (datatype == CoreDatatype.XSD.UNSIGNED_BYTE) {
+			result = normalizeUnsignedByte(value);
+		} else if (datatype == CoreDatatype.XSD.FLOAT) {
+			result = normalizeFloat(value);
+		} else if (datatype == CoreDatatype.XSD.DOUBLE) {
+			result = normalizeDouble(value);
+		} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
+			result = normalizeBoolean(value);
+		} else if (datatype == CoreDatatype.XSD.DATETIME) {
+			result = normalizeDateTime(value);
+		} else if (datatype == CoreDatatype.XSD.ANYURI) {
 			result = collapseWhiteSpace(value);
 		}
 
@@ -853,7 +1002,7 @@ public class XMLDatatypeUtil {
 		} else if (value.equals("true") || value.equals("false")) {
 			return value;
 		} else {
-			throw new IllegalArgumentException("Not a legal boolean value: " + value);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal boolean value: " + value);
 		}
 	}
 
@@ -873,7 +1022,7 @@ public class XMLDatatypeUtil {
 		StringBuilder result = new StringBuilder(decLength + 2);
 
 		if (decLength == 0) {
-			throwIAE("Not a legal decimal: " + decimal);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal decimal: " + decimal);
 		}
 
 		boolean isZeroPointZero = true;
@@ -888,7 +1037,7 @@ public class XMLDatatypeUtil {
 		}
 
 		if (idx == decLength) {
-			throwIAE("Not a legal decimal: " + decimal);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal decimal: " + decimal);
 		}
 
 		// skip any leading zeros
@@ -912,8 +1061,8 @@ public class XMLDatatypeUtil {
 				if (c == '.') {
 					break;
 				}
-				if (!isDigit(c)) {
-					throwIAE("Not a legal decimal: " + decimal);
+				if (isNotDigit(c)) {
+					throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal decimal: " + decimal);
 				}
 				result.append(c);
 				idx++;
@@ -943,8 +1092,8 @@ public class XMLDatatypeUtil {
 
 				while (idx <= lastIdx) {
 					char c = decimal.charAt(idx);
-					if (!isDigit(c)) {
-						throwIAE("Not a legal decimal: " + decimal);
+					if (isNotDigit(c)) {
+						throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal decimal: " + decimal);
 					}
 					result.append(c);
 					idx++;
@@ -1066,7 +1215,7 @@ public class XMLDatatypeUtil {
 		int intLength = integer.length();
 
 		if (intLength == 0) {
-			throwIAE("Not a legal integer: " + integer);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal integer: " + integer);
 		}
 
 		int idx = 0;
@@ -1081,7 +1230,7 @@ public class XMLDatatypeUtil {
 		}
 
 		if (idx == intLength) {
-			throwIAE("Not a legal integer: " + integer);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal integer: " + integer);
 		}
 
 		if (integer.charAt(idx) == '0' && idx < intLength - 1) {
@@ -1097,8 +1246,8 @@ public class XMLDatatypeUtil {
 
 		// Check that all characters in 'norm' are digits
 		for (int i = 0; i < norm.length(); i++) {
-			if (!isDigit(norm.charAt(i))) {
-				throwIAE("Not a legal integer: " + integer);
+			if (isNotDigit(norm.charAt(i))) {
+				throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal integer: " + integer);
 			}
 		}
 
@@ -1109,12 +1258,12 @@ public class XMLDatatypeUtil {
 		// Check lower and upper bounds, if applicable
 		if (minValue != null) {
 			if (compareCanonicalIntegers(norm, minValue) < 0) {
-				throwIAE("Value smaller than minimum value");
+				throw VALUE_SMALLER_THAN_MINIMUM_VALUE_EXCEPTION;
 			}
 		}
 		if (maxValue != null) {
 			if (compareCanonicalIntegers(norm, maxValue) > 0) {
-				throwIAE("Value larger than maximum value");
+				throw VALUE_LARGER_THAN_MAXIMUM_VALUE_EXCEPTION;
 			}
 		}
 
@@ -1171,7 +1320,8 @@ public class XMLDatatypeUtil {
 
 		if (value.contains(" ")) {
 			// floating point lexical value can not contain spaces after collapse
-			throwIAE("No space allowed in floating point lexical value (" + value + ")");
+			throw new IllegalArgumentExceptionWithoutStackTrace(
+					"No space allowed in floating point lexical value (" + value + ")");
 		}
 
 		// handle special values
@@ -1215,7 +1365,7 @@ public class XMLDatatypeUtil {
 			}
 			sb.append(mantissa.charAt(firstDigitIdx));
 			sb.append('.');
-			sb.append(mantissa.substring(firstDigitIdx + 1, dotIdx));
+			sb.append(mantissa, firstDigitIdx + 1, dotIdx);
 			sb.append(mantissa.substring(dotIdx + 1));
 
 			mantissa = sb.toString();
@@ -1286,22 +1436,26 @@ public class XMLDatatypeUtil {
 		// applicable
 		if (minMantissa != null) {
 			if (compareCanonicalDecimals(mantissa, minMantissa) < 0) {
-				throwIAE("Mantissa smaller than minimum value (" + minMantissa + ")");
+				throw new IllegalArgumentExceptionWithoutStackTrace(
+						"Mantissa smaller than minimum value (" + minMantissa + ")");
 			}
 		}
 		if (maxMantissa != null) {
 			if (compareCanonicalDecimals(mantissa, maxMantissa) > 0) {
-				throwIAE("Mantissa larger than maximum value (" + maxMantissa + ")");
+				throw new IllegalArgumentExceptionWithoutStackTrace(
+						"Mantissa larger than maximum value (" + maxMantissa + ")");
 			}
 		}
 		if (minExponent != null) {
 			if (compareCanonicalIntegers(exponent, minExponent) < 0) {
-				throwIAE("Exponent smaller than minimum value (" + minExponent + ")");
+				throw new IllegalArgumentExceptionWithoutStackTrace(
+						"Exponent smaller than minimum value (" + minExponent + ")");
 			}
 		}
 		if (maxExponent != null) {
 			if (compareCanonicalIntegers(exponent, maxExponent) > 0) {
-				throwIAE("Exponent larger than maximum value (" + maxExponent + ")");
+				throw new IllegalArgumentExceptionWithoutStackTrace(
+						"Exponent larger than maximum value (" + maxExponent + ")");
 			}
 		}
 
@@ -1320,17 +1474,6 @@ public class XMLDatatypeUtil {
 		dt.normalize();
 		return dt.toString();
 	}
-
-	/**
-	 * Replaces all occurences of #x9 (tab), #xA (line feed) and #xD (carriage return) with #x20 (space), as specified
-	 * for whiteSpace facet <var>replace</var>.
-	 */
-	// private static String replaceWhiteSpace(String s) {
-	// s = StringUtil.gsub("\t", " ", s);
-	// s = StringUtil.gsub("\r", " ", s);
-	// s = StringUtil.gsub("\n", " ", s);
-	// return s;
-	// }
 
 	/**
 	 * Replaces all contiguous sequences of #x9 (tab), #xA (line feed) and #xD (carriage return) with a single #x20
@@ -1361,39 +1504,40 @@ public class XMLDatatypeUtil {
 	 *------------------*/
 
 	public static int compare(String value1, String value2, IRI datatype) {
-		if (datatype.equals(XSD.DECIMAL)) {
+		if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL)) {
 			return compareDecimals(value1, value2);
-		} else if (datatype.equals(XSD.INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER)) {
 			return compareIntegers(value1, value2);
-		} else if (datatype.equals(XSD.NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER)) {
 			return compareNegativeIntegers(value1, value2);
-		} else if (datatype.equals(XSD.NON_POSITIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER)) {
 			return compareNonPositiveIntegers(value1, value2);
-		} else if (datatype.equals(XSD.NON_NEGATIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER)) {
 			return compareNonNegativeIntegers(value1, value2);
-		} else if (datatype.equals(XSD.POSITIVE_INTEGER)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER)) {
 			return comparePositiveIntegers(value1, value2);
-		} else if (datatype.equals(XSD.LONG)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.LONG)) {
 			return compareLongs(value1, value2);
-		} else if (datatype.equals(XSD.INT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INT)) {
 			return compareInts(value1, value2);
-		} else if (datatype.equals(XSD.SHORT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.SHORT)) {
 			return compareShorts(value1, value2);
-		} else if (datatype.equals(XSD.BYTE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BYTE)) {
 			return compareBytes(value1, value2);
-		} else if (datatype.equals(XSD.UNSIGNED_LONG)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG)) {
 			return compareUnsignedLongs(value1, value2);
-		} else if (datatype.equals(XSD.UNSIGNED_INT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT)) {
 			return compareUnsignedInts(value1, value2);
-		} else if (datatype.equals(XSD.UNSIGNED_SHORT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT)) {
 			return compareUnsignedShorts(value1, value2);
-		} else if (datatype.equals(XSD.UNSIGNED_BYTE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE)) {
 			return compareUnsignedBytes(value1, value2);
-		} else if (datatype.equals(XSD.FLOAT)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT)) {
 			return compareFloats(value1, value2);
-		} else if (datatype.equals(XSD.DOUBLE)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE)) {
 			return compareDoubles(value1, value2);
-		} else if (datatype.equals(XSD.DATETIME) || datatype.equals(XSD.DATETIMESTAMP)) {
+		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME)
+				|| datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIMESTAMP)) {
 			return compareDateTime(value1, value2);
 		} else {
 			throw new IllegalArgumentException("datatype is not ordered");
@@ -1456,7 +1600,7 @@ public class XMLDatatypeUtil {
 			// Continue comparing digits after the dot if necessary
 			int dec1Length = dec1.length();
 			int dec2Length = dec2.length();
-			int lastIdx = dec1Length <= dec2Length ? dec1Length : dec2Length;
+			int lastIdx = Math.min(dec1Length, dec2Length);
 
 			for (int i = dotIdx1 + 1; result == 0 && i < lastIdx; i++) {
 				result = dec1.charAt(i) - dec2.charAt(i);
@@ -1694,10 +1838,7 @@ public class XMLDatatypeUtil {
 	 *         <var>NaN</var> is compared to a floating point number other than <var>NaN</var>.
 	 */
 	public static int compareFPNumbers(String fp1, String fp2) {
-		fp1 = normalizeFPNumber(fp1);
-		fp2 = normalizeFPNumber(fp2);
-
-		return compareCanonicalFPNumbers(fp1, fp2);
+		return compareCanonicalFPNumbers(normalizeFPNumber(fp1), normalizeFPNumber(fp2));
 	}
 
 	/**
@@ -1718,7 +1859,7 @@ public class XMLDatatypeUtil {
 				// NaN is equal to itself
 				return 0;
 			} else {
-				throwIAE("NaN cannot be compared to other floats");
+				throw NAN_COMPARE_EXCEPTION;
 			}
 		}
 
@@ -2018,14 +2159,20 @@ public class XMLDatatypeUtil {
 	/**
 	 * Checks whether the supplied character is a digit.
 	 */
-	private static final boolean isDigit(char c) {
-		return c >= '0' && c <= '9';
+	private static boolean isNotDigit(char c) {
+		return c < '0' || c > '9';
 	}
 
-	/**
-	 * Throws an IllegalArgumentException that contains the supplied message.
-	 */
-	private static final void throwIAE(String msg) {
-		throw new IllegalArgumentException(msg);
+	private static class IllegalArgumentExceptionWithoutStackTrace extends IllegalArgumentException {
+		public IllegalArgumentExceptionWithoutStackTrace(String msg) {
+			super(msg);
+		}
+
+		@Override
+		public synchronized Throwable fillInStackTrace() {
+			// no-op because we don't need to have the entire stacktrace when we are just using these exceptions for
+			// control flow
+			return this;
+		}
 	}
 }

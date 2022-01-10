@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 
 /**
  * A {@link ValueFactory} that will delegate everything to another {@link ValueFactory} and create statements whose
@@ -69,6 +70,11 @@ class RDFStarDecodingValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String label, IRI datatype) {
+		return delegate.createLiteral(label, datatype);
+	}
+
+	@Override
+	public Literal createLiteral(String label, CoreDatatype datatype) {
 		return delegate.createLiteral(label, datatype);
 	}
 

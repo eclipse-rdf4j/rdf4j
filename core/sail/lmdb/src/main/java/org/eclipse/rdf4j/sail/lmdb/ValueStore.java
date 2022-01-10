@@ -52,9 +52,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -751,7 +750,8 @@ class ValueStore extends AbstractValueFactory {
 
 	private byte[] literal2legacy(Literal literal) throws IOException {
 		IRI dt = literal.getDatatype();
-		if (XSD.STRING.equals(dt) || RDF.LANGSTRING.equals(dt)) {
+		if (org.eclipse.rdf4j.model.vocabulary.XSD.STRING.equals(dt)
+				|| org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(dt)) {
 			return literal2data(literal.getLabel(), literal.getLanguage(), null, false);
 		}
 		return literal2data(literal.getLabel(), literal.getLanguage(), dt, false);
@@ -868,17 +868,17 @@ class ValueStore extends AbstractValueFactory {
 			} else if (datatype != null) {
 				return new LmdbLiteral(revision, label, datatype, id);
 			} else {
-				return new LmdbLiteral(revision, label, XSD.STRING, id);
+				return new LmdbLiteral(revision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
 			}
 		} else {
 			value.setLabel(label);
 			if (lang != null) {
 				value.setLanguage(lang);
-				value.setDatatype(RDF.LANGSTRING);
+				value.setDatatype(CoreDatatype.RDF.LANGSTRING);
 			} else if (datatype != null) {
 				value.setDatatype(datatype);
 			} else {
-				value.setDatatype(XSD.STRING);
+				value.setDatatype(CoreDatatype.XSD.STRING);
 			}
 			return value;
 		}
@@ -943,7 +943,7 @@ class ValueStore extends AbstractValueFactory {
 
 	@Override
 	public LmdbLiteral createLiteral(String value) {
-		return new LmdbLiteral(revision, value, XSD.STRING);
+		return new LmdbLiteral(revision, value, CoreDatatype.XSD.STRING);
 	}
 
 	@Override
@@ -1026,9 +1026,11 @@ class ValueStore extends AbstractValueFactory {
 
 		if (Literals.isLanguageLiteral(l)) {
 			return new LmdbLiteral(revision, l.getLabel(), l.getLanguage().get());
+		} else if (l.getCoreDatatype() != CoreDatatype.NONE) {
+			return new LmdbLiteral(revision, l.getLabel(), l.getCoreDatatype());
 		} else {
 			LmdbIRI datatype = getLmdbURI(l.getDatatype());
-			return new LmdbLiteral(revision, l.getLabel(), datatype);
+			return new LmdbLiteral(revision, l.getLabel(), datatype, l.getCoreDatatype());
 		}
 	}
 }

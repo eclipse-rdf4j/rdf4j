@@ -69,7 +69,9 @@ public class Literals {
 	 *         the absence of this enum does <i>not</i> indicate that the literal has no datatype, merely that it has no
 	 *         cached enum representation of that datatype.
 	 * @since 3.5.0
+	 * @deprecated Use {@link Literal#getCoreDatatype()} instead.
 	 */
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public static Optional<XSD.Datatype> getXsdDatatype(Literal l) {
 		if (l instanceof SimpleLiteral) {
 			return ((SimpleLiteral) l).getXsdDatatype();

@@ -189,10 +189,10 @@ public abstract class LiteralTest {
 	@Test
 	public final void testTypedConstructorNullDatatype() {
 
-		final String label = "label";
-		final IRI datatype = null;
+		String label = "label";
+		IRI datatype = null;
 
-		final Literal literal = literal(label, datatype);
+		Literal literal = literal(label, datatype);
 
 		assertThat(literal.getLabel()).isEqualTo(label);
 		assertThat(literal.getLanguage()).isNotPresent();
