@@ -15,6 +15,8 @@ import java.util.Date;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+
 /**
  * A factory for creating {@link IRI IRIs}, {@link BNode blank nodes}, {@link Literal literals} and {@link Statement
  * statements} based on the RDF-1.1 Concepts and Abstract Syntax, a W3C Recommendation.
@@ -89,6 +91,14 @@ public interface ValueFactory {
 	 *                 literal.
 	 */
 	Literal createLiteral(String label, IRI datatype);
+
+	/**
+	 * Creates a new literal with the supplied label and datatype.
+	 *
+	 * @param label    The literal's label, must not be <var>null</var>.
+	 * @param datatype The literal's datatype. It may not be null.
+	 */
+	Literal createLiteral(String label, CoreDatatype datatype);
 
 	/**
 	 * Creates a new <var>xsd:boolean</var>-typed literal representing the specified value.

@@ -18,6 +18,8 @@ import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+
 /**
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
  *
@@ -144,12 +146,12 @@ public interface Literal extends Value {
 
 	/**
 	 * Retrieves the {@link TemporalAccessor temporal accessor} value of this literal.
-	 * 
+	 *
 	 * <p>
 	 * A temporal accessor representation can be given for literals whose label conforms to the syntax of the following
 	 * <a href="https://www.w3.org/TR/xmlschema11-2">XML Schema 1.1</a> date/time datatypes:
 	 * </p>
-	 * 
+	 *
 	 * <ul>
 	 *
 	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#dateTime">xsd:dateTime</a>,</li>
@@ -161,24 +163,24 @@ public interface Literal extends Value {
 	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gMonthDay">xsd:gMonthDay</a>,</li>
 	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gDay">xsd:gDay</a>,</li>
 	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gMonth">xsd:gMonth</a>.</li>
-	 * 
+	 *
 	 * </ul>
-	 * 
+	 *
 	 * <p>
 	 * Temporal accessor representations may be converted to specific {@link java.time} values like
 	 * {@link OffsetDateTime} using target static factory methods, for instance
 	 * {@code OffsetDateTime.from(literal.temporalAccessorValue())}.
 	 * </p>
-	 * 
+	 *
 	 * <p>
 	 * Note however that {@link java.time} doesn't include dedicated classes for some legal XML Schema date/time values,
 	 * like offset dates (for instance, {@code 2020-11-16+01:00}) and {@code xsd:gDay} (for instance, {@code ---16}).
 	 * </p>
-	 * 
+	 *
 	 * @return the temporal accessor value of this literal
 	 *
 	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAccessor} value
-	 * 
+	 *
 	 * @since 3.5.0
 	 * @author Alessandro Bollini
 	 *
@@ -192,7 +194,7 @@ public interface Literal extends Value {
 	 *          Datatypes Second Edition</a>: it is not included among temporal datatypes automatically assigned by
 	 *          {@link ValueFactory#createLiteral(TemporalAmount)} in order to provide better interoperability with the
 	 *          latter version of the standard.
-	 * 
+	 *
 	 * @implSpec The default method implementation throws an {@link UnsupportedOperationException} and is only supplied
 	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
 	 *           expected to override it.
@@ -209,7 +211,7 @@ public interface Literal extends Value {
 	 * <a href="https://www.w3.org/TR/xmlschema-2/">XML Schema 2</a>
 	 * <a href="https://www.w3.org/TR/xmlschema-2/#duration">xsd:duration</a> datatype.
 	 * </p>
-	 * 
+	 *
 	 * <p>
 	 * The adoption of the <a href="https://www.w3.org/TR/xmlschema-2/">XML Schema 2</a> definition is a known deviation
 	 * from the <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF 1.1</a> standard;
@@ -225,7 +227,7 @@ public interface Literal extends Value {
 	 * Note however that {@link java.time} doesn't include dedicated classes for legal XML Schema duration values
 	 * including both date and time components (for instance, {@code P1YT23H}).
 	 * </p>
-	 * 
+	 *
 	 * @return the temporal amount value of this literal
 	 *
 	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAmount} value
@@ -266,6 +268,19 @@ public interface Literal extends Value {
 	 * @throws IllegalArgumentException If the literal cannot be represented by a {@link XMLGregorianCalendar}.
 	 */
 	XMLGregorianCalendar calendarValue();
+
+	/**
+	 * The XSD datatypes together with rdf:langString make up the core datatypes. These are represented as enums for
+	 * both convience and performance.
+	 *
+	 * @return The CoreDatatype wrapped in an optional, or en empty optional if there is no datatype or the datatype
+	 *         matches none of the core datatypes.
+	 *
+	 * @implNote This method may not return null. Return an empty optional is only permitted if the datatype does not
+	 *           match any of the core datatypes. Instead of minting a new Optional object every time this method is
+	 *           called it's recommended to use {@link CoreDatatype#asOptional()}.
+	 */
+	Optional<CoreDatatype> getCoreDatatype();
 
 	/**
 	 * Compares this literal to another object.

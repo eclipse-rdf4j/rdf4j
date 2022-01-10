@@ -12,8 +12,7 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
 public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
@@ -43,6 +42,11 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	 */
 	private IRI datatype;
 
+	/**
+	 * The literal's core datatype.
+	 */
+	private final CoreDatatype.Cache coreDatatype;
+
 	private volatile ValueStoreRevision revision;
 
 	private volatile long internalID;
@@ -56,11 +60,13 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public LmdbLiteral(ValueStoreRevision revision, long internalID) {
 		super();
 		setInternalID(internalID, revision);
+		coreDatatype = CoreDatatype.Cache.empty();
 	}
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, long internalID) {
 		this.label = label;
-		this.datatype = XSD.STRING;
+		coreDatatype = CoreDatatype.Cache.from(CoreDatatype.XSD_STRING);
+		datatype = CoreDatatype.XSD_STRING.getIri();
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -72,7 +78,8 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, long internalID) {
 		this.label = label;
 		this.language = lang;
-		this.datatype = RDF.LANGSTRING;
+		coreDatatype = CoreDatatype.Cache.from(CoreDatatype.RDF_LANGSTRING);
+		datatype = CoreDatatype.RDF_LANGSTRING.getIri();
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -81,9 +88,22 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		this(revision, label, datatype, UNKNOWN_ID);
 	}
 
+	public LmdbLiteral(ValueStoreRevision revision, String label, CoreDatatype datatype) {
+		this(revision, label, datatype, UNKNOWN_ID);
+	}
+
 	public LmdbLiteral(ValueStoreRevision revision, String label, IRI datatype, long internalID) {
 		this.label = label;
 		this.datatype = datatype;
+		this.coreDatatype = CoreDatatype.Cache.empty();
+		setInternalID(internalID, revision);
+		this.initialized = true;
+	}
+
+	public LmdbLiteral(ValueStoreRevision revision, String label, CoreDatatype coreDatatype, long internalID) {
+		this.label = label;
+		this.coreDatatype = CoreDatatype.Cache.from(coreDatatype);
+		this.datatype = coreDatatype.getIri();
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -114,8 +134,19 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		return datatype;
 	}
 
+	@Override
+	public Optional<CoreDatatype> getCoreDatatype() {
+		return coreDatatype.getCached(datatype);
+	}
+
 	public void setDatatype(IRI datatype) {
 		this.datatype = datatype;
+		coreDatatype.clearCache();
+	}
+
+	public void setDatatype(CoreDatatype coreDatatype) {
+		this.coreDatatype.setDatatype(coreDatatype);
+		datatype = coreDatatype.getIri();
 	}
 
 	@Override

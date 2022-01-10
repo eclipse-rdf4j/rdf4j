@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -110,7 +111,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	@Override
 	public Literal createLiteral(String value) {
-		return new SimpleLiteral(value, XSD.Datatype.STRING);
+		return new SimpleLiteral(value, CoreDatatype.XSD_STRING);
 	}
 
 	@Override
@@ -260,7 +261,18 @@ public class SimpleValueFactory extends AbstractValueFactory {
 		return new NumericLiteral(number, datatype);
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected Literal createNumericLiteral(Number number, XSD.Datatype datatype) {
+		if (number instanceof BigDecimal) {
+			return new DecimalLiteral((BigDecimal) number, datatype);
+		}
+		if (number instanceof BigInteger) {
+			return new IntegerLiteral((BigInteger) number, datatype);
+		}
+		return new NumericLiteral(number, datatype);
+	}
+
+	protected Literal createNumericLiteral(Number number, CoreDatatype datatype) {
 		if (number instanceof BigDecimal) {
 			return new DecimalLiteral((BigDecimal) number, datatype);
 		}

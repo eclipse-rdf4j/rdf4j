@@ -116,6 +116,18 @@ public abstract class AbstractValueFactory implements ValueFactory {
 	}
 
 	@Override
+	public Literal createLiteral(String label, CoreDatatype datatype) {
+
+		Objects.requireNonNull(label, "null label");
+
+		if (reserved(datatype)) {
+			throw new IllegalArgumentException("reserved datatype <" + datatype + ">");
+		}
+
+		return new TypedLiteral(label, datatype);
+	}
+
+	@Override
 	public Literal createLiteral(String label, String language) {
 
 		Objects.requireNonNull(label, "null label");

@@ -25,6 +25,7 @@ import javax.xml.namespace.QName;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.text.ASCIIUtil;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -283,6 +284,78 @@ public class XMLDatatypeUtil {
 		} else if (datatype.equals(XSD.ANYURI)) {
 			result = isValidAnyURI(value);
 		} else if (datatype.equals(XSD.LANGUAGE)) {
+			result = Literals.isValidLanguageTag(value);
+		}
+
+		return result;
+	}
+
+	public static boolean isValidValue(String value, CoreDatatype datatype) {
+		boolean result = true;
+
+		if (datatype == CoreDatatype.XSD_DECIMAL) {
+			result = isValidDecimal(value);
+		} else if (datatype == CoreDatatype.XSD_INTEGER) {
+			result = isValidInteger(value);
+		} else if (datatype == CoreDatatype.XSD_NEGATIVE_INTEGER) {
+			result = isValidNegativeInteger(value);
+		} else if (datatype == CoreDatatype.XSD_NON_POSITIVE_INTEGER) {
+			result = isValidNonPositiveInteger(value);
+		} else if (datatype == CoreDatatype.XSD_NON_NEGATIVE_INTEGER) {
+			result = isValidNonNegativeInteger(value);
+		} else if (datatype == CoreDatatype.XSD_POSITIVE_INTEGER) {
+			result = isValidPositiveInteger(value);
+		} else if (datatype == CoreDatatype.XSD_LONG) {
+			result = isValidLong(value);
+		} else if (datatype == CoreDatatype.XSD_INT) {
+			result = isValidInt(value);
+		} else if (datatype == CoreDatatype.XSD_SHORT) {
+			result = isValidShort(value);
+		} else if (datatype == CoreDatatype.XSD_BYTE) {
+			result = isValidByte(value);
+		} else if (datatype == CoreDatatype.XSD_UNSIGNED_LONG) {
+			result = isValidUnsignedLong(value);
+		} else if (datatype == CoreDatatype.XSD_UNSIGNED_INT) {
+			result = isValidUnsignedInt(value);
+		} else if (datatype == CoreDatatype.XSD_UNSIGNED_SHORT) {
+			result = isValidUnsignedShort(value);
+		} else if (datatype == CoreDatatype.XSD_UNSIGNED_BYTE) {
+			result = isValidUnsignedByte(value);
+		} else if (datatype == CoreDatatype.XSD_FLOAT) {
+			result = isValidFloat(value);
+		} else if (datatype == CoreDatatype.XSD_DOUBLE) {
+			result = isValidDouble(value);
+		} else if (datatype == CoreDatatype.XSD_BOOLEAN) {
+			result = isValidBoolean(value);
+		} else if (datatype == CoreDatatype.XSD_DATETIME) {
+			result = isValidDateTime(value);
+		} else if (datatype == CoreDatatype.XSD_DATETIMESTAMP) {
+			result = isValidDateTimeStamp(value);
+		} else if (datatype == CoreDatatype.XSD_DATE) {
+			result = isValidDate(value);
+		} else if (datatype == CoreDatatype.XSD_TIME) {
+			result = isValidTime(value);
+		} else if (datatype == CoreDatatype.XSD_GDAY) {
+			result = isValidGDay(value);
+		} else if (datatype == CoreDatatype.XSD_GMONTH) {
+			result = isValidGMonth(value);
+		} else if (datatype == CoreDatatype.XSD_GMONTHDAY) {
+			result = isValidGMonthDay(value);
+		} else if (datatype == CoreDatatype.XSD_GYEAR) {
+			result = isValidGYear(value);
+		} else if (datatype == CoreDatatype.XSD_GYEARMONTH) {
+			result = isValidGYearMonth(value);
+		} else if (datatype == CoreDatatype.XSD_DURATION) {
+			result = isValidDuration(value);
+		} else if (datatype == CoreDatatype.XSD_DAYTIMEDURATION) {
+			result = isValidDayTimeDuration(value);
+		} else if (datatype == CoreDatatype.XSD_YEARMONTHDURATION) {
+			result = isValidYearMonthDuration(value);
+		} else if (datatype == CoreDatatype.XSD_QNAME) {
+			result = isValidQName(value);
+		} else if (datatype == CoreDatatype.XSD_ANYURI) {
+			result = isValidAnyURI(value);
+		} else if (datatype == CoreDatatype.XSD_LANGUAGE) {
 			result = Literals.isValidLanguageTag(value);
 		}
 

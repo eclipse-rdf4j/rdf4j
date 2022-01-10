@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.xml.datatype.Duration;
@@ -15,6 +17,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 
 /**
  * Constants for the standard <a href="https://www.w3.org/TR/xmlschema11-2/">XML Schema 1.1 datatypes</a>.
@@ -191,53 +194,53 @@ public class XSD {
 
 	public enum Datatype {
 
-		DURATION(XSD.DURATION, true, true, false, false, false, false, false),
-		DATETIME(XSD.DATETIME, true, false, false, false, false, false, true),
-		DATETIMESTAMP(XSD.DATETIMESTAMP, false, false, false, true, false, false, true),
-		DAYTIMEDURATION(XSD.DAYTIMEDURATION, false, true, false, true, false, false, false),
-		TIME(XSD.TIME, true, false, false, false, false, false, true),
-		DATE(XSD.DATE, true, false, false, false, false, false, true),
-		GYEARMONTH(XSD.GYEARMONTH, true, false, false, false, false, false, true),
-		GYEAR(XSD.GYEAR, true, false, false, false, false, false, true),
-		GMONTHDAY(XSD.GMONTHDAY, true, false, false, false, false, false, true),
-		GDAY(XSD.GDAY, true, false, false, false, false, false, true),
-		GMONTH(XSD.GMONTH, true, false, false, false, false, false, true),
-		STRING(XSD.STRING, true, false, false, false, false, false, false),
-		BOOLEAN(XSD.BOOLEAN, true, false, false, false, false, false, false),
-		BASE64BINARY(XSD.BASE64BINARY, true, false, false, false, false, false, false),
-		HEXBINARY(XSD.HEXBINARY, true, false, false, false, false, false, false),
-		FLOAT(XSD.FLOAT, true, false, false, false, false, true, false),
-		DECIMAL(XSD.DECIMAL, true, false, false, false, true, false, false),
-		DOUBLE(XSD.DOUBLE, true, false, false, false, false, true, false),
-		ANYURI(XSD.ANYURI, true, false, false, false, false, false, false),
-		QNAME(XSD.QNAME, true, false, false, false, false, false, false),
-		NOTATION(XSD.NOTATION, true, false, false, false, false, false, false),
-		NORMALIZEDSTRING(XSD.NORMALIZEDSTRING, false, false, false, true, false, false, false),
-		TOKEN(XSD.TOKEN, false, false, false, true, false, false, false),
-		LANGUAGE(XSD.LANGUAGE, false, false, false, true, false, false, false),
-		NMTOKEN(XSD.NMTOKEN, false, false, false, true, false, false, false),
-		NMTOKENS(XSD.NMTOKENS, false, false, false, true, false, false, false),
-		NAME(XSD.NAME, false, false, false, true, false, false, false),
-		NCNAME(XSD.NCNAME, false, false, false, true, false, false, false),
-		ID(XSD.ID, false, false, false, true, false, false, false),
-		IDREF(XSD.IDREF, false, false, false, true, false, false, false),
-		IDREFS(XSD.IDREFS, false, false, false, true, false, false, false),
-		ENTITY(XSD.ENTITY, false, false, false, true, false, false, false),
-		ENTITIES(XSD.ENTITIES, false, false, false, true, false, false, false),
-		INTEGER(XSD.INTEGER, false, false, true, true, true, false, false),
-		LONG(XSD.LONG, false, false, true, true, true, false, false),
-		INT(XSD.INT, false, false, true, true, true, false, false),
-		SHORT(XSD.SHORT, false, false, true, true, true, false, false),
-		BYTE(XSD.BYTE, false, false, true, true, true, false, false),
-		NON_POSITIVE_INTEGER(XSD.NON_POSITIVE_INTEGER, false, false, true, true, true, false, false),
-		NEGATIVE_INTEGER(XSD.NEGATIVE_INTEGER, false, false, true, true, true, false, false),
-		NON_NEGATIVE_INTEGER(XSD.NON_NEGATIVE_INTEGER, false, false, true, true, true, false, false),
-		POSITIVE_INTEGER(XSD.POSITIVE_INTEGER, false, false, true, true, true, false, false),
-		UNSIGNED_LONG(XSD.UNSIGNED_LONG, false, false, true, true, true, false, false),
-		UNSIGNED_INT(XSD.UNSIGNED_INT, false, false, true, true, true, false, false),
-		UNSIGNED_SHORT(XSD.UNSIGNED_SHORT, false, false, true, true, true, false, false),
-		UNSIGNED_BYTE(XSD.UNSIGNED_BYTE, false, false, true, true, true, false, false),
-		YEARMONTHDURATION(XSD.YEARMONTHDURATION, false, true, false, true, false, false, false);
+		DURATION(create("duration"), true, true, false, false, false, false, false),
+		DATETIME(create("dateTime"), true, false, false, false, false, false, true),
+		DATETIMESTAMP(create("dateTimeStamp"), false, false, false, true, false, false, true),
+		DAYTIMEDURATION(create("dayTimeDuration"), false, true, false, true, false, false, false),
+		TIME(create("time"), true, false, false, false, false, false, true),
+		DATE(create("date"), true, false, false, false, false, false, true),
+		GYEARMONTH(create("gYearMonth"), true, false, false, false, false, false, true),
+		GYEAR(create("gYear"), true, false, false, false, false, false, true),
+		GMONTHDAY(create("gMonthDay"), true, false, false, false, false, false, true),
+		GDAY(create("gDay"), true, false, false, false, false, false, true),
+		GMONTH(create("gMonth"), true, false, false, false, false, false, true),
+		STRING(create("string"), true, false, false, false, false, false, false),
+		BOOLEAN(create("boolean"), true, false, false, false, false, false, false),
+		BASE64BINARY(create("base64Binary"), true, false, false, false, false, false, false),
+		HEXBINARY(create("hexBinary"), true, false, false, false, false, false, false),
+		FLOAT(create("float"), true, false, false, false, false, true, false),
+		DECIMAL(create("decimal"), true, false, false, false, true, false, false),
+		DOUBLE(create("double"), true, false, false, false, false, true, false),
+		ANYURI(create("anyURI"), true, false, false, false, false, false, false),
+		QNAME(create("QName"), true, false, false, false, false, false, false),
+		NOTATION(create("NOTATION"), true, false, false, false, false, false, false),
+		NORMALIZEDSTRING(create("normalizedString"), false, false, false, true, false, false, false),
+		TOKEN(create("token"), false, false, false, true, false, false, false),
+		LANGUAGE(create("language"), false, false, false, true, false, false, false),
+		NMTOKEN(create("NMTOKEN"), false, false, false, true, false, false, false),
+		NMTOKENS(create("NMTOKENS"), false, false, false, true, false, false, false),
+		NAME(create("Name"), false, false, false, true, false, false, false),
+		NCNAME(create("NCName"), false, false, false, true, false, false, false),
+		ID(create("ID"), false, false, false, true, false, false, false),
+		IDREF(create("IDREF"), false, false, false, true, false, false, false),
+		IDREFS(create("IDREFS"), false, false, false, true, false, false, false),
+		ENTITY(create("ENTITY"), false, false, false, true, false, false, false),
+		ENTITIES(create("ENTITIES"), false, false, false, true, false, false, false),
+		INTEGER(create("integer"), false, false, true, true, true, false, false),
+		LONG(create("long"), false, false, true, true, true, false, false),
+		INT(create("int"), false, false, true, true, true, false, false),
+		SHORT(create("short"), false, false, true, true, true, false, false),
+		BYTE(create("byte"), false, false, true, true, true, false, false),
+		NON_POSITIVE_INTEGER(create("nonPositiveInteger"), false, false, true, true, true, false, false),
+		NEGATIVE_INTEGER(create("negativeInteger"), false, false, true, true, true, false, false),
+		NON_NEGATIVE_INTEGER(create("nonNegativeInteger"), false, false, true, true, true, false, false),
+		POSITIVE_INTEGER(create("positiveInteger"), false, false, true, true, true, false, false),
+		UNSIGNED_LONG(create("unsignedLong"), false, false, true, true, true, false, false),
+		UNSIGNED_INT(create("unsignedInt"), false, false, true, true, true, false, false),
+		UNSIGNED_SHORT(create("unsignedShort"), false, false, true, true, true, false, false),
+		UNSIGNED_BYTE(create("unsignedByte"), false, false, true, true, true, false, false),
+		YEARMONTHDURATION(create("yearMonthDuration"), false, true, false, true, false, false, false);
 
 		private final IRI iri;
 		private final boolean primitive;
@@ -247,6 +250,7 @@ public class XSD {
 		private final boolean decimal;
 		private final boolean floatingPoint;
 		private final boolean calendar;
+		private final CoreDatatype coreDatatype;
 
 		Datatype(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
 				boolean floatingPoint, boolean calendar) {
@@ -258,6 +262,7 @@ public class XSD {
 			this.decimal = decimal;
 			this.floatingPoint = floatingPoint;
 			this.calendar = calendar;
+			this.coreDatatype = CoreDatatype.from(iri).orElseThrow();
 		}
 
 		/**
@@ -361,11 +366,23 @@ public class XSD {
 			return isNumericDatatype() || isCalendarDatatype();
 		}
 
-		static HashMap<IRI, Optional<Datatype>> reverseLookup = new HashMap<>();
+		public IRI getIri() {
+			return iri;
+		}
+
+		public CoreDatatype getCoreDatatype() {
+			return coreDatatype;
+		}
+
+		private static Map<IRI, Optional<Datatype>> reverseLookup = new HashMap<>();
+
+		private static Map<CoreDatatype, Optional<Datatype>> reverseLookupCoreDatatype = new EnumMap<>(
+				CoreDatatype.class);
 
 		static {
 			for (Datatype value : Datatype.values()) {
 				reverseLookup.put(value.iri, Optional.of(value));
+				reverseLookupCoreDatatype.put(value.coreDatatype, Optional.of(value));
 			}
 		}
 
@@ -373,8 +390,8 @@ public class XSD {
 			return reverseLookup.getOrDefault(datatype, Optional.empty());
 		}
 
-		public IRI getIri() {
-			return iri;
+		public static Optional<Datatype> from(CoreDatatype datatype) {
+			return reverseLookupCoreDatatype.getOrDefault(datatype, Optional.empty());
 		}
 
 	}

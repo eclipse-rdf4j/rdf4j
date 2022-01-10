@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -874,11 +875,11 @@ class ValueStore extends AbstractValueFactory {
 			value.setLabel(label);
 			if (lang != null) {
 				value.setLanguage(lang);
-				value.setDatatype(RDF.LANGSTRING);
+				value.setDatatype(CoreDatatype.RDF_LANGSTRING);
 			} else if (datatype != null) {
 				value.setDatatype(datatype);
 			} else {
-				value.setDatatype(XSD.STRING);
+				value.setDatatype(CoreDatatype.XSD_STRING);
 			}
 			return value;
 		}
@@ -943,7 +944,7 @@ class ValueStore extends AbstractValueFactory {
 
 	@Override
 	public LmdbLiteral createLiteral(String value) {
-		return new LmdbLiteral(revision, value, XSD.STRING);
+		return new LmdbLiteral(revision, value, CoreDatatype.XSD_STRING);
 	}
 
 	@Override
@@ -1026,6 +1027,8 @@ class ValueStore extends AbstractValueFactory {
 
 		if (Literals.isLanguageLiteral(l)) {
 			return new LmdbLiteral(revision, l.getLabel(), l.getLanguage().get());
+		} else if (l.getCoreDatatype().isPresent()) {
+			return new LmdbLiteral(revision, l.getLabel(), l.getCoreDatatype().get());
 		} else {
 			LmdbIRI datatype = getLmdbURI(l.getDatatype());
 			return new LmdbLiteral(revision, l.getLabel(), datatype);
