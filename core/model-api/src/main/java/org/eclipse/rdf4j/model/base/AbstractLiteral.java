@@ -919,40 +919,33 @@ public abstract class AbstractLiteral implements Literal {
 			}
 		});
 
-		private static final Map<QName, IRI> DATATYPES = datatypes();
-
-		private static Map<QName, IRI> datatypes() {
-
-			final Map<QName, IRI> datatypes = new HashMap<>();
-
-			datatypes.put(DatatypeConstants.DATETIME, XSD_DATETIME);
-			datatypes.put(DatatypeConstants.TIME, XSD_TIME);
-			datatypes.put(DatatypeConstants.DATE, XSD_DATE);
-
-			datatypes.put(DatatypeConstants.GYEARMONTH, XSD_GYEARMONTH);
-			datatypes.put(DatatypeConstants.GYEAR, XSD_GYEAR);
-			datatypes.put(DatatypeConstants.GMONTHDAY, XSD_GMONTHDAY);
-			datatypes.put(DatatypeConstants.GDAY, XSD_GDAY);
-			datatypes.put(DatatypeConstants.GMONTH, XSD_GMONTH);
-
-			datatypes.put(DatatypeConstants.DURATION, XSD_DURATION);
-			datatypes.put(DatatypeConstants.DURATION_DAYTIME, XSD_DURATION_DAYTIME);
-			datatypes.put(DatatypeConstants.DURATION_YEARMONTH, XSD_DURATION_YEARMONTH);
-
-			return datatypes;
-		}
-
 		private static IRI datatype(QName qname) {
 
-			final IRI datatype = DATATYPES.get(qname);
-
-			if (datatype == null) {
-				throw new IllegalArgumentException(String.format(
-						"QName <%s> cannot be mapped to an XML Schema date/time datatype", qname
-				));
+			if (DatatypeConstants.DATETIME == qname) {
+				return XSD_DATETIME;
+			} else if (DatatypeConstants.DATE == qname) {
+				return XSD_DATE;
+			} else if (DatatypeConstants.TIME == qname) {
+				return XSD_TIME;
+			} else if (DatatypeConstants.GYEARMONTH == qname) {
+				return XSD_GYEARMONTH;
+			} else if (DatatypeConstants.GMONTHDAY == qname) {
+				return XSD_GMONTHDAY;
+			} else if (DatatypeConstants.GYEAR == qname) {
+				return XSD_GYEAR;
+			} else if (DatatypeConstants.GMONTH == qname) {
+				return XSD_GMONTH;
+			} else if (DatatypeConstants.GDAY == qname) {
+				return XSD_GDAY;
+			} else if (DatatypeConstants.DURATION == qname) {
+				return XSD_DURATION;
+			} else if (DatatypeConstants.DURATION_DAYTIME == qname) {
+				return XSD_DURATION_DAYTIME;
+			} else if (DatatypeConstants.DURATION_YEARMONTH == qname) {
+				return XSD_DURATION_YEARMONTH;
+			} else {
+				throw new IllegalArgumentException("QName cannot be mapped to an XML Schema IRI: " + qname.toString());
 			}
-
-			return datatype;
 		}
 
 		private static XMLGregorianCalendar parseCalendar(String label) {
