@@ -1971,30 +1971,30 @@ public class XMLDatatypeUtil {
 	 * @see DatatypeConstants
 	 */
 	public static IRI qnameToURI(QName qname) {
-		if (DatatypeConstants.DATETIME.equals(qname)) {
+		if (DatatypeConstants.DATETIME == qname) {
 			return XSD.DATETIME;
-		} else if (DatatypeConstants.DATE.equals(qname)) {
+		} else if (DatatypeConstants.DATE == qname) {
 			return XSD.DATE;
-		} else if (DatatypeConstants.TIME.equals(qname)) {
+		} else if (DatatypeConstants.TIME == qname) {
 			return XSD.TIME;
-		} else if (DatatypeConstants.GYEARMONTH.equals(qname)) {
+		} else if (DatatypeConstants.GYEARMONTH == qname) {
 			return XSD.GYEARMONTH;
-		} else if (DatatypeConstants.GMONTHDAY.equals(qname)) {
+		} else if (DatatypeConstants.GMONTHDAY == qname) {
 			return XSD.GMONTHDAY;
-		} else if (DatatypeConstants.GYEAR.equals(qname)) {
+		} else if (DatatypeConstants.GYEAR == qname) {
 			return XSD.GYEAR;
-		} else if (DatatypeConstants.GMONTH.equals(qname)) {
+		} else if (DatatypeConstants.GMONTH == qname) {
 			return XSD.GMONTH;
-		} else if (DatatypeConstants.GDAY.equals(qname)) {
+		} else if (DatatypeConstants.GDAY == qname) {
 			return XSD.GDAY;
-		} else if (DatatypeConstants.DURATION.equals(qname)) {
+		} else if (DatatypeConstants.DURATION == qname) {
 			return XSD.DURATION;
-		} else if (DatatypeConstants.DURATION_DAYTIME.equals(qname)) {
+		} else if (DatatypeConstants.DURATION_DAYTIME == qname) {
 			return XSD.DAYTIMEDURATION;
-		} else if (DatatypeConstants.DURATION_YEARMONTH.equals(qname)) {
+		} else if (DatatypeConstants.DURATION_YEARMONTH == qname) {
 			return XSD.YEARMONTHDURATION;
 		} else {
-			throw new IllegalArgumentException("QName cannot be mapped to an XML Schema URI: " + qname.toString());
+			throw new IllegalArgumentException("QName cannot be mapped to an XML Schema IRI: " + qname.toString());
 		}
 	}
 
