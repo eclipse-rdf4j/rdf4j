@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.lang.ref.SoftReference;
+
 import org.eclipse.rdf4j.model.IRI;
 
 /**
@@ -82,9 +84,22 @@ public class MemIRI implements IRI, MemResource {
 	 * Methods *
 	 *---------*/
 
+	transient SoftReference<String> toStringCache = null;
+
 	@Override
 	public String toString() {
-		return namespace + localName;
+		String result;
+		if (toStringCache == null) {
+			result = namespace + localName;
+			toStringCache = new SoftReference<>(result);
+		} else {
+			result = toStringCache.get();
+			if (result == null) {
+				result = namespace + localName;
+				toStringCache = new SoftReference<>(result);
+			}
+		}
+		return result;
 	}
 
 	@Override
