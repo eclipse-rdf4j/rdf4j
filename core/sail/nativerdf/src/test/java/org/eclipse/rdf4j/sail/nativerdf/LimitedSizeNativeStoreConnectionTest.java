@@ -104,31 +104,6 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 		assertNull(shouldThrow);
 	}
 
-	@Test
-	public void testOrderAndLimit() throws Exception {
-		((LimitedSizeNativeStoreConnection) ((SailRepositoryConnection) testCon).getSailConnection())
-				.setMaxCollectionsSize(2);
-		testCon.begin();
-		ValueFactory vf = testCon.getValueFactory();
-		IRI context1 = vf.createIRI("http://my.context.1");
-		IRI predicate = vf.createIRI("http://my.predicate");
-		IRI object = vf.createIRI("http://my.object");
-
-		for (int j = 0; j < 100; j++) {
-			testCon.add(vf.createIRI("http://my.subject" + j), predicate, object, context1);
-		}
-		testCon.commit();
-		String queryString = "SELECT DISTINCT ?s WHERE {?s ?p ?o} ORDER BY ?s";
-		TupleQuery q = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-		QueryEvaluationException shouldThrow = runQuery(q);
-		assertNotNull(shouldThrow);
-
-		queryString = "SELECT DISTINCT ?s WHERE {?s ?p ?o} ORDER BY ?s LIMIT 2";
-		q = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-		shouldThrow = runQuery(q);
-		assertNull(shouldThrow);
-	}
-
 	protected QueryEvaluationException runQuery(TupleQuery q) {
 		QueryEvaluationException shouldThrow = null;
 		try (TupleQueryResult r = q.evaluate();) {

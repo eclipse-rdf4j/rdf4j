@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.testsuite.repository;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -170,5 +171,25 @@ public abstract class SparqlDatasetTest {
 		conn.close();
 
 		return subj;
+	}
+
+	@Test
+	public void testSelectAllIsSameAsCount() throws Exception {
+		try (RepositoryConnection con = repository.getConnection()) {
+			TupleQuery tupleQuery = con.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT ?s ?p ?o WHERE {?s ?p ?o}");
+			TupleQueryResult res = tupleQuery.evaluate();
+
+			assertTrue("expect a result", res.hasNext());
+			long count = 0;
+			while (res.hasNext()) {
+				BindingSet bs = res.next();
+				assertNotNull(bs);
+				assertTrue(bs.hasBinding("s"));
+				assertTrue(bs.hasBinding("p"));
+				assertTrue(bs.hasBinding("o"));
+				count++;
+			}
+			assertEquals("expect same number of solutions", count, con.size());
+		}
 	}
 }

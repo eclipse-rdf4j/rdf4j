@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -132,6 +133,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 		@Override
 		public boolean isTrue(ValueExpr expr, BindingSet bindings)
+				throws ValueExprEvaluationException, QueryEvaluationException {
+			return delegate.isTrue(expr, bindings);
+		}
+
+		@Override
+		public boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings)
 				throws ValueExprEvaluationException, QueryEvaluationException {
 			return delegate.isTrue(expr, bindings);
 		}

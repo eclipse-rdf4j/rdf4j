@@ -7,54 +7,40 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.DelayedIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.IntersectIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
-import org.eclipse.rdf4j.common.iteration.LimitIteration;
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.common.iteration.OffsetIteration;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
-import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDF4J;
-import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Coalesce;
@@ -110,6 +96,7 @@ import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -117,42 +104,47 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep.ConstantQueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RdfStarQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RegexValueEvaluationStepSupplier;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ReificationRdfStarQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.UnionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ZeroLengthPathEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.OrderIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SPARQLMinusIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.EvaluationStrategies;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.util.UUIDable;
 
 import com.google.common.base.Stopwatch;
@@ -274,6 +266,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return expr;
 	}
 
+	@Deprecated(forRemoval = true)
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -315,55 +308,118 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
 			ret = new ResultSizeCountingIterator(ret, expr);
 		}
-
 		return ret;
 	}
 
+	@Override
+	public QueryEvaluationStep precompile(TupleExpr expr) {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
+		if (expr instanceof QueryRoot) {
+			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
+					.findAllVariablesUsedInQuery((QueryRoot) expr);
+			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables);
+		}
+		return precompile(expr, context);
+	}
+
+	@Override
+	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+		QueryEvaluationStep ret;
+
+		if (expr instanceof StatementPattern) {
+			ret = prepare((StatementPattern) expr, context);
+		} else if (expr instanceof UnaryTupleOperator) {
+			ret = prepare((UnaryTupleOperator) expr, context);
+		} else if (expr instanceof BinaryTupleOperator) {
+			ret = prepare((BinaryTupleOperator) expr, context);
+		} else if (expr instanceof SingletonSet) {
+			ret = prepare((SingletonSet) expr, context);
+		} else if (expr instanceof EmptySet) {
+			ret = prepare((EmptySet) expr, context);
+		} else if (expr instanceof ZeroLengthPath) {
+			ret = prepare((ZeroLengthPath) expr, context);
+		} else if (expr instanceof ArbitraryLengthPath) {
+			ret = prepare((ArbitraryLengthPath) expr, context);
+		} else if (expr instanceof BindingSetAssignment) {
+			ret = prepare((BindingSetAssignment) expr, context);
+		} else if (expr instanceof TripleRef) {
+			ret = prepare((TripleRef) expr, context);
+		} else if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		} else {
+			throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
+		}
+
+		if (ret != null) {
+			if (trackTime) {
+				ret = trackTime(expr, ret);
+			}
+			if (trackResultSize) {
+				ret = trackResultSize(expr, ret);
+			}
+			return ret;
+		} else {
+			return EvaluationStrategy.super.precompile(expr, context);
+		}
+	}
+
+	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
+		return QueryEvaluationStep.wrap(qes, (iter) -> {
+			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
+			return new ResultSizeCountingIterator(iter, expr);
+		});
+	}
+
+	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
+		return QueryEvaluationStep.wrap(qes, (iter) -> {
+			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
+			return new TimedIterator(iter, expr);
+		});
+	}
+
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ArbitraryLengthPath alp,
 			final BindingSet bindings) throws QueryEvaluationException {
+		return precompile(alp).evaluate(bindings);
+	}
+
+	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
+			throws QueryEvaluationException {
 		final Scope scope = alp.getScope();
 		final Var subjectVar = alp.getSubjectVar();
 		final TupleExpr pathExpression = alp.getPathExpression();
 		final Var objVar = alp.getObjectVar();
 		final Var contextVar = alp.getContextVar();
 		final long minLength = alp.getMinLength();
+		return new QueryEvaluationStep() {
 
-		return new PathIteration(this, scope, subjectVar, pathExpression, objVar, contextVar, minLength, bindings);
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				return new PathIteration(StrictEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
+						contextVar, minLength, bindings);
+			}
+		};
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(ZeroLengthPath zlp,
 			final BindingSet bindings) throws QueryEvaluationException {
+		return precompile(zlp).evaluate(bindings);
+	}
+
+	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
+			throws QueryEvaluationException {
 
 		final Var subjectVar = zlp.getSubjectVar();
 		final Var objVar = zlp.getObjectVar();
 		final Var contextVar = zlp.getContextVar();
+		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);
+		QueryValueEvaluationStep objPrep = precompile(objVar, context);
 
-		Value subj = null;
-		try {
-			subj = evaluate(subjectVar, bindings);
-		} catch (QueryEvaluationException ignored) {
-		}
-
-		Value obj = null;
-		try {
-			obj = evaluate(objVar, bindings);
-		} catch (QueryEvaluationException ignored) {
-		}
-
-		if (subj != null && obj != null) {
-			if (!subj.equals(obj)) {
-				return new EmptyIteration<>();
-			}
-		}
-
-		return getZeroLengthPathIterator(bindings, subjectVar, objVar, contextVar, subj, obj);
+		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context);
 	}
 
-	protected ZeroLengthPathIteration getZeroLengthPathIterator(final BindingSet bindings, final Var subjectVar,
-			final Var objVar, final Var contextVar, Value subj, Value obj) {
-		return new ZeroLengthPathIteration(this, subjectVar, objVar, subj, obj, contextVar, bindings);
-	}
-
+	@Deprecated(forRemoval = true)
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, String serviceUri,
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
@@ -380,307 +436,207 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, BindingSet bindings)
 			throws QueryEvaluationException {
+		return precompile(service).evaluate(bindings);
+	}
+
+	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return new MinusQueryEvaluationStep(precompile(node.getLeftArg(), context),
+				precompile(node.getRightArg(), context));
+	}
+
+	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {
+		return new QueryEvaluationStep() {
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				return new GroupIterator(StrictEvaluationStrategy.this, node, bindings, iterationCacheSyncThreshold,
+						context);
+			}
+		};
+	}
+
+	protected QueryEvaluationStep prepare(Intersection node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep leftArg = precompile(node.getLeftArg(), context);
+		QueryEvaluationStep rightArg = precompile(node.getRightArg(), context);
+		return new IntersectionQueryEvaluationStep(leftArg, rightArg, this::makeSet);
+	}
+
+	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
+		return new JoinQueryEvaluationStep(this, node, context);
+	}
+
+	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return LeftJoinQueryEvaluationStep.supply(this, node, context);
+	}
+
+	protected QueryEvaluationStep prepare(MultiProjection node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				return new MultiProjectionIterator(node, arg.evaluate(bindings), bindings);
+			}
+		};
+	}
+
+	protected QueryEvaluationStep prepare(Projection node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep temp = precompile(node.getArg(), context);
+		return new ProjectionQueryEvaluationStep(node, temp, context);
+	}
+
+	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+
+		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		return new QueryRootQueryEvaluationStep(arg);
+	}
+
+	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return new StatementPatternQueryEvaluationStep(node, context, tripleSource);
+	}
+
+	protected QueryEvaluationStep prepare(Union node, QueryEvaluationContext context) throws QueryEvaluationException {
+		QueryEvaluationStep leftQes = precompile(node.getLeftArg(), context);
+		QueryEvaluationStep rightQes = precompile(node.getRightArg(), context);
+
+		return new UnionQueryEvaluationStep(leftQes, rightQes);
+	}
+
+	protected QueryEvaluationStep prepare(Slice node, QueryEvaluationContext context) throws QueryEvaluationException {
+		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		return SliceQueryEvaluationStep.supply(node, arg);
+	}
+
+	protected QueryEvaluationStep prepare(Extension node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		Consumer<MutableBindingSet> consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(node, this,
+				context);
+		return new ExtensionQueryEvaluationStep(arg, consumer, context);
+	}
+
+	protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context)
+			throws QueryEvaluationException {
 		Var serviceRef = service.getServiceRef();
+		return new ServiceQueryEvaluationStep(service, serviceRef, serviceResolver);
+	}
 
-		String serviceUri;
-		if (serviceRef.hasValue()) {
-			serviceUri = serviceRef.getValue().stringValue();
-		} else {
-			if (bindings != null && bindings.getValue(serviceRef.getName()) != null) {
-				serviceUri = bindings.getBinding(serviceRef.getName()).getValue().stringValue();
-			} else {
-				throw new QueryEvaluationException("SERVICE variables must be bound at evaluation time.");
-			}
-		}
+	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
+		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		QueryValueEvaluationStep ves;
 		try {
-
-			FederatedService fs = serviceResolver.getService(serviceUri);
-
-			// create a copy of the free variables, and remove those for which
-			// bindings are available (we can set them as constraints!)
-			Set<String> freeVars = new HashSet<>(service.getServiceVars());
-			freeVars.removeAll(bindings.getBindingNames());
-
-			// Get bindings from values pre-bound into variables.
-			MapBindingSet allBindings = new MapBindingSet();
-			for (Binding binding : bindings) {
-				allBindings.addBinding(binding.getName(), binding.getValue());
-			}
-
-			Set<Var> boundVars = getBoundVariables(service);
-			for (Var boundVar : boundVars) {
-				freeVars.remove(boundVar.getName());
-				allBindings.addBinding(boundVar.getName(), boundVar.getValue());
-			}
-			bindings = allBindings;
-
-			String baseUri = service.getBaseURI();
-
-			// special case: no free variables => perform ASK query
-			if (freeVars.isEmpty()) {
-				boolean exists = fs.ask(service, bindings, baseUri);
-
-				// check if triples are available (with inserted bindings)
-				if (exists) {
-					return new SingletonIteration<>(bindings);
-				} else {
+			ves = precompile(node.getCondition(), context);
+		} catch (QueryEvaluationException e) {
+			// If we have a failed compilation we always return false.
+			// Which means empty. so let's short circuit that.
+//			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
+			return new QueryEvaluationStep() {
+				@Override
+				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
 					return new EmptyIteration<>();
 				}
-
-			}
-
-			// otherwise: perform a SELECT query
-			return fs.select(service, freeVars, bindings,
-					baseUri);
-
-		} catch (RuntimeException e) {
-			// suppress exceptions if silent
-			if (service.isSilent()) {
-				return new SingletonIteration<>(bindings);
-			} else {
-				throw e;
-			}
+			};
 		}
+		return new QueryEvaluationStep() {
 
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+				return new FilterIterator(node, arg.evaluate(bs), ves, StrictEvaluationStrategy.this);
+			}
+		};
 	}
 
-	private Set<Var> getBoundVariables(Service service) {
-		BoundVarVisitor visitor = new BoundVarVisitor();
-		visitor.meet(service);
-		return visitor.boundVars;
+	protected QueryEvaluationStep prepare(Order node, QueryEvaluationContext context) throws QueryEvaluationException {
+		ValueComparator vcmp = new ValueComparator();
+		OrderComparator cmp = new OrderComparator(this, node, vcmp, context);
+		boolean reduced = isReducedOrDistinct(node);
+		long limit = getLimit(node);
+		QueryEvaluationStep preparedArg = precompile(node.getArg(), context);
+		return new OrderQueryEvaluationStep(cmp, limit, reduced, preparedArg, iterationCacheSyncThreshold);
 	}
 
-	private static class BoundVarVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
 
-		private final Set<Var> boundVars = new HashSet<>();
+		return new BindingSetAssignmentQueryEvaluationStep(node, context);
+	}
+
+	private final class QueryRootQueryEvaluationStep implements QueryEvaluationStep {
+		private final QueryEvaluationStep arg;
+
+		private QueryRootQueryEvaluationStep(QueryEvaluationStep arg) {
+			this.arg = arg;
+		}
 
 		@Override
-		public void meet(Var var) {
-			if (var.hasValue()) {
-				boundVars.add(var);
-			}
+		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+			// TODO fix the sharing of the now element to be safe
+			StrictEvaluationStrategy.this.sharedValueOfNow = null;
+			return arg.evaluate(bs);
 		}
+	}
+
+	protected QueryEvaluationStep prepare(DescribeOperator node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep child = precompile(node.getArg(), context);
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+				return new DescribeIteration(child.evaluate(bs), StrictEvaluationStrategy.this, node.getBindingNames(),
+						bs);
+			}
+		};
+	}
+
+	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		final QueryEvaluationStep child = precompile(node.getArg(), context);
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
+				return new DistinctIteration<BindingSet, QueryEvaluationException>(evaluate,
+						StrictEvaluationStrategy.this::makeSet);
+			}
+		};
+
+	}
+
+	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				return new ReducedIteration<>(arg.evaluate(bindings));
+			}
+		};
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(DescribeOperator operator,
 			final BindingSet bindings) throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(operator.getArg(), bindings);
-		return new DescribeIteration(iter, this, operator.getBindingNames(), bindings);
+		return precompile(operator).evaluate(bindings);
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern statementPattern,
 			final BindingSet bindings) throws QueryEvaluationException {
-		final Var subjVar = statementPattern.getSubjectVar();
-		final Var predVar = statementPattern.getPredicateVar();
-		final Var objVar = statementPattern.getObjectVar();
-		final Var conVar = statementPattern.getContextVar();
-
-		final Value subjValue = getVarValue(subjVar, bindings);
-		final Value predValue = getVarValue(predVar, bindings);
-		final Value objValue = getVarValue(objVar, bindings);
-		final Value contextValue = getVarValue(conVar, bindings);
-
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = null;
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter2 = null;
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter3 = null;
-		ConvertingIteration<Statement, BindingSet, QueryEvaluationException> resultingIterator = null;
-
-		if (isUnbound(subjVar, bindings) || isUnbound(predVar, bindings) || isUnbound(objVar, bindings)
-				|| isUnbound(conVar, bindings)) {
-			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
-			return new EmptyIteration<>();
-		}
-
-		boolean allGood = false;
-		try {
-			try {
-				Resource[] contexts;
-
-				Set<IRI> graphs = null;
-				boolean emptyGraph = false;
-
-				if (dataset != null) {
-					if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
-						graphs = dataset.getDefaultGraphs();
-						emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
-					} else {
-						graphs = dataset.getNamedGraphs();
-						emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
-					}
-				}
-
-				if (emptyGraph) {
-					// Search zero contexts
-					return new EmptyIteration<>();
-				} else if (graphs == null || graphs.isEmpty()) {
-					// store default behaviour
-					if (contextValue != null) {
-						if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
-							contexts = new Resource[] { (Resource) null };
-						} else {
-							contexts = new Resource[] { (Resource) contextValue };
-						}
-					}
-					/*
-					 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default
-					 * graph in SPARQL querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) {
-					 * contexts = new Resource[] { (Resource)null }; }
-					 */
-					else {
-						contexts = new Resource[0];
-					}
-				} else if (contextValue != null) {
-					if (graphs.contains(contextValue)) {
-						contexts = new Resource[] { (Resource) contextValue };
-					} else {
-						// Statement pattern specifies a context that is not part of
-						// the dataset
-						return new EmptyIteration<>();
-					}
-				} else {
-					contexts = new Resource[graphs.size()];
-					int i = 0;
-					for (IRI graph : graphs) {
-						IRI context = null;
-						if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {
-							context = graph;
-						}
-						contexts[i++] = context;
-					}
-				}
-
-				stIter1 = tripleSource.getStatements((Resource) subjValue, (IRI) predValue, objValue, contexts);
-
-				if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
-					// Named contexts are matched by retrieving all statements from
-					// the store and filtering out the statements that do not have a
-					// context.
-					stIter2 = new FilterIteration<Statement, QueryEvaluationException>(stIter1) {
-
-						@Override
-						protected boolean accept(Statement st) {
-							return st.getContext() != null;
-						}
-
-					}; // end anonymous class
-				} else {
-					stIter2 = stIter1;
-				}
-			} catch (ClassCastException e) {
-				// Invalid value type for subject, predicate and/or context
-				return new EmptyIteration<>();
-			}
-
-			// The same variable might have been used multiple times in this
-			// StatementPattern, verify value equality in those cases.
-			// TODO: skip this filter if not necessary
-			stIter3 = new FilterIteration<Statement, QueryEvaluationException>(stIter2) {
-
-				@Override
-				protected boolean accept(Statement st) {
-					Resource subj = st.getSubject();
-					IRI pred = st.getPredicate();
-					Value obj = st.getObject();
-					Resource context = st.getContext();
-
-					if (subjVar != null && subjValue == null) {
-						if (subjVar.equals(predVar) && !subj.equals(pred)) {
-							return false;
-						}
-						if (subjVar.equals(objVar) && !subj.equals(obj)) {
-							return false;
-						}
-						if (subjVar.equals(conVar) && !subj.equals(context)) {
-							return false;
-						}
-					}
-
-					if (predVar != null && predValue == null) {
-						if (predVar.equals(objVar) && !pred.equals(obj)) {
-							return false;
-						}
-						if (predVar.equals(conVar) && !pred.equals(context)) {
-							return false;
-						}
-					}
-
-					if (objVar != null && objValue == null) {
-						if (objVar.equals(conVar) && !obj.equals(context)) {
-							return false;
-						}
-					}
-
-					return true;
-				}
-			};
-
-			// Return an iterator that converts the statements to var bindings
-			resultingIterator = new ConvertingIteration<Statement, BindingSet, QueryEvaluationException>(stIter3) {
-
-				@Override
-				protected BindingSet convert(Statement st) {
-					QueryBindingSet result = new QueryBindingSet(bindings);
-
-					if (subjVar != null && !subjVar.isConstant() && !result.hasBinding(subjVar.getName())) {
-						result.addBinding(subjVar.getName(), st.getSubject());
-					}
-					if (predVar != null && !predVar.isConstant() && !result.hasBinding(predVar.getName())) {
-						result.addBinding(predVar.getName(), st.getPredicate());
-					}
-					if (objVar != null && !objVar.isConstant() && !result.hasBinding(objVar.getName())) {
-						result.addBinding(objVar.getName(), st.getObject());
-					}
-					if (conVar != null && !conVar.isConstant() && !result.hasBinding(conVar.getName())
-							&& st.getContext() != null) {
-						result.addBinding(conVar.getName(), st.getContext());
-					}
-
-					return result;
-				}
-			};
-			allGood = true;
-
-			return resultingIterator;
-
-		} finally {
-			if (!allGood) {
-				try {
-					if (resultingIterator != null) {
-						resultingIterator.close();
-					}
-				} finally {
-					try {
-						if (stIter3 != null) {
-							stIter3.close();
-						}
-					} finally {
-						try {
-							if (stIter2 != null) {
-								stIter2.close();
-							}
-						} finally {
-							if (stIter1 != null) {
-								stIter1.close();
-							}
-						}
-					}
-				}
-			}
-		}
+		return precompile(statementPattern).evaluate(bindings);
 	}
 
-	protected boolean isUnbound(Var var, BindingSet bindings) {
-		if (var == null) {
-			return false;
-		} else {
-			return bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null;
-		}
-	}
-
-	protected Value getVarValue(Var var, BindingSet bindings) {
+	public static Value getVarValue(Var var, BindingSet bindings) {
 		if (var == null) {
 			return null;
 		} else if (var.hasValue()) {
@@ -726,135 +682,103 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	protected QueryEvaluationStep prepare(UnaryTupleOperator expr, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		if (expr instanceof Projection) {
+			return prepare((Projection) expr, context);
+		} else if (expr instanceof MultiProjection) {
+			return prepare((MultiProjection) expr, context);
+		} else if (expr instanceof Filter) {
+			return prepare((Filter) expr, context);
+		} else if (expr instanceof Service) {
+			return prepare((Service) expr, context);
+		} else if (expr instanceof Slice) {
+			return prepare((Slice) expr, context);
+		} else if (expr instanceof Extension) {
+			return prepare((Extension) expr, context);
+		} else if (expr instanceof Distinct) {
+			return prepare((Distinct) expr, context);
+		} else if (expr instanceof Reduced) {
+			return prepare((Reduced) expr, context);
+		} else if (expr instanceof Group) {
+			return prepare((Group) expr, context);
+		} else if (expr instanceof Order) {
+			return prepare((Order) expr, context);
+		} else if (expr instanceof QueryRoot) {
+			// new query, reset shared return value for successive calls of
+			// NOW()
+			this.sharedValueOfNow = null;
+			return precompile(expr.getArg(), context);
+		} else if (expr instanceof DescribeOperator) {
+			return prepare((DescribeOperator) expr, context);
+		} else if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		} else {
+			throw new QueryEvaluationException("Unknown unary tuple operator type: " + expr.getClass());
+		}
+	}
+
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSetAssignment bsa,
 			BindingSet bindings) throws QueryEvaluationException {
-		final Iterator<BindingSet> assignments = bsa.getBindingSets().iterator();
-		if (bindings.size() == 0) {
-			// we can just return the assignments directly without checking existing bindings
-			return new CloseableIteratorIteration<>(assignments);
-		}
-
-		// we need to verify that new binding assignments do not overwrite existing bindings
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
-
-		result = new LookAheadIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected BindingSet getNextElement() throws QueryEvaluationException {
-				QueryBindingSet nextResult = null;
-				while (nextResult == null && assignments.hasNext()) {
-					final BindingSet assignedBindings = assignments.next();
-
-					for (String name : assignedBindings.getBindingNames()) {
-						if (nextResult == null) {
-							nextResult = new QueryBindingSet(bindings);
-						}
-
-						final Value assignedValue = assignedBindings.getValue(name);
-						if (assignedValue != null) {
-							// check that the binding assignment does not overwrite existing bindings.
-							Value existingValue = bindings.getValue(name);
-							if (existingValue == null || assignedValue.equals(existingValue)) {
-								if (existingValue == null) {
-									// we are not overwriting an existing binding.
-									nextResult.addBinding(name, assignedValue);
-								}
-							} else {
-								// if values are not equal there is no compatible merge and we should return no next
-								// element.
-								nextResult = null;
-								break;
-							}
-						}
-					}
-				}
-				return nextResult;
-			}
-		};
-
-		return result;
+		return precompile(bsa).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Projection projection, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
-
-		result = this.evaluate(projection.getArg(), bindings);
-		result = new ProjectionIterator(projection, result, bindings);
-		return result;
+		return precompile(projection).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(MultiProjection multiProjection,
 			BindingSet bindings) throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
-		result = this.evaluate(multiProjection.getArg(), bindings);
-		result = new MultiProjectionIterator(multiProjection, result, bindings);
-		return result;
+		return precompile(multiProjection).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Filter filter, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
-		result = this.evaluate(filter.getArg(), bindings);
-		result = new FilterIterator(filter, result, this);
-		return result;
+		return precompile(filter).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Slice slice, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result = evaluate(slice.getArg(), bindings);
-
-		if (slice.hasOffset()) {
-			result = new OffsetIteration<>(result, slice.getOffset());
-		}
-
-		if (slice.hasLimit()) {
-			result = new LimitIteration<>(result, slice.getLimit());
-		}
-
-		return result;
+		return precompile(slice).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Extension extension, BindingSet bindings)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
-		try {
-			result = this.evaluate(extension.getArg(), bindings);
-		} catch (ValueExprEvaluationException e) {
-			// a type error in an extension argument should be silently ignored
-			// and
-			// result in zero bindings.
-			result = new EmptyIteration<>();
-		}
-
-		result = new ExtensionIterator(extension, result, this);
-		return result;
+		return precompile(extension).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct, BindingSet bindings)
 			throws QueryEvaluationException {
-		return new DistinctIteration<>(evaluate(distinct.getArg(), bindings));
+		return precompile(distinct).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Reduced reduced, BindingSet bindings)
 			throws QueryEvaluationException {
 		return new ReducedIteration<>(evaluate(reduced.getArg(), bindings));
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Group node, BindingSet bindings)
 			throws QueryEvaluationException {
-		return new GroupIterator(this, node, bindings, iterationCacheSyncThreshold);
+		return precompile(node).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Order node, BindingSet bindings)
 			throws QueryEvaluationException {
-		ValueComparator vcmp = new ValueComparator();
-		OrderComparator cmp = new OrderComparator(this, node, vcmp);
-		boolean reduced = isReducedOrDistinct(node);
-		long limit = getLimit(node);
-		return new OrderIterator(evaluate(node.getArg(), bindings), cmp, limit, reduced, iterationCacheSyncThreshold);
+		return precompile(node).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BinaryTupleOperator expr,
 			BindingSet bindings) throws QueryEvaluationException {
 		if (expr instanceof Join) {
@@ -874,138 +798,170 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	protected QueryEvaluationStep prepare(BinaryTupleOperator expr, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		if (expr instanceof Join) {
+			return prepare((Join) expr, context);
+		} else if (expr instanceof LeftJoin) {
+			return prepare((LeftJoin) expr, context);
+		} else if (expr instanceof Union) {
+			return prepare((Union) expr, context);
+		} else if (expr instanceof Intersection) {
+			return prepare((Intersection) expr, context);
+		} else if (expr instanceof Difference) {
+			return prepare((Difference) expr, context);
+		} else if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		} else {
+			throw new QueryEvaluationException("Unsupported binary tuple operator type: " + expr.getClass());
+		}
+	}
+
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Join join, BindingSet bindings)
 			throws QueryEvaluationException {
-		// efficient computation of a SERVICE join using vectored evaluation
-		// TODO maybe we can create a ServiceJoin node already in the parser?
-		if (join.getRightArg() instanceof Service) {
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter = evaluate(join.getLeftArg(), bindings);
-			return new ServiceJoinIterator(leftIter, (Service) join.getRightArg(), bindings, this);
-		}
-
-		if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
-			return new HashJoinIteration(this, join, bindings);
-		} else {
-			return new JoinIterator(this, join, bindings);
-		}
+		return precompile(join).evaluate(bindings);
 	}
 
-	private boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
-		return (TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr));
-	}
-
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(LeftJoin leftJoin,
 			final BindingSet bindings) throws QueryEvaluationException {
-		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
-			return new HashJoinIteration(this, leftJoin, bindings);
-		}
-
-		// Check whether optional join is "well designed" as defined in section
-		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
-		VarNameCollector optionalVarCollector = new VarNameCollector();
-		leftJoin.getRightArg().visit(optionalVarCollector);
-		if (leftJoin.hasCondition()) {
-			leftJoin.getCondition().visit(optionalVarCollector);
-		}
-
-		Set<String> problemVars = optionalVarCollector.getVarNames();
-		problemVars.removeAll(leftJoin.getLeftArg().getBindingNames());
-		problemVars.retainAll(bindings.getBindingNames());
-
-		if (problemVars.isEmpty()) {
-			// left join is "well designed"
-			return new LeftJoinIterator(this, leftJoin, bindings);
-		} else {
-			return new BadlyDesignedLeftJoinIterator(this, leftJoin, bindings, problemVars);
-		}
+		return precompile(leftJoin).evaluate(bindings);
 	}
 
-	@SuppressWarnings("unchecked")
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Union union,
 			final BindingSet bindings) throws QueryEvaluationException {
-		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
-
-		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(union.getLeftArg(), bindings);
-			}
-		};
-
-		rightArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(union.getRightArg(), bindings);
-			}
-		};
-
-		return new UnionIteration<>(leftArg, rightArg);
+		return precompile(union).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Intersection intersection,
 			final BindingSet bindings) throws QueryEvaluationException {
-		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
-
-		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(intersection.getLeftArg(), bindings);
-			}
-		};
-
-		rightArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(intersection.getRightArg(), bindings);
-			}
-		};
-
-		return new IntersectIteration<>(leftArg, rightArg);
+		return precompile(intersection).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(final Difference difference,
 			final BindingSet bindings) throws QueryEvaluationException {
-		Iteration<BindingSet, QueryEvaluationException> leftArg, rightArg;
-
-		leftArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(difference.getLeftArg(), bindings);
-			}
-		};
-
-		rightArg = new DelayedIteration<BindingSet, QueryEvaluationException>() {
-
-			@Override
-			protected Iteration<BindingSet, QueryEvaluationException> createIteration()
-					throws QueryEvaluationException {
-				return evaluate(difference.getRightArg(), bindings);
-			}
-		};
-
-		return new SPARQLMinusIteration<>(leftArg, rightArg);
+		return precompile(difference).evaluate(bindings);
 	}
 
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(SingletonSet singletonSet,
 			BindingSet bindings) throws QueryEvaluationException {
 		return new SingletonIteration<>(bindings);
 	}
 
+	protected QueryEvaluationStep prepare(SingletonSet singletonSet, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				return new SingletonIteration<>(bindings);
+			}
+		};
+
+	}
+
+	@Deprecated(forRemoval = true)
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet, BindingSet bindings)
 			throws QueryEvaluationException {
 		return new EmptyIteration<>();
 	}
 
+	protected QueryEvaluationStep prepare(EmptySet emptySet, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return new QueryEvaluationStep() {
+
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				return new EmptyIteration<>();
+			}
+		};
+	}
+
+	@Override
+	public QueryValueEvaluationStep precompile(ValueExpr expr,
+			QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		if (expr instanceof Var) {
+			return prepare((Var) expr, context);
+		} else if (expr instanceof ValueConstant) {
+			return prepare((ValueConstant) expr, context);
+		} else if (expr instanceof BNodeGenerator) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Bound) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Str) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Label) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Lang) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof LangMatches) {
+			return prepare((LangMatches) expr, context);
+		} else if (expr instanceof Datatype) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Namespace) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof LocalName) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof IsResource) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof IsURI) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof IsBNode) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof IsLiteral) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof IsNumeric) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof IRIFunction) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Regex) {
+			return prepare((Regex) expr, context);
+		} else if (expr instanceof Coalesce) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Like) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof FunctionCall) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof And) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Or) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Not) {
+			return prepare((Not) expr, context);
+		} else if (expr instanceof SameTerm) {
+			return prepare((SameTerm) expr, context);
+		} else if (expr instanceof Compare) {
+			return prepare((Compare) expr, context);
+		} else if (expr instanceof MathExpr) {
+			return prepare((MathExpr) expr, context);
+		} else if (expr instanceof In) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof CompareAny) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof CompareAll) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof Exists) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof If) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof ListMemberOperator) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr instanceof ValueExprTripleRef) {
+			return new QueryValueEvaluationStep.Minimal(this, expr);
+		} else if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		} else {
+			throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
+		}
+	}
+
+	@Deprecated(forRemoval = true)
 	@Override
 	public Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
@@ -1084,6 +1040,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Var var, BindingSet bindings) throws QueryEvaluationException {
 		Value value = var.getValue();
 
@@ -1098,11 +1055,43 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return value;
 	}
 
+	protected QueryValueEvaluationStep prepare(Var var, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+
+		Value value = var.getValue();
+
+		if (value != null) {
+			return new ConstantQueryValueEvaluationStep(value);
+		} else {
+			java.util.function.Function<BindingSet, Value> getValue = context.getValue(var.getName());
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value value = getValue.apply(bindings);
+					if (value == null) {
+						throw new ValueExprEvaluationException();
+					}
+					return value;
+				}
+			};
+		}
+
+	}
+
+	@Deprecated(forRemoval = true)
 	public Value evaluate(ValueConstant valueConstant, BindingSet bindings)
 			throws QueryEvaluationException {
 		return valueConstant.getValue();
 	}
 
+	protected QueryValueEvaluationStep prepare(ValueConstant valueConstant, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return new ConstantQueryValueEvaluationStep(valueConstant);
+	}
+
+	@Deprecated(forRemoval = true)
 	public Value evaluate(BNodeGenerator node, BindingSet bindings)
 			throws QueryEvaluationException {
 		ValueExpr nodeIdExpr = node.getNodeIdExpr();
@@ -1120,6 +1109,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return tripleSource.getValueFactory().createBNode();
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Bound node, BindingSet bindings) throws QueryEvaluationException {
 		try {
 			Value argValue = evaluate(node.getArg(), bindings);
@@ -1129,6 +1119,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Str node, BindingSet bindings) throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 
@@ -1149,6 +1140,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Label node, BindingSet bindings)
 			throws QueryEvaluationException {
 		// FIXME: deprecate Label in favour of Str(?)
@@ -1167,6 +1159,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Lang node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1179,6 +1172,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		throw new ValueExprEvaluationException();
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Datatype node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value v = evaluate(node.getArg(), bindings);
@@ -1201,6 +1195,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		throw new ValueExprEvaluationException();
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Namespace node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1213,6 +1208,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(LocalName node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1230,6 +1226,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a Resource, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsResource node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1241,6 +1238,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a URI, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsURI node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1252,6 +1250,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a BNode, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsBNode node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1263,6 +1262,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a Literal, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsLiteral node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1275,6 +1275,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 *
 	 * @return <var>true</var> if the operand contains a numeric datatyped literal, <var>false</var> otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(IsNumeric node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1298,6 +1299,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return a URI generated from the given arguments
 	 * @throws QueryEvaluationException
 	 */
+	@Deprecated(forRemoval = true)
 	public IRI evaluate(IRIFunction node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
@@ -1340,67 +1342,37 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <var>true</var> if the operands match according to the <var>regex</var> operator, <var>false</var>
 	 *         otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Regex node, BindingSet bindings)
 			throws QueryEvaluationException {
-		Value arg = evaluate(node.getArg(), bindings);
-		Value parg = evaluate(node.getPatternArg(), bindings);
-		Value farg = null;
-		ValueExpr flagsArg = node.getFlagsArg();
-		if (flagsArg != null) {
-			farg = evaluate(flagsArg, bindings);
-		}
-
-		if (QueryEvaluationUtil.isStringLiteral(arg) && QueryEvaluationUtil.isSimpleLiteral(parg)
-				&& (farg == null || QueryEvaluationUtil.isSimpleLiteral(farg))) {
-			String text = ((Literal) arg).getLabel();
-			String ptn = ((Literal) parg).getLabel();
-			String flags = "";
-			if (farg != null) {
-				flags = ((Literal) farg).getLabel();
-			}
-			// TODO should this Pattern be cached?
-			int f = 0;
-			for (char c : flags.toCharArray()) {
-				switch (c) {
-				case 's':
-					f |= Pattern.DOTALL;
-					break;
-				case 'm':
-					f |= Pattern.MULTILINE;
-					break;
-				case 'i':
-					f |= Pattern.CASE_INSENSITIVE;
-					f |= Pattern.UNICODE_CASE;
-					break;
-				case 'x':
-					f |= Pattern.COMMENTS;
-					break;
-				case 'd':
-					f |= Pattern.UNIX_LINES;
-					break;
-				case 'u':
-					f |= Pattern.UNICODE_CASE;
-					break;
-				case 'q':
-					f |= Pattern.LITERAL;
-					break;
-				default:
-					throw new ValueExprEvaluationException(flags);
-				}
-			}
-			Pattern pattern = Pattern.compile(ptn, f);
-			boolean result = pattern.matcher(text).find();
-			return BooleanLiteral.valueOf(result);
-		}
-
-		throw new ValueExprEvaluationException();
+		return prepare(node, new QueryEvaluationContext.Minimal(dataset)).evaluate(bindings);
 	}
 
+	/**
+	 * Determines whether the two operands match according to the <code>regex</code> operator.
+	 *
+	 * @return <var>true</var> if the operands match according to the <var>regex</var> operator, <var>false</var>
+	 *         otherwise.
+	 */
+	protected QueryValueEvaluationStep prepare(Regex node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return RegexValueEvaluationStepSupplier.make(this, node, context);
+	}
+
+	@Deprecated(forRemoval = true)
 	public Value evaluate(LangMatches node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value langTagValue = evaluate(node.getLeftArg(), bindings);
 		Value langRangeValue = evaluate(node.getRightArg(), bindings);
 
+		return evaluateLangMatch(langTagValue, langRangeValue);
+	}
+
+	protected QueryValueEvaluationStep prepare(LangMatches node, QueryEvaluationContext context) {
+		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> evaluateLangMatch(leftVal, rightVal), context);
+	}
+
+	private Value evaluateLangMatch(Value langTagValue, Value langRangeValue) {
 		if (QueryEvaluationUtil.isSimpleLiteral(langTagValue) && QueryEvaluationUtil.isSimpleLiteral(langRangeValue)) {
 			String langTag = ((Literal) langTagValue).getLabel();
 			String langRange = ((Literal) langRangeValue).getLabel();
@@ -1411,7 +1383,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		throw new ValueExprEvaluationException();
-
 	}
 
 	/**
@@ -1422,6 +1393,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return <var>true</var> if the operands match according to the <var>like</var> operator, <var>false</var>
 	 *         otherwise.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Like node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value val = evaluate(node.getArg(), bindings);
@@ -1512,6 +1484,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * Evaluates a function.
 	 */
+	@Deprecated(forRemoval = true)
 	public Value evaluate(FunctionCall node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Function function = FunctionRegistry.getInstance()
@@ -1534,9 +1507,58 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		return function.evaluate(tripleSource, argValues);
-
 	}
 
+	public QueryValueEvaluationStep prepare(FunctionCall node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		Function function = FunctionRegistry.getInstance()
+				.get(node.getURI())
+				.orElseThrow(() -> new QueryEvaluationException("Unknown function '" + node.getURI() + "'"));
+
+		// the NOW function is a special case as it needs to keep a shared
+		// return
+		// value for the duration of the query.
+		if (function instanceof Now) {
+			return prepare((Now) function, context);
+		}
+
+		List<ValueExpr> args = node.getArgs();
+
+		QueryValueEvaluationStep[] argSteps = new QueryValueEvaluationStep[args.size()];
+
+		boolean allConstant = true;
+		for (int i = 0; i < args.size(); i++) {
+			argSteps[i] = precompile(args.get(i), context);
+			if (!argSteps[i].isConstant())
+				allConstant = false;
+		}
+		if (allConstant) {
+			Value[] argValues = evaluateAllArguments(args, argSteps, EmptyBindingSet.getInstance());
+			Value res = function.evaluate(tripleSource, argValues);
+			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(res);
+		} else {
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value[] argValues = evaluateAllArguments(args, argSteps, bindings);
+					return function.evaluate(tripleSource, argValues);
+				}
+			};
+		}
+	}
+
+	private Value[] evaluateAllArguments(List<ValueExpr> args, QueryValueEvaluationStep[] argSteps,
+			BindingSet bindings) {
+		Value[] argValues = new Value[argSteps.length];
+		for (int i = 0; i < args.size(); i++) {
+			argValues[i] = argSteps[i].evaluate(bindings);
+		}
+		return argValues;
+	}
+
+	@Deprecated(forRemoval = true)
 	public Value evaluate(And node, BindingSet bindings) throws QueryEvaluationException {
 		try {
 			Value leftValue = evaluate(node.getLeftArg(), bindings);
@@ -1562,6 +1584,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(rightValue));
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Or node, BindingSet bindings) throws QueryEvaluationException {
 		try {
 			Value leftValue = evaluate(node.getLeftArg(), bindings);
@@ -1587,12 +1610,19 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(rightValue));
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Not node, BindingSet bindings) throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
 		boolean argBoolean = QueryEvaluationUtil.getEffectiveBooleanValue(argValue);
 		return BooleanLiteral.valueOf(!argBoolean);
 	}
 
+	protected QueryValueEvaluationStep prepare(Not node, QueryEvaluationContext context) {
+		return supplyUnaryValueEvaluation(node,
+				(v) -> BooleanLiteral.valueOf(!QueryEvaluationUtil.getEffectiveBooleanValue(v)), context);
+	}
+
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Now node, BindingSet bindings) throws QueryEvaluationException {
 		if (sharedValueOfNow == null) {
 			sharedValueOfNow = node.evaluate(tripleSource.getValueFactory());
@@ -1600,6 +1630,19 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return sharedValueOfNow;
 	}
 
+	/**
+	 * During the execution of a single query NOW() should always return the same result and is in practical terms a
+	 * constant during evaluation.
+	 * 
+	 * @param node    that represent the NOW() function
+	 * @param context that holds the shared now() of the query invocation
+	 * @return a constant value evaluation step
+	 */
+	protected QueryValueEvaluationStep prepare(Now node, QueryEvaluationContext context) {
+		return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(context.getNow());
+	}
+
+	@Deprecated(forRemoval = true)
 	public Value evaluate(SameTerm node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
@@ -1608,6 +1651,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(leftVal != null && leftVal.equals(rightVal));
 	}
 
+	protected QueryValueEvaluationStep prepare(SameTerm node, QueryEvaluationContext context) {
+		return supplyBinaryValueEvaluation(node,
+				(leftVal, rightVal) -> BooleanLiteral.valueOf(leftVal != null && leftVal.equals(rightVal)), context);
+	}
+
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Coalesce node, BindingSet bindings) throws ValueExprEvaluationException {
 		Value result = null;
 
@@ -1630,6 +1679,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return result;
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Compare node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
@@ -1638,6 +1688,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator()));
 	}
 
+	protected QueryValueEvaluationStep prepare(Compare node, QueryEvaluationContext context) {
+		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+				.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator())), context);
+	}
+
+	@Deprecated(forRemoval = true)
 	public Value evaluate(MathExpr node, BindingSet bindings)
 			throws QueryEvaluationException {
 		// Do the math
@@ -1651,6 +1707,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		throw new ValueExprEvaluationException("Both arguments must be numeric literals");
 	}
 
+	private Value mathOperationApplier(MathExpr node, Value leftVal, Value rightVal) {
+		if (leftVal instanceof Literal && rightVal instanceof Literal) {
+			return MathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());
+		}
+
+		throw new ValueExprEvaluationException("Both arguments must be literals");
+	}
+
+	protected QueryValueEvaluationStep prepare(MathExpr node, QueryEvaluationContext context) {
+		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> mathOperationApplier(node, leftVal, rightVal),
+				context);
+	}
+
+	@Deprecated(forRemoval = true)
 	public Value evaluate(If node, BindingSet bindings) throws QueryEvaluationException {
 		Value result;
 
@@ -1673,6 +1743,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return result;
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(In node, BindingSet bindings) throws QueryEvaluationException {
 		Value leftValue = evaluate(node.getArg(), bindings);
 
@@ -1695,6 +1766,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(result);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(ListMemberOperator node, BindingSet bindings)
 			throws QueryEvaluationException {
 		List<ValueExpr> args = node.getArguments();
@@ -1728,6 +1800,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(result);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(CompareAny node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value leftValue = evaluate(node.getArg(), bindings);
@@ -1755,6 +1828,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(result);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(CompareAll node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value leftValue = evaluate(node.getArg(), bindings);
@@ -1783,6 +1857,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return BooleanLiteral.valueOf(result);
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(Exists node, BindingSet bindings)
 			throws QueryEvaluationException {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
@@ -1794,6 +1869,15 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	public boolean isTrue(ValueExpr expr, BindingSet bindings) throws QueryEvaluationException {
 		try {
 			Value value = evaluate(expr, bindings);
+			return QueryEvaluationUtil.getEffectiveBooleanValue(value);
+		} catch (ValueExprEvaluationException e) {
+			return false;
+		}
+	}
+
+	public boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings) throws QueryEvaluationException {
+		try {
+			Value value = expr.evaluate(bindings);
 			return QueryEvaluationUtil.getEffectiveBooleanValue(value);
 		} catch (ValueExprEvaluationException e) {
 			return false;
@@ -1835,6 +1919,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return Long.MAX_VALUE;
 	}
 
+	@Deprecated(forRemoval = true)
 	public Value evaluate(ValueExprTripleRef node, BindingSet bindings)
 			throws QueryEvaluationException {
 		Value subj = evaluate(node.getSubjectVar(), bindings);
@@ -1862,156 +1947,24 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @return iteration over the solutions
 	 */
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TripleRef ref, BindingSet bindings) {
+		return precompile(ref).evaluate(bindings);
+	}
+
+	protected QueryEvaluationStep prepare(TripleRef ref, QueryEvaluationContext context) {
 		// Naive implementation that walks over all statements matching (x rdf:type rdf:Statement)
 		// and filter those that do not match the bindings for subject, predicate and object vars (if bound)
 		final org.eclipse.rdf4j.query.algebra.Var subjVar = ref.getSubjectVar();
 		final org.eclipse.rdf4j.query.algebra.Var predVar = ref.getPredicateVar();
 		final org.eclipse.rdf4j.query.algebra.Var objVar = ref.getObjectVar();
 		final org.eclipse.rdf4j.query.algebra.Var extVar = ref.getExprVar();
-
-		final Value subjValue = getVarValue(subjVar, bindings);
-		final Value predValue = getVarValue(predVar, bindings);
-		final Value objValue = getVarValue(objVar, bindings);
-		final Value extValue = getVarValue(extVar, bindings);
-
-		// case1: when we have a binding for extVar we use it in the reified nodes lookup
-		// case2: in which we have unbound extVar
-		// in both cases:
-		// 1. iterate over all statements matching ((* | extValue), rdf:type, rdf:Statement)
-		// 2. construct a look ahead iteration and filter these solutions that do not match the
-		// bindings for the subject, predicate and object vars (if these are bound)
-		// return set of solution where the values of the statements (extVar, rdf:subject/predicate/object, value)
-		// are bound to the variables of the respective TripleRef variables for subject, predicate, object
-		// NOTE: if the tripleSource is extended to allow for lookup over asserted Triple values in the underlying sail
-		// the evaluation of the TripleRef should be suitably forwarded down the sail and filter/construct
-		// the correct solution out of the results of that call
-		if (extValue != null && !(extValue instanceof Resource)) {
-			return new EmptyIteration<>();
-		}
-
 		// whether the TripleSouce support access to RDF star
 		final boolean sourceSupportsRdfStar = tripleSource instanceof RDFStarTripleSource;
-
-		// in case the
 		if (sourceSupportsRdfStar) {
-			CloseableIteration<? extends Triple, QueryEvaluationException> sourceIter = ((RDFStarTripleSource) tripleSource)
-					.getRdfStarTriples((Resource) subjValue, (IRI) predValue, objValue);
-
-			FilterIteration<Triple, QueryEvaluationException> filterIter = new FilterIteration<Triple, QueryEvaluationException>(
-					sourceIter) {
-				@Override
-				protected boolean accept(Triple triple) throws QueryEvaluationException {
-					if (subjValue != null && !subjValue.equals(triple.getSubject())) {
-						return false;
-					}
-					if (predValue != null && !predValue.equals(triple.getPredicate())) {
-						return false;
-					}
-					if (objValue != null && !objValue.equals(triple.getObject())) {
-						return false;
-					}
-					if (extValue != null && !extValue.equals(triple)) {
-						return false;
-					}
-					return true;
-				}
-			};
-
-			return new ConvertingIteration<Triple, BindingSet, QueryEvaluationException>(filterIter) {
-				@Override
-				protected BindingSet convert(Triple triple) throws QueryEvaluationException {
-					QueryBindingSet result = new QueryBindingSet(bindings);
-					if (subjValue == null) {
-						result.addBinding(subjVar.getName(), triple.getSubject());
-					}
-					if (predValue == null) {
-						result.addBinding(predVar.getName(), triple.getPredicate());
-					}
-					if (objValue == null) {
-						result.addBinding(objVar.getName(), triple.getObject());
-					}
-					// add the extVar binding if we do not have a value bound.
-					if (extValue == null) {
-						result.addBinding(extVar.getName(), triple);
-					}
-					return result;
-				}
-			};
+			return new RdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, (RDFStarTripleSource) tripleSource,
+					context);
 		} else {
-			// standard reification iteration
-			// 1. walk over resources used as subjects of (x rdf:type rdf:Statement)
-			final CloseableIteration<? extends Resource, QueryEvaluationException> iter = new ConvertingIteration<Statement, Resource, QueryEvaluationException>(
-					tripleSource.getStatements((Resource) extValue, RDF.TYPE, RDF.STATEMENT)) {
-
-				@Override
-				protected Resource convert(Statement sourceObject)
-						throws QueryEvaluationException {
-					return sourceObject.getSubject();
-				}
-			};
-			// for each reification node, fetch and check the subject, predicate and object values against
-			// the expected values from TripleRef pattern and supplied bindings collection
-			return new LookAheadIteration<BindingSet, QueryEvaluationException>() {
-				@Override
-				protected void handleClose()
-						throws QueryEvaluationException {
-					super.handleClose();
-					iter.close();
-				}
-
-				@Override
-				protected BindingSet getNextElement()
-						throws QueryEvaluationException {
-					while (iter.hasNext()) {
-						Resource theNode = iter.next();
-						QueryBindingSet result = new QueryBindingSet(bindings);
-						// does it match the subjectValue/subjVar
-						if (!matchValue(theNode, subjValue, subjVar, result, RDF.SUBJECT)) {
-							continue;
-						}
-						// the predicate, if not, remove the binding that hass been added
-						// when the subjValue has been checked and its value added to the solution
-						if (!matchValue(theNode, predValue, predVar, result, RDF.PREDICATE)) {
-							continue;
-						}
-						// check the object, if it do not match
-						// remove the bindings added for subj and pred
-						if (!matchValue(theNode, objValue, objVar, result, RDF.OBJECT)) {
-							continue;
-						}
-						// add the extVar binding if we do not have a value bound.
-						if (extValue == null) {
-							result.addBinding(extVar.getName(), theNode);
-						} else if (!extValue.equals(theNode)) {
-							// the extVar value do not match theNode
-							continue;
-						}
-						return result;
-					}
-					return null;
-				}
-
-				private boolean matchValue(Resource theNode, Value value, Var var, QueryBindingSet result,
-						IRI predicate) {
-					try (CloseableIteration<? extends Statement, QueryEvaluationException> valueiter = tripleSource
-							.getStatements(theNode, predicate, null)) {
-						while (valueiter.hasNext()) {
-							Statement valueStatement = valueiter.next();
-							if (theNode.equals(valueStatement.getSubject())) {
-								if (value == null || value.equals(valueStatement.getObject())) {
-									if (value == null) {
-										result.addBinding(var.getName(), valueStatement.getObject());
-									}
-									return true;
-								}
-							}
-						}
-						return false;
-					}
-				}
-
-			};
-		} // else standard reification iteration
+			return new ReificationRdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, tripleSource, context);
+		}
 	}
 
 	/**
@@ -2028,6 +1981,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			return iterator.hasNext();
 		}
 
 		@Override
@@ -2091,5 +2049,88 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Override
 	public void setTrackTime(boolean trackTime) {
 		this.trackTime = trackTime;
+	}
+
+	/**
+	 * Supply a QueryValueEvalationStep that will invoke the function (operator passed in). It will try to optimise
+	 * constant argument to be called only once per query run,
+	 * 
+	 * @param node      the node to evaluate
+	 * @param operation the function that wraps the operator.
+	 * @param context   in which the query is running.
+	 * @return a potential constant evaluation step.
+	 */
+	protected QueryValueEvaluationStep supplyBinaryValueEvaluation(BinaryValueOperator node,
+			BiFunction<Value, Value, Value> operation, QueryEvaluationContext context) {
+		QueryValueEvaluationStep leftStep = precompile(node.getLeftArg(), context);
+		QueryValueEvaluationStep rightStep = precompile(node.getRightArg(), context);
+		if (leftStep.isConstant() && rightStep.isConstant()) {
+			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
+			Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());
+			Value value = operation.apply(leftVal, rightVal);
+			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(value);
+		} else if (leftStep.isConstant()) {
+			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value rightVal = rightStep.evaluate(bindings);
+					return operation.apply(leftVal, rightVal);
+				}
+			};
+		} else if (rightStep.isConstant()) {
+			Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value leftVal = leftStep.evaluate(bindings);
+					Value result = operation.apply(leftVal, rightVal);
+					return result;
+				}
+			};
+		} else {
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value leftVal = leftStep.evaluate(bindings);
+					Value rightVal = rightStep.evaluate(bindings);
+					return operation.apply(leftVal, rightVal);
+				}
+			};
+		}
+	}
+
+	/**
+	 * Return a QueryEvaluationStep that applies constant propegation.
+	 * 
+	 * @param node      that will be evaluated/prepared
+	 * @param operation the task to be done
+	 * @param context   in which the evaluation takes place
+	 * @return a potentially constant step
+	 */
+	protected QueryValueEvaluationStep supplyUnaryValueEvaluation(UnaryValueOperator node,
+			java.util.function.Function<Value, Value> operation, QueryEvaluationContext context) {
+		QueryValueEvaluationStep argStep = precompile(node.getArg(), context);
+		if (argStep.isConstant()) {
+			Value argValue = argStep.evaluate(EmptyBindingSet.getInstance());
+
+			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(operation.apply(argValue));
+		} else {
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					Value argValue = argStep.evaluate(bindings);
+					return operation.apply(argValue);
+				}
+			};
+		}
 	}
 }

@@ -152,7 +152,7 @@ public class QueryPlanRetrievalTest {
 					"   │     ├──Compare (!=)" + LINE_SEP +
 					"   │     │     Var (name=c)" + LINE_SEP +
 					"   │     │     Var (name=d)" + LINE_SEP +
-					"   │     └──Join" + LINE_SEP +
+					"   │     └──Join (HashJoinIteration)" + LINE_SEP +
 					"   │        ╠══Filter" + LINE_SEP +
 					"   │        ║  ├──Compare (!=)" + LINE_SEP +
 					"   │        ║  │     Var (name=c)" + LINE_SEP +
@@ -820,7 +820,7 @@ public class QueryPlanRetrievalTest {
 					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Var (name=d)</U></td></tr></table>> shape=plaintext];"
 					+ LINE_SEP
 					+
-					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Join</U></td></tr></table>> shape=plaintext];"
+					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Join</U></td></tr> <tr><td>Algorithm</td><td>HashJoinIteration</td></tr></table>> shape=plaintext];"
 					+ LINE_SEP
 					+
 					"   UUID -> UUID [label=\"left\"] ;" + LINE_SEP +

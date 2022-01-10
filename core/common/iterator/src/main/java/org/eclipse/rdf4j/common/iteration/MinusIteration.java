@@ -8,7 +8,9 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * An Iteration that returns the results of an Iteration (the left argument) minus the results of another Iteration (the
@@ -30,6 +32,8 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	private boolean initialized;
 
 	private Set<E> excludeSet;
+
+	private final Supplier<Set<E>> setMaker;
 
 	/*--------------*
 	 * Constructors *
@@ -62,8 +66,28 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 		this.rightArg = rightArg;
 		this.distinct = distinct;
 		this.initialized = false;
+		this.setMaker = HashSet::new;
 	}
 
+	/**
+	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
+	 * argument.
+	 *
+	 * @param leftArg  An Iteration containing the main set of elements.
+	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
+	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
+	 */
+	public MinusIteration(Iteration<? extends E, X> leftArg, Iteration<? extends E, X> rightArg, boolean distinct,
+			Supplier<Set<E>> setMaker) {
+		super(leftArg);
+
+		assert rightArg != null;
+
+		this.rightArg = rightArg;
+		this.distinct = distinct;
+		this.initialized = false;
+		this.setMaker = setMaker;
+	}
 	/*--------------*
 	 * Constructors *
 	 *--------------*/

@@ -15,8 +15,9 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
  * Interleaved join iterator.
@@ -34,27 +35,32 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 * Variables *
 	 *-----------*/
 
-	private final EvaluationStrategy strategy;
-
-	private final Join join;
-
 	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+
+	private final QueryEvaluationStep preparedRight;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
-	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings) throws QueryEvaluationException {
-		this.strategy = strategy;
-		this.join = join;
+	public JoinIterator(EvaluationStrategy strategy, QueryEvaluationStep leftPrepared,
+			QueryEvaluationStep rightPrepared, Join join, BindingSet bindings) throws QueryEvaluationException {
+		leftIter = leftPrepared.evaluate(bindings);
 
+		// Initialize with empty iteration so that var is never null
+		rightIter = new EmptyIteration<>();
+		this.preparedRight = rightPrepared;
+	}
+
+	public JoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings, QueryEvaluationContext context)
+			throws QueryEvaluationException {
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		// Initialize with empty iteration so that var is never null
 		rightIter = new EmptyIteration<>();
-
+		preparedRight = strategy.precompile(join.getRightArg(), context);
 		join.setAlgorithm(this);
 	}
 
@@ -64,6 +70,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
+
 		try {
 			while (rightIter.hasNext() || leftIter.hasNext()) {
 				if (rightIter.hasNext()) {
@@ -74,8 +81,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 				rightIter.close();
 
 				if (leftIter.hasNext()) {
-					TupleExpr rightArg = join.getRightArg();
-					rightIter = strategy.evaluate(rightArg, leftIter.next());
+					rightIter = preparedRight.evaluate(leftIter.next());
 				}
 			}
 		} catch (NoSuchElementException ignore) {

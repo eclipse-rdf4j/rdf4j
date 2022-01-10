@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * An Iteration that returns the intersection of the results of two Iterations. Optionally, the Iteration can be
@@ -32,6 +33,8 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 
 	private Set<E> includeSet;
 
+	private final Supplier<Set<E>> setMaker;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -45,6 +48,11 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 */
 	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2) {
 		this(arg1, arg2, false);
+	}
+
+	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
+			Supplier<Set<E>> setMaker) {
+		this(arg1, arg2, false, setMaker);
 	}
 
 	/**
@@ -63,6 +71,26 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 		this.arg2 = arg2;
 		this.distinct = distinct;
 		this.initialized = false;
+		this.setMaker = this::makeSet;
+	}
+
+	/**
+	 * Creates a new IntersectIteration that returns the intersection of the results of two Iterations.
+	 *
+	 * @param arg1     An Iteration containing the first set of elements.
+	 * @param arg2     An Iteration containing the second set of elements.
+	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
+	 */
+	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
+			boolean distinct, Supplier<Set<E>> setMaker) {
+		super(arg1);
+
+		assert arg2 != null;
+
+		this.arg2 = arg2;
+		this.distinct = distinct;
+		this.initialized = false;
+		this.setMaker = setMaker;
 	}
 
 	/*--------------*
@@ -97,7 +125,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 
 	// this method does not seem to "addSecondSet" since the second set seems to be ignored
 	public Set<E> addSecondSet(Iteration<? extends E, ? extends X> arg2, Set<E> set) throws X {
-		return Iterations.addAll(arg2, makeSet());
+		return Iterations.addAll(arg2, setMaker.get());
 	}
 
 	protected boolean removeFromIncludeSet(E object) {
