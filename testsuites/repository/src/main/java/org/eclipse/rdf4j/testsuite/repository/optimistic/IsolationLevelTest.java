@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -46,6 +47,11 @@ public class IsolationLevelTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private final Logger logger = LoggerFactory.getLogger(IsolationLevelTest.class);

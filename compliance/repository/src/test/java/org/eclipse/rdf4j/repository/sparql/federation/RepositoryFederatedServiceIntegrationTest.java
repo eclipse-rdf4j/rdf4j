@@ -68,6 +68,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 		federatedService.shutdown();
 		localRepo.shutDown();
 		serviceRepo.shutDown();
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	@Test

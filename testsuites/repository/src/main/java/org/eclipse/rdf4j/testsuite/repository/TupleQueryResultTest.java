@@ -18,7 +18,9 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Random;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -32,7 +34,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+import org.eclipse.rdf4j.sail.SailException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -46,6 +50,11 @@ public abstract class TupleQueryResultTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private Repository rep;
@@ -73,6 +82,8 @@ public abstract class TupleQueryResultTest {
 			con.close();
 			con = null;
 		} finally {
+			System.gc();
+			Thread.sleep(1);
 			rep.shutDown();
 			rep = null;
 		}
@@ -211,7 +222,7 @@ public abstract class TupleQueryResultTest {
 
 		for (int evaluateCount = 0; evaluateCount < 1000; evaluateCount++) {
 			try (ByteArrayOutputStream stream = new ByteArrayOutputStream();
-					RepositoryConnection nextCon = rep.getConnection();) {
+					RepositoryConnection nextCon = rep.getConnection()) {
 				TupleQueryResultWriter sparqlWriter = QueryResultIO.createTupleWriter(TupleQueryResultFormat.SPARQL,
 						stream);
 				TupleQuery tupleQuery = nextCon.prepareTupleQuery(QueryLanguage.SPARQL,
@@ -223,7 +234,7 @@ public abstract class TupleQueryResultTest {
 	}
 
 	@Test
-	public void testNotClosingResult() {
+	public void testNotClosingResult() throws InterruptedException {
 		ValueFactory vf = con.getValueFactory();
 		int subjectIndex = 0;
 		int predicateIndex = 100;
@@ -258,5 +269,25 @@ public abstract class TupleQueryResultTest {
 				tupleQuery.evaluate();
 			}
 		}
+	}
+
+	@Test(expected = SailException.class)
+	public void testNotClosingResultThrowsException() throws InterruptedException {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+
+		con.begin();
+		con.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+		con.commit();
+
+		TupleQueryResult evaluate;
+		try (RepositoryConnection repCon = rep.getConnection()) {
+			String queryString = "select * where {?s ?p ?o}";
+			TupleQuery tupleQuery = repCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
+
+			evaluate = tupleQuery.evaluate();
+		}
+
+		evaluate.close();
+
 	}
 }

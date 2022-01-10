@@ -31,5 +31,6 @@ public class MemoryOptimisticIsolationTest extends OptimisticIsolationTest {
 	@AfterClass
 	public static void tearDown() throws Exception {
 		setRepositoryFactory(null);
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 }

@@ -34,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -127,7 +128,7 @@ public abstract class AbstractGenericLuceneTest {
 		// setup a LuceneSail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
-		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(true);
+		Properties.setLockTrackingEnabled(true);
 		sail = new LuceneSail();
 		configure(sail);
 		sail.setBaseSail(memoryStore);
@@ -161,6 +162,7 @@ public abstract class AbstractGenericLuceneTest {
 				repository.shutDown();
 			}
 		}
+		Properties.setLockTrackingEnabled(false);
 	}
 
 	@Test

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -40,6 +41,10 @@ public abstract class InferencingTest {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+	}
 	/*-----------*
 	 * Constants *
 	 *-----------*/

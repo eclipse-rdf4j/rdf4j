@@ -126,9 +126,9 @@ public class TupleExprs {
 	 * @return a list of TupleExpr children.
 	 */
 	public static List<TupleExpr> getChildren(TupleExpr t) {
-		final List<TupleExpr> children = new ArrayList<>(4);
-		t.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+		List<TupleExpr> children = new ArrayList<>();
 
+		t.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meetNode(QueryModelNode node) {
 				if (node instanceof TupleExpr) {
@@ -136,6 +136,7 @@ public class TupleExprs {
 				}
 			}
 		});
+
 		return children;
 	}
 
@@ -172,7 +173,7 @@ public class TupleExprs {
 			if (lit.getDatatype() != null) {
 				uniqueStringForValue += "_" + Integer.toHexString(lit.getDatatype().hashCode());
 			}
-			if (lit.getLanguage() != null) {
+			if (lit.getLanguage().isPresent()) {
 				uniqueStringForValue += "_" + Integer.toHexString(lit.getLanguage().hashCode());
 			}
 		} else if (value instanceof BNode) {

@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -51,6 +52,12 @@ public abstract class MultithreadedTest {
 	@BeforeAll
 	public static void beforeAll() {
 
+	}
+
+	@AfterAll
+	public static void afterAll() {
+		Properties.setLockTrackingEnabled(false);
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	@Test

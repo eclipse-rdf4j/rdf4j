@@ -40,7 +40,8 @@ public class ElasticsearchStoreIsolationLevelIT extends SailIsolationLevelTest {
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass2() throws Exception {
+		SailIsolationLevelTest.afterClass();
 		clientPool.close();
 		TestHelpers.stopElasticsearch(runner);
 	}

@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
+import java.lang.ref.Cleaner;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
@@ -33,6 +35,10 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 
 	@Override
 	public boolean hasNext() throws E {
+		if (!connection.isOpen()) {
+			throw new IllegalStateException("Iteration in use after connection has been closed!");
+		}
+
 		if (isClosed()) {
 			return false;
 		}

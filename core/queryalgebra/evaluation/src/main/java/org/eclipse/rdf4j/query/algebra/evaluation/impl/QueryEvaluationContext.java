@@ -30,7 +30,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  */
 public interface QueryEvaluationContext {
 
-	public class Minimal implements QueryEvaluationContext {
+	class Minimal implements QueryEvaluationContext {
+
+		private Literal now;
+		private final Dataset dataset;
+
 		public Minimal(Literal now, Dataset dataset) {
 			super();
 			this.now = now;
@@ -39,14 +43,18 @@ public interface QueryEvaluationContext {
 
 		public Minimal(Dataset dataset) {
 			this.dataset = dataset;
-			this.now = SimpleValueFactory.getInstance().createLiteral(new Date());
 		}
-
-		private final Literal now;
-		private final Dataset dataset;
 
 		@Override
 		public Literal getNow() {
+
+			if (now == null) {
+				synchronized (this) {
+					if (now == null) {
+						now = SimpleValueFactory.getInstance().createLiteral(new Date());
+					}
+				}
+			}
 
 			return now;
 		}
@@ -60,26 +68,26 @@ public interface QueryEvaluationContext {
 	/**
 	 * @return the shared now;
 	 */
-	public Literal getNow();
+	Literal getNow();
 
 	/**
 	 * @return The dataset that this query is operation on.
 	 */
-	public Dataset getDataset();
+	Dataset getDataset();
 
-	public default MutableBindingSet createBindingSet() {
+	default MutableBindingSet createBindingSet() {
 		return new QueryBindingSet();
 	}
 
-	public default Predicate<BindingSet> hasBinding(String variableName) {
+	default Predicate<BindingSet> hasBinding(String variableName) {
 		return (bs) -> bs.hasBinding(variableName);
 	}
 
-	public default Function<BindingSet, Binding> getBinding(String variableName) {
+	default Function<BindingSet, Binding> getBinding(String variableName) {
 		return (bs) -> bs.getBinding(variableName);
 	}
 
-	public default Function<BindingSet, Value> getValue(String variableName) {
+	default Function<BindingSet, Value> getValue(String variableName) {
 		Function<BindingSet, Binding> getBinding = getBinding(variableName);
 		return (bs) -> {
 			Binding binding = getBinding.apply(bs);
@@ -91,15 +99,15 @@ public interface QueryEvaluationContext {
 		};
 	}
 
-	public default BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
+	default BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
 		return (val, bs) -> bs.setBinding(variableName, val);
 	}
 
-	public default BiConsumer<Value, MutableBindingSet> addBinding(String variableName) {
+	default BiConsumer<Value, MutableBindingSet> addBinding(String variableName) {
 		return (val, bs) -> bs.addBinding(variableName, val);
 	}
 
-	public default MutableBindingSet createBindingSet(BindingSet bindings) {
+	default MutableBindingSet createBindingSet(BindingSet bindings) {
 		return new QueryBindingSet(bindings);
 	}
 }

@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -35,6 +36,11 @@ public abstract class GraphQueryResultTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private Repository rep;

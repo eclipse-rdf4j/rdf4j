@@ -89,6 +89,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		if (server != null) {
 			server.shutdown();
 		}
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	@BeforeEach

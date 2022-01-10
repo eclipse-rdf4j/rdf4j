@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -62,6 +63,11 @@ public abstract class RDFStoreTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	/**

@@ -385,17 +385,23 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 		return true;
 	}
 
-	synchronized <T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
+	<T> Future<T> submitRunnableToExecutorService(Callable<T> runnable) {
 		if (executorService[0] == null) {
-			executorService[0] = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2,
-					r -> {
-						Thread t = Executors.defaultThreadFactory().newThread(r);
-						// this thread pool does not need to stick around if the all other threads are done, because it
-						// is only used for SHACL validation and if all other threads have ended then there would be no
-						// thread to receive the validation results.
-						t.setDaemon(true);
-						return t;
-					});
+			synchronized (this) {
+				if (executorService[0] == null) {
+					executorService[0] = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2,
+							r -> {
+								Thread t = Executors.defaultThreadFactory().newThread(r);
+								// this thread pool does not need to stick around if the all other threads are done,
+								// because it
+								// is only used for SHACL validation and if all other threads have ended then there
+								// would be no
+								// thread to receive the validation results.
+								t.setDaemon(true);
+								return t;
+							});
+				}
+			}
 		}
 		return executorService[0].submit(runnable);
 	}

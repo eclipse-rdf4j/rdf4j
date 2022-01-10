@@ -131,6 +131,9 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		} finally {
 			super.tearDown();
 		}
+
+		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);
+
 	}
 
 	@Test

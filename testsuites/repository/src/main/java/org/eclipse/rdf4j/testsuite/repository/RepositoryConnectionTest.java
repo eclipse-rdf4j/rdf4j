@@ -101,9 +101,6 @@ public abstract class RepositoryConnectionTest {
 
 	@BeforeClass
 	public static void setUpClass() throws Exception {
-		// Turn off debugging for this test, as the cleanup processes are working correctly,
-		// but they debug a lot of information in testOrderByQueriesAreInterrupable
-		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	@Parameters(name = "{0}")

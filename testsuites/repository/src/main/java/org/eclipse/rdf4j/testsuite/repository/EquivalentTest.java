@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -43,6 +44,11 @@ public abstract class EquivalentTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private static ValueFactory vf = SimpleValueFactory.getInstance();

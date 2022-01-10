@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -52,6 +53,11 @@ public abstract class SailIsolationLevelTest {
 	@BeforeClass
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private final Logger logger = LoggerFactory.getLogger(SailIsolationLevelTest.class);

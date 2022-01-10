@@ -30,17 +30,17 @@ public final class EmptyIteration<E, X extends Exception> extends AbstractClosea
 	 *---------*/
 
 	@Override
-	public final boolean hasNext() {
+	public boolean hasNext() {
 		return false;
 	}
 
 	@Override
-	public final E next() {
+	public E next() {
 		throw new NoSuchElementException();
 	}
 
 	@Override
-	public final void remove() {
+	public void remove() {
 		throw new IllegalStateException("Empty iterator does not contain any elements");
 	}
 }

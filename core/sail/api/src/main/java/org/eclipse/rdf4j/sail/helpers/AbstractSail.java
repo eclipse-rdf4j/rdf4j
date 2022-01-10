@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -68,7 +69,7 @@ public abstract class AbstractSail implements Sail {
 	protected static boolean debugEnabled() {
 		try {
 			String value = System.getProperty(DEBUG_PROP);
-			return value != null && !value.equals("false");
+			return value != null && !value.trim().equalsIgnoreCase("false");
 		} catch (SecurityException e) {
 			// Thrown when not allowed to read system properties, for example when
 			// running in applets

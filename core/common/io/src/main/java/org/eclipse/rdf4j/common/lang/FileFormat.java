@@ -37,7 +37,7 @@ public class FileFormat {
 	/**
 	 * The file format's MIME types. The first item in the list is interpreted as the default MIME type for the format.
 	 */
-	private final List<String> mimeTypes = new ArrayList<>(1);
+	private final List<String> mimeTypes;
 
 	/**
 	 * The file format's (default) charset.
@@ -48,7 +48,7 @@ public class FileFormat {
 	 * The file format's file extensions. The first item in the list is interpreted as the default file extension for
 	 * the format.
 	 */
-	private final List<String> fileExtensions = new ArrayList<>(1);
+	private final List<String> fileExtensions;
 
 	/*--------------*
 	 * Constructors *
@@ -101,9 +101,9 @@ public class FileFormat {
 		assert fileExtensions != null : "fileExtensions must not be null";
 
 		this.name = name;
-		this.mimeTypes.addAll(mimeTypes);
+		this.mimeTypes = new ArrayList<>(mimeTypes);
 		this.charset = charset;
-		this.fileExtensions.addAll(fileExtensions);
+		this.fileExtensions = new ArrayList<>(fileExtensions);
 	}
 
 	/*---------*
