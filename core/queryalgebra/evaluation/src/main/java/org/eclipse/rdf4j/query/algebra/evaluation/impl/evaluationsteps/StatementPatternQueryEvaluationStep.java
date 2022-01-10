@@ -103,7 +103,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		if (var == null) {
 			return (b) -> null;
 		} else if (var.hasValue()) {
-			return (b) -> var.getValue();
+			Value value = var.getValue();
+			return (b) -> {
+				return value;
+			};
 		} else {
 			return context.getValue(var.getName());
 		}
