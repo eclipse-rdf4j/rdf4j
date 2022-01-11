@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.memory.model.MemBNode;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatement;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemTriple;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
+import org.eclipse.rdf4j.sail.memory.model.WeakObjectRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -782,20 +784,27 @@ class MemorySailStore implements SailStore {
 
 			Lock stLock = openStatementsReadLock();
 			try {
-				synchronized (valueFactory) {
-					int snapshot = getCurrentSnapshot();
-					for (MemResource memResource : valueFactory.getMemURIs()) {
-						if (isContextResource(memResource, snapshot)) {
-							contextIDs.add(memResource);
-						}
-					}
-
-					for (MemResource memResource : valueFactory.getMemBNodes()) {
+				int snapshot = getCurrentSnapshot();
+				try (WeakObjectRegistry.AutoCloseableIterator<MemIRI> memIRIsIterator = valueFactory
+						.getMemIRIsIterator()) {
+					while (memIRIsIterator.hasNext()) {
+						MemResource memResource = memIRIsIterator.next();
 						if (isContextResource(memResource, snapshot)) {
 							contextIDs.add(memResource);
 						}
 					}
 				}
+
+				try (WeakObjectRegistry.AutoCloseableIterator<MemBNode> memBNodesIterator = valueFactory
+						.getMemBNodesIterator()) {
+					while (memBNodesIterator.hasNext()) {
+						MemResource memResource = memBNodesIterator.next();
+						if (isContextResource(memResource, snapshot)) {
+							contextIDs.add(memResource);
+						}
+					}
+				}
+
 			} finally {
 				stLock.release();
 			}
