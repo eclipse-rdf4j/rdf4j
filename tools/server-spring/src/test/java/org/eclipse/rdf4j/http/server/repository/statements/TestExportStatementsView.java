@@ -14,7 +14,6 @@ import java.util.Map;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory;
-import org.hamcrest.CoreMatchers;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -61,6 +60,6 @@ public class TestExportStatementsView extends TestStatementsCommon {
 		}
 
 		Assert.assertNotNull(exception);
-		Assert.assertThat(exception.getMessage(), CoreMatchers.containsString(REPOSITORY_ERROR_MSG));
+		Assert.assertTrue(exception.getMessage().contains(REPOSITORY_ERROR_MSG));
 	}
 }
