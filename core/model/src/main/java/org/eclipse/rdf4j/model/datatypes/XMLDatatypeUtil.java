@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.model.datatypes;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URISyntaxException;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.regex.Pattern;
@@ -36,13 +35,20 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  */
 public class XMLDatatypeUtil {
 
+	private static final IllegalArgumentExceptionWithoutStackTrace VALUE_SMALLER_THAN_MINIMUM_VALUE_EXCEPTION = new IllegalArgumentExceptionWithoutStackTrace(
+			"Value smaller than minimum value");
+	private static final IllegalArgumentExceptionWithoutStackTrace VALUE_LARGER_THAN_MAXIMUM_VALUE_EXCEPTION = new IllegalArgumentExceptionWithoutStackTrace(
+			"Value larger than maximum value");
+	private static final IllegalArgumentExceptionWithoutStackTrace NAN_COMPARE_EXCEPTION = new IllegalArgumentExceptionWithoutStackTrace(
+			"NaN cannot be compared to other floats");
+
 	public static final String POSITIVE_INFINITY = "INF";
 
 	public static final String NEGATIVE_INFINITY = "-INF";
 
 	public static final String NaN = "NaN";
 
-	private static DatatypeFactory dtFactory;
+	private static final DatatypeFactory dtFactory;
 
 	static {
 		try {
@@ -58,46 +64,32 @@ public class XMLDatatypeUtil {
 			"-?P((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?");
 	private final static Pattern P_YEARMONTHDURATION = Pattern.compile("-?P((\\d)+Y)?((\\d)+M)?");
 	private final static Pattern P_TIMEZONE = Pattern.compile(".*(Z|[+-]((0\\d|1[0-3]):[0-5]\\d|14:00))$");
-	private final static Pattern P_DATE = Pattern.compile("-?\\d{4,}-\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_TIME = Pattern.compile("\\d\\d:\\d\\d:\\d\\d(\\.\\d+)?(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GDAY = Pattern.compile("---\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GMONTH = Pattern.compile("--\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GMONTHDAY = Pattern.compile("--\\d\\d-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GYEAR = Pattern.compile("-?\\d{4,}(Z|(\\+|-)\\d\\d:\\d\\d)?");
-	private final static Pattern P_GYEARMONTH = Pattern.compile("-?\\d{4,}-\\d\\d(Z|(\\+|-)\\d\\d:\\d\\d)?");
+	private final static Pattern P_DATE = Pattern.compile("-?\\d{4,}-\\d\\d-\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_TIME = Pattern.compile("\\d\\d:\\d\\d:\\d\\d(\\.\\d+)?(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GDAY = Pattern.compile("---\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GMONTH = Pattern.compile("--\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GMONTHDAY = Pattern.compile("--\\d\\d-\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GYEAR = Pattern.compile("-?\\d{4,}(Z|([+\\-])\\d\\d:\\d\\d)?");
+	private final static Pattern P_GYEARMONTH = Pattern.compile("-?\\d{4,}-\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?");
 
-	private static final Set<IRI> primitiveDatatypes = createSet(XSD.DURATION, XSD.DATETIME, XSD.TIME, XSD.DATE,
+	private static final Set<IRI> primitiveDatatypes = Set.of(XSD.DURATION, XSD.DATETIME, XSD.TIME, XSD.DATE,
 			XSD.GYEARMONTH, XSD.GYEAR, XSD.GMONTHDAY, XSD.GDAY, XSD.GMONTH, XSD.STRING, XSD.BOOLEAN, XSD.BASE64BINARY,
-			XSD.HEXBINARY, XSD.FLOAT, XSD.DECIMAL, XSD.DOUBLE, XSD.ANYURI, XSD.QNAME, XSD.NOTATION
-	);
+			XSD.HEXBINARY, XSD.FLOAT, XSD.DECIMAL, XSD.DOUBLE, XSD.ANYURI, XSD.QNAME, XSD.NOTATION);
 
-	private static final Set<IRI> derivedDatatypes = createSet(XSD.NORMALIZEDSTRING, XSD.TOKEN, XSD.LANGUAGE,
-			XSD.NMTOKEN, XSD.NMTOKENS, XSD.NAME, XSD.NCNAME, XSD.ID, XSD.IDREF, XSD.IDREFS, XSD.ENTITY, XSD.ENTITIES,
-			XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT, XSD.BYTE, XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER,
+	private static final Set<IRI> derivedDatatypes = Set.of(XSD.NORMALIZEDSTRING, XSD.TOKEN, XSD.LANGUAGE, XSD.NMTOKEN,
+			XSD.NMTOKENS, XSD.NAME, XSD.NCNAME, XSD.ID, XSD.IDREF, XSD.IDREFS, XSD.ENTITY, XSD.ENTITIES, XSD.INTEGER,
+			XSD.LONG, XSD.INT, XSD.SHORT, XSD.BYTE, XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER,
 			XSD.NON_NEGATIVE_INTEGER, XSD.POSITIVE_INTEGER, XSD.UNSIGNED_LONG, XSD.UNSIGNED_INT, XSD.UNSIGNED_SHORT,
-			XSD.UNSIGNED_BYTE, XSD.DAYTIMEDURATION, XSD.YEARMONTHDURATION, XSD.DATETIMESTAMP
-	);
+			XSD.UNSIGNED_BYTE, XSD.DAYTIMEDURATION, XSD.YEARMONTHDURATION, XSD.DATETIMESTAMP);
 
-	private static final Set<IRI> integerDatatypes = createSet(XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT,
-			XSD.BYTE, XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER, XSD.NON_NEGATIVE_INTEGER, XSD.POSITIVE_INTEGER,
-			XSD.UNSIGNED_LONG, XSD.UNSIGNED_INT, XSD.UNSIGNED_SHORT, XSD.UNSIGNED_BYTE
-	);
+	private static final Set<IRI> integerDatatypes = Set.of(XSD.INTEGER, XSD.LONG, XSD.INT, XSD.SHORT, XSD.BYTE,
+			XSD.NON_POSITIVE_INTEGER, XSD.NEGATIVE_INTEGER, XSD.NON_NEGATIVE_INTEGER, XSD.POSITIVE_INTEGER,
+			XSD.UNSIGNED_LONG, XSD.UNSIGNED_INT, XSD.UNSIGNED_SHORT, XSD.UNSIGNED_BYTE);
 
-	private static final Set<IRI> calendarDatatypes = createSet(XSD.DATETIME, XSD.DATE, XSD.TIME, XSD.GYEARMONTH,
-			XSD.GMONTHDAY, XSD.GYEAR, XSD.GMONTH, XSD.GDAY, XSD.DATETIMESTAMP
-	);
+	private static final Set<IRI> calendarDatatypes = Set.of(XSD.DATETIME, XSD.DATE, XSD.TIME, XSD.GYEARMONTH,
+			XSD.GMONTHDAY, XSD.GYEAR, XSD.GMONTH, XSD.GDAY, XSD.DATETIMESTAMP);
 
-	private static final Set<IRI> durationDatatypes = createSet(XSD.DURATION, XSD.DAYTIMEDURATION,
-			XSD.YEARMONTHDURATION
-	);
-
-	private static final Set<IRI> createSet(IRI... values) {
-		final Set<IRI> set = new HashSet<IRI>(values.length);
-		for (IRI value : values) {
-			set.add(value);
-		}
-		return set;
-	}
+	private static final Set<IRI> durationDatatypes = Set.of(XSD.DURATION, XSD.DAYTIMEDURATION, XSD.YEARMONTHDURATION);
 
 	/**
 	 * Checks whether the supplied datatype is a primitive XML Schema datatype.
@@ -291,75 +283,76 @@ public class XMLDatatypeUtil {
 	}
 
 	public static boolean isValidValue(String value, CoreDatatype datatype) {
-		boolean result = true;
 
-		if (datatype == CoreDatatype.XSD_DECIMAL) {
-			result = isValidDecimal(value);
-		} else if (datatype == CoreDatatype.XSD_INTEGER) {
-			result = isValidInteger(value);
-		} else if (datatype == CoreDatatype.XSD_NEGATIVE_INTEGER) {
-			result = isValidNegativeInteger(value);
-		} else if (datatype == CoreDatatype.XSD_NON_POSITIVE_INTEGER) {
-			result = isValidNonPositiveInteger(value);
-		} else if (datatype == CoreDatatype.XSD_NON_NEGATIVE_INTEGER) {
-			result = isValidNonNegativeInteger(value);
-		} else if (datatype == CoreDatatype.XSD_POSITIVE_INTEGER) {
-			result = isValidPositiveInteger(value);
-		} else if (datatype == CoreDatatype.XSD_LONG) {
-			result = isValidLong(value);
-		} else if (datatype == CoreDatatype.XSD_INT) {
-			result = isValidInt(value);
-		} else if (datatype == CoreDatatype.XSD_SHORT) {
-			result = isValidShort(value);
-		} else if (datatype == CoreDatatype.XSD_BYTE) {
-			result = isValidByte(value);
-		} else if (datatype == CoreDatatype.XSD_UNSIGNED_LONG) {
-			result = isValidUnsignedLong(value);
-		} else if (datatype == CoreDatatype.XSD_UNSIGNED_INT) {
-			result = isValidUnsignedInt(value);
-		} else if (datatype == CoreDatatype.XSD_UNSIGNED_SHORT) {
-			result = isValidUnsignedShort(value);
-		} else if (datatype == CoreDatatype.XSD_UNSIGNED_BYTE) {
-			result = isValidUnsignedByte(value);
-		} else if (datatype == CoreDatatype.XSD_FLOAT) {
-			result = isValidFloat(value);
-		} else if (datatype == CoreDatatype.XSD_DOUBLE) {
-			result = isValidDouble(value);
-		} else if (datatype == CoreDatatype.XSD_BOOLEAN) {
-			result = isValidBoolean(value);
-		} else if (datatype == CoreDatatype.XSD_DATETIME) {
-			result = isValidDateTime(value);
-		} else if (datatype == CoreDatatype.XSD_DATETIMESTAMP) {
-			result = isValidDateTimeStamp(value);
-		} else if (datatype == CoreDatatype.XSD_DATE) {
-			result = isValidDate(value);
-		} else if (datatype == CoreDatatype.XSD_TIME) {
-			result = isValidTime(value);
-		} else if (datatype == CoreDatatype.XSD_GDAY) {
-			result = isValidGDay(value);
-		} else if (datatype == CoreDatatype.XSD_GMONTH) {
-			result = isValidGMonth(value);
-		} else if (datatype == CoreDatatype.XSD_GMONTHDAY) {
-			result = isValidGMonthDay(value);
-		} else if (datatype == CoreDatatype.XSD_GYEAR) {
-			result = isValidGYear(value);
-		} else if (datatype == CoreDatatype.XSD_GYEARMONTH) {
-			result = isValidGYearMonth(value);
-		} else if (datatype == CoreDatatype.XSD_DURATION) {
-			result = isValidDuration(value);
-		} else if (datatype == CoreDatatype.XSD_DAYTIMEDURATION) {
-			result = isValidDayTimeDuration(value);
-		} else if (datatype == CoreDatatype.XSD_YEARMONTHDURATION) {
-			result = isValidYearMonthDuration(value);
-		} else if (datatype == CoreDatatype.XSD_QNAME) {
-			result = isValidQName(value);
-		} else if (datatype == CoreDatatype.XSD_ANYURI) {
-			result = isValidAnyURI(value);
-		} else if (datatype == CoreDatatype.XSD_LANGUAGE) {
-			result = Literals.isValidLanguageTag(value);
+		switch (datatype) {
+		case XSD_DECIMAL:
+			return isValidDecimal(value);
+		case XSD_INTEGER:
+			return isValidInteger(value);
+		case XSD_NEGATIVE_INTEGER:
+			return isValidNegativeInteger(value);
+		case XSD_NON_POSITIVE_INTEGER:
+			return isValidNonPositiveInteger(value);
+		case XSD_NON_NEGATIVE_INTEGER:
+			return isValidNonNegativeInteger(value);
+		case XSD_POSITIVE_INTEGER:
+			return isValidPositiveInteger(value);
+		case XSD_LONG:
+			return isValidLong(value);
+		case XSD_INT:
+			return isValidInt(value);
+		case XSD_SHORT:
+			return isValidShort(value);
+		case XSD_BYTE:
+			return isValidByte(value);
+		case XSD_UNSIGNED_LONG:
+			return isValidUnsignedLong(value);
+		case XSD_UNSIGNED_INT:
+			return isValidUnsignedInt(value);
+		case XSD_UNSIGNED_SHORT:
+			return isValidUnsignedShort(value);
+		case XSD_UNSIGNED_BYTE:
+			return isValidUnsignedByte(value);
+		case XSD_FLOAT:
+			return isValidFloat(value);
+		case XSD_DOUBLE:
+			return isValidDouble(value);
+		case XSD_BOOLEAN:
+			return isValidBoolean(value);
+		case XSD_DATETIME:
+			return isValidDateTime(value);
+		case XSD_DATETIMESTAMP:
+			return isValidDateTimeStamp(value);
+		case XSD_DATE:
+			return isValidDate(value);
+		case XSD_TIME:
+			return isValidTime(value);
+		case XSD_GDAY:
+			return isValidGDay(value);
+		case XSD_GMONTH:
+			return isValidGMonth(value);
+		case XSD_GMONTHDAY:
+			return isValidGMonthDay(value);
+		case XSD_GYEAR:
+			return isValidGYear(value);
+		case XSD_GYEARMONTH:
+			return isValidGYearMonth(value);
+		case XSD_DURATION:
+			return isValidDuration(value);
+		case XSD_DAYTIMEDURATION:
+			return isValidDayTimeDuration(value);
+		case XSD_YEARMONTHDURATION:
+			return isValidYearMonthDuration(value);
+		case XSD_QNAME:
+			return isValidQName(value);
+		case XSD_ANYURI:
+			return isValidAnyURI(value);
+		case XSD_LANGUAGE:
+			return Literals.isValidLanguageTag(value);
+		default:
+			return false;
 		}
 
-		return result;
 	}
 
 	/**
@@ -688,7 +681,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidDate(String value) {
-		return P_DATE.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_DATE.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -698,7 +691,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidTime(String value) {
-		return P_TIME.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_TIME.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -708,7 +701,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGDay(String value) {
-		return P_GDAY.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GDAY.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -718,7 +711,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGMonth(String value) {
-		return P_GMONTH.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GMONTH.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -728,7 +721,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGMonthDay(String value) {
-		return P_GMONTHDAY.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GMONTHDAY.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -738,7 +731,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGYear(String value) {
-		return P_GYEAR.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GYEAR.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -748,7 +741,7 @@ public class XMLDatatypeUtil {
 	 * @return <var>true</var> if valid, <var>false</var> otherwise
 	 */
 	public static boolean isValidGYearMonth(String value) {
-		return P_GYEARMONTH.matcher(value).matches() ? isValidCalendarValue(value) : false;
+		return P_GYEARMONTH.matcher(value).matches() && isValidCalendarValue(value);
 	}
 
 	/**
@@ -769,12 +762,12 @@ public class XMLDatatypeUtil {
 		// check prefix
 		String prefix = split[0];
 		if (!"".equals(prefix)) {
-			if (!isPrefixStartChar(prefix.charAt(0))) {
+			if (isNotPrefixStartChar(prefix.charAt(0))) {
 				return false;
 			}
 
 			for (int i = 1; i < prefix.length(); i++) {
-				if (!isNameChar(prefix.charAt(i))) {
+				if (isNotNameChar(prefix.charAt(i))) {
 					return false;
 				}
 			}
@@ -784,12 +777,12 @@ public class XMLDatatypeUtil {
 
 		if (!"".equals(name)) {
 			// check name
-			if (!isNameStartChar(name.charAt(0))) {
+			if (isNotNameStartChar(name.charAt(0))) {
 				return false;
 			}
 
 			for (int i = 1; i < name.length(); i++) {
-				if (!isNameChar(name.charAt(i))) {
+				if (isNotNameChar(name.charAt(i))) {
 					return false;
 				}
 			}
@@ -816,21 +809,21 @@ public class XMLDatatypeUtil {
 		}
 	}
 
-	private static boolean isPrefixStartChar(int c) {
-		return ASCIIUtil.isLetter(c) || c >= 0x00C0 && c <= 0x00D6 || c >= 0x00D8 && c <= 0x00F6
-				|| c >= 0x00F8 && c <= 0x02FF || c >= 0x0370 && c <= 0x037D || c >= 0x037F && c <= 0x1FFF
-				|| c >= 0x200C && c <= 0x200D || c >= 0x2070 && c <= 0x218F || c >= 0x2C00 && c <= 0x2FEF
-				|| c >= 0x3001 && c <= 0xD7FF || c >= 0xF900 && c <= 0xFDCF || c >= 0xFDF0 && c <= 0xFFFD
-				|| c >= 0x10000 && c <= 0xEFFFF;
+	private static boolean isNotPrefixStartChar(int c) {
+		return !ASCIIUtil.isLetter(c) && (c < 0x00C0 || c > 0x00D6) && (c < 0x00D8 || c > 0x00F6)
+				&& (c < 0x00F8 || c > 0x02FF) && (c < 0x0370 || c > 0x037D) && (c < 0x037F || c > 0x1FFF)
+				&& (c < 0x200C || c > 0x200D) && (c < 0x2070 || c > 0x218F) && (c < 0x2C00 || c > 0x2FEF)
+				&& (c < 0x3001 || c > 0xD7FF) && (c < 0xF900 || c > 0xFDCF) && (c < 0xFDF0 || c > 0xFFFD)
+				&& (c < 0x10000 || c > 0xEFFFF);
 	}
 
-	private static boolean isNameStartChar(int c) {
-		return c == '_' || isPrefixStartChar(c);
+	private static boolean isNotNameStartChar(int c) {
+		return c != '_' && isNotPrefixStartChar(c);
 	}
 
-	private static boolean isNameChar(int c) {
-		return isNameStartChar(c) || ASCIIUtil.isNumber(c) || c == '-' || c == 0x00B7 || c >= 0x0300 && c <= 0x036F
-				|| c >= 0x203F && c <= 0x2040;
+	private static boolean isNotNameChar(int c) {
+		return isNotNameStartChar(c) && !ASCIIUtil.isNumber(c) && c != '-' && c != 0x00B7 && (c < 0x0300 || c > 0x036F)
+				&& (c < 0x203F || c > 0x2040);
 	}
 
 	/**
@@ -926,7 +919,7 @@ public class XMLDatatypeUtil {
 		} else if (value.equals("true") || value.equals("false")) {
 			return value;
 		} else {
-			throw new IllegalArgumentException("Not a legal boolean value: " + value);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal boolean value: " + value);
 		}
 	}
 
@@ -946,7 +939,7 @@ public class XMLDatatypeUtil {
 		StringBuilder result = new StringBuilder(decLength + 2);
 
 		if (decLength == 0) {
-			throwIAE("Not a legal decimal: " + decimal);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal decimal: " + decimal);
 		}
 
 		boolean isZeroPointZero = true;
@@ -961,7 +954,7 @@ public class XMLDatatypeUtil {
 		}
 
 		if (idx == decLength) {
-			throwIAE("Not a legal decimal: " + decimal);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal decimal: " + decimal);
 		}
 
 		// skip any leading zeros
@@ -985,8 +978,8 @@ public class XMLDatatypeUtil {
 				if (c == '.') {
 					break;
 				}
-				if (!isDigit(c)) {
-					throwIAE("Not a legal decimal: " + decimal);
+				if (isNotDigit(c)) {
+					throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal decimal: " + decimal);
 				}
 				result.append(c);
 				idx++;
@@ -1016,8 +1009,8 @@ public class XMLDatatypeUtil {
 
 				while (idx <= lastIdx) {
 					char c = decimal.charAt(idx);
-					if (!isDigit(c)) {
-						throwIAE("Not a legal decimal: " + decimal);
+					if (isNotDigit(c)) {
+						throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal decimal: " + decimal);
 					}
 					result.append(c);
 					idx++;
@@ -1139,7 +1132,7 @@ public class XMLDatatypeUtil {
 		int intLength = integer.length();
 
 		if (intLength == 0) {
-			throwIAE("Not a legal integer: " + integer);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal integer: " + integer);
 		}
 
 		int idx = 0;
@@ -1154,7 +1147,7 @@ public class XMLDatatypeUtil {
 		}
 
 		if (idx == intLength) {
-			throwIAE("Not a legal integer: " + integer);
+			throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal integer: " + integer);
 		}
 
 		if (integer.charAt(idx) == '0' && idx < intLength - 1) {
@@ -1170,8 +1163,8 @@ public class XMLDatatypeUtil {
 
 		// Check that all characters in 'norm' are digits
 		for (int i = 0; i < norm.length(); i++) {
-			if (!isDigit(norm.charAt(i))) {
-				throwIAE("Not a legal integer: " + integer);
+			if (isNotDigit(norm.charAt(i))) {
+				throw new IllegalArgumentExceptionWithoutStackTrace("Not a legal integer: " + integer);
 			}
 		}
 
@@ -1182,12 +1175,12 @@ public class XMLDatatypeUtil {
 		// Check lower and upper bounds, if applicable
 		if (minValue != null) {
 			if (compareCanonicalIntegers(norm, minValue) < 0) {
-				throwIAE("Value smaller than minimum value");
+				throw VALUE_SMALLER_THAN_MINIMUM_VALUE_EXCEPTION;
 			}
 		}
 		if (maxValue != null) {
 			if (compareCanonicalIntegers(norm, maxValue) > 0) {
-				throwIAE("Value larger than maximum value");
+				throw VALUE_LARGER_THAN_MAXIMUM_VALUE_EXCEPTION;
 			}
 		}
 
@@ -1244,7 +1237,8 @@ public class XMLDatatypeUtil {
 
 		if (value.contains(" ")) {
 			// floating point lexical value can not contain spaces after collapse
-			throwIAE("No space allowed in floating point lexical value (" + value + ")");
+			throw new IllegalArgumentExceptionWithoutStackTrace(
+					"No space allowed in floating point lexical value (" + value + ")");
 		}
 
 		// handle special values
@@ -1288,7 +1282,7 @@ public class XMLDatatypeUtil {
 			}
 			sb.append(mantissa.charAt(firstDigitIdx));
 			sb.append('.');
-			sb.append(mantissa.substring(firstDigitIdx + 1, dotIdx));
+			sb.append(mantissa, firstDigitIdx + 1, dotIdx);
 			sb.append(mantissa.substring(dotIdx + 1));
 
 			mantissa = sb.toString();
@@ -1359,22 +1353,26 @@ public class XMLDatatypeUtil {
 		// applicable
 		if (minMantissa != null) {
 			if (compareCanonicalDecimals(mantissa, minMantissa) < 0) {
-				throwIAE("Mantissa smaller than minimum value (" + minMantissa + ")");
+				throw new IllegalArgumentExceptionWithoutStackTrace(
+						"Mantissa smaller than minimum value (" + minMantissa + ")");
 			}
 		}
 		if (maxMantissa != null) {
 			if (compareCanonicalDecimals(mantissa, maxMantissa) > 0) {
-				throwIAE("Mantissa larger than maximum value (" + maxMantissa + ")");
+				throw new IllegalArgumentExceptionWithoutStackTrace(
+						"Mantissa larger than maximum value (" + maxMantissa + ")");
 			}
 		}
 		if (minExponent != null) {
 			if (compareCanonicalIntegers(exponent, minExponent) < 0) {
-				throwIAE("Exponent smaller than minimum value (" + minExponent + ")");
+				throw new IllegalArgumentExceptionWithoutStackTrace(
+						"Exponent smaller than minimum value (" + minExponent + ")");
 			}
 		}
 		if (maxExponent != null) {
 			if (compareCanonicalIntegers(exponent, maxExponent) > 0) {
-				throwIAE("Exponent larger than maximum value (" + maxExponent + ")");
+				throw new IllegalArgumentExceptionWithoutStackTrace(
+						"Exponent larger than maximum value (" + maxExponent + ")");
 			}
 		}
 
@@ -1393,17 +1391,6 @@ public class XMLDatatypeUtil {
 		dt.normalize();
 		return dt.toString();
 	}
-
-	/**
-	 * Replaces all occurences of #x9 (tab), #xA (line feed) and #xD (carriage return) with #x20 (space), as specified
-	 * for whiteSpace facet <var>replace</var>.
-	 */
-	// private static String replaceWhiteSpace(String s) {
-	// s = StringUtil.gsub("\t", " ", s);
-	// s = StringUtil.gsub("\r", " ", s);
-	// s = StringUtil.gsub("\n", " ", s);
-	// return s;
-	// }
 
 	/**
 	 * Replaces all contiguous sequences of #x9 (tab), #xA (line feed) and #xD (carriage return) with a single #x20
@@ -1529,7 +1516,7 @@ public class XMLDatatypeUtil {
 			// Continue comparing digits after the dot if necessary
 			int dec1Length = dec1.length();
 			int dec2Length = dec2.length();
-			int lastIdx = dec1Length <= dec2Length ? dec1Length : dec2Length;
+			int lastIdx = Math.min(dec1Length, dec2Length);
 
 			for (int i = dotIdx1 + 1; result == 0 && i < lastIdx; i++) {
 				result = dec1.charAt(i) - dec2.charAt(i);
@@ -1767,10 +1754,7 @@ public class XMLDatatypeUtil {
 	 *         <var>NaN</var> is compared to a floating point number other than <var>NaN</var>.
 	 */
 	public static int compareFPNumbers(String fp1, String fp2) {
-		fp1 = normalizeFPNumber(fp1);
-		fp2 = normalizeFPNumber(fp2);
-
-		return compareCanonicalFPNumbers(fp1, fp2);
+		return compareCanonicalFPNumbers(normalizeFPNumber(fp1), normalizeFPNumber(fp2));
 	}
 
 	/**
@@ -1791,7 +1775,7 @@ public class XMLDatatypeUtil {
 				// NaN is equal to itself
 				return 0;
 			} else {
-				throwIAE("NaN cannot be compared to other floats");
+				throw NAN_COMPARE_EXCEPTION;
 			}
 		}
 
@@ -2091,14 +2075,20 @@ public class XMLDatatypeUtil {
 	/**
 	 * Checks whether the supplied character is a digit.
 	 */
-	private static final boolean isDigit(char c) {
-		return c >= '0' && c <= '9';
+	private static boolean isNotDigit(char c) {
+		return c < '0' || c > '9';
 	}
 
-	/**
-	 * Throws an IllegalArgumentException that contains the supplied message.
-	 */
-	private static final void throwIAE(String msg) {
-		throw new IllegalArgumentException(msg);
+	private static class IllegalArgumentExceptionWithoutStackTrace extends IllegalArgumentException {
+		public IllegalArgumentExceptionWithoutStackTrace(String msg) {
+			super(msg);
+		}
+
+		@Override
+		public synchronized Throwable fillInStackTrace() {
+			// no-op because we don't need to have the entire stacktrace when we are just using these exceptions for
+			// control flow
+			return this;
+		}
 	}
 }
