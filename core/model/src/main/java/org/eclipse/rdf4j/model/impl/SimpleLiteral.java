@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -72,7 +71,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	protected SimpleLiteral(String label) {
 		setLabel(label);
-		setDatatype(XSD.STRING);
+		setDatatype(org.eclipse.rdf4j.model.vocabulary.XSD.STRING);
 	}
 
 	/**
@@ -94,10 +93,10 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	protected SimpleLiteral(String label, IRI datatype) {
 		setLabel(label);
-		if (RDF.LANGSTRING.equals(datatype)) {
+		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(CoreDatatype.XSD_STRING);
+			setDatatype(CoreDatatype.XSD.STRING);
 		} else {
 			setDatatype(datatype);
 		}
@@ -106,10 +105,10 @@ public class SimpleLiteral extends AbstractLiteral {
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected SimpleLiteral(String label, XSD.Datatype datatype) {
 		setLabel(label);
-		if (RDF.LANGSTRING.equals(datatype.getIri())) {
+		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype.getIri())) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(CoreDatatype.XSD_STRING);
+			setDatatype(CoreDatatype.XSD.STRING);
 		} else {
 			setDatatype(datatype.getCoreDatatype());
 		}
@@ -118,10 +117,10 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	protected SimpleLiteral(String label, CoreDatatype datatype) {
 		setLabel(label);
-		if (datatype == CoreDatatype.RDF_LANGSTRING) {
+		if (datatype == CoreDatatype.RDF.LANGSTRING) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(CoreDatatype.XSD_STRING);
+			setDatatype(CoreDatatype.XSD.STRING);
 		} else {
 			setDatatype(datatype);
 		}
@@ -148,7 +147,7 @@ public class SimpleLiteral extends AbstractLiteral {
 			throw new IllegalArgumentException("Language tag cannot be empty");
 		}
 		this.language = language;
-		setDatatype(RDF.LANGSTRING);
+		setDatatype(org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING);
 	}
 
 	@Override
@@ -185,7 +184,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	public Optional<XSD.Datatype> getXsdDatatype() {
 		Optional<CoreDatatype> coreDatatype = getCoreDatatype();
 		if (coreDatatype.isPresent()) {
-			return XSD.Datatype.from(coreDatatype.get());
+			return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.get());
 		}
 		return Optional.empty();
 	}
@@ -241,7 +240,7 @@ public class SimpleLiteral extends AbstractLiteral {
 			sb.append('"').append(label).append('"');
 			sb.append('@').append(language);
 			return sb.toString();
-		} else if (XSD.STRING.equals(datatype) || datatype == null) {
+		} else if (org.eclipse.rdf4j.model.vocabulary.XSD.STRING.equals(datatype) || datatype == null) {
 			StringBuilder sb = new StringBuilder(label.length() + 2);
 			sb.append('"').append(label).append('"');
 			return sb.toString();

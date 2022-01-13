@@ -189,7 +189,7 @@ public class XSD {
 	public static final IRI YEARMONTHDURATION = create("yearMonthDuration");
 
 	private static IRI create(String localName) {
-		return Vocabularies.createIRI(XSD.NAMESPACE, localName);
+		return Vocabularies.createIRI(org.eclipse.rdf4j.model.vocabulary.XSD.NAMESPACE, localName);
 	}
 
 	public enum Datatype {
@@ -250,7 +250,7 @@ public class XSD {
 		private final boolean decimal;
 		private final boolean floatingPoint;
 		private final boolean calendar;
-		private final CoreDatatype coreDatatype;
+		private final CoreDatatype.XSD coreDatatype;
 
 		Datatype(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
 				boolean floatingPoint, boolean calendar) {
@@ -262,7 +262,7 @@ public class XSD {
 			this.decimal = decimal;
 			this.floatingPoint = floatingPoint;
 			this.calendar = calendar;
-			this.coreDatatype = CoreDatatype.from(iri).orElseThrow();
+			this.coreDatatype = (CoreDatatype.XSD) CoreDatatype.from(iri).orElseThrow();
 		}
 
 		/**
@@ -374,15 +374,15 @@ public class XSD {
 			return coreDatatype;
 		}
 
-		private static Map<IRI, Optional<Datatype>> reverseLookup = new HashMap<>();
+		private static final Map<IRI, Optional<Datatype>> reverseLookup = new HashMap<>();
 
-		private static Map<CoreDatatype, Optional<Datatype>> reverseLookupCoreDatatype = new EnumMap<>(
-				CoreDatatype.class);
+		private static final Map<CoreDatatype.XSD, Optional<Datatype>> reverseLookupXSDDatatype = new EnumMap<>(
+				CoreDatatype.XSD.class);
 
 		static {
 			for (Datatype value : Datatype.values()) {
 				reverseLookup.put(value.iri, Optional.of(value));
-				reverseLookupCoreDatatype.put(value.coreDatatype, Optional.of(value));
+				reverseLookupXSDDatatype.put(value.coreDatatype, Optional.of(value));
 			}
 		}
 
@@ -391,7 +391,7 @@ public class XSD {
 		}
 
 		public static Optional<Datatype> from(CoreDatatype datatype) {
-			return reverseLookupCoreDatatype.getOrDefault(datatype, Optional.empty());
+			return reverseLookupXSDDatatype.getOrDefault(datatype, Optional.empty());
 		}
 
 	}

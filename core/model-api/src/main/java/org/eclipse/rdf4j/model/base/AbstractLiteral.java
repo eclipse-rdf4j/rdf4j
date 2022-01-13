@@ -26,7 +26,7 @@ import static java.time.temporal.ChronoUnit.SECONDS;
 import static java.time.temporal.ChronoUnit.YEARS;
 import static java.util.Objects.requireNonNull;
 
-import static org.eclipse.rdf4j.model.base.CoreDatatype.RDF_LANGSTRING;
+import static org.eclipse.rdf4j.model.base.CoreDatatype.RDF.LANGSTRING;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -76,11 +76,11 @@ public abstract class AbstractLiteral implements Literal {
 	private static final long serialVersionUID = -1286527360744086451L;
 
 	static boolean reserved(IRI datatype) {
-		return RDF_LANGSTRING.getIri().equals(datatype);
+		return LANGSTRING.getIri().equals(datatype);
 	}
 
 	static boolean reserved(CoreDatatype datatype) {
-		return RDF_LANGSTRING == datatype;
+		return LANGSTRING == datatype;
 	}
 
 	/**
@@ -193,7 +193,7 @@ public abstract class AbstractLiteral implements Literal {
 
 					final IRI datatype = getDatatype();
 
-					return datatype.equals(CoreDatatype.XSD_STRING) ? label
+					return datatype.equals(CoreDatatype.XSD.STRING) ? label
 							: label + "^^<" + datatype.stringValue() + ">";
 
 				});
@@ -217,15 +217,15 @@ public abstract class AbstractLiteral implements Literal {
 
 		TypedLiteral(String label) {
 			this.label = label;
-			this.coreDatatype = CoreDatatype.Cache.from(CoreDatatype.XSD_STRING);
-			this.datatype = CoreDatatype.XSD_STRING.getIri();
+			this.coreDatatype = CoreDatatype.Cache.from(CoreDatatype.XSD.STRING);
+			this.datatype = CoreDatatype.XSD.STRING.getIri();
 		}
 
 		TypedLiteral(String label, IRI datatype) {
 			this.label = label;
 			if (datatype == null) {
-				this.datatype = CoreDatatype.XSD_STRING.getIri();
-				this.coreDatatype = CoreDatatype.Cache.from(CoreDatatype.XSD_STRING);
+				this.datatype = CoreDatatype.XSD.STRING.getIri();
+				this.coreDatatype = CoreDatatype.Cache.from(CoreDatatype.XSD.STRING);
 			} else {
 				this.datatype = datatype;
 				this.coreDatatype = CoreDatatype.Cache.empty();
@@ -283,12 +283,12 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return RDF_LANGSTRING.getIri();
+			return LANGSTRING.getIri();
 		}
 
 		@Override
-		public Optional<CoreDatatype> getCoreDatatype() {
-			return CoreDatatype.RDF_LANGSTRING.asOptional();
+		public Optional<CoreDatatype.RDF> getCoreDatatype() {
+			return LANGSTRING.asOptional();
 		}
 	}
 
@@ -327,12 +327,12 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return CoreDatatype.XSD_BOOLEAN.getIri();
+			return CoreDatatype.XSD.BOOLEAN.getIri();
 		}
 
 		@Override
-		public Optional<CoreDatatype> getCoreDatatype() {
-			return CoreDatatype.XSD_BOOLEAN.asOptional();
+		public Optional<CoreDatatype.XSD> getCoreDatatype() {
+			return CoreDatatype.XSD.BOOLEAN.asOptional();
 		}
 
 		@Override
@@ -384,27 +384,27 @@ public abstract class AbstractLiteral implements Literal {
 		private final CoreDatatype datatype;
 
 		NumberLiteral(byte value) {
-			this(value, Byte.toString(value), CoreDatatype.XSD_BYTE);
+			this(value, Byte.toString(value), CoreDatatype.XSD.BYTE);
 		}
 
 		NumberLiteral(short value) {
-			this(value, Short.toString(value), CoreDatatype.XSD_SHORT);
+			this(value, Short.toString(value), CoreDatatype.XSD.SHORT);
 		}
 
 		NumberLiteral(int value) {
-			this(value, Integer.toString(value), CoreDatatype.XSD_INT);
+			this(value, Integer.toString(value), CoreDatatype.XSD.INT);
 		}
 
 		NumberLiteral(long value) {
-			this(value, Long.toString(value), CoreDatatype.XSD_LONG);
+			this(value, Long.toString(value), CoreDatatype.XSD.LONG);
 		}
 
 		NumberLiteral(float value) {
-			this(value, toString(value), CoreDatatype.XSD_FLOAT);
+			this(value, toString(value), CoreDatatype.XSD.FLOAT);
 		}
 
 		NumberLiteral(double value) {
-			this(value, toString(value), CoreDatatype.XSD_DOUBLE);
+			this(value, toString(value), CoreDatatype.XSD.DOUBLE);
 		}
 
 		NumberLiteral(Number value, String label, CoreDatatype datatype) {
@@ -469,7 +469,7 @@ public abstract class AbstractLiteral implements Literal {
 		private static final long serialVersionUID = -4274941248972496665L;
 
 		IntegerLiteral(BigInteger value) {
-			super(value, value.toString(), CoreDatatype.XSD_INTEGER);
+			super(value, value.toString(), CoreDatatype.XSD.INTEGER);
 		}
 
 		@Override
@@ -489,7 +489,7 @@ public abstract class AbstractLiteral implements Literal {
 		private static final long serialVersionUID = -4382147098035463886L;
 
 		DecimalLiteral(BigDecimal value) {
-			super(value, value.toPlainString(), CoreDatatype.XSD_DECIMAL);
+			super(value, value.toPlainString(), CoreDatatype.XSD.DECIMAL);
 		}
 
 		@Override
@@ -588,7 +588,7 @@ public abstract class AbstractLiteral implements Literal {
 				.toFormatter();
 
 		private static final Map<Integer, CoreDatatype> DATATYPES = datatypes();
-		private static final Map<CoreDatatype, DateTimeFormatter> FORMATTERS = formatters();
+		private static final Map<CoreDatatype.XSD, DateTimeFormatter> FORMATTERS = formatters();
 
 		static TemporalAccessor parseTemporalAccessor(String label) throws DateTimeException {
 
@@ -612,41 +612,41 @@ public abstract class AbstractLiteral implements Literal {
 
 			Map<Integer, CoreDatatype> datatypes = new HashMap<>();
 
-			datatypes.put(date + time, CoreDatatype.XSD_DATETIME);
-			datatypes.put(date + time + nano, CoreDatatype.XSD_DATETIME);
-			datatypes.put((date + time + zone), CoreDatatype.XSD_DATETIME);
-			datatypes.put((date + time + nano + zone), CoreDatatype.XSD_DATETIME);
+			datatypes.put(date + time, CoreDatatype.XSD.DATETIME);
+			datatypes.put(date + time + nano, CoreDatatype.XSD.DATETIME);
+			datatypes.put((date + time + zone), CoreDatatype.XSD.DATETIME);
+			datatypes.put((date + time + nano + zone), CoreDatatype.XSD.DATETIME);
 
-			datatypes.put(time, CoreDatatype.XSD_TIME);
-			datatypes.put(time + nano, CoreDatatype.XSD_TIME);
-			datatypes.put(time + zone, CoreDatatype.XSD_TIME);
-			datatypes.put(time + nano + zone, CoreDatatype.XSD_TIME);
+			datatypes.put(time, CoreDatatype.XSD.TIME);
+			datatypes.put(time + nano, CoreDatatype.XSD.TIME);
+			datatypes.put(time + zone, CoreDatatype.XSD.TIME);
+			datatypes.put(time + nano + zone, CoreDatatype.XSD.TIME);
 
-			datatypes.put(date, CoreDatatype.XSD_DATE);
-			datatypes.put(date + zone, CoreDatatype.XSD_DATE);
+			datatypes.put(date, CoreDatatype.XSD.DATE);
+			datatypes.put(date + zone, CoreDatatype.XSD.DATE);
 
-			datatypes.put(key(YEAR, MONTH_OF_YEAR), CoreDatatype.XSD_GYEARMONTH);
-			datatypes.put(key(YEAR), CoreDatatype.XSD_GYEAR);
-			datatypes.put(key(MONTH_OF_YEAR, DAY_OF_MONTH), CoreDatatype.XSD_GMONTHDAY);
-			datatypes.put(key(DAY_OF_MONTH), CoreDatatype.XSD_GDAY);
-			datatypes.put(key(MONTH_OF_YEAR), CoreDatatype.XSD_GMONTH);
+			datatypes.put(key(YEAR, MONTH_OF_YEAR), CoreDatatype.XSD.GYEARMONTH);
+			datatypes.put(key(YEAR), CoreDatatype.XSD.GYEAR);
+			datatypes.put(key(MONTH_OF_YEAR, DAY_OF_MONTH), CoreDatatype.XSD.GMONTHDAY);
+			datatypes.put(key(DAY_OF_MONTH), CoreDatatype.XSD.GDAY);
+			datatypes.put(key(MONTH_OF_YEAR), CoreDatatype.XSD.GMONTH);
 
 			return datatypes;
 		}
 
-		private static Map<CoreDatatype, DateTimeFormatter> formatters() {
+		private static Map<CoreDatatype.XSD, DateTimeFormatter> formatters() {
 
-			final Map<CoreDatatype, DateTimeFormatter> formatters = new EnumMap<>(CoreDatatype.class);
+			final Map<CoreDatatype.XSD, DateTimeFormatter> formatters = new EnumMap<>(CoreDatatype.XSD.class);
 
-			formatters.put(CoreDatatype.XSD_DATETIME, DATETIME_FORMATTER);
-			formatters.put(CoreDatatype.XSD_TIME, OFFSET_TIME_FORMATTER);
-			formatters.put(CoreDatatype.XSD_DATE, OFFSET_DATE_FORMATTER);
+			formatters.put(CoreDatatype.XSD.DATETIME, DATETIME_FORMATTER);
+			formatters.put(CoreDatatype.XSD.TIME, OFFSET_TIME_FORMATTER);
+			formatters.put(CoreDatatype.XSD.DATE, OFFSET_DATE_FORMATTER);
 
-			formatters.put(CoreDatatype.XSD_GYEARMONTH, LOCAL_DATE_FORMATTER);
-			formatters.put(CoreDatatype.XSD_GYEAR, LOCAL_DATE_FORMATTER);
-			formatters.put(CoreDatatype.XSD_GMONTHDAY, DASH_FORMATTER);
-			formatters.put(CoreDatatype.XSD_GDAY, DASH_FORMATTER);
-			formatters.put(CoreDatatype.XSD_GMONTH, DASH_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GYEARMONTH, LOCAL_DATE_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GYEAR, LOCAL_DATE_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GMONTHDAY, DASH_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GDAY, DASH_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GMONTH, DASH_FORMATTER);
 
 			return formatters;
 		}
@@ -905,7 +905,7 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return CoreDatatype.XSD_DURATION.getIri();
+			return CoreDatatype.XSD.DURATION.getIri();
 		}
 
 		@Override
@@ -914,8 +914,8 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype> getCoreDatatype() {
-			return CoreDatatype.XSD_DURATION.asOptional();
+		public Optional<CoreDatatype.XSD> getCoreDatatype() {
+			return CoreDatatype.XSD.DURATION.asOptional();
 		}
 
 	}
@@ -942,19 +942,19 @@ public abstract class AbstractLiteral implements Literal {
 
 			final Map<QName, CoreDatatype> datatypes = new HashMap<>();
 
-			datatypes.put(DatatypeConstants.DATETIME, CoreDatatype.XSD_DATETIME);
-			datatypes.put(DatatypeConstants.TIME, CoreDatatype.XSD_TIME);
-			datatypes.put(DatatypeConstants.DATE, CoreDatatype.XSD_DATE);
+			datatypes.put(DatatypeConstants.DATETIME, CoreDatatype.XSD.DATETIME);
+			datatypes.put(DatatypeConstants.TIME, CoreDatatype.XSD.TIME);
+			datatypes.put(DatatypeConstants.DATE, CoreDatatype.XSD.DATE);
 
-			datatypes.put(DatatypeConstants.GYEARMONTH, CoreDatatype.XSD_GYEARMONTH);
-			datatypes.put(DatatypeConstants.GYEAR, CoreDatatype.XSD_GYEAR);
-			datatypes.put(DatatypeConstants.GMONTHDAY, CoreDatatype.XSD_GMONTHDAY);
-			datatypes.put(DatatypeConstants.GDAY, CoreDatatype.XSD_GDAY);
-			datatypes.put(DatatypeConstants.GMONTH, CoreDatatype.XSD_GMONTH);
+			datatypes.put(DatatypeConstants.GYEARMONTH, CoreDatatype.XSD.GYEARMONTH);
+			datatypes.put(DatatypeConstants.GYEAR, CoreDatatype.XSD.GYEAR);
+			datatypes.put(DatatypeConstants.GMONTHDAY, CoreDatatype.XSD.GMONTHDAY);
+			datatypes.put(DatatypeConstants.GDAY, CoreDatatype.XSD.GDAY);
+			datatypes.put(DatatypeConstants.GMONTH, CoreDatatype.XSD.GMONTH);
 
-			datatypes.put(DatatypeConstants.DURATION, CoreDatatype.XSD_DURATION);
-			datatypes.put(DatatypeConstants.DURATION_DAYTIME, CoreDatatype.XSD_DAYTIMEDURATION);
-			datatypes.put(DatatypeConstants.DURATION_YEARMONTH, CoreDatatype.XSD_YEARMONTHDURATION);
+			datatypes.put(DatatypeConstants.DURATION, CoreDatatype.XSD.DURATION);
+			datatypes.put(DatatypeConstants.DURATION_DAYTIME, CoreDatatype.XSD.DAYTIMEDURATION);
+			datatypes.put(DatatypeConstants.DURATION_YEARMONTH, CoreDatatype.XSD.YEARMONTHDURATION);
 
 			return datatypes;
 		}

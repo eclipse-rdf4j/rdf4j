@@ -111,7 +111,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	@Override
 	public Literal createLiteral(String value) {
-		return new SimpleLiteral(value, CoreDatatype.XSD_STRING);
+		return new SimpleLiteral(value, CoreDatatype.XSD.STRING);
 	}
 
 	@Override
@@ -173,7 +173,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(byte value) {
-		return createIntegerLiteral(value, XSD.Datatype.BYTE);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.BYTE);
 	}
 
 	/**
@@ -181,7 +181,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(short value) {
-		return createIntegerLiteral(value, XSD.Datatype.SHORT);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.SHORT);
 	}
 
 	/**
@@ -189,7 +189,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(int value) {
-		return createIntegerLiteral(value, XSD.Datatype.INT);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.INT);
 	}
 
 	/**
@@ -197,7 +197,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(long value) {
-		return createIntegerLiteral(value, XSD.Datatype.LONG);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.LONG);
 	}
 
 	/**
@@ -216,7 +216,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(float value) {
-		return createFPLiteral(value, XSD.Datatype.FLOAT);
+		return createFPLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.FLOAT);
 	}
 
 	/**
@@ -224,17 +224,17 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(double value) {
-		return createFPLiteral(value, XSD.Datatype.DOUBLE);
+		return createFPLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.DOUBLE);
 	}
 
 	@Override
 	public Literal createLiteral(BigInteger bigInteger) {
-		return createIntegerLiteral(bigInteger, XSD.INTEGER);
+		return createIntegerLiteral(bigInteger, org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER);
 	}
 
 	@Override
 	public Literal createLiteral(BigDecimal bigDecimal) {
-		return createNumericLiteral(bigDecimal, XSD.DECIMAL);
+		return createNumericLiteral(bigDecimal, org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL);
 	}
 
 	/**

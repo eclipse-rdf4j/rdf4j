@@ -65,8 +65,8 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	public LmdbLiteral(ValueStoreRevision revision, String label, long internalID) {
 		this.label = label;
-		coreDatatype = CoreDatatype.Cache.from(CoreDatatype.XSD_STRING);
-		datatype = CoreDatatype.XSD_STRING.getIri();
+		coreDatatype = CoreDatatype.Cache.from(CoreDatatype.XSD.STRING);
+		datatype = CoreDatatype.XSD.STRING.getIri();
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -78,8 +78,8 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public LmdbLiteral(ValueStoreRevision revision, String label, String lang, long internalID) {
 		this.label = label;
 		this.language = lang;
-		coreDatatype = CoreDatatype.Cache.from(CoreDatatype.RDF_LANGSTRING);
-		datatype = CoreDatatype.RDF_LANGSTRING.getIri();
+		coreDatatype = CoreDatatype.Cache.from(CoreDatatype.RDF.LANGSTRING);
+		datatype = CoreDatatype.RDF.LANGSTRING.getIri();
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
