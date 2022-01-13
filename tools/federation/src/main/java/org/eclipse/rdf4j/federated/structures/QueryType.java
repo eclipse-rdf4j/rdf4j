@@ -11,6 +11,7 @@ public enum QueryType {
 
 	SELECT,
 	CONSTRUCT,
+	DESCRIBE,
 	ASK,
 	UPDATE,
 	GET_STATEMENTS,

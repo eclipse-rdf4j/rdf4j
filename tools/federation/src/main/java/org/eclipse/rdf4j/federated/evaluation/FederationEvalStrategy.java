@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
+import org.eclipse.rdf4j.federated.algebra.FederatedDescribeOperator;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
@@ -40,6 +41,7 @@ import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor;
+import org.eclipse.rdf4j.federated.evaluation.iterator.FederatedDescribeIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
 import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
@@ -80,6 +82,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -212,10 +215,10 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		// if the query has a single relevant source (and if it is not a SERVICE query), evaluate at this source only
 		// Note: UPDATE queries are always handled in the federation engine to adhere to the configured
-		// write strategy
+		// write strategy. Also DESCRIBE queries are handled in the federation
 		Set<Endpoint> relevantSources = performSourceSelection(members, cache, queryInfo, info);
 		if (relevantSources.size() == 1 && propagateServices(info.getServices())
-				&& queryInfo.getQueryType() != QueryType.UPDATE) {
+				&& queryInfo.getQueryType() != QueryType.UPDATE && queryInfo.getQueryType() != QueryType.DESCRIBE) {
 			return new SingleSourceQuery(query, relevantSources.iterator().next(), queryInfo);
 		}
 
@@ -862,6 +865,20 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				return BooleanLiteral.TRUE;
 			}
 		};
+	}
+
+	@Override
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(DescribeOperator operator,
+			final BindingSet bindings) throws QueryEvaluationException {
+
+		if (!(operator instanceof FederatedDescribeOperator)) {
+			throw new FedXRuntimeException(
+					"Expected a FedXDescribeOperator Node. Found " + operator.getClass() + " instead.");
+		}
+		CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(operator.getArg(), bindings);
+		// Note: we need to evaluate the DESCRIBE over the entire federation
+		return new FederatedDescribeIteration(iter, this, operator.getBindingNames(), bindings,
+				((FederatedDescribeOperator) operator).getQueryInfo());
 	}
 
 	protected CloseableIteration<BindingSet, QueryEvaluationException> evaluateAtStatementSources(Object preparedQuery,
