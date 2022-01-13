@@ -386,11 +386,9 @@ public class XMLDatatypeUtil {
 				return isValidAnyURI(value);
 			case LANGUAGE:
 				return Literals.isValidLanguageTag(value);
-			default:
-				return false;
 			}
 		}
-		return false;
+		return true;
 
 	}
 
@@ -933,6 +931,52 @@ public class XMLDatatypeUtil {
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME)) {
 			result = normalizeDateTime(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.ANYURI)) {
+			result = collapseWhiteSpace(value);
+		}
+
+		return result;
+	}
+
+	public static String normalize(String value, CoreDatatype.XSD datatype) {
+		String result = value;
+
+		if (datatype == CoreDatatype.XSD.DECIMAL) {
+			result = normalizeDecimal(value);
+		} else if (datatype == CoreDatatype.XSD.INTEGER) {
+			result = normalizeInteger(value);
+		} else if (datatype == CoreDatatype.XSD.NEGATIVE_INTEGER) {
+			result = normalizeNegativeInteger(value);
+		} else if (datatype == CoreDatatype.XSD.NON_POSITIVE_INTEGER) {
+			result = normalizeNonPositiveInteger(value);
+		} else if (datatype == CoreDatatype.XSD.NON_NEGATIVE_INTEGER) {
+			result = normalizeNonNegativeInteger(value);
+		} else if (datatype == CoreDatatype.XSD.POSITIVE_INTEGER) {
+			result = normalizePositiveInteger(value);
+		} else if (datatype == CoreDatatype.XSD.LONG) {
+			result = normalizeLong(value);
+		} else if (datatype == CoreDatatype.XSD.INT) {
+			result = normalizeInt(value);
+		} else if (datatype == CoreDatatype.XSD.SHORT) {
+			result = normalizeShort(value);
+		} else if (datatype == CoreDatatype.XSD.BYTE) {
+			result = normalizeByte(value);
+		} else if (datatype == CoreDatatype.XSD.UNSIGNED_LONG) {
+			result = normalizeUnsignedLong(value);
+		} else if (datatype == CoreDatatype.XSD.UNSIGNED_INT) {
+			result = normalizeUnsignedInt(value);
+		} else if (datatype == CoreDatatype.XSD.UNSIGNED_SHORT) {
+			result = normalizeUnsignedShort(value);
+		} else if (datatype == CoreDatatype.XSD.UNSIGNED_BYTE) {
+			result = normalizeUnsignedByte(value);
+		} else if (datatype == CoreDatatype.XSD.FLOAT) {
+			result = normalizeFloat(value);
+		} else if (datatype == CoreDatatype.XSD.DOUBLE) {
+			result = normalizeDouble(value);
+		} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
+			result = normalizeBoolean(value);
+		} else if (datatype == CoreDatatype.XSD.DATETIME) {
+			result = normalizeDateTime(value);
+		} else if (datatype == CoreDatatype.XSD.ANYURI) {
 			result = collapseWhiteSpace(value);
 		}
 

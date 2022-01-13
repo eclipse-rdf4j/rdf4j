@@ -27,6 +27,10 @@ class CoreDatatypeHelper {
 			reverseLookup.put(value.getIri(), value.asOptional());
 		}
 
+		for (CoreDatatype value : CoreDatatype.GEO.values()) {
+			reverseLookup.put(value.getIri(), value.asOptional());
+		}
+
 		for (CoreDatatype value : CoreDatatype.XSD.values()) {
 			reverseLookup.put(value.getIri(), value.asOptional());
 		}

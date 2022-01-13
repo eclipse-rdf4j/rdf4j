@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.model.base;
 
 import java.io.Serializable;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -36,8 +35,9 @@ public interface CoreDatatype {
 	Map<IRI, Optional<CoreDatatype>> reverseLookup = CoreDatatypeHelper.getReverseLookup();
 
 	static Optional<CoreDatatype> from(IRI datatype) {
-		if (datatype == null)
+		if (datatype == null) {
 			return Optional.empty();
+		}
 		return reverseLookup.getOrDefault(datatype, Optional.empty());
 	}
 
@@ -73,11 +73,14 @@ public interface CoreDatatype {
 
 		public Optional<CoreDatatype> getCached(IRI datatype) {
 			if (!cached) {
-				coreDatatype = CoreDatatype.from(datatype).orElse(null);
+				if (datatype != null) {
+					coreDatatype = CoreDatatype.from(datatype).orElse(null);
+				}
 				cached = true;
 			}
-			if (coreDatatype != null)
+			if (coreDatatype != null) {
 				return coreDatatype.asOptional();
+			}
 			return Optional.empty();
 		}
 
@@ -85,52 +88,52 @@ public interface CoreDatatype {
 
 	enum XSD implements CoreDatatype {
 
-		DURATION(iri("duration"), true, true, false, false, false, false, false),
-		DATETIME(iri("dateTime"), true, false, false, false, false, false, true),
-		DATETIMESTAMP(iri("dateTimeStamp"), false, false, false, true, false, false, true),
-		DAYTIMEDURATION(iri("dayTimeDuration"), false, true, false, true, false, false, false),
-		TIME(iri("time"), true, false, false, false, false, false, true),
-		DATE(iri("date"), true, false, false, false, false, false, true),
-		GYEARMONTH(iri("gYearMonth"), true, false, false, false, false, false, true),
-		GYEAR(iri("gYear"), true, false, false, false, false, false, true),
-		GMONTHDAY(iri("gMonthDay"), true, false, false, false, false, false, true),
-		GDAY(iri("gDay"), true, false, false, false, false, false, true),
-		GMONTH(iri("gMonth"), true, false, false, false, false, false, true),
-		STRING(iri("string"), true, false, false, false, false, false, false),
-		BOOLEAN(iri("boolean"), true, false, false, false, false, false, false),
-		BASE64BINARY(iri("base64Binary"), true, false, false, false, false, false, false),
-		HEXBINARY(iri("hexBinary"), true, false, false, false, false, false, false),
-		FLOAT(iri("float"), true, false, false, false, false, true, false),
-		DECIMAL(iri("decimal"), true, false, false, false, true, false, false),
-		DOUBLE(iri("double"), true, false, false, false, false, true, false),
-		ANYURI(iri("anyURI"), true, false, false, false, false, false, false),
-		QNAME(iri("QName"), true, false, false, false, false, false, false),
-		NOTATION(iri("NOTATION"), true, false, false, false, false, false, false),
-		NORMALIZEDSTRING(iri("normalizedString"), false, false, false, true, false, false, false),
-		TOKEN(iri("token"), false, false, false, true, false, false, false),
-		LANGUAGE(iri("language"), false, false, false, true, false, false, false),
-		NMTOKEN(iri("NMTOKEN"), false, false, false, true, false, false, false),
-		NMTOKENS(iri("NMTOKENS"), false, false, false, true, false, false, false),
-		NAME(iri("Name"), false, false, false, true, false, false, false),
-		NCNAME(iri("NCName"), false, false, false, true, false, false, false),
+		ENTITIES(iri("ENTITIES"), false, false, false, true, false, false, false),
+		ENTITY(iri("ENTITY"), false, false, false, true, false, false, false),
 		ID(iri("ID"), false, false, false, true, false, false, false),
 		IDREF(iri("IDREF"), false, false, false, true, false, false, false),
 		IDREFS(iri("IDREFS"), false, false, false, true, false, false, false),
-		ENTITY(iri("ENTITY"), false, false, false, true, false, false, false),
-		ENTITIES(iri("ENTITIES"), false, false, false, true, false, false, false),
-		INTEGER(iri("integer"), false, false, true, true, true, false, false),
-		LONG(iri("long"), false, false, true, true, true, false, false),
-		INT(iri("int"), false, false, true, true, true, false, false),
-		SHORT(iri("short"), false, false, true, true, true, false, false),
+		NCNAME(iri("NCName"), false, false, false, true, false, false, false),
+		NMTOKEN(iri("NMTOKEN"), false, false, false, true, false, false, false),
+		NMTOKENS(iri("NMTOKENS"), false, false, false, true, false, false, false),
+		NOTATION(iri("NOTATION"), true, false, false, false, false, false, false),
+		NAME(iri("Name"), false, false, false, true, false, false, false),
+		QNAME(iri("QName"), true, false, false, false, false, false, false),
+		ANYURI(iri("anyURI"), true, false, false, false, false, false, false),
+		BASE64BINARY(iri("base64Binary"), true, false, false, false, false, false, false),
+		BOOLEAN(iri("boolean"), true, false, false, false, false, false, false),
 		BYTE(iri("byte"), false, false, true, true, true, false, false),
-		NON_POSITIVE_INTEGER(iri("nonPositiveInteger"), false, false, true, true, true, false, false),
+		DATE(iri("date"), true, false, false, false, false, false, true),
+		DATETIME(iri("dateTime"), true, false, false, false, false, false, true),
+		DATETIMESTAMP(iri("dateTimeStamp"), false, false, false, true, false, false, true),
+		DAYTIMEDURATION(iri("dayTimeDuration"), false, true, false, true, false, false, false),
+		DECIMAL(iri("decimal"), true, false, false, false, true, false, false),
+		DOUBLE(iri("double"), true, false, false, false, false, true, false),
+		DURATION(iri("duration"), true, true, false, false, false, false, false),
+		FLOAT(iri("float"), true, false, false, false, false, true, false),
+		GDAY(iri("gDay"), true, false, false, false, false, false, true),
+		GMONTH(iri("gMonth"), true, false, false, false, false, false, true),
+		GMONTHDAY(iri("gMonthDay"), true, false, false, false, false, false, true),
+		GYEAR(iri("gYear"), true, false, false, false, false, false, true),
+		GYEARMONTH(iri("gYearMonth"), true, false, false, false, false, false, true),
+		HEXBINARY(iri("hexBinary"), true, false, false, false, false, false, false),
+		INT(iri("int"), false, false, true, true, true, false, false),
+		INTEGER(iri("integer"), false, false, true, true, true, false, false),
+		LANGUAGE(iri("language"), false, false, false, true, false, false, false),
+		LONG(iri("long"), false, false, true, true, true, false, false),
 		NEGATIVE_INTEGER(iri("negativeInteger"), false, false, true, true, true, false, false),
 		NON_NEGATIVE_INTEGER(iri("nonNegativeInteger"), false, false, true, true, true, false, false),
+		NON_POSITIVE_INTEGER(iri("nonPositiveInteger"), false, false, true, true, true, false, false),
+		NORMALIZEDSTRING(iri("normalizedString"), false, false, false, true, false, false, false),
 		POSITIVE_INTEGER(iri("positiveInteger"), false, false, true, true, true, false, false),
-		UNSIGNED_LONG(iri("unsignedLong"), false, false, true, true, true, false, false),
-		UNSIGNED_INT(iri("unsignedInt"), false, false, true, true, true, false, false),
-		UNSIGNED_SHORT(iri("unsignedShort"), false, false, true, true, true, false, false),
+		SHORT(iri("short"), false, false, true, true, true, false, false),
+		STRING(iri("string"), true, false, false, false, false, false, false),
+		TIME(iri("time"), true, false, false, false, false, false, true),
+		TOKEN(iri("token"), false, false, false, true, false, false, false),
 		UNSIGNED_BYTE(iri("unsignedByte"), false, false, true, true, true, false, false),
+		UNSIGNED_INT(iri("unsignedInt"), false, false, true, true, true, false, false),
+		UNSIGNED_LONG(iri("unsignedLong"), false, false, true, true, true, false, false),
+		UNSIGNED_SHORT(iri("unsignedShort"), false, false, true, true, true, false, false),
 		YEARMONTHDURATION(iri("yearMonthDuration"), false, true, false, true, false, false, false);
 
 		private static final String NAMESPACE = "http://www.w3.org/2001/XMLSchema#";
@@ -319,19 +322,43 @@ public interface CoreDatatype {
 			return optional;
 		}
 
-		private static final HashMap<IRI, Optional<RDF>> reverseLookup = new HashMap<>();
+	}
 
-		static {
-			for (RDF value : RDF.values()) {
-				reverseLookup.put(value.iri, Optional.of(value));
-			}
+	enum GEO implements CoreDatatype {
+
+		WKT_LITERAL(iri("wktLiteral"));
+
+		private static final String NAMESPACE = "http://www.opengis.net/ont/geosparql#";
+
+		private static IRI iri(String localName) {
+			return new AbstractIRI.GenericIRI(NAMESPACE, localName);
 		}
 
-		public static Optional<RDF> from(IRI datatype) {
-			if (datatype == null)
-				return Optional.empty();
-			return reverseLookup.getOrDefault(datatype, Optional.empty());
+		private final IRI iri;
+		private final Optional<GEO> optional;
+
+		GEO(IRI iri) {
+			this.iri = iri;
+			this.optional = Optional.of(this);
+		}
+
+		public boolean isXSDDatatype() {
+			return false;
+		}
+
+		@Override
+		public boolean isRDFDatatype() {
+			return true;
+		}
+
+		public IRI getIri() {
+			return iri;
+		}
+
+		public Optional<GEO> asOptional() {
+			return optional;
 		}
 
 	}
+
 }
