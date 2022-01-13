@@ -37,7 +37,6 @@ import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.cache.CacheUtils;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
-import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor;
@@ -147,18 +146,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}, federationContext.getFederatedServiceResolver());
 		this.federationContext = federationContext;
 		this.executor = federationContext.getManager().getExecutor();
-		this.cache = createSourceSelectionCache();
-	}
-
-	/**
-	 * Create the {@link SourceSelectionCache}
-	 *
-	 * @return the {@link SourceSelectionCache}
-	 * @see FedXConfig#getSourceSelectionCacheSpec()
-	 */
-	protected SourceSelectionCache createSourceSelectionCache() {
-		String cacheSpec = federationContext.getConfig().getSourceSelectionCacheSpec();
-		return new SourceSelectionMemoryCache(cacheSpec);
+		this.cache = federationContext.getSourceSelectionCache();
 	}
 
 	@Override
@@ -461,7 +449,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 		}
 
 		// TODO why not collect in parallel?
-		WorkerUnionBase<Statement> union = new SynchronousWorkerUnion<>(this, queryInfo);
+		WorkerUnionBase<Statement> union = new SynchronousWorkerUnion<>(queryInfo);
 
 		for (StatementSource source : sources) {
 			Endpoint e = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());
@@ -619,7 +607,7 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			throws QueryEvaluationException {
 
 		ControlledWorkerScheduler<BindingSet> unionScheduler = federationContext.getManager().getUnionScheduler();
-		ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<>(this, unionScheduler,
+		ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<>(unionScheduler,
 				union.getQueryInfo());
 		int numberOfArguments = union.getNumberOfArguments();
 		QueryEvaluationStep[] args = new QueryEvaluationStep[numberOfArguments];

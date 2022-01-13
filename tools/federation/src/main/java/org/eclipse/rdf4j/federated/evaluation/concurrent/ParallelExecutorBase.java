@@ -50,8 +50,8 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	protected volatile CloseableIteration<T, QueryEvaluationException> rightIter;
 	protected volatile boolean finished = false;
 
-	public ParallelExecutorBase(FederationEvalStrategy strategy, QueryInfo queryInfo) throws QueryEvaluationException {
-		this.strategy = strategy;
+	public ParallelExecutorBase(QueryInfo queryInfo) throws QueryEvaluationException {
+		this.strategy = queryInfo.getStrategy();
 		this.executorId = NEXT_EXECUTOR_ID.incrementAndGet();
 		this.queryInfo = queryInfo;
 	}
