@@ -173,7 +173,7 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 * @return the name scrubbed of any illegal characters
 	 */
 	public static String scrubVarName(String theName) {
-		return theName.replaceAll("-", "");
+		return theName.replace("-", "");
 	}
 
 	/**

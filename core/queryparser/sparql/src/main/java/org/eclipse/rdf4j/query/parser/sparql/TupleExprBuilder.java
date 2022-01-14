@@ -310,7 +310,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// the
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
-		final Var var = new Var("_anon_" + UUID.randomUUID().toString().replaceAll("-", "_"));
+		final Var var = new Var("_anon_" + UUID.randomUUID().toString().replace("-", "_"));
 		var.setAnonymous(true);
 		return var;
 	}
@@ -974,7 +974,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (resource instanceof Var) {
 				projectionElements.addElement(new ProjectionElem(((Var) resource).getName()));
 			} else {
-				String alias = "_describe_" + UUID.randomUUID().toString().replaceAll("-", "_");
+				String alias = "_describe_" + UUID.randomUUID().toString().replace("-", "_");
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));

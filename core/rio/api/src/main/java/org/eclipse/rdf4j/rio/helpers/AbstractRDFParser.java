@@ -774,7 +774,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	}
 
 	private final String createUniqueBNodePrefix() {
-		return UUID.randomUUID().toString().replaceAll("-", "") + "-";
+		return UUID.randomUUID().toString().replace("-", "") + "-";
 	}
 
 	/**
