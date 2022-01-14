@@ -182,11 +182,7 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 			quoted = true;
 
 			// escape quotes inside the string
-			label = label.replaceAll("\"", "\"\"");
-
-			// add quotes around the string (escaped with a second quote for the
-			// CSV parser)
-			// label = "\"\"" + label + "\"\"";
+			label = label.replace("\"", "\"\"");
 		}
 
 		if (quoted) {

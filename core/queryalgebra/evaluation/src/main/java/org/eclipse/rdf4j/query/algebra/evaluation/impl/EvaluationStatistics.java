@@ -107,7 +107,7 @@ public class EvaluationStatistics {
 
 		@Override
 		public void meet(ArbitraryLengthPath node) {
-			final Var pathVar = new Var("_anon_" + UUID.randomUUID().toString().replaceAll("-", "_"));
+			final Var pathVar = new Var("_anon_" + UUID.randomUUID().toString().replace("-", "_"));
 			pathVar.setAnonymous(true);
 			// cardinality of ALP is determined based on the cost of a
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that
