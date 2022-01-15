@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.model.base;
 
 import java.io.Serializable;
-import java.util.Map;
 import java.util.Optional;
 
 import javax.xml.datatype.Duration;
