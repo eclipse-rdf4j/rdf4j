@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Namespaces;
 import org.eclipse.rdf4j.model.vocabulary.DC;
@@ -832,7 +833,7 @@ public abstract class RepositoryConnectionTest {
 
 	@Test
 	public void testGetStatementsMalformedTypedLiteral() throws Exception {
-		Literal invalidIntegerLiteral = vf.createLiteral("the number four", XSD.INTEGER);
+		Literal invalidIntegerLiteral = vf.createLiteral("the number four", CoreDatatype.XSD.INTEGER);
 		try {
 			IRI pred = vf.createIRI(URN_PRED);
 			testCon.add(bob, pred, invalidIntegerLiteral);

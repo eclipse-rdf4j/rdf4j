@@ -12,6 +12,7 @@ import java.util.Optional;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.LiteralUtilException;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -198,9 +199,14 @@ public class RDFParserHelper {
 				}
 				// Backup for unnormalised datatype literal creation
 				else if (workingDatatype != null) {
-					result = valueFactory.createLiteral(workingLabel, workingDatatype);
+					Optional<? extends CoreDatatype> coreDatatype = CoreDatatype.from(workingDatatype);
+					if(coreDatatype.isPresent()){
+						result = valueFactory.createLiteral(workingLabel, coreDatatype.get());
+					}else {
+						result = valueFactory.createLiteral(workingLabel, workingDatatype);
+					}
 				} else {
-					result = valueFactory.createLiteral(workingLabel, XSD.STRING);
+					result = valueFactory.createLiteral(workingLabel, CoreDatatype.XSD.STRING);
 				}
 			} catch (Exception e) {
 				reportFatalError(e, lineNo, columnNo, errListener);

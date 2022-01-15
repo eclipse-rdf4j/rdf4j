@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model.impl;
 
 import java.io.IOException;
+import java.io.NotSerializableException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -443,7 +444,11 @@ public class LinkedHashModel extends AbstractModel {
 			IRI pred = st.getPredicate();
 			Value obj = st.getObject();
 			Resource ctx = st.getContext();
-			s.writeObject(new ContextStatement(subj, pred, obj, ctx));
+			try {
+				s.writeObject(new ContextStatement(subj, pred, obj, ctx));
+			}catch (NotSerializableException e){
+				System.out.println();
+			}
 		}
 	}
 

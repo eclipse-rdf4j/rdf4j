@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+
+import java.util.Optional;
 
 /**
  * An extension of {@link SimpleLiteral} that stores a boolean value to avoid parsing.
@@ -60,5 +63,10 @@ public class BooleanLiteral extends SimpleLiteral {
 	 */
 	public static BooleanLiteral valueOf(boolean value) {
 		return value ? TRUE : FALSE;
+	}
+
+	@Override
+	public Optional<? extends CoreDatatype> getCoreDatatype() {
+		return CoreDatatype.XSD.BOOLEAN.asOptional();
 	}
 }

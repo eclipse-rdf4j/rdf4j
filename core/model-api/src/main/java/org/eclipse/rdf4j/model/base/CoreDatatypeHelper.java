@@ -19,9 +19,9 @@ import org.eclipse.rdf4j.model.IRI;
 @InternalUseOnly
 class CoreDatatypeHelper {
 
-	static Map<IRI, Optional<CoreDatatype>> getReverseLookup() {
+	static Map<IRI, Optional<? extends CoreDatatype>> getReverseLookup() {
 
-		HashMap<IRI, Optional<CoreDatatype>> reverseLookup = new HashMap<>();
+		HashMap<IRI, Optional<? extends CoreDatatype>> reverseLookup = new HashMap<>();
 
 		for (CoreDatatype value : CoreDatatype.RDF.values()) {
 			reverseLookup.put(value.getIri(), value.asOptional());
@@ -35,6 +35,6 @@ class CoreDatatypeHelper {
 			reverseLookup.put(value.getIri(), value.asOptional());
 		}
 
-		return Collections.unmodifiableMap(reverseLookup);
+		return reverseLookup;
 	}
 }

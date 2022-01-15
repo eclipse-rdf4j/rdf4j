@@ -2139,6 +2139,34 @@ public class XMLDatatypeUtil {
 		}
 	}
 
+	public static CoreDatatype.XSD qnameToCoreDatatype(QName qname) {
+		if (DatatypeConstants.DATETIME == qname) {
+			return CoreDatatype.XSD.DATETIME;
+		} else if (DatatypeConstants.DATE == qname) {
+			return CoreDatatype.XSD.DATE;
+		} else if (DatatypeConstants.TIME == qname) {
+			return CoreDatatype.XSD.TIME;
+		} else if (DatatypeConstants.GYEARMONTH == qname) {
+			return CoreDatatype.XSD.GYEARMONTH;
+		} else if (DatatypeConstants.GMONTHDAY == qname) {
+			return CoreDatatype.XSD.GMONTHDAY;
+		} else if (DatatypeConstants.GYEAR == qname) {
+			return CoreDatatype.XSD.GYEAR;
+		} else if (DatatypeConstants.GMONTH == qname) {
+			return CoreDatatype.XSD.GMONTH;
+		} else if (DatatypeConstants.GDAY == qname) {
+			return CoreDatatype.XSD.GDAY;
+		} else if (DatatypeConstants.DURATION == qname) {
+			return CoreDatatype.XSD.DURATION;
+		} else if (DatatypeConstants.DURATION_DAYTIME == qname) {
+			return CoreDatatype.XSD.DAYTIMEDURATION;
+		} else if (DatatypeConstants.DURATION_YEARMONTH == qname) {
+			return CoreDatatype.XSD.YEARMONTHDURATION;
+		} else {
+			throw new IllegalArgumentException("QName cannot be mapped to an XML Schema IRI: " + qname.toString());
+		}
+	}
+
 	public static String toString(Number value) {
 		double d = value.doubleValue();
 		if (Double.POSITIVE_INFINITY == d) {

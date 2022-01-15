@@ -30,11 +30,11 @@ public interface CoreDatatype {
 
 	IRI getIri();
 
-	<T extends CoreDatatype> Optional<T> asOptional();
+	Optional<? extends CoreDatatype> asOptional();
 
-	Map<IRI, Optional<CoreDatatype>> reverseLookup = CoreDatatypeHelper.getReverseLookup();
+	Map<IRI, Optional<? extends CoreDatatype>> reverseLookup = CoreDatatypeHelper.getReverseLookup();
 
-	static Optional<CoreDatatype> from(IRI datatype) {
+	static Optional<? extends CoreDatatype> from(IRI datatype) {
 		if (datatype == null) {
 			return Optional.empty();
 		}
@@ -71,7 +71,7 @@ public interface CoreDatatype {
 			this.coreDatatype = null;
 		}
 
-		public Optional<CoreDatatype> getCached(IRI datatype) {
+		public Optional<? extends CoreDatatype> getCached(IRI datatype) {
 			if (!cached) {
 				if (datatype != null) {
 					coreDatatype = CoreDatatype.from(datatype).orElse(null);

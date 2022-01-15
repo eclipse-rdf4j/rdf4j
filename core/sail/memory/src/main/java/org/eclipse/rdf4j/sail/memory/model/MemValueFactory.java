@@ -7,11 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
-import java.util.Collections;
-import java.util.Set;
-
-import javax.xml.datatype.XMLGregorianCalendar;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -19,11 +14,14 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.util.Values;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
+
+import javax.xml.datatype.XMLGregorianCalendar;
+import java.util.Collections;
+import java.util.Set;
 
 /**
  * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
@@ -286,36 +284,40 @@ public class MemValueFactory extends AbstractValueFactory {
 		return literalRegistry.getOrAdd(literal, () -> {
 			String label = literal.getLabel();
 			IRI datatype = literal.getDatatype();
-			MemLiteral memLiteral;
+			CoreDatatype coreDatatype = literal.getCoreDatatype().orElse(null);
 
 			if (Literals.isLanguageLiteral(literal)) {
-				memLiteral = new MemLiteral(this, label, literal.getLanguage().get());
+				return new MemLiteral(this, label, literal.getLanguage().get());
 			} else {
 				try {
-					if (XMLDatatypeUtil.isIntegerDatatype(datatype)) {
-						memLiteral = new IntegerMemLiteral(this, label, literal.integerValue(), datatype);
-					} else if (datatype.equals(XSD.DECIMAL)) {
-						memLiteral = new DecimalMemLiteral(this, label, literal.decimalValue(), datatype);
-					} else if (datatype.equals(XSD.FLOAT)) {
-						memLiteral = new NumericMemLiteral(this, label, literal.floatValue(), datatype);
-					} else if (datatype.equals(XSD.DOUBLE)) {
-						memLiteral = new NumericMemLiteral(this, label, literal.doubleValue(), datatype);
-					} else if (datatype.equals(XSD.BOOLEAN)) {
-						memLiteral = new BooleanMemLiteral(this, label, literal.booleanValue());
-					} else if (datatype.equals(XSD.DATETIME)) {
-						memLiteral = new CalendarMemLiteral(this, label, datatype, literal.calendarValue());
-					} else if (datatype.equals(XSD.DATETIMESTAMP)) {
-						memLiteral = new CalendarMemLiteral(this, label, datatype, literal.calendarValue());
-					} else {
-						memLiteral = new MemLiteral(this, label, datatype);
+					if (coreDatatype != null && coreDatatype.isXSDDatatype()) {
+						if (((CoreDatatype.XSD) coreDatatype).isIntegerDatatype()) {
+							return new IntegerMemLiteral(this, label, literal.integerValue(), coreDatatype);
+						} else if (coreDatatype == CoreDatatype.XSD.DECIMAL) {
+							return new DecimalMemLiteral(this, label, literal.decimalValue(), coreDatatype);
+						} else if (coreDatatype == CoreDatatype.XSD.FLOAT) {
+							return new NumericMemLiteral(this, label, literal.floatValue(), coreDatatype);
+						} else if (coreDatatype == CoreDatatype.XSD.DOUBLE) {
+							return new NumericMemLiteral(this, label, literal.doubleValue(), coreDatatype);
+						} else if (coreDatatype == CoreDatatype.XSD.BOOLEAN) {
+							return new BooleanMemLiteral(this, label, literal.booleanValue());
+						} else if (coreDatatype == CoreDatatype.XSD.DATETIME) {
+							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
+						} else if (coreDatatype == CoreDatatype.XSD.DATETIMESTAMP) {
+							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
+						}
 					}
+					if (coreDatatype != null) {
+						return new MemLiteral(this, label, coreDatatype);
+					} else {
+						return new MemLiteral(this, label, datatype, null);
+					}
+
 				} catch (IllegalArgumentException e) {
 					// Unable to parse literal label to primitive type
-					memLiteral = new MemLiteral(this, label, datatype);
+					return new MemLiteral(this, label, datatype);
 				}
 			}
-
-			return memLiteral;
 		});
 	}
 
@@ -375,6 +377,13 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	@Override
+	public Literal createLiteral(String value, CoreDatatype datatype) {
+		return getOrCreateMemLiteral(super.createLiteral(value, datatype));
+	}
+
+
+
+	@Override
 	public Literal createLiteral(boolean value) {
 		MemLiteral newLiteral = new BooleanMemLiteral(this, value);
 		return getSharedLiteral(newLiteral);
@@ -399,7 +408,7 @@ public class MemValueFactory extends AbstractValueFactory {
 		if (memTriple == null) {
 			// Create a MemTriple and add it to the registry
 			MemTriple newMemTriple = new MemTriple(this, getOrCreateMemResource(triple.getSubject()),
-					getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
+				getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
 			boolean wasNew = tripleRegistry.add(newMemTriple);
 
 			if (!wasNew) {

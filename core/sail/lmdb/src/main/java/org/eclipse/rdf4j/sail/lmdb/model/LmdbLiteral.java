@@ -135,7 +135,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	@Override
-	public Optional<CoreDatatype> getCoreDatatype() {
+	public Optional<? extends CoreDatatype> getCoreDatatype() {
 		return coreDatatype.getCached(datatype);
 	}
 

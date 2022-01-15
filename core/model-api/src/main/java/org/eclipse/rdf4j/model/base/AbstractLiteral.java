@@ -254,7 +254,7 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype> getCoreDatatype() {
+		public Optional<? extends CoreDatatype> getCoreDatatype() {
 			return coreDatatype.getCached(datatype);
 		}
 	}
@@ -381,7 +381,7 @@ public abstract class AbstractLiteral implements Literal {
 		protected Number value;
 
 		private final String label;
-		private final CoreDatatype datatype;
+		private final CoreDatatype.XSD datatype;
 
 		NumberLiteral(byte value) {
 			this(value, Byte.toString(value), CoreDatatype.XSD.BYTE);
@@ -407,7 +407,7 @@ public abstract class AbstractLiteral implements Literal {
 			this(value, toString(value), CoreDatatype.XSD.DOUBLE);
 		}
 
-		NumberLiteral(Number value, String label, CoreDatatype datatype) {
+		NumberLiteral(Number value, String label, CoreDatatype.XSD datatype) {
 			this.value = value;
 			this.label = label;
 			this.datatype = datatype;
@@ -459,7 +459,7 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype> getCoreDatatype() {
+		public Optional<CoreDatatype.XSD> getCoreDatatype() {
 			return datatype.asOptional();
 		}
 	}
@@ -587,7 +587,7 @@ public abstract class AbstractLiteral implements Literal {
 
 				.toFormatter();
 
-		private static final Map<Integer, CoreDatatype> DATATYPES = datatypes();
+		private static final Map<Integer, CoreDatatype.XSD> DATATYPES = datatypes();
 		private static final Map<CoreDatatype.XSD, DateTimeFormatter> FORMATTERS = formatters();
 
 		static TemporalAccessor parseTemporalAccessor(String label) throws DateTimeException {
@@ -603,14 +603,14 @@ public abstract class AbstractLiteral implements Literal {
 			return value;
 		}
 
-		private static Map<Integer, CoreDatatype> datatypes() {
+		private static Map<Integer, CoreDatatype.XSD> datatypes() {
 
 			int date = key(YEAR, MONTH_OF_YEAR, DAY_OF_MONTH);
 			int time = key(HOUR_OF_DAY, MINUTE_OF_HOUR, SECOND_OF_MINUTE);
 			int nano = key(NANO_OF_SECOND);
 			int zone = key(OFFSET_SECONDS);
 
-			Map<Integer, CoreDatatype> datatypes = new HashMap<>();
+			Map<Integer, CoreDatatype.XSD> datatypes = new HashMap<>();
 
 			datatypes.put(date + time, CoreDatatype.XSD.DATETIME);
 			datatypes.put(date + time + nano, CoreDatatype.XSD.DATETIME);
@@ -691,7 +691,7 @@ public abstract class AbstractLiteral implements Literal {
 		private final TemporalAccessor value;
 
 		private final String label;
-		private final CoreDatatype datatype;
+		private final CoreDatatype.XSD datatype;
 
 		TemporalAccessorLiteral(TemporalAccessor value) {
 
@@ -729,7 +729,7 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype> getCoreDatatype() {
+		public Optional<CoreDatatype.XSD> getCoreDatatype() {
 			return datatype.asOptional();
 		}
 
@@ -936,11 +936,11 @@ public abstract class AbstractLiteral implements Literal {
 			}
 		});
 
-		private static final Map<QName, CoreDatatype> DATATYPES = datatypes();
+		private static final Map<QName, CoreDatatype.XSD> DATATYPES = datatypes();
 
-		private static Map<QName, CoreDatatype> datatypes() {
+		private static Map<QName, CoreDatatype.XSD> datatypes() {
 
-			final Map<QName, CoreDatatype> datatypes = new HashMap<>();
+			final Map<QName, CoreDatatype.XSD> datatypes = new HashMap<>();
 
 			datatypes.put(DatatypeConstants.DATETIME, CoreDatatype.XSD.DATETIME);
 			datatypes.put(DatatypeConstants.TIME, CoreDatatype.XSD.TIME);
@@ -966,7 +966,7 @@ public abstract class AbstractLiteral implements Literal {
 		private final XMLGregorianCalendar value;
 
 		private final String label;
-		private final CoreDatatype datatype;
+		private final CoreDatatype.XSD datatype;
 
 		CalendarLiteral(GregorianCalendar calendar) {
 			this(DATATYPE_FACTORY.get().newXMLGregorianCalendar(calendar));
@@ -1009,7 +1009,7 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype> getCoreDatatype() {
+		public Optional<CoreDatatype.XSD> getCoreDatatype() {
 			return datatype.asOptional();
 		}
 	}

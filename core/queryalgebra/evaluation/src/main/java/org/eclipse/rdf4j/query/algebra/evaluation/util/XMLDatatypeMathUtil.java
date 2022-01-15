@@ -73,9 +73,9 @@ public class XMLDatatypeMathUtil {
 				// op:subtract-yearMonthDurations and op:subtract-dayTimeDurations
 				return buildLiteral(left.subtract(right));
 			case MULTIPLY:
-				throw new ValueExprEvaluationException("Multiplication is not defined on xsd:duration.");
+				throw new ValueExprEvaluationException("Multiplication is not defined on CoreDatatype.XSD:duration.");
 			case DIVIDE:
-				throw new ValueExprEvaluationException("Division is not defined on xsd:duration.");
+				throw new ValueExprEvaluationException("Division is not defined on CoreDatatype.XSD:duration.");
 			default:
 				throw new IllegalArgumentException("Unknown operator: " + op);
 			}
@@ -93,7 +93,7 @@ public class XMLDatatypeMathUtil {
 				return buildLiteral(duration.multiply(decimalLit.decimalValue()));
 			} else {
 				throw new ValueExprEvaluationException(
-						"Only multiplication is defined between xsd:decimal and xsd:duration.");
+						"Only multiplication is defined between CoreDatatype.XSD:decimal and CoreDatatype.XSD:duration.");
 			}
 		} catch (IllegalStateException e) {
 			throw new ValueExprEvaluationException(e);
@@ -120,10 +120,10 @@ public class XMLDatatypeMathUtil {
 				return SimpleValueFactory.getInstance().createLiteral(calendar);
 			case MULTIPLY:
 				throw new ValueExprEvaluationException(
-						"Multiplication is not defined between xsd:duration and calendar values.");
+						"Multiplication is not defined between CoreDatatype.XSD:duration and calendar values.");
 			case DIVIDE:
 				throw new ValueExprEvaluationException(
-						"Division is not defined between xsd:duration and calendar values.");
+						"Division is not defined between CoreDatatype.XSD:duration and calendar values.");
 			default:
 				throw new IllegalArgumentException("Unknown operator: " + op);
 			}
@@ -145,7 +145,7 @@ public class XMLDatatypeMathUtil {
 				return SimpleValueFactory.getInstance().createLiteral(calendar);
 			} else {
 				throw new ValueExprEvaluationException(
-						"Only addition is defined between xsd:duration and calendar datatypes.");
+						"Only addition is defined between CoreDatatype.XSD:duration and calendar datatypes.");
 			}
 		} catch (IllegalStateException e) {
 			throw new ValueExprEvaluationException(e);

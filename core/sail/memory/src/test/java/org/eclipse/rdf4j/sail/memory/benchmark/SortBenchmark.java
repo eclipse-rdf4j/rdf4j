@@ -40,21 +40,18 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 0)
 @BenchmarkMode({ Mode.AverageTime })
 // use G1GC because the workload is multi-threaded
-@Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseG1GC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
+@Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseSerialGC" })
+//@Fork(value = 1, jvmArgs = {"-Xms400M", "-Xmx400M", "-XX:+UseSerialGC",  "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Measurement(iterations = 100)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class SortBenchmark {
 
@@ -73,18 +70,19 @@ public class SortBenchmark {
 
 	List<Value> valuesList;
 
-	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("SortBenchmark.*") // adapt to run other benchmark tests
-				// .addProfiler("stack", "lines=20;period=1;top=20")
-				.forks(1)
-				.build();
-
-		new Runner(opt).run();
+	public static void main(String[] args) throws RunnerException, IOException, InterruptedException {
+		SortBenchmark sortBenchmark = new SortBenchmark();
+		sortBenchmark.setup();
+		System.out.println("sort");
+		while(true) {
+			sortBenchmark.sortDirectly();
+			System.out.println(".");
+		}
+//		sortBenchmark.tearDown();
 	}
 
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void setup() throws IOException, InterruptedException {
 
 		repository = new SailRepository(new MemoryStore());
 
@@ -109,7 +107,7 @@ public class SortBenchmark {
 	}
 
 	@TearDown(Level.Trial)
-	public void afterClass() {
+	public void tearDown() {
 
 		repository.shutDown();
 

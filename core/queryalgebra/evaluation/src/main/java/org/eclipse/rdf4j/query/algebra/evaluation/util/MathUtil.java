@@ -62,7 +62,7 @@ public class MathUtil {
 		}
 
 		// Determine most specific datatype that the arguments have in common,
-		// choosing from xsd:integer, xsd:decimal, xsd:float and xsd:double as
+		// choosing from CoreDatatype.XSD:integer, CoreDatatype.XSD:decimal, CoreDatatype.XSD:float and CoreDatatype.XSD:double as
 		// per the SPARQL/XPATH spec
 		IRI commonDatatype;
 
@@ -184,7 +184,7 @@ public class MathUtil {
 	 * expansion.
 	 *
 	 * @param decimalExpansionScale The decimal expansion scale to set. Note that a mimimum of 18 is required to stay
-	 *                              compliant with the XPath specification of xsd:decimal operations.
+	 *                              compliant with the XPath specification of CoreDatatype.XSD:decimal operations.
 	 */
 	public static void setDecimalExpansionScale(int decimalExpansionScale) {
 		MathUtil.decimalExpansionScale = decimalExpansionScale;

@@ -7,13 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.util.Objects;
-import java.util.Optional;
-
-import javax.xml.datatype.XMLGregorianCalendar;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
@@ -21,6 +14,12 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+
+import javax.xml.datatype.XMLGregorianCalendar;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.Objects;
+import java.util.Optional;
 
 /**
  * A simple default implementation of the {@link Literal} interface.
@@ -49,13 +48,14 @@ public class SimpleLiteral extends AbstractLiteral {
 	 * The literal's language tag.
 	 */
 	private String language;
+	transient private Optional<String> optionalLanguageCache = null;
 
 	/**
 	 * The literal's datatype.
 	 */
 	private IRI datatype;
 
-	transient private CoreDatatype.Cache coreDatatype = CoreDatatype.Cache.empty();
+	private final CoreDatatype.Cache coreDatatype = CoreDatatype.Cache.empty();
 
 	/*--------------*
 	 * Constructors *
@@ -72,6 +72,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	protected SimpleLiteral(String label) {
 		setLabel(label);
 		setDatatype(org.eclipse.rdf4j.model.vocabulary.XSD.STRING);
+		optionalLanguageCache = Optional.empty();
 	}
 
 	/**
@@ -100,6 +101,27 @@ public class SimpleLiteral extends AbstractLiteral {
 		} else {
 			setDatatype(datatype);
 		}
+		optionalLanguageCache = Optional.empty();
+
+	}
+
+	/**
+	 * Creates a new datatyped literal with the supplied label and datatype.
+	 *
+	 * @param label    The label for the literal, must not be <var>null</var>.
+	 * @param datatype The datatype for the literal.
+	 */
+	protected SimpleLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {
+		setLabel(label);
+		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype)) {
+			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		} else if (datatype == null) {
+			setDatatype(CoreDatatype.XSD.STRING);
+		} else {
+			setDatatype(datatype, coreDatatype);
+		}
+		optionalLanguageCache = Optional.empty();
+
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
@@ -124,6 +146,7 @@ public class SimpleLiteral extends AbstractLiteral {
 		} else {
 			setDatatype(datatype);
 		}
+		optionalLanguageCache = Optional.empty();
 
 	}
 
@@ -147,17 +170,27 @@ public class SimpleLiteral extends AbstractLiteral {
 			throw new IllegalArgumentException("Language tag cannot be empty");
 		}
 		this.language = language;
-		setDatatype(org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING);
+		optionalLanguageCache = Optional.of(language);
+		setDatatype(CoreDatatype.RDF.LANGSTRING);
 	}
 
 	@Override
 	public Optional<String> getLanguage() {
-		return Optional.ofNullable(language);
+		if (optionalLanguageCache == null) {
+			optionalLanguageCache = Optional.ofNullable(language);
+		}
+		return optionalLanguageCache;
 	}
 
 	protected void setDatatype(IRI datatype) {
 		this.datatype = datatype;
 		coreDatatype.clearCache();
+	}
+
+	protected void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
+		this.datatype = datatype;
+			this.coreDatatype.setDatatype(coreDatatype);
+
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
@@ -167,6 +200,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	}
 
 	protected void setDatatype(CoreDatatype datatype) {
+		assert datatype != null;
 		this.datatype = datatype.getIri();
 		this.coreDatatype.setDatatype(datatype);
 	}
@@ -182,7 +216,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	public Optional<XSD.Datatype> getXsdDatatype() {
-		Optional<CoreDatatype> coreDatatype = getCoreDatatype();
+		Optional<? extends CoreDatatype> coreDatatype = getCoreDatatype();
 		if (coreDatatype.isPresent()) {
 			return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.get());
 		}
@@ -308,7 +342,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	}
 
 	@Override
-	public Optional<CoreDatatype> getCoreDatatype() {
+	public Optional<? extends CoreDatatype> getCoreDatatype() {
 		return coreDatatype.getCached(datatype);
 	}
 

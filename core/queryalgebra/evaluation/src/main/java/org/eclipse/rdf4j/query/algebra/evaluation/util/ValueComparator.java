@@ -7,19 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
-import java.util.Comparator;
-import java.util.Optional;
-
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
-import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+
+import java.util.Comparator;
+import java.util.Optional;
 
 /**
  * A comparator that compares values according the SPARQL value ordering as specified in
@@ -108,27 +106,37 @@ public class ValueComparator implements Comparator<Value> {
 
 	private int compareLiterals(Literal leftLit, Literal rightLit) {
 		// Additional constraint for ORDER BY: "A plain literal is lower
-		// than an RDF literal with type xsd:string of the same lexical
+		// than an RDF literal with type CoreDatatype.XSD:string of the same lexical
 		// form."
-
-		if (!(QueryEvaluationUtil.isPlainLiteral(leftLit) || QueryEvaluationUtil.isPlainLiteral(rightLit))) {
-			try {
-				boolean isSmaller = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.LT, strict);
-				if (isSmaller) {
-					return -1;
-				} else {
-					boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.EQ, strict);
-					if (isEquivalent) {
-						return 0;
-					}
-					return 1;
-				}
-			} catch (ValueExprEvaluationException e) {
-				// literals cannot be compared using the '<' operator, continue
-				// below
+		try {
+			if (!(QueryEvaluationUtil.isPlainLiteral(leftLit) || QueryEvaluationUtil.isPlainLiteral(rightLit))) {
+				return compareNonPlainLiterals(leftLit, rightLit);
 			}
+		} catch (ValueExprEvaluationException e) {
+			// literals cannot be compared using the '<' operator, continue
+			// below
 		}
 
+		return comparePlainLiterals(leftLit, rightLit);
+	}
+
+	private int compareNonPlainLiterals(Literal leftLit, Literal rightLit) {
+
+		boolean isSmaller = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.LT, strict);
+		if (isSmaller) {
+			return -1;
+		} else {
+			boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.EQ, strict);
+			if (isEquivalent) {
+				return 0;
+			}
+			return 1;
+		}
+
+
+	}
+
+	private int comparePlainLiterals(Literal leftLit, Literal rightLit) {
 		int result = 0;
 
 		// FIXME: Confirm these rules work with RDF-1.1
@@ -139,14 +147,14 @@ public class ValueComparator implements Comparator<Value> {
 		if (leftDatatype != null) {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
-				Optional<XSD.Datatype> leftXmlDatatype = Literals.getXsdDatatype(leftLit);
-				Optional<XSD.Datatype> rightXmlDatatype = Literals.getXsdDatatype(rightLit);
+				CoreDatatype.XSD leftXmlDatatype = ((CoreDatatype.XSD) leftLit.getCoreDatatype()
+					.filter(CoreDatatype::isXSDDatatype)
+					.orElse(null));
+				CoreDatatype.XSD rightXmlDatatype = ((CoreDatatype.XSD) rightLit.getCoreDatatype()
+					.filter(CoreDatatype::isXSDDatatype)
+					.orElse(null));
 
-				if (leftXmlDatatype.isPresent() && rightXmlDatatype.isPresent()) {
-					result = compareDatatypes(leftXmlDatatype.get(), rightXmlDatatype.get());
-				} else {
-					result = compareDatatypes(leftDatatype, rightDatatype);
-				}
+				result = compareDatatypes(leftXmlDatatype, rightXmlDatatype, leftDatatype, rightDatatype);
 
 			} else {
 				result = 1;
@@ -181,59 +189,36 @@ public class ValueComparator implements Comparator<Value> {
 		return result;
 	}
 
-	/**
-	 * Compares two literal datatypes and indicates if one should be ordered after the other. This algorithm ensures
-	 * that compatible ordered datatypes (numeric and date/time) are grouped together so that
-	 * {@link QueryEvaluationUtil#compareLiterals(Literal, Literal, CompareOp)} is used in consecutive ordering steps.
-	 */
-	private int compareDatatypes(IRI leftDatatype, IRI rightDatatype) {
-		if (XMLDatatypeUtil.isNumericDatatype(leftDatatype)) {
-			if (XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
+	private int compareDatatypes(CoreDatatype.XSD leftDatatype, CoreDatatype.XSD rightDatatype, IRI leftDatatypeIRI,
+								 IRI rightDatatypeIRI) {
+		if (leftDatatype != null && leftDatatype == rightDatatype) {
+			return 0;
+		} else if (leftDatatype != null && leftDatatype.isNumericDatatype()) {
+			if (rightDatatype != null && rightDatatype.isNumericDatatype()) {
 				// both are numeric datatypes
-				return compareURIs(leftDatatype, rightDatatype);
+				return leftDatatype.compareTo(rightDatatype);
 			} else {
 				return -1;
 			}
-		} else if (XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
+		} else if (rightDatatype != null && rightDatatype.isNumericDatatype()) {
 			return 1;
-		} else if (XMLDatatypeUtil.isCalendarDatatype(leftDatatype)) {
-			if (XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
-				// both are calendar datatypes
-				return compareURIs(leftDatatype, rightDatatype);
+		} else if (leftDatatype != null && leftDatatype.isCalendarDatatype()) {
+			if (rightDatatype != null && rightDatatype.isCalendarDatatype()) {
+				return leftDatatype.compareTo(rightDatatype);
 			} else {
 				return -1;
 			}
-		} else if (XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
+		} else if (rightDatatype != null && rightDatatype.isCalendarDatatype()) {
 			return 1;
-		} else {
-			// incompatible or unordered datatypes
-			return compareURIs(leftDatatype, rightDatatype);
 		}
-	}
 
-	private int compareDatatypes(XSD.Datatype leftDatatype, XSD.Datatype rightDatatype) {
-		if (leftDatatype.isNumericDatatype()) {
-			if (rightDatatype.isNumericDatatype()) {
-				// both are numeric datatypes
-				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
-			} else {
-				return -1;
-			}
-		} else if (rightDatatype.isNumericDatatype()) {
-			return 1;
-		} else if (leftDatatype.isCalendarDatatype()) {
-			if (rightDatatype.isCalendarDatatype()) {
-				// both are calendar datatype
-				return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
-			} else {
-				return -1;
-			}
-		} else if (rightDatatype.isCalendarDatatype()) {
-			return 1;
-		} else {
-			// incompatible or unordered datatype
-			return compareURIs(leftDatatype.getIri(), rightDatatype.getIri());
+		if (leftDatatype != null && rightDatatype != null) {
+			return leftDatatype.compareTo(rightDatatype);
 		}
+
+		// incompatible or unordered datatype
+		return compareURIs(leftDatatypeIRI, rightDatatypeIRI);
+
 	}
 
 	private int compareTriples(Triple leftTriple, Triple rightTriple) {
