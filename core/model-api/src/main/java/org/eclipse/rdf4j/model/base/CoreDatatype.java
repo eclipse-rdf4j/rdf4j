@@ -24,21 +24,27 @@ public interface CoreDatatype {
 	 *
 	 * @return true if the datatype is an XML Schema Datatype
 	 */
-	boolean isXSDDatatype();
+	default boolean isXSDDatatype() {
+		return false;
+	}
 
-	boolean isRDFDatatype();
+	default boolean isRDFDatatype() {
+		return false;
+	}
+
+	default boolean isGEODatatype() {
+		return false;
+	}
 
 	IRI getIri();
 
 	<T extends CoreDatatype> Optional<T> asOptional();
 
-	Map<IRI, Optional<CoreDatatype>> reverseLookup = CoreDatatypeHelper.getReverseLookup();
-
 	static Optional<CoreDatatype> from(IRI datatype) {
 		if (datatype == null) {
 			return Optional.empty();
 		}
-		return reverseLookup.getOrDefault(datatype, Optional.empty());
+		return CoreDatatypeHelper.getReverseLookup().getOrDefault(datatype, Optional.empty());
 	}
 
 	class Cache implements Serializable {
@@ -136,10 +142,10 @@ public interface CoreDatatype {
 		UNSIGNED_SHORT(iri("unsignedShort"), false, false, true, true, true, false, false),
 		YEARMONTHDURATION(iri("yearMonthDuration"), false, true, false, true, false, false, false);
 
-		private static final String NAMESPACE = "http://www.w3.org/2001/XMLSchema#";
+		public static final String NAMESPACE = "http://www.w3.org/2001/XMLSchema#";
 
 		private static IRI iri(String localName) {
-			return new AbstractIRI.GenericIRI(NAMESPACE, localName);
+			return new CoreDatatypeHelper.DatatypeIRI(NAMESPACE, localName);
 		}
 
 		private final IRI iri;
@@ -272,11 +278,6 @@ public interface CoreDatatype {
 			return true;
 		}
 
-		@Override
-		public boolean isRDFDatatype() {
-			return false;
-		}
-
 		public IRI getIri() {
 			return iri;
 		}
@@ -291,10 +292,10 @@ public interface CoreDatatype {
 
 		LANGSTRING(iri("langString"));
 
-		private static final String NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+		public static final String NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 
 		private static IRI iri(String localName) {
-			return new AbstractIRI.GenericIRI(NAMESPACE, localName);
+			return new CoreDatatypeHelper.DatatypeIRI(NAMESPACE, localName);
 		}
 
 		private final IRI iri;
@@ -303,10 +304,6 @@ public interface CoreDatatype {
 		RDF(IRI iri) {
 			this.iri = iri;
 			this.optional = Optional.of(this);
-		}
-
-		public boolean isXSDDatatype() {
-			return false;
 		}
 
 		@Override
@@ -328,10 +325,10 @@ public interface CoreDatatype {
 
 		WKT_LITERAL(iri("wktLiteral"));
 
-		private static final String NAMESPACE = "http://www.opengis.net/ont/geosparql#";
+		public static final String NAMESPACE = "http://www.opengis.net/ont/geosparql#";
 
 		private static IRI iri(String localName) {
-			return new AbstractIRI.GenericIRI(NAMESPACE, localName);
+			return new CoreDatatypeHelper.DatatypeIRI(NAMESPACE, localName);
 		}
 
 		private final IRI iri;
@@ -342,12 +339,8 @@ public interface CoreDatatype {
 			this.optional = Optional.of(this);
 		}
 
-		public boolean isXSDDatatype() {
-			return false;
-		}
-
 		@Override
-		public boolean isRDFDatatype() {
+		public boolean isGEODatatype() {
 			return true;
 		}
 
