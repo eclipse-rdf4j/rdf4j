@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * The SPARQL built-in {@link Function} ENCODE_FOR_URI, as defined in
@@ -40,7 +40,7 @@ public class EncodeForUri implements Function {
 		if (args[0] instanceof Literal) {
 			Literal literal = (Literal) args[0];
 
-			if (QueryEvaluationUtil.isStringLiteral(literal)) {
+			if (QueryEvaluationUtility.isStringLiteral(literal)) {
 				String lexValue = literal.getLabel();
 
 				return valueFactory.createLiteral(encodeUri(lexValue));

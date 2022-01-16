@@ -446,7 +446,7 @@ public class LinkedHashModel extends AbstractModel {
 			Resource ctx = st.getContext();
 			try {
 				s.writeObject(new ContextStatement(subj, pred, obj, ctx));
-			}catch (NotSerializableException e){
+			} catch (NotSerializableException e) {
 				System.out.println();
 			}
 		}

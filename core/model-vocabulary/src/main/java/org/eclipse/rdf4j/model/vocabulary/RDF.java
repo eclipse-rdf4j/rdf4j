@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 
 /**
  * Constants for RDF primitives and for the RDF namespace.
@@ -18,7 +19,7 @@ import org.eclipse.rdf4j.model.Namespace;
 public class RDF {
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns# */
-	public static final String NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+	public static final String NAMESPACE = CoreDatatype.RDF.NAMESPACE;
 
 	/**
 	 * Recommended prefix for the RDF namespace: "rdf"
@@ -101,7 +102,7 @@ public class RDF {
 		FIRST = Vocabularies.createIRI(RDF.NAMESPACE, "first");
 		REST = Vocabularies.createIRI(RDF.NAMESPACE, "rest");
 		NIL = Vocabularies.createIRI(RDF.NAMESPACE, "nil");
-		LANGSTRING = Vocabularies.createIRI(RDF.NAMESPACE, "langString");
+		LANGSTRING = CoreDatatype.RDF.LANGSTRING.getIri();
 		HTML = Vocabularies.createIRI(RDF.NAMESPACE, "HTML");
 	}
 }

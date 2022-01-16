@@ -62,7 +62,8 @@ public class MathUtil {
 		}
 
 		// Determine most specific datatype that the arguments have in common,
-		// choosing from CoreDatatype.XSD:integer, CoreDatatype.XSD:decimal, CoreDatatype.XSD:float and CoreDatatype.XSD:double as
+		// choosing from CoreDatatype.XSD:integer, CoreDatatype.XSD:decimal, CoreDatatype.XSD:float and
+		// CoreDatatype.XSD:double as
 		// per the SPARQL/XPATH spec
 		IRI commonDatatype;
 

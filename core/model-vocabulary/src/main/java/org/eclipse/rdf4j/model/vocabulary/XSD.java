@@ -27,166 +27,166 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 public class XSD {
 
 	/** The XML Schema namespace (<var>http://www.w3.org/2001/XMLSchema#</var>). */
-	public static final String NAMESPACE = "http://www.w3.org/2001/XMLSchema#";
+	public final static String NAMESPACE = CoreDatatype.XSD.NAMESPACE;
 
 	/**
 	 * Recommended prefix for XML Schema datatypes: "xsd"
 	 */
-	public static final String PREFIX = "xsd";
+	public final static String PREFIX = "xsd";
 
 	/**
 	 * An immutable {@link Namespace} constant that represents the XML Schema namespace.
 	 */
-	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
+	public final static Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/*
 	 * Primitive datatypes
 	 */
 
 	/** <var>http://www.w3.org/2001/XMLSchema#duration</var> */
-	public final static IRI DURATION = create("duration");
+	public final static IRI DURATION = CoreDatatype.XSD.DURATION.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#dateTime</var> */
-	public final static IRI DATETIME = create("dateTime");
+	public final static IRI DATETIME = CoreDatatype.XSD.DATETIME.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#dateTimeStamp</var> */
-	public final static IRI DATETIMESTAMP = create("dateTimeStamp");
+	public final static IRI DATETIMESTAMP = CoreDatatype.XSD.DATETIMESTAMP.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#dayTimeDuration</var> */
-	public static final IRI DAYTIMEDURATION = create("dayTimeDuration");
+	public final static IRI DAYTIMEDURATION = CoreDatatype.XSD.DAYTIMEDURATION.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#time</var> */
-	public final static IRI TIME = create("time");
+	public final static IRI TIME = CoreDatatype.XSD.TIME.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#date</var> */
-	public final static IRI DATE = create("date");
+	public final static IRI DATE = CoreDatatype.XSD.DATE.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#gYearMonth</var> */
-	public final static IRI GYEARMONTH = create("gYearMonth");
+	public final static IRI GYEARMONTH = CoreDatatype.XSD.GYEARMONTH.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#gYear</var> */
-	public final static IRI GYEAR = create("gYear");
+	public final static IRI GYEAR = CoreDatatype.XSD.GYEAR.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#gMonthDay</var> */
-	public final static IRI GMONTHDAY = create("gMonthDay");
+	public final static IRI GMONTHDAY = CoreDatatype.XSD.GMONTHDAY.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#gDay</var> */
-	public final static IRI GDAY = create("gDay");
+	public final static IRI GDAY = CoreDatatype.XSD.GDAY.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#gMonth</var> */
-	public final static IRI GMONTH = create("gMonth");
+	public final static IRI GMONTH = CoreDatatype.XSD.GMONTH.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#string</var> */
-	public final static IRI STRING = create("string");
+	public final static IRI STRING = CoreDatatype.XSD.STRING.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#boolean</var> */
-	public final static IRI BOOLEAN = create("boolean");
+	public final static IRI BOOLEAN = CoreDatatype.XSD.BOOLEAN.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#base64Binary</var> */
-	public final static IRI BASE64BINARY = create("base64Binary");
+	public final static IRI BASE64BINARY = CoreDatatype.XSD.BASE64BINARY.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#hexBinary</var> */
-	public final static IRI HEXBINARY = create("hexBinary");
+	public final static IRI HEXBINARY = CoreDatatype.XSD.HEXBINARY.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#float</var> */
-	public final static IRI FLOAT = create("float");
+	public final static IRI FLOAT = CoreDatatype.XSD.FLOAT.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#decimal</var> */
-	public final static IRI DECIMAL = create("decimal");
+	public final static IRI DECIMAL = CoreDatatype.XSD.DECIMAL.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#double</var> */
-	public final static IRI DOUBLE = create("double");
+	public final static IRI DOUBLE = CoreDatatype.XSD.DOUBLE.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#anyURI</var> */
-	public final static IRI ANYURI = create("anyURI");
+	public final static IRI ANYURI = CoreDatatype.XSD.ANYURI.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#QName</var> */
-	public final static IRI QNAME = create("QName");
+	public final static IRI QNAME = CoreDatatype.XSD.QNAME.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#NOTATION</var> */
-	public final static IRI NOTATION = create("NOTATION");
+	public final static IRI NOTATION = CoreDatatype.XSD.NOTATION.getIri();
 
 	/*
 	 * Derived datatypes
 	 */
 
 	/** <var>http://www.w3.org/2001/XMLSchema#normalizedString</var> */
-	public final static IRI NORMALIZEDSTRING = create("normalizedString");
+	public final static IRI NORMALIZEDSTRING = CoreDatatype.XSD.NORMALIZEDSTRING.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#token</var> */
-	public final static IRI TOKEN = create("token");
+	public final static IRI TOKEN = CoreDatatype.XSD.TOKEN.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#language</var> */
-	public final static IRI LANGUAGE = create("language");
+	public final static IRI LANGUAGE = CoreDatatype.XSD.LANGUAGE.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#NMTOKEN</var> */
-	public final static IRI NMTOKEN = create("NMTOKEN");
+	public final static IRI NMTOKEN = CoreDatatype.XSD.NMTOKEN.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#NMTOKENS</var> */
-	public final static IRI NMTOKENS = create("NMTOKENS");
+	public final static IRI NMTOKENS = CoreDatatype.XSD.NMTOKENS.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#Name</var> */
-	public final static IRI NAME = create("Name");
+	public final static IRI NAME = CoreDatatype.XSD.NAME.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#NCName</var> */
-	public final static IRI NCNAME = create("NCName");
+	public final static IRI NCNAME = CoreDatatype.XSD.NCNAME.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#ID</var> */
-	public final static IRI ID = create("ID");
+	public final static IRI ID = CoreDatatype.XSD.ID.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#IDREF</var> */
-	public final static IRI IDREF = create("IDREF");
+	public final static IRI IDREF = CoreDatatype.XSD.IDREF.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#IDREFS</var> */
-	public final static IRI IDREFS = create("IDREFS");
+	public final static IRI IDREFS = CoreDatatype.XSD.IDREFS.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#ENTITY</var> */
-	public final static IRI ENTITY = create("ENTITY");
+	public final static IRI ENTITY = CoreDatatype.XSD.ENTITY.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#ENTITIES</var> */
-	public final static IRI ENTITIES = create("ENTITIES");
+	public final static IRI ENTITIES = CoreDatatype.XSD.ENTITIES.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#integer</var> */
-	public final static IRI INTEGER = create("integer");
+	public final static IRI INTEGER = CoreDatatype.XSD.INTEGER.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#long</var> */
-	public final static IRI LONG = create("long");
+	public final static IRI LONG = CoreDatatype.XSD.LONG.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#int</var> */
-	public final static IRI INT = create("int");
+	public final static IRI INT = CoreDatatype.XSD.INT.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#short</var> */
-	public final static IRI SHORT = create("short");
+	public final static IRI SHORT = CoreDatatype.XSD.SHORT.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#byte</var> */
-	public final static IRI BYTE = create("byte");
+	public final static IRI BYTE = CoreDatatype.XSD.BYTE.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#nonPositiveInteger</var> */
-	public final static IRI NON_POSITIVE_INTEGER = create("nonPositiveInteger");
+	public final static IRI NON_POSITIVE_INTEGER = CoreDatatype.XSD.NON_POSITIVE_INTEGER.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#negativeInteger</var> */
-	public final static IRI NEGATIVE_INTEGER = create("negativeInteger");
+	public final static IRI NEGATIVE_INTEGER = CoreDatatype.XSD.NEGATIVE_INTEGER.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#nonNegativeInteger</var> */
-	public final static IRI NON_NEGATIVE_INTEGER = create("nonNegativeInteger");
+	public final static IRI NON_NEGATIVE_INTEGER = CoreDatatype.XSD.NON_NEGATIVE_INTEGER.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#positiveInteger</var> */
-	public final static IRI POSITIVE_INTEGER = create("positiveInteger");
+	public final static IRI POSITIVE_INTEGER = CoreDatatype.XSD.POSITIVE_INTEGER.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#unsignedLong</var> */
-	public final static IRI UNSIGNED_LONG = create("unsignedLong");
+	public final static IRI UNSIGNED_LONG = CoreDatatype.XSD.UNSIGNED_LONG.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#unsignedInt</var> */
-	public final static IRI UNSIGNED_INT = create("unsignedInt");
+	public final static IRI UNSIGNED_INT = CoreDatatype.XSD.UNSIGNED_INT.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#unsignedShort</var> */
-	public final static IRI UNSIGNED_SHORT = create("unsignedShort");
+	public final static IRI UNSIGNED_SHORT = CoreDatatype.XSD.UNSIGNED_SHORT.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#unsignedByte</var> */
-	public final static IRI UNSIGNED_BYTE = create("unsignedByte");
+	public final static IRI UNSIGNED_BYTE = CoreDatatype.XSD.UNSIGNED_BYTE.getIri();
 
 	/** <var>http://www.w3.org/2001/XMLSchema#yearMonthDuration</var> */
-	public static final IRI YEARMONTHDURATION = create("yearMonthDuration");
+	public final static IRI YEARMONTHDURATION = CoreDatatype.XSD.YEARMONTHDURATION.getIri();
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(org.eclipse.rdf4j.model.vocabulary.XSD.NAMESPACE, localName);
@@ -194,53 +194,55 @@ public class XSD {
 
 	public enum Datatype {
 
-		DURATION(create("duration"), true, true, false, false, false, false, false),
-		DATETIME(create("dateTime"), true, false, false, false, false, false, true),
-		DATETIMESTAMP(create("dateTimeStamp"), false, false, false, true, false, false, true),
-		DAYTIMEDURATION(create("dayTimeDuration"), false, true, false, true, false, false, false),
-		TIME(create("time"), true, false, false, false, false, false, true),
-		DATE(create("date"), true, false, false, false, false, false, true),
-		GYEARMONTH(create("gYearMonth"), true, false, false, false, false, false, true),
-		GYEAR(create("gYear"), true, false, false, false, false, false, true),
-		GMONTHDAY(create("gMonthDay"), true, false, false, false, false, false, true),
-		GDAY(create("gDay"), true, false, false, false, false, false, true),
-		GMONTH(create("gMonth"), true, false, false, false, false, false, true),
-		STRING(create("string"), true, false, false, false, false, false, false),
-		BOOLEAN(create("boolean"), true, false, false, false, false, false, false),
-		BASE64BINARY(create("base64Binary"), true, false, false, false, false, false, false),
-		HEXBINARY(create("hexBinary"), true, false, false, false, false, false, false),
-		FLOAT(create("float"), true, false, false, false, false, true, false),
-		DECIMAL(create("decimal"), true, false, false, false, true, false, false),
-		DOUBLE(create("double"), true, false, false, false, false, true, false),
-		ANYURI(create("anyURI"), true, false, false, false, false, false, false),
-		QNAME(create("QName"), true, false, false, false, false, false, false),
-		NOTATION(create("NOTATION"), true, false, false, false, false, false, false),
-		NORMALIZEDSTRING(create("normalizedString"), false, false, false, true, false, false, false),
-		TOKEN(create("token"), false, false, false, true, false, false, false),
-		LANGUAGE(create("language"), false, false, false, true, false, false, false),
-		NMTOKEN(create("NMTOKEN"), false, false, false, true, false, false, false),
-		NMTOKENS(create("NMTOKENS"), false, false, false, true, false, false, false),
-		NAME(create("Name"), false, false, false, true, false, false, false),
-		NCNAME(create("NCName"), false, false, false, true, false, false, false),
-		ID(create("ID"), false, false, false, true, false, false, false),
-		IDREF(create("IDREF"), false, false, false, true, false, false, false),
-		IDREFS(create("IDREFS"), false, false, false, true, false, false, false),
-		ENTITY(create("ENTITY"), false, false, false, true, false, false, false),
-		ENTITIES(create("ENTITIES"), false, false, false, true, false, false, false),
-		INTEGER(create("integer"), false, false, true, true, true, false, false),
-		LONG(create("long"), false, false, true, true, true, false, false),
-		INT(create("int"), false, false, true, true, true, false, false),
-		SHORT(create("short"), false, false, true, true, true, false, false),
-		BYTE(create("byte"), false, false, true, true, true, false, false),
-		NON_POSITIVE_INTEGER(create("nonPositiveInteger"), false, false, true, true, true, false, false),
-		NEGATIVE_INTEGER(create("negativeInteger"), false, false, true, true, true, false, false),
-		NON_NEGATIVE_INTEGER(create("nonNegativeInteger"), false, false, true, true, true, false, false),
-		POSITIVE_INTEGER(create("positiveInteger"), false, false, true, true, true, false, false),
-		UNSIGNED_LONG(create("unsignedLong"), false, false, true, true, true, false, false),
-		UNSIGNED_INT(create("unsignedInt"), false, false, true, true, true, false, false),
-		UNSIGNED_SHORT(create("unsignedShort"), false, false, true, true, true, false, false),
-		UNSIGNED_BYTE(create("unsignedByte"), false, false, true, true, true, false, false),
-		YEARMONTHDURATION(create("yearMonthDuration"), false, true, false, true, false, false, false);
+		DURATION(CoreDatatype.XSD.DURATION.getIri(), true, true, false, false, false, false, false),
+		DATETIME(CoreDatatype.XSD.DATETIME.getIri(), true, false, false, false, false, false, true),
+		DATETIMESTAMP(CoreDatatype.XSD.DATETIMESTAMP.getIri(), false, false, false, true, false, false, true),
+		DAYTIMEDURATION(CoreDatatype.XSD.DAYTIMEDURATION.getIri(), false, true, false, true, false, false, false),
+		TIME(CoreDatatype.XSD.TIME.getIri(), true, false, false, false, false, false, true),
+		DATE(CoreDatatype.XSD.DATE.getIri(), true, false, false, false, false, false, true),
+		GYEARMONTH(CoreDatatype.XSD.GYEARMONTH.getIri(), true, false, false, false, false, false, true),
+		GYEAR(CoreDatatype.XSD.GYEAR.getIri(), true, false, false, false, false, false, true),
+		GMONTHDAY(CoreDatatype.XSD.GMONTHDAY.getIri(), true, false, false, false, false, false, true),
+		GDAY(CoreDatatype.XSD.GDAY.getIri(), true, false, false, false, false, false, true),
+		GMONTH(CoreDatatype.XSD.GMONTH.getIri(), true, false, false, false, false, false, true),
+		STRING(CoreDatatype.XSD.STRING.getIri(), true, false, false, false, false, false, false),
+		BOOLEAN(CoreDatatype.XSD.BOOLEAN.getIri(), true, false, false, false, false, false, false),
+		BASE64BINARY(CoreDatatype.XSD.BASE64BINARY.getIri(), true, false, false, false, false, false, false),
+		HEXBINARY(CoreDatatype.XSD.HEXBINARY.getIri(), true, false, false, false, false, false, false),
+		FLOAT(CoreDatatype.XSD.FLOAT.getIri(), true, false, false, false, false, true, false),
+		DECIMAL(CoreDatatype.XSD.DECIMAL.getIri(), true, false, false, false, true, false, false),
+		DOUBLE(CoreDatatype.XSD.DOUBLE.getIri(), true, false, false, false, false, true, false),
+		ANYURI(CoreDatatype.XSD.ANYURI.getIri(), true, false, false, false, false, false, false),
+		QNAME(CoreDatatype.XSD.QNAME.getIri(), true, false, false, false, false, false, false),
+		NOTATION(CoreDatatype.XSD.NOTATION.getIri(), true, false, false, false, false, false, false),
+		NORMALIZEDSTRING(CoreDatatype.XSD.NORMALIZEDSTRING.getIri(), false, false, false, true, false, false, false),
+		TOKEN(CoreDatatype.XSD.TOKEN.getIri(), false, false, false, true, false, false, false),
+		LANGUAGE(CoreDatatype.XSD.LANGUAGE.getIri(), false, false, false, true, false, false, false),
+		NMTOKEN(CoreDatatype.XSD.NMTOKEN.getIri(), false, false, false, true, false, false, false),
+		NMTOKENS(CoreDatatype.XSD.NMTOKENS.getIri(), false, false, false, true, false, false, false),
+		NAME(CoreDatatype.XSD.NAME.getIri(), false, false, false, true, false, false, false),
+		NCNAME(CoreDatatype.XSD.NCNAME.getIri(), false, false, false, true, false, false, false),
+		ID(CoreDatatype.XSD.ID.getIri(), false, false, false, true, false, false, false),
+		IDREF(CoreDatatype.XSD.IDREF.getIri(), false, false, false, true, false, false, false),
+		IDREFS(CoreDatatype.XSD.IDREFS.getIri(), false, false, false, true, false, false, false),
+		ENTITY(CoreDatatype.XSD.ENTITY.getIri(), false, false, false, true, false, false, false),
+		ENTITIES(CoreDatatype.XSD.ENTITIES.getIri(), false, false, false, true, false, false, false),
+		INTEGER(CoreDatatype.XSD.INTEGER.getIri(), false, false, true, true, true, false, false),
+		LONG(CoreDatatype.XSD.LONG.getIri(), false, false, true, true, true, false, false),
+		INT(CoreDatatype.XSD.INT.getIri(), false, false, true, true, true, false, false),
+		SHORT(CoreDatatype.XSD.SHORT.getIri(), false, false, true, true, true, false, false),
+		BYTE(CoreDatatype.XSD.BYTE.getIri(), false, false, true, true, true, false, false),
+		NON_POSITIVE_INTEGER(CoreDatatype.XSD.NON_POSITIVE_INTEGER.getIri(), false, false, true, true, true, false,
+				false),
+		NEGATIVE_INTEGER(CoreDatatype.XSD.NEGATIVE_INTEGER.getIri(), false, false, true, true, true, false, false),
+		NON_NEGATIVE_INTEGER(CoreDatatype.XSD.NON_NEGATIVE_INTEGER.getIri(), false, false, true, true, true, false,
+				false),
+		POSITIVE_INTEGER(CoreDatatype.XSD.POSITIVE_INTEGER.getIri(), false, false, true, true, true, false, false),
+		UNSIGNED_LONG(CoreDatatype.XSD.UNSIGNED_LONG.getIri(), false, false, true, true, true, false, false),
+		UNSIGNED_INT(CoreDatatype.XSD.UNSIGNED_INT.getIri(), false, false, true, true, true, false, false),
+		UNSIGNED_SHORT(CoreDatatype.XSD.UNSIGNED_SHORT.getIri(), false, false, true, true, true, false, false),
+		UNSIGNED_BYTE(CoreDatatype.XSD.UNSIGNED_BYTE.getIri(), false, false, true, true, true, false, false),
+		YEARMONTHDURATION(CoreDatatype.XSD.YEARMONTHDURATION.getIri(), false, true, false, true, false, false, false);
 
 		private final IRI iri;
 		private final boolean primitive;

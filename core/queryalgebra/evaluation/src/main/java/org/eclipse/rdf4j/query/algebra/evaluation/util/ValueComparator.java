@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
+import java.util.Comparator;
+import java.util.Optional;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -14,10 +17,6 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
-import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-
-import java.util.Comparator;
-import java.util.Optional;
 
 /**
  * A comparator that compares values according the SPARQL value ordering as specified in
@@ -108,31 +107,38 @@ public class ValueComparator implements Comparator<Value> {
 		// Additional constraint for ORDER BY: "A plain literal is lower
 		// than an RDF literal with type CoreDatatype.XSD:string of the same lexical
 		// form."
-		try {
-			if (!(QueryEvaluationUtil.isPlainLiteral(leftLit) || QueryEvaluationUtil.isPlainLiteral(rightLit))) {
-				return compareNonPlainLiterals(leftLit, rightLit);
+
+		if (!(QueryEvaluationUtility.isPlainLiteral(leftLit) || QueryEvaluationUtility.isPlainLiteral(rightLit))) {
+			Order order = compareNonPlainLiterals(leftLit, rightLit);
+			if (order != Order.incompatible) {
+				return order.asInt();
 			}
-		} catch (ValueExprEvaluationException e) {
-			// literals cannot be compared using the '<' operator, continue
-			// below
 		}
 
 		return comparePlainLiterals(leftLit, rightLit);
 	}
 
-	private int compareNonPlainLiterals(Literal leftLit, Literal rightLit) {
+	private Order compareNonPlainLiterals(Literal leftLit, Literal rightLit) {
 
-		boolean isSmaller = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.LT, strict);
-		if (isSmaller) {
-			return -1;
-		} else {
-			boolean isEquivalent = QueryEvaluationUtil.compareLiterals(leftLit, rightLit, CompareOp.EQ, strict);
-			if (isEquivalent) {
-				return 0;
-			}
-			return 1;
+		QueryEvaluationUtility.Result smaller = QueryEvaluationUtility.compareLiterals(leftLit, rightLit, CompareOp.LT,
+				strict);
+		if (smaller == QueryEvaluationUtility.Result.incompatible) {
+			return Order.incompatible;
 		}
 
+		if (smaller.orElse(false)) {
+			return Order.smaller;
+		} else {
+			QueryEvaluationUtility.Result equivalent = QueryEvaluationUtility.compareLiterals(leftLit, rightLit,
+					CompareOp.EQ, strict);
+			if (equivalent == QueryEvaluationUtility.Result.incompatible) {
+				return Order.incompatible;
+			}
+			if (equivalent.orElse(false)) {
+				return Order.equal;
+			}
+			return Order.greater;
+		}
 
 	}
 
@@ -148,11 +154,11 @@ public class ValueComparator implements Comparator<Value> {
 			if (rightDatatype != null) {
 				// Both literals have datatypes
 				CoreDatatype.XSD leftXmlDatatype = ((CoreDatatype.XSD) leftLit.getCoreDatatype()
-					.filter(CoreDatatype::isXSDDatatype)
-					.orElse(null));
+						.filter(CoreDatatype::isXSDDatatype)
+						.orElse(null));
 				CoreDatatype.XSD rightXmlDatatype = ((CoreDatatype.XSD) rightLit.getCoreDatatype()
-					.filter(CoreDatatype::isXSDDatatype)
-					.orElse(null));
+						.filter(CoreDatatype::isXSDDatatype)
+						.orElse(null));
 
 				result = compareDatatypes(leftXmlDatatype, rightXmlDatatype, leftDatatype, rightDatatype);
 
@@ -190,7 +196,7 @@ public class ValueComparator implements Comparator<Value> {
 	}
 
 	private int compareDatatypes(CoreDatatype.XSD leftDatatype, CoreDatatype.XSD rightDatatype, IRI leftDatatypeIRI,
-								 IRI rightDatatypeIRI) {
+			IRI rightDatatypeIRI) {
 		if (leftDatatype != null && leftDatatype == rightDatatype) {
 			return 0;
 		} else if (leftDatatype != null && leftDatatype.isNumericDatatype()) {
@@ -230,5 +236,24 @@ public class ValueComparator implements Comparator<Value> {
 			}
 		}
 		return c;
+	}
+
+	enum Order {
+		smaller(-1),
+		greater(1),
+		equal(0),
+		incompatible(0);
+
+		private final int value;
+
+		Order(int value) {
+			this.value = value;
+		}
+
+		public int asInt() {
+			if (this == incompatible)
+				throw new IllegalStateException();
+			return value;
+		}
 	}
 }

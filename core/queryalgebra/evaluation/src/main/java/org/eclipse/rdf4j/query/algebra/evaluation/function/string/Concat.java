@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * The SPARQL built-in {@link Function} CONCAT, as defined in
@@ -43,7 +43,7 @@ public class Concat implements Function {
 			if (arg instanceof Literal) {
 				Literal lit = (Literal) arg;
 
-				if (!QueryEvaluationUtil.isStringLiteral(lit)) {
+				if (!QueryEvaluationUtility.isStringLiteral(lit)) {
 					throw new ValueExprEvaluationException("unexpected datatype for CONCAT operand: " + lit);
 				}
 

@@ -252,14 +252,14 @@ public abstract class RDFStoreTest {
 	public void testTimeZoneRoundTrip() throws Exception {
 		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);
-		Literal obj = vf.createLiteral("2006-08-23+00:00",CoreDatatype.XSD.DATE);
+		Literal obj = vf.createLiteral("2006-08-23+00:00", CoreDatatype.XSD.DATE);
 		testValueRoundTrip(subj, pred, obj);
 
 		con.begin();
 		con.removeStatements(null, null, null);
 		con.commit();
 
-		obj = vf.createLiteral("2006-08-23",CoreDatatype.XSD.DATE);
+		obj = vf.createLiteral("2006-08-23", CoreDatatype.XSD.DATE);
 		testValueRoundTrip(subj, pred, obj);
 	}
 
@@ -380,8 +380,8 @@ public abstract class RDFStoreTest {
 	@Test
 	public void testInvalidDateTime() throws Exception {
 		// SES-711
-		Literal date1 = vf.createLiteral("2004-12-20",CoreDatatype.XSD.DATETIME);
-		Literal date2 = vf.createLiteral("2004-12-20",CoreDatatype.XSD.DATETIME);
+		Literal date1 = vf.createLiteral("2004-12-20", CoreDatatype.XSD.DATETIME);
+		Literal date2 = vf.createLiteral("2004-12-20", CoreDatatype.XSD.DATETIME);
 		Assert.assertEquals(date1, date2);
 	}
 

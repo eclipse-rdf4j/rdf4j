@@ -7,6 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.Objects;
+import java.util.Optional;
+
+import javax.xml.datatype.XMLGregorianCalendar;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
@@ -14,12 +21,6 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-
-import javax.xml.datatype.XMLGregorianCalendar;
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.util.Objects;
-import java.util.Optional;
 
 /**
  * A simple default implementation of the {@link Literal} interface.
@@ -55,7 +56,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	private IRI datatype;
 
-	private final CoreDatatype.Cache coreDatatype = CoreDatatype.Cache.empty();
+	private Optional<? extends CoreDatatype> coreDatatype = null;
 
 	/*--------------*
 	 * Constructors *
@@ -184,25 +185,29 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	protected void setDatatype(IRI datatype) {
 		this.datatype = datatype;
-		coreDatatype.clearCache();
+		coreDatatype = null;
 	}
 
 	protected void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
 		this.datatype = datatype;
-			this.coreDatatype.setDatatype(coreDatatype);
+		if (coreDatatype == null) {
+			this.coreDatatype = Optional.empty();
+		} else {
+			this.coreDatatype = coreDatatype.asOptional();
+		}
 
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected void setDatatype(XSD.Datatype datatype) {
 		this.datatype = datatype.getIri();
-		coreDatatype.setDatatype(datatype.getCoreDatatype());
+		coreDatatype = datatype.getCoreDatatype().asOptional();
 	}
 
 	protected void setDatatype(CoreDatatype datatype) {
 		assert datatype != null;
 		this.datatype = datatype.getIri();
-		this.coreDatatype.setDatatype(datatype);
+		this.coreDatatype = datatype.asOptional();
 	}
 
 	@Override
@@ -343,7 +348,10 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	@Override
 	public Optional<? extends CoreDatatype> getCoreDatatype() {
-		return coreDatatype.getCached(datatype);
+		if (coreDatatype == null) {
+			coreDatatype = CoreDatatype.from(datatype);
+		}
+		return coreDatatype;
 	}
 
 }

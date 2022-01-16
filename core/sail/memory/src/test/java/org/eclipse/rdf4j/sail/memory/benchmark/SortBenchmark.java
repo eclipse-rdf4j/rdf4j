@@ -50,7 +50,7 @@ import org.openjdk.jmh.runner.RunnerException;
 @BenchmarkMode({ Mode.AverageTime })
 // use G1GC because the workload is multi-threaded
 @Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = {"-Xms400M", "-Xmx400M", "-XX:+UseSerialGC",  "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+//@Fork(value = 1, jvmArgs = {"-Xms400M", "-Xmx400M", "-XX:+UseSerialGC",  "-XX:StartFlightRecording=delay=60s,duration=240s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 100)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class SortBenchmark {
@@ -74,7 +74,7 @@ public class SortBenchmark {
 		SortBenchmark sortBenchmark = new SortBenchmark();
 		sortBenchmark.setup();
 		System.out.println("sort");
-		while(true) {
+		while (true) {
 			sortBenchmark.sortDirectly();
 			System.out.println(".");
 		}

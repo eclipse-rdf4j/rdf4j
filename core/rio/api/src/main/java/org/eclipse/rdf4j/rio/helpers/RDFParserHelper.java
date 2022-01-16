@@ -200,9 +200,9 @@ public class RDFParserHelper {
 				// Backup for unnormalised datatype literal creation
 				else if (workingDatatype != null) {
 					Optional<? extends CoreDatatype> coreDatatype = CoreDatatype.from(workingDatatype);
-					if(coreDatatype.isPresent()){
+					if (coreDatatype.isPresent()) {
 						result = valueFactory.createLiteral(workingLabel, coreDatatype.get());
-					}else {
+					} else {
 						result = valueFactory.createLiteral(workingLabel, workingDatatype);
 					}
 				} else {

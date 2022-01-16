@@ -7,6 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.util.Collections;
+import java.util.Set;
+
+import javax.xml.datatype.XMLGregorianCalendar;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -18,10 +23,6 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.util.Values;
-
-import javax.xml.datatype.XMLGregorianCalendar;
-import java.util.Collections;
-import java.util.Set;
 
 /**
  * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
@@ -381,8 +382,6 @@ public class MemValueFactory extends AbstractValueFactory {
 		return getOrCreateMemLiteral(super.createLiteral(value, datatype));
 	}
 
-
-
 	@Override
 	public Literal createLiteral(boolean value) {
 		MemLiteral newLiteral = new BooleanMemLiteral(this, value);
@@ -408,7 +407,7 @@ public class MemValueFactory extends AbstractValueFactory {
 		if (memTriple == null) {
 			// Create a MemTriple and add it to the registry
 			MemTriple newMemTriple = new MemTriple(this, getOrCreateMemResource(triple.getSubject()),
-				getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
+					getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
 			boolean wasNew = tripleRegistry.add(newMemTriple);
 
 			if (!wasNew) {

@@ -19,22 +19,59 @@ import org.eclipse.rdf4j.model.IRI;
 @InternalUseOnly
 class CoreDatatypeHelper {
 
+	static Map<IRI, Optional<? extends CoreDatatype>> reverseLookup;
+
 	static Map<IRI, Optional<? extends CoreDatatype>> getReverseLookup() {
 
-		HashMap<IRI, Optional<? extends CoreDatatype>> reverseLookup = new HashMap<>();
+		if (reverseLookup == null) {
+			HashMap<IRI, Optional<? extends CoreDatatype>> map = new HashMap<>();
 
-		for (CoreDatatype value : CoreDatatype.RDF.values()) {
-			reverseLookup.put(value.getIri(), value.asOptional());
-		}
+			for (CoreDatatype value : CoreDatatype.RDF.values()) {
+				map.put(value.getIri(), value.asOptional());
+			}
 
-		for (CoreDatatype value : CoreDatatype.GEO.values()) {
-			reverseLookup.put(value.getIri(), value.asOptional());
-		}
+			for (CoreDatatype value : CoreDatatype.GEO.values()) {
+				map.put(value.getIri(), value.asOptional());
+			}
 
-		for (CoreDatatype value : CoreDatatype.XSD.values()) {
-			reverseLookup.put(value.getIri(), value.asOptional());
+			for (CoreDatatype value : CoreDatatype.XSD.values()) {
+				map.put(value.getIri(), value.asOptional());
+			}
+
+			reverseLookup = Collections.unmodifiableMap(map);
 		}
 
 		return reverseLookup;
+	}
+
+	static class DatatypeIRI extends AbstractIRI {
+
+		private static final long serialVersionUID = 169243624049169159L;
+
+		private final String namespace;
+		private final String localName;
+		private final String stringValue;
+
+		public DatatypeIRI(String namespace, String localName) {
+			this.namespace = namespace;
+			this.localName = localName;
+			this.stringValue = namespace.concat(localName);
+		}
+
+		@Override
+		public String stringValue() {
+			return stringValue;
+		}
+
+		@Override
+		public String getNamespace() {
+			return namespace;
+		}
+
+		@Override
+		public String getLocalName() {
+			return localName;
+		}
+
 	}
 }
