@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.model.base;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -18,10 +20,10 @@ import java.util.stream.Collectors;
 import org.junit.Assert;
 import org.junit.Test;
 
-public class CoreDatatypeSortingTest {
+public class CoreDatatypeTest {
 
 	@Test
-	public void testXSD() {
+	public void testOrderOfXSD() {
 		ArrayList<CoreDatatype.XSD> datatypes = getDatatypesShuffled();
 
 		List<String> datatypeIRIs = getDatatypesShuffled().stream()
@@ -47,6 +49,11 @@ public class CoreDatatypeSortingTest {
 
 		Collections.shuffle(xsds);
 		return xsds;
+	}
+
+	@Test
+	public void testUnknownDatatype() {
+		assertEquals(CoreDatatype.NONE, CoreDatatype.from(new AbstractIRI.GenericIRI("http://example.com")));
 	}
 
 }

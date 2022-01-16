@@ -264,7 +264,7 @@ public class XSD {
 			this.decimal = decimal;
 			this.floatingPoint = floatingPoint;
 			this.calendar = calendar;
-			this.coreDatatype = (CoreDatatype.XSD) CoreDatatype.from(iri).orElseThrow();
+			this.coreDatatype = CoreDatatype.from(iri).asXSDDatatypeOrNull();
 		}
 
 		/**
@@ -392,7 +392,9 @@ public class XSD {
 			return reverseLookup.getOrDefault(datatype, Optional.empty());
 		}
 
-		public static Optional<Datatype> from(CoreDatatype datatype) {
+		public static Optional<Datatype> from(CoreDatatype.XSD datatype) {
+			if (datatype == null)
+				return Optional.empty();
 			return reverseLookupXSDDatatype.getOrDefault(datatype, Optional.empty());
 		}
 

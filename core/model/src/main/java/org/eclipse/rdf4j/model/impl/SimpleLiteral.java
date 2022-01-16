@@ -55,7 +55,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	private IRI datatype;
 
-	transient private CoreDatatype.Cache coreDatatype = CoreDatatype.Cache.empty();
+	private CoreDatatype coreDatatype = null;
 
 	/*--------------*
 	 * Constructors *
@@ -157,18 +157,18 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	protected void setDatatype(IRI datatype) {
 		this.datatype = datatype;
-		coreDatatype.clearCache();
+		coreDatatype = CoreDatatype.from(datatype);
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected void setDatatype(XSD.Datatype datatype) {
 		this.datatype = datatype.getIri();
-		coreDatatype.setDatatype(datatype.getCoreDatatype());
+		coreDatatype = datatype.getCoreDatatype();
 	}
 
 	protected void setDatatype(CoreDatatype datatype) {
 		this.datatype = datatype.getIri();
-		this.coreDatatype.setDatatype(datatype);
+		this.coreDatatype = datatype;
 	}
 
 	@Override
@@ -182,11 +182,9 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	public Optional<XSD.Datatype> getXsdDatatype() {
-		Optional<CoreDatatype> coreDatatype = getCoreDatatype();
-		if (coreDatatype.isPresent()) {
-			return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.get());
-		}
-		return Optional.empty();
+		CoreDatatype coreDatatype = getCoreDatatype();
+
+		return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.asXSDDatatypeOrNull());
 	}
 
 	// Overrides Object.equals(Object), implements Literal.equals(Object)
@@ -308,8 +306,11 @@ public class SimpleLiteral extends AbstractLiteral {
 	}
 
 	@Override
-	public Optional<CoreDatatype> getCoreDatatype() {
-		return coreDatatype.getCached(datatype);
+	public CoreDatatype getCoreDatatype() {
+		if (coreDatatype == null) {
+			coreDatatype = CoreDatatype.from(datatype);
+		}
+		return coreDatatype;
 	}
 
 }

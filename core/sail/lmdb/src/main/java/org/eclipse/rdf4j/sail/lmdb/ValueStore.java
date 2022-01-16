@@ -1026,11 +1026,11 @@ class ValueStore extends AbstractValueFactory {
 
 		if (Literals.isLanguageLiteral(l)) {
 			return new LmdbLiteral(revision, l.getLabel(), l.getLanguage().get());
-		} else if (l.getCoreDatatype().isPresent()) {
-			return new LmdbLiteral(revision, l.getLabel(), l.getCoreDatatype().get());
+		} else if (l.getCoreDatatype() != CoreDatatype.NONE) {
+			return new LmdbLiteral(revision, l.getLabel(), l.getCoreDatatype());
 		} else {
 			LmdbIRI datatype = getLmdbURI(l.getDatatype());
-			return new LmdbLiteral(revision, l.getLabel(), datatype);
+			return new LmdbLiteral(revision, l.getLabel(), datatype, l.getCoreDatatype());
 		}
 	}
 }
