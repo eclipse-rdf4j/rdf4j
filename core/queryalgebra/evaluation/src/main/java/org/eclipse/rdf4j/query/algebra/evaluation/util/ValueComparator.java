@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 
 /**
  * A comparator that compares values according the SPARQL value ordering as specified in
@@ -109,37 +108,26 @@ public class ValueComparator implements Comparator<Value> {
 		// form."
 
 		if (!(QueryEvaluationUtility.isPlainLiteral(leftLit) || QueryEvaluationUtility.isPlainLiteral(rightLit))) {
-			Order order = compareNonPlainLiterals(leftLit, rightLit);
-			if (order != Order.incompatible) {
+			QueryEvaluationUtility.Order order = compareNonPlainLiterals(leftLit, rightLit);
+			if (order.isValid()) {
 				return order.asInt();
 			}
+			if (order == QueryEvaluationUtility.Order.illegalArgument)
+				throw new IllegalStateException();
 		}
 
 		return comparePlainLiterals(leftLit, rightLit);
 	}
 
-	private Order compareNonPlainLiterals(Literal leftLit, Literal rightLit) {
+	private QueryEvaluationUtility.Order compareNonPlainLiterals(Literal leftLit, Literal rightLit) {
 
-		QueryEvaluationUtility.Result smaller = QueryEvaluationUtility.compareLiterals(leftLit, rightLit, CompareOp.LT,
-				strict);
-		if (smaller == QueryEvaluationUtility.Result.incompatibleValueExpression) {
-			return Order.incompatible;
+		QueryEvaluationUtility.Order order = QueryEvaluationUtility.compareLiterals(leftLit, rightLit, strict);
+
+		if (order == QueryEvaluationUtility.Order.notEqual) {
+			return QueryEvaluationUtility.Order.smaller;
 		}
 
-		if (smaller.orElse(false)) {
-			return Order.smaller;
-		} else {
-			QueryEvaluationUtility.Result equivalent = QueryEvaluationUtility.compareLiterals(leftLit, rightLit,
-					CompareOp.EQ, strict);
-			if (equivalent == QueryEvaluationUtility.Result.incompatibleValueExpression) {
-				return Order.incompatible;
-			}
-			if (equivalent.orElse(false)) {
-				return Order.equal;
-			}
-			return Order.greater;
-		}
-
+		return order;
 	}
 
 	private int comparePlainLiterals(Literal leftLit, Literal rightLit) {
@@ -232,24 +220,5 @@ public class ValueComparator implements Comparator<Value> {
 			}
 		}
 		return c;
-	}
-
-	enum Order {
-		smaller(-1),
-		greater(1),
-		equal(0),
-		incompatible(0);
-
-		private final int value;
-
-		Order(int value) {
-			this.value = value;
-		}
-
-		public int asInt() {
-			if (this == incompatible)
-				throw new IllegalStateException();
-			return value;
-		}
 	}
 }

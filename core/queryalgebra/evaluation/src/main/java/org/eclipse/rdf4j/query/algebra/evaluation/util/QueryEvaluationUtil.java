@@ -367,7 +367,8 @@ public class QueryEvaluationUtil {
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		return l.getCoreDatatype() == CoreDatatype.XSD.STRING;
+		assert l.getLanguage().isEmpty() || (l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING);
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
 //	public static boolean isPlainLiteral(Literal l) {

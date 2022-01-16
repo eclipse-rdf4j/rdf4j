@@ -18,7 +18,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Or;
 
 /**
  * @author Arjohn Kampman
@@ -118,18 +120,7 @@ public class QueryEvaluationUtility {
 		return compareLiterals(leftLit, rightLit, operator, true);
 	}
 
-	/**
-	 * Compares the supplied {@link Literal} arguments using the supplied operator.
-	 *
-	 * @param leftLit  the left literal argument of the comparison.
-	 * @param rightLit the right literal argument of the comparison.
-	 * @param operator the comparison operator to use.
-	 * @param strict   boolean indicating whether comparison should use strict (minimally-conforming) SPARQL 1.1
-	 *                 operator behavior, or extended behavior.
-	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds, {@code false}
-	 *         otherwise.
-	 */
-	public static Result compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict) {
+	public static Order compareLiterals(Literal leftLit, Literal rightLit, boolean strict) {
 		// type precendence:
 		// - simple literal
 		// - numeric
@@ -149,7 +140,7 @@ public class QueryEvaluationUtility {
 
 		if (QueryEvaluationUtility.isSimpleLiteral(leftLangLit, leftCoreDatatype)
 				&& QueryEvaluationUtility.isSimpleLiteral(rightLangLit, rightCoreDatatype)) {
-			return compareWithOperator(operator, leftLit.getLabel().compareTo(rightLit.getLabel()));
+			return Order.from(leftLit.getLabel().compareTo(rightLit.getLabel()));
 		} else if (!(leftLangLit || rightLangLit)) {
 
 			CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftCoreDatatype, rightCoreDatatype);
@@ -157,31 +148,21 @@ public class QueryEvaluationUtility {
 			if (commonDatatype != null) {
 
 				try {
-					Result result = handleCommonDatatype(leftLit, rightLit, operator, strict, leftCoreDatatype,
+					Order order = handleCommonDatatype(leftLit, rightLit, strict, leftCoreDatatype,
 							rightCoreDatatype, leftLangLit, rightLangLit, commonDatatype);
 
-					if (result == Result.illegalArgument) {
+					if (order == Order.illegalArgument) {
 						if (leftLit.equals(rightLit)) {
-							switch (operator) {
-							case EQ:
-								return Result._true;
-							case NE:
-								return Result._false;
-							}
+							return Order.equal;
 						}
 					}
 
-					if (result != null) {
-						return result;
+					if (order != null) {
+						return order;
 					}
 				} catch (IllegalArgumentException e) {
 					if (leftLit.equals(rightLit)) {
-						switch (operator) {
-						case EQ:
-							return Result._true;
-						case NE:
-							return Result._false;
-						}
+						return Order.equal;
 					}
 				}
 
@@ -193,23 +174,39 @@ public class QueryEvaluationUtility {
 		// using the operators 'EQ' and 'NE'. See SPARQL's RDFterm-equal
 		// operator
 
-		return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit);
+		return otherCases(leftLit, rightLit, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit);
 
 	}
 
-	private static Result handleCommonDatatype(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict,
+	/**
+	 * Compares the supplied {@link Literal} arguments using the supplied operator.
+	 *
+	 * @param leftLit  the left literal argument of the comparison.
+	 * @param rightLit the right literal argument of the comparison.
+	 * @param operator the comparison operator to use.
+	 * @param strict   boolean indicating whether comparison should use strict (minimally-conforming) SPARQL 1.1
+	 *                 operator behavior, or extended behavior.
+	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds, {@code false}
+	 *         otherwise.
+	 */
+	public static Result compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict) {
+		Order order = compareLiterals(leftLit, rightLit, strict);
+		return order.toResult(operator);
+	}
+
+	private static Order handleCommonDatatype(Literal leftLit, Literal rightLit, boolean strict,
 			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
 			boolean rightLangLit, CoreDatatype.XSD commonDatatype) {
 		if (commonDatatype == CoreDatatype.XSD.DOUBLE) {
-			return compareWithOperator(operator, Double.compare(leftLit.doubleValue(), rightLit.doubleValue()));
+			return Order.from(Double.compare(leftLit.doubleValue(), rightLit.doubleValue()));
 		} else if (commonDatatype == CoreDatatype.XSD.FLOAT) {
-			return compareWithOperator(operator, Float.compare(leftLit.floatValue(), rightLit.floatValue()));
+			return Order.from(Float.compare(leftLit.floatValue(), rightLit.floatValue()));
 		} else if (commonDatatype == CoreDatatype.XSD.DECIMAL) {
-			return compareWithOperator(operator, leftLit.decimalValue().compareTo(rightLit.decimalValue()));
+			return Order.from(leftLit.decimalValue().compareTo(rightLit.decimalValue()));
 		} else if (commonDatatype.isIntegerDatatype()) {
-			return compareWithOperator(operator, leftLit.integerValue().compareTo(rightLit.integerValue()));
+			return Order.from(leftLit.integerValue().compareTo(rightLit.integerValue()));
 		} else if (commonDatatype == CoreDatatype.XSD.BOOLEAN) {
-			return compareWithOperator(operator, Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));
+			return Order.from(Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));
 		} else if (commonDatatype.isCalendarDatatype()) {
 			XMLGregorianCalendar left = leftLit.calendarValue();
 			XMLGregorianCalendar right = rightLit.calendarValue();
@@ -222,10 +219,10 @@ public class QueryEvaluationUtility {
 				// If we compare two CoreDatatype.XSD:dateTime we should use the specific comparison specified in SPARQL
 				// 1.1
 				if (leftCoreDatatype == CoreDatatype.XSD.DATETIME && rightCoreDatatype == CoreDatatype.XSD.DATETIME) {
-					return Result.incompatibleValueExpression;
+					return Order.incompatibleValueExpression;
 				}
 			} else {
-				return compareWithOperator(operator, compare);
+				return Order.from(compare);
 			}
 
 		} else if (!strict && commonDatatype.isDurationDatatype()) {
@@ -233,20 +230,20 @@ public class QueryEvaluationUtility {
 			Duration right = XMLDatatypeUtil.parseDuration(rightLit.getLabel());
 			int compare = left.compare(right);
 			if (compare != DatatypeConstants.INDETERMINATE) {
-				return compareWithOperator(operator, compare);
+				return Order.from(compare);
 			} else {
-				return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype, leftLangLit,
+				return otherCases(leftLit, rightLit, leftCoreDatatype, rightCoreDatatype, leftLangLit,
 						rightLangLit);
 			}
 
 		} else if (commonDatatype == CoreDatatype.XSD.STRING) {
-			return compareWithOperator(operator, leftLit.getLabel().compareTo(rightLit.getLabel()));
+			return Order.from(leftLit.getLabel().compareTo(rightLit.getLabel()));
 		}
 
 		return null;
 	}
 
-	private static Result otherCases(Literal leftLit, Literal rightLit, CompareOp operator,
+	private static Order otherCases(Literal leftLit, Literal rightLit,
 			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
 			boolean rightLangLit) {
 		boolean literalsEqual = leftLit.equals(rightLit);
@@ -258,11 +255,11 @@ public class QueryEvaluationUtility {
 
 				// we need to check that the lexical-to-value mapping for both datatypes succeeds
 				if (!XMLDatatypeUtil.isValidValue(leftLit.getLabel(), leftCoreDatatype)) {
-					return Result.incompatibleValueExpression;
+					return Order.incompatibleValueExpression;
 				}
 
 				if (!XMLDatatypeUtil.isValidValue(rightLit.getLabel(), rightCoreDatatype)) {
-					return Result.incompatibleValueExpression;
+					return Order.incompatibleValueExpression;
 				}
 
 				boolean leftString = leftCoreDatatype == CoreDatatype.XSD.STRING;
@@ -274,33 +271,23 @@ public class QueryEvaluationUtility {
 				boolean rightDate = rightCoreDatatype.isCalendarDatatype();
 
 				if (leftString != rightString) {
-					return Result.incompatibleValueExpression;
+					return Order.incompatibleValueExpression;
 				}
 				if (leftNumeric != rightNumeric) {
-					return Result.incompatibleValueExpression;
+					return Order.incompatibleValueExpression;
 				}
 				if (leftDate != rightDate) {
-					return Result.incompatibleValueExpression;
+					return Order.incompatibleValueExpression;
 				}
 			} else if (!leftLangLit && !rightLangLit) {
 				// For literals with unsupported datatypes we don't know if their values are equal
-				return Result.incompatibleValueExpression;
+				return Order.incompatibleValueExpression;
 			}
 		}
 
-		switch (operator) {
-		case EQ:
-			return Result.fromBoolean(literalsEqual);
-		case NE:
-			return Result.fromBoolean(!literalsEqual);
-		case LT:
-		case LE:
-		case GE:
-		case GT:
-			return Result.incompatibleValueExpression;
-		default:
-			return Result.illegalArgument;
-		}
+		if (literalsEqual)
+			return Order.equal;
+		return Order.notEqual;
 	}
 
 	private static CoreDatatype.XSD getCommonDatatype(boolean strict, CoreDatatype.XSD leftCoreDatatype,
@@ -330,25 +317,6 @@ public class QueryEvaluationUtility {
 		return null;
 	}
 
-	private static Result compareWithOperator(CompareOp operator, int i) {
-		switch (operator) {
-		case LT:
-			return Result.fromBoolean(i < 0);
-		case LE:
-			return Result.fromBoolean(i <= 0);
-		case EQ:
-			return Result.fromBoolean(i == 0);
-		case NE:
-			return Result.fromBoolean(i != 0);
-		case GE:
-			return Result.fromBoolean(i >= 0);
-		case GT:
-			return Result.fromBoolean(i > 0);
-		default:
-			return Result.illegalArgument;
-		}
-	}
-
 	/**
 	 * Checks whether the supplied value is a "plain literal". A "plain literal" is a literal with no datatype and
 	 * optionally a language tag.
@@ -364,7 +332,8 @@ public class QueryEvaluationUtility {
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		return l.getCoreDatatype() == CoreDatatype.XSD.STRING;
+		assert l.getLanguage().isEmpty() || (l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING);
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
 	/**
@@ -487,6 +456,82 @@ public class QueryEvaluationUtility {
 				throw new IllegalStateException("IllegalArgument needs to be handled");
 			}
 			return value;
+		}
+	}
+
+	enum Order {
+		smaller(-1),
+		greater(1),
+		equal(0),
+		notEqual(0),
+		incompatibleValueExpression(0),
+		illegalArgument(0);
+
+		private final int value;
+
+		Order(int value) {
+			this.value = value;
+		}
+
+		public static Order from(int value) {
+			if (value < 0)
+				return smaller;
+			if (value > 0)
+				return greater;
+			return equal;
+		}
+
+		public int asInt() {
+			if (!isValid() && this != notEqual) {
+				throw new IllegalStateException();
+			}
+			return value;
+		}
+
+		public boolean isValid() {
+			return !(this == incompatibleValueExpression || this == illegalArgument);
+		}
+
+		public Result toResult(CompareOp operator) {
+			if (!isValid()) {
+				if (this == incompatibleValueExpression)
+					return Result.incompatibleValueExpression;
+				if (this == illegalArgument)
+					return Result.illegalArgument;
+			}
+
+			if (this == notEqual) {
+				switch (operator) {
+				case EQ:
+					return Result._false;
+				case NE:
+					return Result._true;
+				case LT:
+				case LE:
+				case GE:
+				case GT:
+					return Result.incompatibleValueExpression;
+				default:
+					return Result.illegalArgument;
+				}
+			}
+
+			switch (operator) {
+			case LT:
+				return Result.fromBoolean(value < 0);
+			case LE:
+				return Result.fromBoolean(value <= 0);
+			case EQ:
+				return Result.fromBoolean(value == 0);
+			case NE:
+				return Result.fromBoolean(value != 0);
+			case GE:
+				return Result.fromBoolean(value >= 0);
+			case GT:
+				return Result.fromBoolean(value > 0);
+			default:
+				return Result.illegalArgument;
+			}
 		}
 	}
 }

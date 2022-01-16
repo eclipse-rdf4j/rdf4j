@@ -107,6 +107,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	public LmdbLiteral(ValueStoreRevision revision, String label, IRI datatype, CoreDatatype coreDatatype,
 			long internalID) {
 		this.label = label;
+		assert coreDatatype == CoreDatatype.NONE || coreDatatype.getIri() == datatype;
 		this.datatype = datatype;
 		this.coreDatatype = coreDatatype;
 		setInternalID(internalID, revision);
@@ -149,8 +150,10 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public CoreDatatype getCoreDatatype() {
-		if (coreDatatype == null)
+		init();
+		if (coreDatatype == null) {
 			coreDatatype = CoreDatatype.from(datatype);
+		}
 		return coreDatatype;
 	}
 
