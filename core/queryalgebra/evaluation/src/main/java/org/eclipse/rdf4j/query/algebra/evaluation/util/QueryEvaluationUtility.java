@@ -82,7 +82,7 @@ public class QueryEvaluationUtility {
 
 		}
 
-		return Result.incompatible;
+		return Result.incompatibleValueExpression;
 	}
 
 	public static Result compare(Value leftVal, Value rightVal, CompareOp operator) {
@@ -101,7 +101,7 @@ public class QueryEvaluationUtility {
 			case NE:
 				return Result.fromBoolean(!Objects.equals(leftVal, rightVal));
 			default:
-				return Result.incompatible;
+				return Result.incompatibleValueExpression;
 			}
 		}
 	}
@@ -162,9 +162,25 @@ public class QueryEvaluationUtility {
 
 			if (commonDatatype != null) {
 
-				Result result = handleCommonDatatype(leftLit, rightLit, operator, strict, leftCoreDatatype,
-						rightCoreDatatype, leftLangLit, rightLangLit, commonDatatype);
-				if (result == Result.incompatible) {
+				try {
+					Result result = handleCommonDatatype(leftLit, rightLit, operator, strict, leftCoreDatatype,
+							rightCoreDatatype, leftLangLit, rightLangLit, commonDatatype);
+
+					if (result == Result.illegalArgument) {
+						if (leftLit.equals(rightLit)) {
+							switch (operator) {
+							case EQ:
+								return Result._true;
+							case NE:
+								return Result._false;
+							}
+						}
+					}
+
+					if (result != null) {
+						return result;
+					}
+				} catch (IllegalArgumentException e) {
 					if (leftLit.equals(rightLit)) {
 						switch (operator) {
 						case EQ:
@@ -174,9 +190,6 @@ public class QueryEvaluationUtility {
 						}
 					}
 				}
-
-				if (result != null)
-					return result;
 
 			}
 		}
@@ -215,7 +228,7 @@ public class QueryEvaluationUtility {
 				// If we compare two CoreDatatype.XSD:dateTime we should use the specific comparison specified in SPARQL
 				// 1.1
 				if (leftCoreDatatype == CoreDatatype.XSD.DATETIME && rightCoreDatatype == CoreDatatype.XSD.DATETIME) {
-					return Result.incompatible;
+					return Result.incompatibleValueExpression;
 				}
 			} else {
 				return compareWithOperator(operator, compare);
@@ -251,11 +264,11 @@ public class QueryEvaluationUtility {
 
 				// we need to check that the lexical-to-value mapping for both datatypes succeeds
 				if (!XMLDatatypeUtil.isValidValue(leftLit.getLabel(), leftCoreDatatype)) {
-					return Result.incompatible;
+					return Result.incompatibleValueExpression;
 				}
 
 				if (!XMLDatatypeUtil.isValidValue(rightLit.getLabel(), rightCoreDatatype)) {
-					return Result.incompatible;
+					return Result.incompatibleValueExpression;
 				}
 
 				boolean leftString = leftCoreDatatype == CoreDatatype.XSD.STRING;
@@ -267,17 +280,17 @@ public class QueryEvaluationUtility {
 				boolean rightDate = rightCoreDatatype.isCalendarDatatype();
 
 				if (leftString != rightString) {
-					return Result.incompatible;
+					return Result.incompatibleValueExpression;
 				}
 				if (leftNumeric != rightNumeric) {
-					return Result.incompatible;
+					return Result.incompatibleValueExpression;
 				}
 				if (leftDate != rightDate) {
-					return Result.incompatible;
+					return Result.incompatibleValueExpression;
 				}
 			} else if (!leftLangLit && !rightLangLit) {
 				// For literals with unsupported datatypes we don't know if their values are equal
-				return Result.incompatible;
+				return Result.incompatibleValueExpression;
 			}
 		}
 
@@ -290,9 +303,9 @@ public class QueryEvaluationUtility {
 		case LE:
 		case GE:
 		case GT:
-			return Result.incompatible;
+			return Result.incompatibleValueExpression;
 		default:
-			return Result.incompatible;
+			return Result.illegalArgument;
 		}
 	}
 
@@ -338,7 +351,7 @@ public class QueryEvaluationUtility {
 		case GT:
 			return Result.fromBoolean(i > 0);
 		default:
-			return Result.incompatible;
+			return Result.illegalArgument;
 		}
 	}
 
@@ -357,8 +370,8 @@ public class QueryEvaluationUtility {
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		return l.getCoreDatatype().filter(d -> d == CoreDatatype.XSD.STRING).isPresent();
-//		return l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
+//		return l.getCoreDatatype().filter(d -> d == CoreDatatype.XSD.STRING).isPresent();
+		return l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
 	}
 
 	/**
@@ -453,7 +466,8 @@ public class QueryEvaluationUtility {
 	public enum Result {
 		_true(true),
 		_false(false),
-		incompatible();
+		incompatibleValueExpression(),
+		illegalArgument();
 
 		static Result fromBoolean(boolean b) {
 			if (b) {
@@ -474,8 +488,11 @@ public class QueryEvaluationUtility {
 		}
 
 		public boolean orElse(boolean alternative) {
-			if (isIncompatible)
+			if (this == incompatibleValueExpression) {
 				return alternative;
+			} else if (this == illegalArgument) {
+				throw new IllegalStateException("IllegalArgument needs to be handled");
+			}
 			return value;
 		}
 	}

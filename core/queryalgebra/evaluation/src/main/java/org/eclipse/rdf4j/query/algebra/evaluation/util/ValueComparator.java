@@ -122,7 +122,7 @@ public class ValueComparator implements Comparator<Value> {
 
 		QueryEvaluationUtility.Result smaller = QueryEvaluationUtility.compareLiterals(leftLit, rightLit, CompareOp.LT,
 				strict);
-		if (smaller == QueryEvaluationUtility.Result.incompatible) {
+		if (smaller == QueryEvaluationUtility.Result.incompatibleValueExpression) {
 			return Order.incompatible;
 		}
 
@@ -131,7 +131,7 @@ public class ValueComparator implements Comparator<Value> {
 		} else {
 			QueryEvaluationUtility.Result equivalent = QueryEvaluationUtility.compareLiterals(leftLit, rightLit,
 					CompareOp.EQ, strict);
-			if (equivalent == QueryEvaluationUtility.Result.incompatible) {
+			if (equivalent == QueryEvaluationUtility.Result.incompatibleValueExpression) {
 				return Order.incompatible;
 			}
 			if (equivalent.orElse(false)) {

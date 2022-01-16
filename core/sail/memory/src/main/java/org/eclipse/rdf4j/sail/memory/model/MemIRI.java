@@ -90,16 +90,14 @@ public class MemIRI implements IRI, MemResource {
 	public String toString() {
 		String result;
 		if (toStringCache == null) {
-			result = new StringBuilder(namespace.length() + localName.length()).append(namespace)
-					.append(localName)
-					.toString();
+			result = namespace +
+					localName;
 			toStringCache = new SoftReference<>(result);
 		} else {
 			result = toStringCache.get();
 			if (result == null) {
-				result = new StringBuilder(namespace.length() + localName.length()).append(namespace)
-						.append(localName)
-						.toString();
+				result = namespace +
+						localName;
 				toStringCache = new SoftReference<>(result);
 			}
 		}

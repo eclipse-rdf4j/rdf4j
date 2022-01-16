@@ -56,7 +56,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	private IRI datatype;
 
-	private Optional<? extends CoreDatatype> coreDatatype = null;
+	private final CoreDatatype.Cache coreDatatype = CoreDatatype.Cache.empty();
 
 	/*--------------*
 	 * Constructors *
@@ -185,15 +185,15 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	protected void setDatatype(IRI datatype) {
 		this.datatype = datatype;
-		coreDatatype = null;
+		coreDatatype.clearCache();
 	}
 
 	protected void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
 		this.datatype = datatype;
 		if (coreDatatype == null) {
-			this.coreDatatype = Optional.empty();
+			this.coreDatatype.setDatatype(null);
 		} else {
-			this.coreDatatype = coreDatatype.asOptional();
+			this.coreDatatype.setDatatype(coreDatatype);
 		}
 
 	}
@@ -201,13 +201,13 @@ public class SimpleLiteral extends AbstractLiteral {
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected void setDatatype(XSD.Datatype datatype) {
 		this.datatype = datatype.getIri();
-		coreDatatype = datatype.getCoreDatatype().asOptional();
+		coreDatatype.setDatatype(datatype.getCoreDatatype());
 	}
 
 	protected void setDatatype(CoreDatatype datatype) {
 		assert datatype != null;
 		this.datatype = datatype.getIri();
-		this.coreDatatype = datatype.asOptional();
+		this.coreDatatype.setDatatype(datatype);
 	}
 
 	@Override
@@ -238,22 +238,33 @@ public class SimpleLiteral extends AbstractLiteral {
 		if (o instanceof Literal) {
 			Literal other = (Literal) o;
 
+			Optional<? extends CoreDatatype> coreDatatype = getCoreDatatype();
+			if (coreDatatype.isPresent()) {
+				// Compare core datatypes
+				if ((coreDatatype.get() != ((Literal) o).getCoreDatatype().orElse(null))) {
+					return false;
+				} else {
+					// Compare other datatypes
+					if (!datatype.equals(other.getDatatype())) {
+						return false;
+					}
+				}
+			}
+
 			// Compare labels
 			if (!label.equals(other.getLabel())) {
 				return false;
 			}
 
-			// Compare datatypes
-			if (!datatype.equals(other.getDatatype())) {
-				return false;
-			}
+			Optional<String> language = getLanguage();
+			Optional<String> otherLanguage = other.getLanguage();
 
-			if (getLanguage().isPresent() && other.getLanguage().isPresent()) {
-				return getLanguage().get().equalsIgnoreCase(other.getLanguage().get());
+			if (language.isPresent() && otherLanguage.isPresent()) {
+				return language.get().equalsIgnoreCase(otherLanguage.get());
 			}
 			// If only one has a language, then return false
 			else {
-				return !getLanguage().isPresent() && !other.getLanguage().isPresent();
+				return language.isEmpty() && otherLanguage.isEmpty();
 			}
 		}
 
@@ -348,10 +359,7 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	@Override
 	public Optional<? extends CoreDatatype> getCoreDatatype() {
-		if (coreDatatype == null) {
-			coreDatatype = CoreDatatype.from(datatype);
-		}
-		return coreDatatype;
+		return coreDatatype.getCached(datatype);
 	}
 
 }
