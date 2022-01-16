@@ -191,9 +191,7 @@ public class QueryEvaluationUtil {
 					} else if (commonDatatype.isIntegerDatatype()) {
 						return compareWithOperator(operator, leftLit.integerValue().compareTo(rightLit.integerValue()));
 					} else if (commonDatatype == CoreDatatype.XSD.BOOLEAN) {
-						Boolean leftBool = leftLit.booleanValue();
-						Boolean rightBool = rightLit.booleanValue();
-						return compareWithOperator(operator, leftBool.compareTo(rightBool));
+						return compareWithOperator(operator, Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));
 					} else if (commonDatatype.isCalendarDatatype()) {
 						XMLGregorianCalendar left = leftLit.calendarValue();
 						XMLGregorianCalendar right = rightLit.calendarValue();
