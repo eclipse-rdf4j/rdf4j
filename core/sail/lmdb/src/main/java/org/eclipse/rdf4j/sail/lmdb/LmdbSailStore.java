@@ -10,12 +10,12 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -55,6 +55,89 @@ class LmdbSailStore implements SailStore {
 	private final TripleStore tripleStore;
 
 	private final ValueStore valueStore;
+
+	private final ExecutorService tripleStoreExecutor = Executors.newCachedThreadPool();
+	private final CircularBuffer<Operation> opQueue = new CircularBuffer<>(1024);
+	private volatile Throwable tripleStoreException;
+	private final AtomicBoolean running = new AtomicBoolean(false);
+	private boolean multiThreadingActive;
+	private volatile boolean asyncTransactionFinished;
+	private volatile boolean nextTransactionAsync;
+
+	private boolean enableMultiThreading = true;
+
+	/**
+	 * A fast non-blocking circular buffer backed by an array.
+	 *
+	 * @param <T> Type of elements within this buffer
+	 */
+	final class CircularBuffer<T> {
+
+		private final T[] elements;
+		private volatile int head = 0;
+		private volatile int tail = 0;
+
+		CircularBuffer(int size) {
+			this.elements = (T[]) new Object[size];
+		}
+
+		boolean add(T element) {
+			// faster version of:
+			// tail == Math.floorMod(head - 1, elements.length)
+			if (head > 0 ? tail == head - 1 : tail == elements.length - 1) {
+				return false;
+			}
+			elements[tail] = element;
+			tail = (tail + 1) % elements.length;
+			return true;
+		}
+
+		T remove() {
+			T result = null;
+			if (tail != head) {
+				result = elements[head];
+				head = (head + 1) % elements.length;
+			}
+			return result;
+		}
+	}
+
+	/**
+	 * An operation that can be executed asynchronously.
+	 */
+	interface Operation {
+		void execute() throws Exception;
+	}
+
+	/**
+	 * Special operation that marks the end of a transaction.
+	 */
+	static final Operation END_TRANSACTION = () -> {
+	};
+
+	/**
+	 * Operation for adding a new quad.
+	 */
+	class AddQuadOperation implements Operation {
+		long s, p, o, c;
+		boolean explicit;
+		Resource context;
+
+		@Override
+		public void execute() throws IOException {
+			boolean wasNew = tripleStore.storeTriple(s, p, o, c, explicit);
+			if (wasNew && context != null) {
+				contextStore.increment(context);
+			}
+		}
+	}
+
+	/**
+	 * Super-class for operations that capture their finished state.
+	 */
+	abstract static class StatefulOperation implements Operation {
+		volatile boolean finished = false;
+	}
 
 	private final NamespaceStore namespaceStore;
 
@@ -114,6 +197,11 @@ class LmdbSailStore implements SailStore {
 						}
 					} finally {
 						if (tripleStore != null) {
+							running.set(false);
+							tripleStoreExecutor.shutdown();
+							while (!tripleStoreExecutor.isTerminated()) {
+								Thread.yield();
+							}
 							tripleStore.close();
 						}
 					}
@@ -141,29 +229,6 @@ class LmdbSailStore implements SailStore {
 		return new LmdbSailSource(false);
 	}
 
-	List<Long> getContextIDs(Resource... contexts) throws IOException {
-		assert contexts.length > 0 : "contexts must not be empty";
-
-		// Filter duplicates
-		LinkedHashSet<Resource> contextSet = new LinkedHashSet<>();
-		Collections.addAll(contextSet, contexts);
-
-		// Fetch IDs, filtering unknown resources from the result
-		List<Long> contextIDs = new ArrayList<>(contextSet.size());
-		for (Resource context : contextSet) {
-			if (context == null) {
-				contextIDs.add(0L);
-			} else {
-				long contextID = valueStore.getId(context);
-				if (contextID != LmdbValue.UNKNOWN_ID) {
-					contextIDs.add(contextID);
-				}
-			}
-		}
-
-		return contextIDs;
-	}
-
 	CloseableIteration<Resource, SailException> getContexts() throws IOException {
 		RecordIterator records = tripleStore.getAllTriplesSortedByContext();
 		CloseableIteration<? extends Statement, SailException> stIter1;
@@ -174,7 +239,7 @@ class LmdbSailStore implements SailStore {
 			stIter1 = new LmdbStatementIterator(records, valueStore);
 		}
 
-		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<Statement, SailException>(
+		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<>(
 				stIter1) {
 			@Override
 			protected boolean accept(Statement st) {
@@ -182,7 +247,7 @@ class LmdbSailStore implements SailStore {
 			}
 		};
 
-		return new ConvertingIteration<Statement, Resource, SailException>(stIter2) {
+		return new ConvertingIteration<>(stIter2) {
 			@Override
 			protected Resource convert(Statement sourceObject) throws SailException {
 				return sourceObject.getContext();
@@ -302,30 +367,55 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void flush() throws SailException {
+		public void flush() throws SailException {
 			sinkStoreAccessLock.lock();
+			boolean activeTxn = storeTxnStarted.get();
 			try {
+				if (multiThreadingActive) {
+					while (!opQueue.add(END_TRANSACTION)) {
+						if (tripleStoreException != null) {
+							throw new SailException(tripleStoreException);
+						} else {
+							Thread.yield();
+						}
+					}
+				}
+
 				try {
 					namespaceStore.sync();
 				} finally {
+					if (multiThreadingActive) {
+						while (!asyncTransactionFinished) {
+							if (tripleStoreException != null) {
+								throw new SailException(tripleStoreException);
+							} else {
+								Thread.yield();
+							}
+						}
+					}
 					try {
 						contextStore.sync();
 					} finally {
-						if (storeTxnStarted.get()) {
-							tripleStore.commit();
+						if (activeTxn) {
 							valueStore.commit();
+							if (!multiThreadingActive) {
+								tripleStore.commit();
+							}
 							// do not set flag to false until _after_ commit is successfully completed.
 							storeTxnStarted.set(false);
 						}
 					}
 				}
 			} catch (IOException e) {
+				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw new SailException(e);
 			} catch (RuntimeException e) {
+				running.set(false);
 				logger.error("Encountered an unexpected problem while trying to commit", e);
 				throw e;
 			} finally {
+				multiThreadingActive = false;
 				sinkStoreAccessLock.unlock();
 			}
 		}
@@ -334,7 +424,7 @@ class LmdbSailStore implements SailStore {
 		public void setNamespace(String prefix, String name) throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTriplestoreTransaction();
+				startTransaction(true);
 				namespaceStore.setNamespace(prefix, name);
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -345,7 +435,7 @@ class LmdbSailStore implements SailStore {
 		public void removeNamespace(String prefix) throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTriplestoreTransaction();
+				startTransaction(true);
 				namespaceStore.removeNamespace(prefix);
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -356,7 +446,7 @@ class LmdbSailStore implements SailStore {
 		public void clearNamespaces() throws SailException {
 			sinkStoreAccessLock.lock();
 			try {
-				startTriplestoreTransaction();
+				startTransaction(true);
 				namespaceStore.clear();
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -389,47 +479,93 @@ class LmdbSailStore implements SailStore {
 		 *
 		 * @throws SailException if a transaction could not be started.
 		 */
-		private synchronized void startTriplestoreTransaction() throws SailException {
+		private void startTransaction(boolean preferThreading) throws SailException {
+			synchronized (storeTxnStarted) {
+				if (storeTxnStarted.compareAndSet(false, true)) {
+					multiThreadingActive = preferThreading && enableMultiThreading;
+					nextTransactionAsync = multiThreadingActive;
+					asyncTransactionFinished = false;
+					try {
+						if (multiThreadingActive) {
+							if (running.compareAndSet(false, true)) {
+								tripleStoreException = null;
+								tripleStoreExecutor.submit(() -> {
+									try {
+										while (running.get()) {
+											tripleStore.startTransaction();
+											while (true) {
+												Operation op = opQueue.remove();
+												if (op != null) {
+													if (op == END_TRANSACTION) {
+														tripleStore.commit();
+														nextTransactionAsync = false;
+														asyncTransactionFinished = true;
+														break;
+													} else {
+														op.execute();
+													}
+												} else {
+													Thread.yield();
+												}
+											}
 
-			if (storeTxnStarted.compareAndSet(false, true)) {
-				try {
-					tripleStore.startTransaction();
-					valueStore.startTransaction();
-				} catch (IOException e) {
-					storeTxnStarted.set(false);
-					throw new SailException(e);
+											// keep thread running for at least 2ms to lock-free wait for the next
+											// transaction
+											long start = System.currentTimeMillis();
+											while (running.get() && !nextTransactionAsync) {
+												if (System.currentTimeMillis() - start > 2) {
+													synchronized (storeTxnStarted) {
+														if (!nextTransactionAsync) {
+															running.set(false);
+															return;
+														}
+													}
+												} else {
+													Thread.yield();
+												}
+											}
+										}
+									} catch (Throwable e) {
+										tripleStoreException = e;
+									}
+								});
+							}
+						} else {
+							tripleStore.startTransaction();
+						}
+						valueStore.startTransaction();
+					} catch (Exception e) {
+						storeTxnStarted.set(false);
+						throw new SailException(e);
+					}
 				}
 			}
 		}
 
-		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
+		private void addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource context)
 				throws SailException {
-			Objects.requireNonNull(contexts,
-					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
-
-			boolean result = false;
 			sinkStoreAccessLock.lock();
 			try {
-				startTriplestoreTransaction();
-				long subjID = valueStore.storeValue(subj);
-				long predID = valueStore.storeValue(pred);
-				long objID = valueStore.storeValue(obj);
+				startTransaction(true);
 
-				if (contexts.length == 0) {
-					contexts = new Resource[] { null };
-				}
+				AddQuadOperation q = new AddQuadOperation();
+				q.s = valueStore.storeValue(subj);
+				q.p = valueStore.storeValue(pred);
+				q.o = valueStore.storeValue(obj);
+				q.c = context == null ? 0 : valueStore.storeValue(context);
+				q.context = context;
+				q.explicit = explicit;
 
-				for (Resource context : contexts) {
-					long contextID = 0;
-					if (context != null) {
-						contextID = valueStore.storeValue(context);
+				if (multiThreadingActive) {
+					while (!opQueue.add(q)) {
+						if (tripleStoreException != null) {
+							throw new SailException(tripleStoreException);
+						} else {
+							Thread.yield();
+						}
 					}
-
-					boolean wasNew = tripleStore.storeTriple(subjID, predID, objID, contextID, explicit);
-					if (wasNew && context != null) {
-						contextStore.increment(context);
-					}
-					result |= wasNew;
+				} else {
+					q.execute();
 				}
 			} catch (IOException e) {
 				throw new SailException(e);
@@ -439,8 +575,25 @@ class LmdbSailStore implements SailStore {
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
+		}
 
-			return result;
+		private long removeStatements(long subj, long pred, long obj, boolean explicit, long[] contexts)
+				throws IOException {
+			long removeCount = 0;
+			for (long contextId : contexts) {
+				Map<Long, Long> result = tripleStore.removeTriplesByContext(subj, pred, obj, contextId,
+						explicit);
+
+				for (Entry<Long, Long> entry : result.entrySet()) {
+					Long entryContextId = entry.getKey();
+					if (entryContextId > 0) {
+						Resource modifiedContext = (Resource) valueStore.getValue(entryContextId);
+						contextStore.decrementBy(modifiedContext, entry.getValue());
+					}
+					removeCount += entry.getValue();
+				}
+			}
+			return removeCount;
 		}
 
 		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
@@ -450,27 +603,33 @@ class LmdbSailStore implements SailStore {
 
 			sinkStoreAccessLock.lock();
 			try {
-				startTriplestoreTransaction();
-				long subjID = LmdbValue.UNKNOWN_ID;
+				startTransaction(false);
+				final long subjID;
 				if (subj != null) {
 					subjID = valueStore.getId(subj);
 					if (subjID == LmdbValue.UNKNOWN_ID) {
 						return 0;
 					}
+				} else {
+					subjID = LmdbValue.UNKNOWN_ID;
 				}
-				long predID = LmdbValue.UNKNOWN_ID;
+				final long predID;
 				if (pred != null) {
 					predID = valueStore.getId(pred);
 					if (predID == LmdbValue.UNKNOWN_ID) {
 						return 0;
 					}
+				} else {
+					predID = LmdbValue.UNKNOWN_ID;
 				}
-				long objID = LmdbValue.UNKNOWN_ID;
+				final long objID;
 				if (obj != null) {
 					objID = valueStore.getId(obj);
 					if (objID == LmdbValue.UNKNOWN_ID) {
 						return 0;
 					}
+				} else {
+					objID = LmdbValue.UNKNOWN_ID;
 				}
 
 				final long[] contextIds = new long[contexts.length == 0 ? 1 : contexts.length];
@@ -490,21 +649,38 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 
-				long removeCount = 0;
-				for (long contextId : contextIds) {
-					Map<Long, Long> result = tripleStore.removeTriplesByContext(subjID, predID, objID, contextId,
-							explicit);
-
-					for (Entry<Long, Long> entry : result.entrySet()) {
-						Long entryContextId = entry.getKey();
-						if (entryContextId > 0) {
-							Resource modifiedContext = (Resource) valueStore.getValue(entryContextId);
-							contextStore.decrementBy(modifiedContext, entry.getValue());
+				if (multiThreadingActive) {
+					long[] removeCount = new long[1];
+					StatefulOperation removeOp = new StatefulOperation() {
+						@Override
+						public void execute() throws Exception {
+							try {
+								removeCount[0] = removeStatements(subjID, predID, objID, explicit, contextIds);
+							} finally {
+								finished = true;
+							}
 						}
-						removeCount += entry.getValue();
+					};
+
+					while (!opQueue.add(removeOp)) {
+						if (tripleStoreException != null) {
+							throw new SailException(tripleStoreException);
+						} else {
+							Thread.yield();
+						}
 					}
+
+					while (!removeOp.finished) {
+						if (tripleStoreException != null) {
+							throw new SailException(tripleStoreException);
+						} else {
+							Thread.yield();
+						}
+					}
+					return removeCount[0];
+				} else {
+					return removeStatements(subjID, predID, objID, explicit, contextIds);
 				}
-				return removeCount;
 			} catch (IOException e) {
 				throw new SailException(e);
 			} catch (RuntimeException e) {
@@ -526,8 +702,6 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	/**
-	 	 */
 	private final class LmdbSailDataset implements SailDataset {
 
 		private final boolean explicit;
