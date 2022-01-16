@@ -66,7 +66,7 @@ public class BooleanLiteral extends SimpleLiteral {
 	}
 
 	@Override
-	public Optional<? extends CoreDatatype> getCoreDatatype() {
-		return CoreDatatype.XSD.BOOLEAN.asOptional();
+	public CoreDatatype.XSD getCoreDatatype() {
+		return CoreDatatype.XSD.BOOLEAN;
 	}
 }

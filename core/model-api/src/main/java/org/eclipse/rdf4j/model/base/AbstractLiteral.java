@@ -26,8 +26,6 @@ import static java.time.temporal.ChronoUnit.SECONDS;
 import static java.time.temporal.ChronoUnit.YEARS;
 import static java.util.Objects.requireNonNull;
 
-import static org.eclipse.rdf4j.model.base.CoreDatatype.RDF.LANGSTRING;
-
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.DateTimeException;
@@ -76,11 +74,11 @@ public abstract class AbstractLiteral implements Literal {
 	private static final long serialVersionUID = -1286527360744086451L;
 
 	static boolean reserved(IRI datatype) {
-		return LANGSTRING.getIri().equals(datatype);
+		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype);
 	}
 
 	static boolean reserved(CoreDatatype datatype) {
-		return LANGSTRING == datatype;
+		return CoreDatatype.RDF.LANGSTRING == datatype;
 	}
 
 	/**
@@ -212,12 +210,12 @@ public abstract class AbstractLiteral implements Literal {
 		private static final long serialVersionUID = -19640527584237291L;
 
 		private final String label;
-		private final CoreDatatype.Cache coreDatatype;
+		private final CoreDatatype coreDatatype;
 		private final IRI datatype;
 
 		TypedLiteral(String label) {
 			this.label = label;
-			this.coreDatatype = CoreDatatype.Cache.from(CoreDatatype.XSD.STRING);
+			this.coreDatatype = CoreDatatype.XSD.STRING;
 			this.datatype = CoreDatatype.XSD.STRING.getIri();
 		}
 
@@ -225,17 +223,29 @@ public abstract class AbstractLiteral implements Literal {
 			this.label = label;
 			if (datatype == null) {
 				this.datatype = CoreDatatype.XSD.STRING.getIri();
-				this.coreDatatype = CoreDatatype.Cache.from(CoreDatatype.XSD.STRING);
+				this.coreDatatype = CoreDatatype.XSD.STRING;
 			} else {
 				this.datatype = datatype;
-				this.coreDatatype = CoreDatatype.Cache.empty();
+				this.coreDatatype = CoreDatatype.from(datatype);
 			}
 		}
 
 		TypedLiteral(String label, CoreDatatype datatype) {
 			this.label = label;
-			this.coreDatatype = Objects.requireNonNull(CoreDatatype.Cache.from(datatype));
+			this.coreDatatype = Objects.requireNonNull(datatype);
 			this.datatype = datatype.getIri();
+		}
+
+		TypedLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {
+			assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
+			this.label = label;
+			if (datatype == null) {
+				this.datatype = CoreDatatype.XSD.STRING.getIri();
+				this.coreDatatype = CoreDatatype.XSD.STRING;
+			} else {
+				this.datatype = datatype;
+				this.coreDatatype = coreDatatype;
+			}
 		}
 
 		@Override
@@ -254,8 +264,8 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<? extends CoreDatatype> getCoreDatatype() {
-			return coreDatatype.getCached(datatype);
+		public CoreDatatype getCoreDatatype() {
+			return coreDatatype;
 		}
 	}
 
@@ -283,12 +293,12 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return LANGSTRING.getIri();
+			return CoreDatatype.RDF.LANGSTRING.getIri();
 		}
 
 		@Override
-		public Optional<CoreDatatype.RDF> getCoreDatatype() {
-			return LANGSTRING.asOptional();
+		public CoreDatatype.RDF getCoreDatatype() {
+			return CoreDatatype.RDF.LANGSTRING;
 		}
 	}
 
@@ -331,8 +341,8 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype.XSD> getCoreDatatype() {
-			return CoreDatatype.XSD.BOOLEAN.asOptional();
+		public CoreDatatype.XSD getCoreDatatype() {
+			return CoreDatatype.XSD.BOOLEAN;
 		}
 
 		@Override
@@ -459,8 +469,8 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype.XSD> getCoreDatatype() {
-			return datatype.asOptional();
+		public CoreDatatype getCoreDatatype() {
+			return datatype;
 		}
 	}
 
@@ -729,8 +739,8 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype.XSD> getCoreDatatype() {
-			return datatype.asOptional();
+		public CoreDatatype getCoreDatatype() {
+			return datatype;
 		}
 
 	}
@@ -914,8 +924,8 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype.XSD> getCoreDatatype() {
-			return CoreDatatype.XSD.DURATION.asOptional();
+		public CoreDatatype.XSD getCoreDatatype() {
+			return CoreDatatype.XSD.DURATION;
 		}
 
 	}
@@ -1009,8 +1019,8 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
-		public Optional<CoreDatatype.XSD> getCoreDatatype() {
-			return datatype.asOptional();
+		public CoreDatatype getCoreDatatype() {
+			return datatype;
 		}
 	}
 

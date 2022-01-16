@@ -284,14 +284,14 @@ public class MemValueFactory extends AbstractValueFactory {
 	public MemLiteral getOrCreateMemLiteral(Literal literal) {
 		return literalRegistry.getOrAdd(literal, () -> {
 			String label = literal.getLabel();
-			IRI datatype = literal.getDatatype();
-			CoreDatatype coreDatatype = literal.getCoreDatatype().orElse(null);
+			CoreDatatype coreDatatype = literal.getCoreDatatype();
+			IRI datatype = coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : literal.getDatatype();
 
 			if (Literals.isLanguageLiteral(literal)) {
 				return new MemLiteral(this, label, literal.getLanguage().get());
 			} else {
 				try {
-					if (coreDatatype != null && coreDatatype.isXSDDatatype()) {
+					if (coreDatatype.isXSDDatatype()) {
 						if (((CoreDatatype.XSD) coreDatatype).isIntegerDatatype()) {
 							return new IntegerMemLiteral(this, label, literal.integerValue(), coreDatatype);
 						} else if (coreDatatype == CoreDatatype.XSD.DECIMAL) {
@@ -308,11 +308,8 @@ public class MemValueFactory extends AbstractValueFactory {
 							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
 						}
 					}
-					if (coreDatatype != null) {
-						return new MemLiteral(this, label, coreDatatype);
-					} else {
-						return new MemLiteral(this, label, datatype, null);
-					}
+
+					return new MemLiteral(this, label, datatype, coreDatatype);
 
 				} catch (IllegalArgumentException e) {
 					// Unable to parse literal label to primitive type

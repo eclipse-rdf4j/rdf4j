@@ -18,6 +18,10 @@ import org.eclipse.rdf4j.model.IRI;
 
 public interface CoreDatatype {
 
+	CoreDatatype NONE = () -> {
+		throw new IllegalStateException();
+	};
+
 	/**
 	 * Checks whether the supplied datatype is an XML Schema Datatype.
 	 *
@@ -35,60 +39,25 @@ public interface CoreDatatype {
 		return false;
 	}
 
-	IRI getIri();
-
-	Optional<? extends CoreDatatype> asOptional();
-
-	static Optional<? extends CoreDatatype> from(IRI datatype) {
-		if (datatype == null) {
-			return Optional.empty();
-		}
-		return CoreDatatypeHelper.getReverseLookup().getOrDefault(datatype, Optional.empty());
+	default XSD asXSDDatatypeOrNull() {
+		return null;
 	}
 
-	class Cache implements Serializable {
+	default RDF asRDFDatatypeOrNull() {
+		return null;
+	}
 
-		private static final long serialVersionUID = 6739573;
+	default GEO asGEODatatypeOrNull() {
+		return null;
+	}
 
-		private CoreDatatype coreDatatype;
-		private boolean cached = false;
+	IRI getIri();
 
-		private Cache() {
+	static CoreDatatype from(IRI datatype) {
+		if (datatype == null) {
+			return CoreDatatype.NONE;
 		}
-
-		public static Cache from(CoreDatatype datatype) {
-			Cache cache = new Cache();
-			cache.setDatatype(datatype);
-			return cache;
-		}
-
-		public static Cache empty() {
-			return new Cache();
-		}
-
-		public void setDatatype(CoreDatatype coreDatatype) {
-			this.coreDatatype = coreDatatype;
-			this.cached = true;
-		}
-
-		public void clearCache() {
-			this.cached = false;
-			this.coreDatatype = null;
-		}
-
-		public Optional<? extends CoreDatatype> getCached(IRI datatype) {
-			if (!cached) {
-				if (datatype != null) {
-					coreDatatype = CoreDatatype.from(datatype).orElse(null);
-				}
-				cached = true;
-			}
-			if (coreDatatype != null) {
-				return coreDatatype.asOptional();
-			}
-			return Optional.empty();
-		}
-
+		return CoreDatatypeHelper.getReverseLookup().getOrDefault(datatype, CoreDatatype.NONE);
 	}
 
 	enum XSD implements CoreDatatype {
@@ -281,6 +250,11 @@ public interface CoreDatatype {
 			return iri;
 		}
 
+		@Override
+		public XSD asXSDDatatypeOrNull() {
+			return this;
+		}
+
 		public Optional<XSD> asOptional() {
 			return optional;
 		}
@@ -314,6 +288,11 @@ public interface CoreDatatype {
 			return iri;
 		}
 
+		@Override
+		public RDF asRDFDatatypeOrNull() {
+			return this;
+		}
+
 		public Optional<RDF> asOptional() {
 			return optional;
 		}
@@ -345,6 +324,11 @@ public interface CoreDatatype {
 
 		public IRI getIri() {
 			return iri;
+		}
+
+		@Override
+		public GEO asGEODatatypeOrNull() {
+			return this;
 		}
 
 		public Optional<GEO> asOptional() {

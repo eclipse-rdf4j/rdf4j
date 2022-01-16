@@ -19,23 +19,23 @@ import org.eclipse.rdf4j.model.IRI;
 @InternalUseOnly
 class CoreDatatypeHelper {
 
-	static Map<IRI, Optional<? extends CoreDatatype>> reverseLookup;
+	static Map<IRI, CoreDatatype> reverseLookup;
 
-	static Map<IRI, Optional<? extends CoreDatatype>> getReverseLookup() {
+	static Map<IRI, CoreDatatype> getReverseLookup() {
 
 		if (reverseLookup == null) {
-			HashMap<IRI, Optional<? extends CoreDatatype>> map = new HashMap<>();
+			HashMap<IRI, CoreDatatype> map = new HashMap<>();
 
 			for (CoreDatatype value : CoreDatatype.RDF.values()) {
-				map.put(value.getIri(), value.asOptional());
+				map.put(value.getIri(), value);
 			}
 
 			for (CoreDatatype value : CoreDatatype.GEO.values()) {
-				map.put(value.getIri(), value.asOptional());
+				map.put(value.getIri(), value);
 			}
 
 			for (CoreDatatype value : CoreDatatype.XSD.values()) {
-				map.put(value.getIri(), value.asOptional());
+				map.put(value.getIri(), value);
 			}
 
 			reverseLookup = Collections.unmodifiableMap(map);

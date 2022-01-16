@@ -280,7 +280,7 @@ public interface Literal extends Value {
 	 *           match any of the core datatypes. Instead of minting a new Optional object every time this method is
 	 *           called it's recommended to use {@link CoreDatatype#asOptional()}.
 	 */
-	Optional<? extends CoreDatatype> getCoreDatatype();
+	CoreDatatype getCoreDatatype();
 
 	/**
 	 * Compares this literal to another object.

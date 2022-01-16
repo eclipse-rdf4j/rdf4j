@@ -56,7 +56,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	private IRI datatype;
 
-	private final CoreDatatype.Cache coreDatatype = CoreDatatype.Cache.empty();
+	private CoreDatatype coreDatatype = null;
 
 	/*--------------*
 	 * Constructors *
@@ -113,6 +113,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 * @param datatype The datatype for the literal.
 	 */
 	protected SimpleLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {
+		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
 		setLabel(label);
 		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
@@ -185,29 +186,26 @@ public class SimpleLiteral extends AbstractLiteral {
 
 	protected void setDatatype(IRI datatype) {
 		this.datatype = datatype;
-		coreDatatype.clearCache();
+		coreDatatype = CoreDatatype.from(datatype);
 	}
 
 	protected void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
 		this.datatype = datatype;
-		if (coreDatatype == null) {
-			this.coreDatatype.setDatatype(null);
-		} else {
-			this.coreDatatype.setDatatype(coreDatatype);
-		}
+		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
+		this.coreDatatype = coreDatatype;
 
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected void setDatatype(XSD.Datatype datatype) {
 		this.datatype = datatype.getIri();
-		coreDatatype.setDatatype(datatype.getCoreDatatype());
+		coreDatatype = datatype.getCoreDatatype();
 	}
 
 	protected void setDatatype(CoreDatatype datatype) {
 		assert datatype != null;
 		this.datatype = datatype.getIri();
-		this.coreDatatype.setDatatype(datatype);
+		this.coreDatatype = datatype;
 	}
 
 	@Override
@@ -221,11 +219,9 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	public Optional<XSD.Datatype> getXsdDatatype() {
-		Optional<? extends CoreDatatype> coreDatatype = getCoreDatatype();
-		if (coreDatatype.isPresent()) {
-			return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.get());
-		}
-		return Optional.empty();
+		CoreDatatype coreDatatype = getCoreDatatype();
+
+		return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.asXSDDatatypeOrNull());
 	}
 
 	// Overrides Object.equals(Object), implements Literal.equals(Object)
@@ -238,16 +234,15 @@ public class SimpleLiteral extends AbstractLiteral {
 		if (o instanceof Literal) {
 			Literal other = (Literal) o;
 
-			Optional<? extends CoreDatatype> coreDatatype = getCoreDatatype();
-			if (coreDatatype.isPresent()) {
-				// Compare core datatypes
-				if ((coreDatatype.get() != ((Literal) o).getCoreDatatype().orElse(null))) {
+			CoreDatatype coreDatatype = getCoreDatatype();
+
+			// Compare core datatypes
+			if (coreDatatype != ((Literal) o).getCoreDatatype()) {
+				return false;
+			} else if (coreDatatype == CoreDatatype.NONE) {
+				// Compare other datatypes
+				if (!datatype.equals(other.getDatatype())) {
 					return false;
-				} else {
-					// Compare other datatypes
-					if (!datatype.equals(other.getDatatype())) {
-						return false;
-					}
 				}
 			}
 
@@ -358,8 +353,11 @@ public class SimpleLiteral extends AbstractLiteral {
 	}
 
 	@Override
-	public Optional<? extends CoreDatatype> getCoreDatatype() {
-		return coreDatatype.getCached(datatype);
+	public CoreDatatype getCoreDatatype() {
+		if (coreDatatype == null) {
+			coreDatatype = CoreDatatype.from(datatype);
+		}
+		return coreDatatype;
 	}
 
 }

@@ -623,7 +623,7 @@ public class QueryEvaluationUtilTest {
 			}
 
 			@Override
-			public Optional<? extends CoreDatatype> getCoreDatatype() {
+			public CoreDatatype getCoreDatatype() {
 				return nested.getCoreDatatype();
 			}
 

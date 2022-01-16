@@ -62,9 +62,7 @@ public class QueryEvaluationUtil {
 		if (value.isLiteral()) {
 			Literal literal = (Literal) value;
 			String label = literal.getLabel();
-			CoreDatatype.XSD datatype = (CoreDatatype.XSD) literal.getCoreDatatype()
-					.filter(CoreDatatype::isXSDDatatype)
-					.orElse(null);
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 
 			if (datatype == CoreDatatype.XSD.STRING) {
 				return label.length() > 0;
@@ -161,12 +159,8 @@ public class QueryEvaluationUtil {
 		// - CoreDatatype.XSD:string
 		// - RDF term (equal and unequal only)
 
-		CoreDatatype.XSD leftCoreDatatype = (CoreDatatype.XSD) leftLit.getCoreDatatype()
-				.filter(CoreDatatype::isXSDDatatype)
-				.orElse(null);
-		CoreDatatype.XSD rightCoreDatatype = (CoreDatatype.XSD) rightLit.getCoreDatatype()
-				.filter(CoreDatatype::isXSDDatatype)
-				.orElse(null);
+		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
 
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
@@ -373,8 +367,7 @@ public class QueryEvaluationUtil {
 	}
 
 	public static boolean isPlainLiteral(Literal l) {
-		return l.getCoreDatatype().filter(d -> d == CoreDatatype.XSD.STRING).isPresent();
-//		return l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING;
 	}
 
 //	public static boolean isPlainLiteral(Literal l) {
@@ -403,7 +396,7 @@ public class QueryEvaluationUtil {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(Literal l) {
-		return !Literals.isLanguageLiteral(l) && l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING && !Literals.isLanguageLiteral(l);
 	}
 
 	/**
@@ -458,13 +451,12 @@ public class QueryEvaluationUtil {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-string">SPARQL Functions on Strings Documentation</a>
 	 */
 	public static boolean isStringLiteral(Literal l) {
-		return Literals.isLanguageLiteral(l) || l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || Literals.isLanguageLiteral(l);
 	}
 
 	private static boolean isSupportedDatatype(CoreDatatype.XSD datatype) {
-		return datatype != null &&
-				(datatype == CoreDatatype.XSD.STRING ||
-						datatype.isNumericDatatype() ||
-						datatype.isCalendarDatatype());
+		return datatype != null && (datatype == CoreDatatype.XSD.STRING ||
+				datatype.isNumericDatatype() ||
+				datatype.isCalendarDatatype());
 	}
 }
