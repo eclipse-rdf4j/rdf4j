@@ -55,7 +55,7 @@ class CoreDatatypeHelper {
 		public DatatypeIRI(String namespace, String localName) {
 			this.namespace = namespace;
 			this.localName = localName;
-			this.stringValue = namespace.concat(localName);
+			this.stringValue = namespace.concat(localName).intern();
 		}
 
 		@Override
