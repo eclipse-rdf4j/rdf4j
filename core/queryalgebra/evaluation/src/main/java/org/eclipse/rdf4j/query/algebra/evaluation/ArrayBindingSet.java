@@ -7,9 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -20,6 +23,7 @@ import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 /**
@@ -33,6 +37,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private static final long serialVersionUID = -1L;
 
 	private final String[] bindingNames;
+
+	// Creating a LinkedHashSet is expensive, so we should cache the binding names set
+	private Set<String> bindingNamesSetCache;
 
 	private final boolean[] whichBindingsHaveBeenSet;
 
@@ -83,7 +90,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	/**
 	 * This is used to generate a direct setter into the array to put a binding value into. Can be used to avoid many
 	 * comparisons to the bindingNames.
-	 * 
+	 *
 	 * @param bindingName for which you want the setter
 	 * @return the setter biconsumer which can operate on any ArrayBindingSet but should only be used on ones with an
 	 *         identical bindingNames array. Otherwise returns null.
@@ -95,6 +102,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				return (v, a) -> {
 					a.values[idx] = v;
 					a.whichBindingsHaveBeenSet[idx] = true;
+					a.clearCache();
 				};
 			}
 		}
@@ -110,6 +118,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 					assert !a.whichBindingsHaveBeenSet[idx] : "variable already bound: " + bindingName;
 					a.values[idx] = v;
 					a.whichBindingsHaveBeenSet[idx] = true;
+					a.clearCache();
 				};
 			}
 		}
@@ -158,19 +167,38 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public Set<String> getBindingNames() {
-		final LinkedHashSet<String> bns = new LinkedHashSet<>();
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (values[i] != null)
-				bns.add(bindingNames[i]);
+		if (bindingNamesSetCache == null) {
+			int size = size();
+			if (size == 0) {
+				this.bindingNamesSetCache = Collections.emptySet();
+			} else if (size == 1) {
+				for (int i = 0; i < this.bindingNames.length; i++) {
+					if (whichBindingsHaveBeenSet[i]) {
+						this.bindingNamesSetCache = Collections.singleton(bindingNames[i]);
+						break;
+					}
+				}
+				assert this.bindingNamesSetCache != null;
+			} else {
+				LinkedHashSet<String> bindingNamesSetCache = new LinkedHashSet<>(size * 2);
+				for (int i = 0; i < this.bindingNames.length; i++) {
+					if (whichBindingsHaveBeenSet[i]) {
+						bindingNamesSetCache.add(bindingNames[i]);
+					}
+				}
+				this.bindingNamesSetCache = Collections.unmodifiableSet(bindingNamesSetCache);
+			}
 		}
-		return bns;
+
+		return bindingNamesSetCache;
 	}
 
 	@Override
 	public Value getValue(String bindingName) {
 		for (int i = 0; i < bindingNames.length; i++) {
-			if (bindingNames[i].equals(bindingName) && whichBindingsHaveBeenSet[i])
+			if (bindingNames[i].equals(bindingName) && whichBindingsHaveBeenSet[i]) {
 				return values[i];
+			}
 		}
 		return null;
 	}
@@ -189,8 +217,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	@Override
 	public boolean hasBinding(String bindingName) {
 		for (int i = 0; i < bindingNames.length; i++) {
-			if (bindingNames[i].equals(bindingName))
+			if (bindingNames[i].equals(bindingName)) {
 				return whichBindingsHaveBeenSet[i];
+			}
 		}
 		return false;
 	}
@@ -211,6 +240,33 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		return size;
+	}
+
+	List<String> sortedBindingNames = null;
+
+	public List<String> getSortedBindingNames() {
+		if (sortedBindingNames == null) {
+			int size = size();
+
+			if (size == 1) {
+				for (int i = 0; i < bindingNames.length; i++) {
+					if (whichBindingsHaveBeenSet[i]) {
+						sortedBindingNames = Collections.singletonList(bindingNames[i]);
+					}
+				}
+			} else {
+				ArrayList<String> names = new ArrayList<>(size);
+				for (int i = 0; i < bindingNames.length; i++) {
+					if (whichBindingsHaveBeenSet[i]) {
+						names.add(bindingNames[i]);
+					}
+				}
+				names.sort(String::compareTo);
+				sortedBindingNames = names;
+			}
+		}
+
+		return sortedBindingNames;
 	}
 
 	/*------------------------------------*
@@ -239,10 +295,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 			String name = bindingNames[index];
 			Value value = values[index++];
-			if (value != null)
+			if (value != null) {
 				return new SimpleBinding(name, value);
-			else
+			} else {
 				return null;
+			}
 		}
 
 		@Override
@@ -255,11 +312,14 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public void addBinding(Binding binding) {
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(binding.getName())) {
-				assert this.whichBindingsHaveBeenSet[i] == false;
+				assert !this.whichBindingsHaveBeenSet[i];
 				this.values[i] = binding.getValue();
 				this.whichBindingsHaveBeenSet[i] = true;
+				clearCache();
+				return;
 			}
 		}
+		assert false : "We don't actually support adding a binding.";
 	}
 
 	@Override
@@ -268,6 +328,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			if (bindingNames[i].equals(binding.getName())) {
 				this.values[i] = binding.getValue();
 				this.whichBindingsHaveBeenSet[i] = true;
+				clearCache();
+				return;
 			}
 		}
 	}
@@ -278,6 +340,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			if (bindingNames[i].equals(name)) {
 				this.values[i] = value;
 				this.whichBindingsHaveBeenSet[i] = value != null;
+				clearCache();
+				return;
 			}
 		}
 	}
@@ -290,5 +354,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			}
 		}
 		return true;
+	}
+
+	private void clearCache() {
+		bindingNamesSetCache = null;
 	}
 }

@@ -129,27 +129,29 @@ public class QueryEvaluationUtility {
 		// - CoreDatatype.XSD:string
 		// - RDF term (equal and unequal only)
 
-		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
-		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype leftCoreDatatype = leftLit.getCoreDatatype();
+		CoreDatatype rightCoreDatatype = rightLit.getCoreDatatype();
 
-		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
-		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
+		boolean leftLangLit = leftCoreDatatype == CoreDatatype.RDF.LANGSTRING;
+		boolean rightLangLit = rightCoreDatatype == CoreDatatype.RDF.LANGSTRING;
+
+		CoreDatatype.XSD leftXSDDatatype = leftCoreDatatype.asXSDDatatypeOrNull();
+		CoreDatatype.XSD rightXSDDatatype = rightCoreDatatype.asXSDDatatypeOrNull();
 
 		// for purposes of query evaluation in SPARQL, simple literals and string-typed literals with the same lexical
 		// value are considered equal.
 
-		if (QueryEvaluationUtility.isSimpleLiteral(leftLangLit, leftCoreDatatype)
-				&& QueryEvaluationUtility.isSimpleLiteral(rightLangLit, rightCoreDatatype)) {
+		if (leftCoreDatatype == CoreDatatype.XSD.STRING && rightCoreDatatype == CoreDatatype.XSD.STRING) {
 			return Order.from(leftLit.getLabel().compareTo(rightLit.getLabel()));
 		} else if (!(leftLangLit || rightLangLit)) {
 
-			CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftCoreDatatype, rightCoreDatatype);
+			CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftXSDDatatype, rightXSDDatatype);
 
 			if (commonDatatype != null) {
 
 				try {
-					Order order = handleCommonDatatype(leftLit, rightLit, strict, leftCoreDatatype,
-							rightCoreDatatype, leftLangLit, rightLangLit, commonDatatype);
+					Order order = handleCommonDatatype(leftLit, rightLit, strict, leftXSDDatatype,
+							rightXSDDatatype, leftLangLit, rightLangLit, commonDatatype);
 
 					if (order == Order.illegalArgument) {
 						if (leftLit.equals(rightLit)) {
@@ -174,7 +176,7 @@ public class QueryEvaluationUtility {
 		// using the operators 'EQ' and 'NE'. See SPARQL's RDFterm-equal
 		// operator
 
-		return otherCases(leftLit, rightLit, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit);
+		return otherCases(leftLit, rightLit, leftXSDDatatype, rightXSDDatatype, leftLangLit, rightLangLit);
 
 	}
 
@@ -362,7 +364,7 @@ public class QueryEvaluationUtility {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(Literal l) {
-		return l.getCoreDatatype() == CoreDatatype.XSD.STRING && !Literals.isLanguageLiteral(l);
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING;
 	}
 
 	/**
@@ -372,7 +374,7 @@ public class QueryEvaluationUtility {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(boolean isLang, CoreDatatype datatype) {
-		return !isLang && datatype == CoreDatatype.XSD.STRING;
+		return datatype == CoreDatatype.XSD.STRING;
 	}
 
 	/**
@@ -417,7 +419,7 @@ public class QueryEvaluationUtility {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-string">SPARQL Functions on Strings Documentation</a>
 	 */
 	public static boolean isStringLiteral(Literal l) {
-		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || Literals.isLanguageLiteral(l);
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
 	private static boolean isSupportedDatatype(CoreDatatype.XSD datatype) {
