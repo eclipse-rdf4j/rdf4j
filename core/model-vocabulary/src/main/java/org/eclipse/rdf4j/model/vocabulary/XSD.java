@@ -264,7 +264,7 @@ public class XSD {
 			this.decimal = decimal;
 			this.floatingPoint = floatingPoint;
 			this.calendar = calendar;
-			this.coreDatatype = CoreDatatype.from(iri).asXSDDatatype().orElse(null);
+			this.coreDatatype = CoreDatatype.from(iri).asXSDDatatype().orElseThrow();
 		}
 
 		/**

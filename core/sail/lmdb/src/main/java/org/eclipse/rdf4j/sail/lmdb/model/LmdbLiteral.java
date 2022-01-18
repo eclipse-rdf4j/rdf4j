@@ -43,9 +43,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	private IRI datatype;
 
 	/**
-	 * The literal's core datatype.
+	 * The literal's core datatype. This value is null if there is no know datatype.
 	 */
-	private CoreDatatype coreDatatype = null;
+	private CoreDatatype coreDatatype;
 
 	private volatile ValueStoreRevision revision;
 

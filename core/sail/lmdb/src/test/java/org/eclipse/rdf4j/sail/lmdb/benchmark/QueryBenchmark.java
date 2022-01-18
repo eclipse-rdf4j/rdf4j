@@ -67,6 +67,7 @@ public class QueryBenchmark {
 	private static final String query3;
 	private static final String query4;
 	private static final String query5;
+	private static final String query7_pathexpression1;
 
 	static {
 		try {
@@ -75,6 +76,8 @@ public class QueryBenchmark {
 			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
 			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
 			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
+			query7_pathexpression1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query7-pathexpression1.qr"),
+					StandardCharsets.UTF_8);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -157,6 +160,19 @@ public class QueryBenchmark {
 					.evaluate()
 					.stream()
 					.count();
+		}
+	}
+
+	@Benchmark
+	public long pathExpressionQuery1() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection
+					.prepareTupleQuery(query7_pathexpression1)
+					.evaluate()
+					.stream()
+					.count();
+
 		}
 	}
 

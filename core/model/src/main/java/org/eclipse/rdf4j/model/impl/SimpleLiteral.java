@@ -123,7 +123,6 @@ public class SimpleLiteral extends AbstractLiteral {
 			setDatatype(datatype, coreDatatype);
 		}
 		optionalLanguageCache = Optional.empty();
-
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
@@ -143,8 +142,6 @@ public class SimpleLiteral extends AbstractLiteral {
 		setLabel(label);
 		if (datatype == CoreDatatype.RDF.LANGSTRING) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
-		} else if (datatype == null) {
-			setDatatype(CoreDatatype.XSD.STRING);
 		} else {
 			setDatatype(datatype);
 		}

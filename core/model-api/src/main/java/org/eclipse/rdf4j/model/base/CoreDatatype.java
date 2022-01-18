@@ -131,7 +131,7 @@ public interface CoreDatatype {
 		private final Optional<XSD> optional;
 
 		XSD(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
-			boolean floatingPoint, boolean calendar) {
+				boolean floatingPoint, boolean calendar) {
 			this.iri = iri;
 			this.primitive = primitive;
 			this.duration = duration;

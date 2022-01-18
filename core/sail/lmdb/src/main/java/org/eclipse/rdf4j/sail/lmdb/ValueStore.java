@@ -758,7 +758,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] literal2data(String label, Optional<String> lang, IRI dt, boolean create)
-			throws IOException, UnsupportedEncodingException {
+			throws IOException {
 		// Get datatype ID
 		long datatypeID = LmdbValue.UNKNOWN_ID;
 

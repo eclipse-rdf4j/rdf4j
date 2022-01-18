@@ -74,24 +74,24 @@ public class DateTimeTest extends TestCase {
 	public static Test suite() {
 		TestSuite suite = new TestSuite();
 
-		for (int i = 0; i < VALID_DATES.length; i++) {
-			suite.addTest(new ValidDateTest(VALID_DATES[i]));
+		for (String validDate : VALID_DATES) {
+			suite.addTest(new ValidDateTest(validDate));
 		}
 
-		for (int i = 0; i < INVALID_DATES.length; i++) {
-			suite.addTest(new InvalidDateTest(INVALID_DATES[i]));
+		for (String invalidDate : INVALID_DATES) {
+			suite.addTest(new InvalidDateTest(invalidDate));
 		}
 
-		for (int i = 0; i < NORMALIZED_DATES.length; i++) {
-			suite.addTest(new NormalizedDateTest(NORMALIZED_DATES[i][0], NORMALIZED_DATES[i][1]));
+		for (String[] normalizedDate : NORMALIZED_DATES) {
+			suite.addTest(new NormalizedDateTest(normalizedDate[0], normalizedDate[1]));
 		}
 
-		for (int i = 0; i < EQUAL_DATES.length; i++) {
-			suite.addTest(new EqualDateTest(EQUAL_DATES[i][0], EQUAL_DATES[i][1]));
+		for (String[] equalDate : EQUAL_DATES) {
+			suite.addTest(new EqualDateTest(equalDate[0], equalDate[1]));
 		}
 
-		for (int i = 0; i < COMPARISON_DATES.length; i++) {
-			suite.addTest(new CompareDateTest(COMPARISON_DATES[i][0], COMPARISON_DATES[i][1]));
+		for (String[] comparisonDate : COMPARISON_DATES) {
+			suite.addTest(new CompareDateTest(comparisonDate[0], comparisonDate[1]));
 		}
 
 		return suite;
@@ -105,7 +105,7 @@ public class DateTimeTest extends TestCase {
 	 * run test
 	 */
 	public static void main(String[] args) {
-		TestRunner.run(new TestSuite(DateTimeTest.class));
+		TestRunner.run(suite());
 	}
 
 	/*--------------------------------------------------*
@@ -114,7 +114,7 @@ public class DateTimeTest extends TestCase {
 
 	private static class ValidDateTest extends TestCase {
 
-		private String dateString;
+		private final String dateString;
 
 		public ValidDateTest(String dateString) {
 			super("valid: " + dateString);
@@ -133,7 +133,7 @@ public class DateTimeTest extends TestCase {
 
 	private static class InvalidDateTest extends TestCase {
 
-		private String dateString;
+		private final String dateString;
 
 		public InvalidDateTest(String dateString) {
 			super("invalid: " + dateString);
@@ -152,9 +152,8 @@ public class DateTimeTest extends TestCase {
 
 	private static class NormalizedDateTest extends TestCase {
 
-		private String input;
-
-		private String expected;
+		private final String input;
+		private final String expected;
 
 		public NormalizedDateTest(String input, String expected) {
 			super("normalize: " + input + " --> " + expected);
@@ -175,9 +174,8 @@ public class DateTimeTest extends TestCase {
 
 	private static class EqualDateTest extends TestCase {
 
-		private String dateString1;
-
-		private String dateString2;
+		private final String dateString1;
+		private final String dateString2;
 
 		public EqualDateTest(String dateString1, String dateString2) {
 			super(dateString1 + " == " + dateString2);
@@ -199,9 +197,8 @@ public class DateTimeTest extends TestCase {
 
 	private static class CompareDateTest extends TestCase {
 
-		private String dateString1;
-
-		private String dateString2;
+		private final String dateString1;
+		private final String dateString2;
 
 		public CompareDateTest(String dateString1, String dateString2) {
 			super(dateString1 + " < " + dateString2);

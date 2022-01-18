@@ -380,7 +380,7 @@ public abstract class RDFStoreTest {
 	@Test
 	public void testInvalidDateTime() throws Exception {
 		// SES-711
-		Literal date1 = vf.createLiteral("2004-12-20", CoreDatatype.XSD.DATETIME);
+		Literal date1 = vf.createLiteral("2004-12-20", XSD.DATETIME);
 		Literal date2 = vf.createLiteral("2004-12-20", CoreDatatype.XSD.DATETIME);
 		Assert.assertEquals(date1, date2);
 	}

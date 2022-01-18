@@ -14,6 +14,7 @@ import java.util.List;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -89,7 +90,7 @@ public abstract class EvaluationStrategyTest {
 
 		try (RepositoryConnection conn = strictRepo.getConnection()) {
 			Literal l1 = vf.createLiteral("2009", XSD.GYEAR);
-			Literal l2 = vf.createLiteral("2009-01", XSD.GYEARMONTH);
+			Literal l2 = vf.createLiteral("2009-01", CoreDatatype.XSD.GYEARMONTH);
 			IRI s1 = vf.createIRI("urn:s1");
 			IRI s2 = vf.createIRI("urn:s2");
 			conn.add(s1, RDFS.LABEL, l1);
@@ -107,7 +108,7 @@ public abstract class EvaluationStrategyTest {
 		ValueFactory vf = extendedRepo.getValueFactory();
 
 		try (RepositoryConnection conn = extendedRepo.getConnection()) {
-			Literal l1 = vf.createLiteral("2009", XSD.GYEAR);
+			Literal l1 = vf.createLiteral("2009", CoreDatatype.XSD.GYEAR);
 			Literal l2 = vf.createLiteral("2009-01", XSD.GYEARMONTH);
 			IRI s1 = vf.createIRI("urn:s1");
 			IRI s2 = vf.createIRI("urn:s2");

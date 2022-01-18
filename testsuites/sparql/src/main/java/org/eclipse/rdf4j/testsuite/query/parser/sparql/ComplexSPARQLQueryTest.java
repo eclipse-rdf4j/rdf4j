@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.DCAT;
 import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -979,7 +980,7 @@ public abstract class ComplexSPARQLQueryTest {
 			Value y = bs.getValue("y");
 			assertNotNull(y);
 			assertTrue(y instanceof Literal);
-			assertEquals(f.createLiteral("1", XSD.INTEGER), y);
+			assertEquals(f.createLiteral("1", CoreDatatype.XSD.INTEGER), y);
 		}
 	}
 
@@ -1151,7 +1152,7 @@ public abstract class ComplexSPARQLQueryTest {
 
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/3072
-	 * 
+	 *
 	 */
 	@Test
 	public void testValuesAfterOptional() throws Exception {
@@ -2661,7 +2662,7 @@ public abstract class ComplexSPARQLQueryTest {
 		assertThat(result.size()).isEqualTo(1);
 		BindingSet solution = result.get(0);
 
-		assertThat(solution.getValue("b1")).isEqualTo(literal("1", XSD.INTEGER));
+		assertThat(solution.getValue("b1")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
 		assertThat(solution.getValue("b2")).isNull();
 		assertThat(solution.getValue("b3")).isNull();
 
