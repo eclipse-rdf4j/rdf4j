@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.model.base;
 
-import java.io.Serializable;
 import java.util.Optional;
 
 import javax.xml.datatype.Duration;
@@ -39,16 +38,16 @@ public interface CoreDatatype {
 		return false;
 	}
 
-	default XSD asXSDDatatypeOrNull() {
-		return null;
+	default Optional<XSD> asXSDDatatype() {
+		return Optional.empty();
 	}
 
-	default RDF asRDFDatatypeOrNull() {
-		return null;
+	default Optional<RDF> asRDFDatatype() {
+		return Optional.empty();
 	}
 
-	default GEO asGEODatatypeOrNull() {
-		return null;
+	default Optional<GEO> asGEODatatype() {
+		return Optional.empty();
 	}
 
 	IRI getIri();
@@ -123,15 +122,16 @@ public interface CoreDatatype {
 		private final boolean derived;
 		private final boolean decimal;
 		private final boolean floatingPoint;
-		private final boolean numeric;
 		private final boolean calendar;
-		private final boolean ordered;
 		private final boolean builtIn;
+		private final boolean numeric;
+		private final boolean ordered;
 
+		// Creating optionals are expensive so we precompute one
 		private final Optional<XSD> optional;
 
 		XSD(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
-				boolean floatingPoint, boolean calendar) {
+			boolean floatingPoint, boolean calendar) {
 			this.iri = iri;
 			this.primitive = primitive;
 			this.duration = duration;
@@ -141,9 +141,8 @@ public interface CoreDatatype {
 			this.floatingPoint = floatingPoint;
 			this.calendar = calendar;
 
-			this.numeric = decimal || floatingPoint;
 			this.builtIn = primitive || derived;
-
+			this.numeric = decimal || floatingPoint;
 			this.ordered = numeric || calendar;
 
 			this.optional = Optional.of(this);
@@ -260,11 +259,7 @@ public interface CoreDatatype {
 		}
 
 		@Override
-		public XSD asXSDDatatypeOrNull() {
-			return this;
-		}
-
-		public Optional<XSD> asOptional() {
+		public Optional<XSD> asXSDDatatype() {
 			return optional;
 		}
 
@@ -281,6 +276,8 @@ public interface CoreDatatype {
 		}
 
 		private final IRI iri;
+
+		// Creating optionals are expensive so we precompute one
 		private final Optional<RDF> optional;
 
 		RDF(IRI iri) {
@@ -298,11 +295,7 @@ public interface CoreDatatype {
 		}
 
 		@Override
-		public RDF asRDFDatatypeOrNull() {
-			return this;
-		}
-
-		public Optional<RDF> asOptional() {
+		public Optional<RDF> asRDFDatatype() {
 			return optional;
 		}
 
@@ -319,6 +312,8 @@ public interface CoreDatatype {
 		}
 
 		private final IRI iri;
+
+		// Creating optionals are expensive so we precompute one
 		private final Optional<GEO> optional;
 
 		GEO(IRI iri) {
@@ -336,11 +331,7 @@ public interface CoreDatatype {
 		}
 
 		@Override
-		public GEO asGEODatatypeOrNull() {
-			return this;
-		}
-
-		public Optional<GEO> asOptional() {
+		public Optional<GEO> asGEODatatype() {
 			return optional;
 		}
 

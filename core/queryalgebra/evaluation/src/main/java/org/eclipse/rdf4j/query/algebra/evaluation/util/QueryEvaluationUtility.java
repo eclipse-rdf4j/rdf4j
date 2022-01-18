@@ -50,7 +50,7 @@ public class QueryEvaluationUtility {
 		if (value.isLiteral()) {
 			Literal literal = (Literal) value;
 			String label = literal.getLabel();
-			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatype().orElse(null);
 
 			if (datatype == CoreDatatype.XSD.STRING) {
 				return Result.fromBoolean(label.length() > 0);
@@ -135,8 +135,8 @@ public class QueryEvaluationUtility {
 		boolean leftLangLit = leftCoreDatatype == CoreDatatype.RDF.LANGSTRING;
 		boolean rightLangLit = rightCoreDatatype == CoreDatatype.RDF.LANGSTRING;
 
-		CoreDatatype.XSD leftXSDDatatype = leftCoreDatatype.asXSDDatatypeOrNull();
-		CoreDatatype.XSD rightXSDDatatype = rightCoreDatatype.asXSDDatatypeOrNull();
+		CoreDatatype.XSD leftXSDDatatype = leftCoreDatatype.asXSDDatatype().orElse(null);
+		CoreDatatype.XSD rightXSDDatatype = rightCoreDatatype.asXSDDatatype().orElse(null);
 
 		// for purposes of query evaluation in SPARQL, simple literals and string-typed literals with the same lexical
 		// value are considered equal.

@@ -62,7 +62,7 @@ public class QueryEvaluationUtil {
 		if (value.isLiteral()) {
 			Literal literal = (Literal) value;
 			String label = literal.getLabel();
-			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatype().orElse(null);
 
 			if (datatype == CoreDatatype.XSD.STRING) {
 				return label.length() > 0;
@@ -159,8 +159,8 @@ public class QueryEvaluationUtil {
 		// - CoreDatatype.XSD:string
 		// - RDF term (equal and unequal only)
 
-		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
-		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);
+		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);
 
 		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
 		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
