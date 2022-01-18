@@ -320,73 +320,80 @@ public class XMLDatatypeUtil {
 
 	public static boolean isValidValue(String value, CoreDatatype datatype) {
 		if (datatype.isXSDDatatype()) {
-			switch (((CoreDatatype.XSD) datatype)) {
-			case DECIMAL:
-				return isValidDecimal(value);
-			case INTEGER:
-				return isValidInteger(value);
-			case NEGATIVE_INTEGER:
-				return isValidNegativeInteger(value);
-			case NON_POSITIVE_INTEGER:
-				return isValidNonPositiveInteger(value);
-			case NON_NEGATIVE_INTEGER:
-				return isValidNonNegativeInteger(value);
-			case POSITIVE_INTEGER:
-				return isValidPositiveInteger(value);
-			case LONG:
-				return isValidLong(value);
-			case INT:
-				return isValidInt(value);
-			case SHORT:
-				return isValidShort(value);
-			case BYTE:
-				return isValidByte(value);
-			case UNSIGNED_LONG:
-				return isValidUnsignedLong(value);
-			case UNSIGNED_INT:
-				return isValidUnsignedInt(value);
-			case UNSIGNED_SHORT:
-				return isValidUnsignedShort(value);
-			case UNSIGNED_BYTE:
-				return isValidUnsignedByte(value);
-			case FLOAT:
-				return isValidFloat(value);
-			case DOUBLE:
-				return isValidDouble(value);
-			case BOOLEAN:
-				return isValidBoolean(value);
-			case DATETIME:
-				return isValidDateTime(value);
-			case DATETIMESTAMP:
-				return isValidDateTimeStamp(value);
-			case DATE:
-				return isValidDate(value);
-			case TIME:
-				return isValidTime(value);
-			case GDAY:
-				return isValidGDay(value);
-			case GMONTH:
-				return isValidGMonth(value);
-			case GMONTHDAY:
-				return isValidGMonthDay(value);
-			case GYEAR:
-				return isValidGYear(value);
-			case GYEARMONTH:
-				return isValidGYearMonth(value);
-			case DURATION:
-				return isValidDuration(value);
-			case DAYTIMEDURATION:
-				return isValidDayTimeDuration(value);
-			case YEARMONTHDURATION:
-				return isValidYearMonthDuration(value);
-			case QNAME:
-				return isValidQName(value);
-			case ANYURI:
-				return isValidAnyURI(value);
-			case LANGUAGE:
-				return Literals.isValidLanguageTag(value);
-			}
+			return isValidValue(value, ((CoreDatatype.XSD) datatype));
 		}
+		return true;
+
+	}
+
+	public static boolean isValidValue(String value, CoreDatatype.XSD datatype) {
+		switch (datatype) {
+		case DECIMAL:
+			return isValidDecimal(value);
+		case INTEGER:
+			return isValidInteger(value);
+		case NEGATIVE_INTEGER:
+			return isValidNegativeInteger(value);
+		case NON_POSITIVE_INTEGER:
+			return isValidNonPositiveInteger(value);
+		case NON_NEGATIVE_INTEGER:
+			return isValidNonNegativeInteger(value);
+		case POSITIVE_INTEGER:
+			return isValidPositiveInteger(value);
+		case LONG:
+			return isValidLong(value);
+		case INT:
+			return isValidInt(value);
+		case SHORT:
+			return isValidShort(value);
+		case BYTE:
+			return isValidByte(value);
+		case UNSIGNED_LONG:
+			return isValidUnsignedLong(value);
+		case UNSIGNED_INT:
+			return isValidUnsignedInt(value);
+		case UNSIGNED_SHORT:
+			return isValidUnsignedShort(value);
+		case UNSIGNED_BYTE:
+			return isValidUnsignedByte(value);
+		case FLOAT:
+			return isValidFloat(value);
+		case DOUBLE:
+			return isValidDouble(value);
+		case BOOLEAN:
+			return isValidBoolean(value);
+		case DATETIME:
+			return isValidDateTime(value);
+		case DATETIMESTAMP:
+			return isValidDateTimeStamp(value);
+		case DATE:
+			return isValidDate(value);
+		case TIME:
+			return isValidTime(value);
+		case GDAY:
+			return isValidGDay(value);
+		case GMONTH:
+			return isValidGMonth(value);
+		case GMONTHDAY:
+			return isValidGMonthDay(value);
+		case GYEAR:
+			return isValidGYear(value);
+		case GYEARMONTH:
+			return isValidGYearMonth(value);
+		case DURATION:
+			return isValidDuration(value);
+		case DAYTIMEDURATION:
+			return isValidDayTimeDuration(value);
+		case YEARMONTHDURATION:
+			return isValidYearMonthDuration(value);
+		case QNAME:
+			return isValidQName(value);
+		case ANYURI:
+			return isValidAnyURI(value);
+		case LANGUAGE:
+			return Literals.isValidLanguageTag(value);
+		}
+
 		return true;
 
 	}
@@ -891,95 +898,93 @@ public class XMLDatatypeUtil {
 	 * @throws IllegalArgumentException If the supplied value is illegal considering the supplied datatype.
 	 */
 	public static String normalize(String value, IRI datatype) {
-		String result = value;
-
 		if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL)) {
-			result = normalizeDecimal(value);
+			return normalizeDecimal(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER)) {
-			result = normalizeInteger(value);
+			return normalizeInteger(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER)) {
-			result = normalizeNegativeInteger(value);
+			return normalizeNegativeInteger(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER)) {
-			result = normalizeNonPositiveInteger(value);
+			return normalizeNonPositiveInteger(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER)) {
-			result = normalizeNonNegativeInteger(value);
+			return normalizeNonNegativeInteger(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER)) {
-			result = normalizePositiveInteger(value);
+			return normalizePositiveInteger(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.LONG)) {
-			result = normalizeLong(value);
+			return normalizeLong(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INT)) {
-			result = normalizeInt(value);
+			return normalizeInt(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.SHORT)) {
-			result = normalizeShort(value);
+			return normalizeShort(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BYTE)) {
-			result = normalizeByte(value);
+			return normalizeByte(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG)) {
-			result = normalizeUnsignedLong(value);
+			return normalizeUnsignedLong(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT)) {
-			result = normalizeUnsignedInt(value);
+			return normalizeUnsignedInt(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT)) {
-			result = normalizeUnsignedShort(value);
+			return normalizeUnsignedShort(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE)) {
-			result = normalizeUnsignedByte(value);
+			return normalizeUnsignedByte(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT)) {
-			result = normalizeFloat(value);
+			return normalizeFloat(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE)) {
-			result = normalizeDouble(value);
+			return normalizeDouble(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN)) {
-			result = normalizeBoolean(value);
+			return normalizeBoolean(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME)) {
-			result = normalizeDateTime(value);
+			return normalizeDateTime(value);
 		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.ANYURI)) {
-			result = collapseWhiteSpace(value);
+			return collapseWhiteSpace(value);
 		}
 
-		return result;
+		return value;
 	}
 
 	public static String normalize(String value, CoreDatatype.XSD datatype) {
-		String result = value;
 
-		if (datatype == CoreDatatype.XSD.DECIMAL) {
-			result = normalizeDecimal(value);
-		} else if (datatype == CoreDatatype.XSD.INTEGER) {
-			result = normalizeInteger(value);
-		} else if (datatype == CoreDatatype.XSD.NEGATIVE_INTEGER) {
-			result = normalizeNegativeInteger(value);
-		} else if (datatype == CoreDatatype.XSD.NON_POSITIVE_INTEGER) {
-			result = normalizeNonPositiveInteger(value);
-		} else if (datatype == CoreDatatype.XSD.NON_NEGATIVE_INTEGER) {
-			result = normalizeNonNegativeInteger(value);
-		} else if (datatype == CoreDatatype.XSD.POSITIVE_INTEGER) {
-			result = normalizePositiveInteger(value);
-		} else if (datatype == CoreDatatype.XSD.LONG) {
-			result = normalizeLong(value);
-		} else if (datatype == CoreDatatype.XSD.INT) {
-			result = normalizeInt(value);
-		} else if (datatype == CoreDatatype.XSD.SHORT) {
-			result = normalizeShort(value);
-		} else if (datatype == CoreDatatype.XSD.BYTE) {
-			result = normalizeByte(value);
-		} else if (datatype == CoreDatatype.XSD.UNSIGNED_LONG) {
-			result = normalizeUnsignedLong(value);
-		} else if (datatype == CoreDatatype.XSD.UNSIGNED_INT) {
-			result = normalizeUnsignedInt(value);
-		} else if (datatype == CoreDatatype.XSD.UNSIGNED_SHORT) {
-			result = normalizeUnsignedShort(value);
-		} else if (datatype == CoreDatatype.XSD.UNSIGNED_BYTE) {
-			result = normalizeUnsignedByte(value);
-		} else if (datatype == CoreDatatype.XSD.FLOAT) {
-			result = normalizeFloat(value);
-		} else if (datatype == CoreDatatype.XSD.DOUBLE) {
-			result = normalizeDouble(value);
-		} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
-			result = normalizeBoolean(value);
-		} else if (datatype == CoreDatatype.XSD.DATETIME) {
-			result = normalizeDateTime(value);
-		} else if (datatype == CoreDatatype.XSD.ANYURI) {
-			result = collapseWhiteSpace(value);
+		switch (datatype) {
+		case DECIMAL:
+			return normalizeDecimal(value);
+		case INTEGER:
+			return normalizeInteger(value);
+		case NEGATIVE_INTEGER:
+			return normalizeNegativeInteger(value);
+		case NON_POSITIVE_INTEGER:
+			return normalizeNonPositiveInteger(value);
+		case NON_NEGATIVE_INTEGER:
+			return normalizeNonNegativeInteger(value);
+		case POSITIVE_INTEGER:
+			return normalizePositiveInteger(value);
+		case LONG:
+			return normalizeLong(value);
+		case INT:
+			return normalizeInt(value);
+		case SHORT:
+			return normalizeShort(value);
+		case BYTE:
+			return normalizeByte(value);
+		case UNSIGNED_LONG:
+			return normalizeUnsignedLong(value);
+		case UNSIGNED_INT:
+			return normalizeUnsignedInt(value);
+		case UNSIGNED_SHORT:
+			return normalizeUnsignedShort(value);
+		case UNSIGNED_BYTE:
+			return normalizeUnsignedByte(value);
+		case FLOAT:
+			return normalizeFloat(value);
+		case DOUBLE:
+			return normalizeDouble(value);
+		case BOOLEAN:
+			return normalizeBoolean(value);
+		case DATETIME:
+			return normalizeDateTime(value);
+		case ANYURI:
+			return collapseWhiteSpace(value);
 		}
 
-		return result;
+		return value;
 	}
 
 	/**
