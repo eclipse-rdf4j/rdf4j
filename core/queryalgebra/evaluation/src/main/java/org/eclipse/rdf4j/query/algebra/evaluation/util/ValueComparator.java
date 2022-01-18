@@ -112,8 +112,9 @@ public class ValueComparator implements Comparator<Value> {
 			if (order.isValid()) {
 				return order.asInt();
 			}
-			if (order == QueryEvaluationUtility.Order.illegalArgument)
+			if (order == QueryEvaluationUtility.Order.illegalArgument) {
 				throw new IllegalStateException();
+			}
 		}
 
 		return comparePlainLiterals(leftLit, rightLit);
@@ -145,38 +146,38 @@ public class ValueComparator implements Comparator<Value> {
 				CoreDatatype.XSD rightXmlDatatype = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
 
 				result = compareDatatypes(leftXmlDatatype, rightXmlDatatype, leftDatatype, rightDatatype);
+				if (result != 0) {
+					return result;
+				}
 
 			} else {
-				result = 1;
+				return 1;
 			}
 		} else if (rightDatatype != null) {
-			result = -1;
+			return -1;
 		}
 
-		if (result == 0) {
-			// datatypes are equal or both literals are untyped; sort by language
-			// tags, simple literals come before literals with language tags
-			Optional<String> leftLanguage = leftLit.getLanguage();
-			Optional<String> rightLanguage = rightLit.getLanguage();
+		// datatypes are equal or both literals are untyped; sort by language
+		// tags, simple literals come before literals with language tags
+		Optional<String> leftLanguage = leftLit.getLanguage();
+		Optional<String> rightLanguage = rightLit.getLanguage();
 
-			if (leftLanguage.isPresent()) {
-				if (rightLanguage.isPresent()) {
-					result = leftLanguage.get().compareTo(rightLanguage.get());
-				} else {
-					result = 1;
+		if (leftLanguage.isPresent()) {
+			if (rightLanguage.isPresent()) {
+				result = leftLanguage.get().compareTo(rightLanguage.get());
+				if (result != 0) {
+					return result;
 				}
-			} else if (rightLanguage.isPresent()) {
-				result = -1;
+			} else {
+				return 1;
 			}
+		} else if (rightLanguage.isPresent()) {
+			return -1;
 		}
 
-		if (result == 0) {
-			// Literals are equal as fas as their datatypes and language tags are
-			// concerned, compare their labels
-			result = leftLit.getLabel().compareTo(rightLit.getLabel());
-		}
-
-		return result;
+		// Literals are equal as fas as their datatypes and language tags are
+		// concerned, compare their labels
+		return leftLit.getLabel().compareTo(rightLit.getLabel());
 	}
 
 	private int compareDatatypes(CoreDatatype.XSD leftDatatype, CoreDatatype.XSD rightDatatype, IRI leftDatatypeIRI,
