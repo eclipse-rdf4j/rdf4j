@@ -123,6 +123,9 @@ public interface CoreDatatype {
 		private final boolean decimal;
 		private final boolean floatingPoint;
 		private final boolean calendar;
+		private final boolean builtIn;
+		private final boolean numeric;
+		private final boolean ordered;
 
 		// Creating optionals are expensive so we precompute one
 		private final Optional<XSD> optional;
@@ -137,6 +140,11 @@ public interface CoreDatatype {
 			this.decimal = decimal;
 			this.floatingPoint = floatingPoint;
 			this.calendar = calendar;
+
+			this.builtIn = primitive || derived;
+			this.numeric = decimal || floatingPoint;
+			this.ordered = numeric || calendar;
+
 			this.optional = Optional.of(this);
 		}
 
@@ -164,7 +172,7 @@ public interface CoreDatatype {
 		 * @return true if it is a primitive or derived XML Schema type
 		 */
 		public boolean isBuiltInDatatype() {
-			return isPrimitiveDatatype() || isDerivedDatatype();
+			return builtIn;
 		}
 
 		/**
@@ -174,7 +182,7 @@ public interface CoreDatatype {
 		 * @return true of it is a decimal or floating point type
 		 */
 		public boolean isNumericDatatype() {
-			return isDecimalDatatype() || isFloatingPointDatatype();
+			return numeric;
 		}
 
 		/**
@@ -238,7 +246,7 @@ public interface CoreDatatype {
 		 * @return true if the datatype is ordered
 		 */
 		public boolean isOrderedDatatype() {
-			return isNumericDatatype() || isCalendarDatatype();
+			return ordered;
 		}
 
 		@Override

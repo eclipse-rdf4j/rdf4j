@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.Repository;
@@ -485,7 +486,7 @@ public class IsolationLevelTest {
 
 	protected void insertTestStatement(RepositoryConnection connection, int i) throws RepositoryException {
 		ValueFactory vf = connection.getValueFactory();
-		Literal lit = vf.createLiteral(Integer.toString(i), XSD.INTEGER);
+		Literal lit = vf.createLiteral(Integer.toString(i), CoreDatatype.XSD.INTEGER);
 		connection.add(vf.createIRI("http://test#s" + i), vf.createIRI("http://test#p"), lit,
 				vf.createIRI("http://test#context_" + i));
 	}
