@@ -270,15 +270,18 @@ public interface Literal extends Value {
 	XMLGregorianCalendar calendarValue();
 
 	/**
-	 * The XSD datatypes together with rdf:langString make up the core datatypes. These are represented as enums for
-	 * both convience and performance.
+	 * CoreDatatype is an interface for natively supported datatypes in RDF4J. This includes, among others, the XML
+	 * Schema datatypes and rdf:langString. CoreDatatypes are implemented as enums and more performant and convenient to
+	 * work with than IRI-based datatypes. The constant {@link CoreDatatype#NONE)} is used to represent a datatype that
+	 * is not one of the supported core datatypes.
 	 *
-	 * @return The CoreDatatype wrapped in an optional, or en empty optional if there is no datatype or the datatype
-	 *         matches none of the core datatypes.
+	 * @return The CoreDatatype or {@link CoreDatatype#NONE)} if the datatype matches none of the core datatypes. This
+	 *         method will not return null.
 	 *
-	 * @implNote This method may not return null. Return an empty optional is only permitted if the datatype does not
-	 *           match any of the core datatypes. Instead of minting a new Optional object every time this method is
-	 *           called it's recommended to use {@link CoreDatatype#asOptional()}.
+	 * @implNote This method may not return null. Returning {@link CoreDatatype#NONE)} is only permitted if the datatype
+	 *           does not match any of the core datatypes. A literal with a language tag must return
+	 *           {@link CoreDatatype.RDF#LANGSTRING)}. A literal without a specified datatype must return
+	 *           {@link CoreDatatype.XSD#STRING)}.
 	 */
 	CoreDatatype getCoreDatatype();
 
