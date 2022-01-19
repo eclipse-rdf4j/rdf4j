@@ -46,42 +46,42 @@ public class NumericLiteral extends SimpleLiteral {
 	 * Creates an xsd:byte typed litral with the specified value.
 	 */
 	protected NumericLiteral(byte number) {
-		this(number, XSD.BYTE);
+		this(number, CoreDatatype.XSD.BYTE);
 	}
 
 	/**
 	 * Creates an xsd:short typed litral with the specified value.
 	 */
 	protected NumericLiteral(short number) {
-		this(number, XSD.SHORT);
+		this(number, CoreDatatype.XSD.SHORT);
 	}
 
 	/**
 	 * Creates an xsd:int typed litral with the specified value.
 	 */
 	protected NumericLiteral(int number) {
-		this(number, XSD.INT);
+		this(number, CoreDatatype.XSD.INT);
 	}
 
 	/**
 	 * Creates an xsd:long typed litral with the specified value.
 	 */
 	protected NumericLiteral(long n) {
-		this(n, XSD.LONG);
+		this(n, CoreDatatype.XSD.LONG);
 	}
 
 	/**
 	 * Creates an xsd:float typed litral with the specified value.
 	 */
 	protected NumericLiteral(float n) {
-		this(n, XSD.FLOAT);
+		this(n, CoreDatatype.XSD.FLOAT);
 	}
 
 	/**
 	 * Creates an xsd:double typed litral with the specified value.
 	 */
 	protected NumericLiteral(double n) {
-		this(n, XSD.DOUBLE);
+		this(n, CoreDatatype.XSD.DOUBLE);
 	}
 
 	@Override

@@ -12,7 +12,6 @@ import java.math.BigInteger;
 import java.util.Date;
 import java.util.IllformedLocaleException;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Optional;
 
 import javax.xml.datatype.Duration;
@@ -21,6 +20,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -439,30 +439,30 @@ public class Literals {
 		}
 
 		if (object instanceof Boolean) {
-			return valueFactory.createLiteral(((Boolean) object).booleanValue());
+			return valueFactory.createLiteral((Boolean) object);
 		} else if (object instanceof Byte) {
-			return valueFactory.createLiteral(((Byte) object).byteValue());
+			return valueFactory.createLiteral((Byte) object);
 		} else if (object instanceof Double) {
-			return valueFactory.createLiteral(((Double) object).doubleValue());
+			return valueFactory.createLiteral((Double) object);
 		} else if (object instanceof Float) {
-			return valueFactory.createLiteral(((Float) object).floatValue());
+			return valueFactory.createLiteral((Float) object);
 		} else if (object instanceof Integer) {
-			return valueFactory.createLiteral(((Integer) object).intValue());
+			return valueFactory.createLiteral((Integer) object);
 		} else if (object instanceof Long) {
-			return valueFactory.createLiteral(((Long) object).longValue());
+			return valueFactory.createLiteral((Long) object);
 		} else if (object instanceof Short) {
-			return valueFactory.createLiteral(((Short) object).shortValue());
+			return valueFactory.createLiteral((Short) object);
 		} else if (object instanceof XMLGregorianCalendar) {
 			return valueFactory.createLiteral((XMLGregorianCalendar) object);
 		} else if (object instanceof Date) {
 			return valueFactory.createLiteral((Date) object);
 		} else if (object instanceof String) {
-			return valueFactory.createLiteral(object.toString(), XSD.STRING);
+			return valueFactory.createLiteral(object.toString(), CoreDatatype.XSD.STRING);
 		} else {
 			if (throwExceptionOnFailure) {
 				throw new LiteralUtilException("Did not recognise object when creating literal");
 			}
-			return valueFactory.createLiteral(object.toString(), XSD.STRING);
+			return valueFactory.createLiteral(object.toString(), CoreDatatype.XSD.STRING);
 		}
 	}
 
@@ -484,13 +484,10 @@ public class Literals {
 			return false;
 		}
 
-		if (object instanceof Boolean || object instanceof Byte || object instanceof Double || object instanceof Float
+		return object instanceof Boolean || object instanceof Byte || object instanceof Double
+				|| object instanceof Float
 				|| object instanceof Integer || object instanceof Long || object instanceof Short
-				|| object instanceof XMLGregorianCalendar || object instanceof Date || object instanceof String) {
-			return true;
-		}
-
-		return false;
+				|| object instanceof XMLGregorianCalendar || object instanceof Date || object instanceof String;
 	}
 
 	/**
@@ -500,7 +497,7 @@ public class Literals {
 	 * @return True if the literal has a language tag attached to it and false otherwise.
 	 */
 	public static boolean isLanguageLiteral(Literal literal) {
-		return Objects.requireNonNull(literal, "Literal cannot be null").getLanguage().isPresent();
+		return literal.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
 	/**

@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -69,6 +70,16 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 	 * @param datatype The datatype of the supplied label.
 	 */
 	public MemLiteral(Object creator, String label, IRI datatype) {
+		super(label, datatype);
+		this.creator = creator;
+	}
+
+	public MemLiteral(Object creator, String label, IRI datatype, CoreDatatype coreDatatype) {
+		super(label, datatype, coreDatatype);
+		this.creator = creator;
+	}
+
+	public MemLiteral(Object creator, String label, CoreDatatype datatype) {
 		super(label, datatype);
 		this.creator = creator;
 	}

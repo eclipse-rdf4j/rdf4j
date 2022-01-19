@@ -9,6 +9,8 @@
 package org.eclipse.rdf4j.model.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,9 +26,9 @@ public class CoreDatatypeTest {
 
 	@Test
 	public void testOrderOfXSD() {
-		ArrayList<CoreDatatype.XSD> datatypes = getDatatypesShuffled();
+		ArrayList<CoreDatatype.XSD> datatypes = getXSDDatatypesShuffled();
 
-		List<String> datatypeIRIs = getDatatypesShuffled().stream()
+		List<String> datatypeIRIs = getXSDDatatypesShuffled().stream()
 				.map(CoreDatatype::getIri)
 				.map(Object::toString)
 				.collect(Collectors.toList());
@@ -42,13 +44,48 @@ public class CoreDatatypeTest {
 
 	}
 
-	private ArrayList<CoreDatatype.XSD> getDatatypesShuffled() {
-		Random random = new Random(42353245);
+	@Test
+	public void testOrderOfRDF() {
+		ArrayList<CoreDatatype.RDF> datatypes = getRDFDatatypesShuffled();
 
-		ArrayList<CoreDatatype.XSD> xsds = new ArrayList<>(Arrays.asList(CoreDatatype.XSD.values()));
+		List<String> datatypeIRIs = getRDFDatatypesShuffled().stream()
+				.map(CoreDatatype::getIri)
+				.map(Object::toString)
+				.collect(Collectors.toList());
 
-		Collections.shuffle(xsds);
-		return xsds;
+		Collections.sort(datatypes);
+		Collections.sort(datatypeIRIs);
+
+		List<String> datatypeIRIsSortedByEnum = datatypes.stream()
+				.map(CoreDatatype::getIri)
+				.map(Object::toString)
+				.collect(Collectors.toList());
+		Assert.assertEquals(datatypeIRIs, datatypeIRIsSortedByEnum);
+
+	}
+
+	private ArrayList<CoreDatatype.XSD> getXSDDatatypesShuffled() {
+
+		ArrayList<CoreDatatype.XSD> datatypes = new ArrayList<>(Arrays.asList(CoreDatatype.XSD.values()));
+
+		Collections.shuffle(datatypes, new Random(42353245));
+		return datatypes;
+	}
+
+	private ArrayList<CoreDatatype.RDF> getRDFDatatypesShuffled() {
+
+		ArrayList<CoreDatatype.RDF> datatypes = new ArrayList<>(Arrays.asList(CoreDatatype.RDF.values()));
+
+		Collections.shuffle(datatypes, new Random(42353245));
+		return datatypes;
+	}
+
+	@Test
+	public void testToString() {
+		for (CoreDatatype value : CoreDatatypeHelper.getReverseLookup().values()) {
+			assertSame(value.toString(), value.getIri().toString());
+		}
+
 	}
 
 	@Test

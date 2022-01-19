@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
@@ -139,12 +139,8 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	}
 
 	private boolean isTrue(QueryValueEvaluationStep expr, QueryBindingSet bindings) {
-		try {
-			Value value = expr.evaluate(bindings);
-			return QueryEvaluationUtil.getEffectiveBooleanValue(value);
-		} catch (ValueExprEvaluationException e) {
-			return false;
-		}
+		Value value = expr.evaluate(bindings);
+		return QueryEvaluationUtility.getEffectiveBooleanValue(value).orElse(false);
 	}
 
 	@Override

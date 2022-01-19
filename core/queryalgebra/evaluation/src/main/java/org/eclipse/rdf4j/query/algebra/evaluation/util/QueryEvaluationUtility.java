@@ -1,10 +1,10 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Distribution License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
+ *  All rights reserved. This program and the accompanying materials
+ *  are made available under the terms of the Eclipse Distribution License v1.0
+ *  which accompanies this distribution, and is available at
+ *  http://www.eclipse.org/org/documents/edl-v10.php.
+ ******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import java.util.Objects;
@@ -18,26 +18,15 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
-import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Or;
 
 /**
  * @author Arjohn Kampman
+ * @author Håvard M. Ottestad
  */
-public class QueryEvaluationUtil {
-
-	public static final ValueExprEvaluationException INDETERMINATE_DATE_TIME_EXCEPTION = new ValueExprEvaluationException(
-			"Indeterminate result for date/time comparison");
-	public static final ValueExprEvaluationException STRING_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION = new ValueExprEvaluationException(
-			"Unable to compare strings with other supported types");
-	public static final ValueExprEvaluationException NUMERIC_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION = new ValueExprEvaluationException(
-			"Unable to compare numeric types with other supported types");
-	public static final ValueExprEvaluationException DATE_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION = new ValueExprEvaluationException(
-			"Unable to compare date types with other supported types");
-	public static final ValueExprEvaluationException UNSUPPOERTED_TYPES_EXCEPTION = new ValueExprEvaluationException(
-			"Unable to compare literals with unsupported types");
-	public static final ValueExprEvaluationException NOT_COMPATIBLE_AND_ORDERED_EXCEPTION = new ValueExprEvaluationException(
-			"Only literals with compatible, ordered datatypes can be compared using <, <=, > and >= operators");
+public class QueryEvaluationUtility {
 
 	/**
 	 * Determines the effective boolean value (EBV) of the supplied value as defined in the
@@ -56,54 +45,51 @@ public class QueryEvaluationUtil {
 	 *
 	 * @param value Some value.
 	 * @return The EBV of <var>value</var>.
-	 * @throws ValueExprEvaluationException In case the application of the EBV algorithm results in a type error.
 	 */
-	public static boolean getEffectiveBooleanValue(Value value) throws ValueExprEvaluationException {
+	public static Result getEffectiveBooleanValue(Value value) {
 		if (value.isLiteral()) {
 			Literal literal = (Literal) value;
 			String label = literal.getLabel();
 			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatype().orElse(null);
 
 			if (datatype == CoreDatatype.XSD.STRING) {
-				return label.length() > 0;
+				return Result.fromBoolean(label.length() > 0);
 			} else if (datatype == CoreDatatype.XSD.BOOLEAN) {
 				// also false for illegal values
-				return "true".equals(label) || "1".equals(label);
+				return Result.fromBoolean("true".equals(label) || "1".equals(label));
 			} else if (datatype == CoreDatatype.XSD.DECIMAL) {
 				try {
 					String normDec = XMLDatatypeUtil.normalizeDecimal(label);
-					return !normDec.equals("0.0");
+					return Result.fromBoolean(!normDec.equals("0.0"));
 				} catch (IllegalArgumentException e) {
-					return false;
+					return Result.fromBoolean(false);
 				}
 			} else if (datatype != null && datatype.isIntegerDatatype()) {
 				try {
 					String normInt = XMLDatatypeUtil.normalize(label, datatype);
-					return !normInt.equals("0");
+					return Result.fromBoolean(!normInt.equals("0"));
 				} catch (IllegalArgumentException e) {
-					return false;
+					return Result.fromBoolean(false);
 				}
 			} else if (datatype != null && datatype.isFloatingPointDatatype()) {
 				try {
 					String normFP = XMLDatatypeUtil.normalize(label, datatype);
-					return !normFP.equals("0.0E0") && !normFP.equals("NaN");
+					return Result.fromBoolean(!normFP.equals("0.0E0") && !normFP.equals("NaN"));
 				} catch (IllegalArgumentException e) {
-					return false;
+					return Result.fromBoolean(false);
 				}
 			}
 
 		}
 
-		throw new ValueExprEvaluationException();
+		return Result.incompatibleValueExpression;
 	}
 
-	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator)
-			throws ValueExprEvaluationException {
+	public static Result compare(Value leftVal, Value rightVal, CompareOp operator) {
 		return compare(leftVal, rightVal, operator, true);
 	}
 
-	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator, boolean strict)
-			throws ValueExprEvaluationException {
+	public static Result compare(Value leftVal, Value rightVal, CompareOp operator, boolean strict) {
 		if (leftVal.isLiteral() && rightVal.isLiteral()) {
 			// Both left and right argument is a Literal
 			return compareLiterals((Literal) leftVal, (Literal) rightVal, operator, strict);
@@ -111,12 +97,11 @@ public class QueryEvaluationUtil {
 			// All other value combinations
 			switch (operator) {
 			case EQ:
-				return Objects.equals(leftVal, rightVal);
+				return Result.fromBoolean(Objects.equals(leftVal, rightVal));
 			case NE:
-				return !Objects.equals(leftVal, rightVal);
+				return Result.fromBoolean(!Objects.equals(leftVal, rightVal));
 			default:
-				throw new ValueExprEvaluationException(
-						"Only literals with compatible, ordered datatypes can be compared using <, <=, > and >= operators");
+				return Result.incompatibleValueExpression;
 			}
 		}
 	}
@@ -130,11 +115,69 @@ public class QueryEvaluationUtil {
 	 * @param operator the comparison operator to use.
 	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds, {@code false}
 	 *         otherwise.
-	 * @throws ValueExprEvaluationException if a type error occurred.
 	 */
-	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator)
-			throws ValueExprEvaluationException {
+	public static Result compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator) {
 		return compareLiterals(leftLit, rightLit, operator, true);
+	}
+
+	public static Order compareLiterals(Literal leftLit, Literal rightLit, boolean strict) {
+		// type precendence:
+		// - simple literal
+		// - numeric
+		// - CoreDatatype.XSD:boolean
+		// - CoreDatatype.XSD:dateTime
+		// - CoreDatatype.XSD:string
+		// - RDF term (equal and unequal only)
+
+		CoreDatatype leftCoreDatatype = leftLit.getCoreDatatype();
+		CoreDatatype rightCoreDatatype = rightLit.getCoreDatatype();
+
+		boolean leftLangLit = leftCoreDatatype == CoreDatatype.RDF.LANGSTRING;
+		boolean rightLangLit = rightCoreDatatype == CoreDatatype.RDF.LANGSTRING;
+
+		CoreDatatype.XSD leftXSDDatatype = leftCoreDatatype.asXSDDatatype().orElse(null);
+		CoreDatatype.XSD rightXSDDatatype = rightCoreDatatype.asXSDDatatype().orElse(null);
+
+		// for purposes of query evaluation in SPARQL, simple literals and string-typed literals with the same lexical
+		// value are considered equal.
+
+		if (leftCoreDatatype == CoreDatatype.XSD.STRING && rightCoreDatatype == CoreDatatype.XSD.STRING) {
+			return Order.from(leftLit.getLabel().compareTo(rightLit.getLabel()));
+		} else if (!(leftLangLit || rightLangLit)) {
+
+			CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftXSDDatatype, rightXSDDatatype);
+
+			if (commonDatatype != null) {
+
+				try {
+					Order order = handleCommonDatatype(leftLit, rightLit, strict, leftXSDDatatype,
+							rightXSDDatatype, leftLangLit, rightLangLit, commonDatatype);
+
+					if (order == Order.illegalArgument) {
+						if (leftLit.equals(rightLit)) {
+							return Order.equal;
+						}
+					}
+
+					if (order != null) {
+						return order;
+					}
+				} catch (IllegalArgumentException e) {
+					if (leftLit.equals(rightLit)) {
+						return Order.equal;
+					}
+				}
+
+			}
+		}
+
+		// All other cases, e.g. literals with languages, unequal or
+		// unordered datatypes, etc. These arguments can only be compared
+		// using the operators 'EQ' and 'NE'. See SPARQL's RDFterm-equal
+		// operator
+
+		return otherCases(leftLit, rightLit, leftXSDDatatype, rightXSDDatatype, leftLangLit, rightLangLit);
+
 	}
 
 	/**
@@ -147,109 +190,62 @@ public class QueryEvaluationUtil {
 	 *                 operator behavior, or extended behavior.
 	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds, {@code false}
 	 *         otherwise.
-	 * @throws ValueExprEvaluationException if a type error occurred.
 	 */
-	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict)
-			throws ValueExprEvaluationException {
-		// type precendence:
-		// - simple literal
-		// - numeric
-		// - CoreDatatype.XSD:boolean
-		// - CoreDatatype.XSD:dateTime
-		// - CoreDatatype.XSD:string
-		// - RDF term (equal and unequal only)
-
-		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);
-		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);
-
-		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);
-		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);
-
-		// for purposes of query evaluation in SPARQL, simple literals and string-typed literals with the same lexical
-		// value are considered equal.
-
-		if (QueryEvaluationUtil.isSimpleLiteral(leftLangLit, leftCoreDatatype)
-				&& QueryEvaluationUtil.isSimpleLiteral(rightLangLit, rightCoreDatatype)) {
-			return compareWithOperator(operator, leftLit.getLabel().compareTo(rightLit.getLabel()));
-		} else if (!(leftLangLit || rightLangLit)) {
-
-			CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftCoreDatatype, rightCoreDatatype);
-
-			if (commonDatatype != null) {
-				try {
-					if (commonDatatype == CoreDatatype.XSD.DOUBLE) {
-						return compareWithOperator(operator,
-								Double.compare(leftLit.doubleValue(), rightLit.doubleValue()));
-					} else if (commonDatatype == CoreDatatype.XSD.FLOAT) {
-						return compareWithOperator(operator,
-								Float.compare(leftLit.floatValue(), rightLit.floatValue()));
-					} else if (commonDatatype == CoreDatatype.XSD.DECIMAL) {
-						return compareWithOperator(operator, leftLit.decimalValue().compareTo(rightLit.decimalValue()));
-					} else if (commonDatatype.isIntegerDatatype()) {
-						return compareWithOperator(operator, leftLit.integerValue().compareTo(rightLit.integerValue()));
-					} else if (commonDatatype == CoreDatatype.XSD.BOOLEAN) {
-						return compareWithOperator(operator,
-								Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));
-					} else if (commonDatatype.isCalendarDatatype()) {
-						XMLGregorianCalendar left = leftLit.calendarValue();
-						XMLGregorianCalendar right = rightLit.calendarValue();
-
-						int compare = left.compare(right);
-
-						// Note: XMLGregorianCalendar.compare() returns compatible values (-1, 0, 1) but INDETERMINATE
-						// needs special treatment
-						if (compare == DatatypeConstants.INDETERMINATE) {
-							// If we compare two CoreDatatype.XSD:dateTime we should use the specific comparison
-							// specified in SPARQL
-							// 1.1
-							if (leftCoreDatatype == CoreDatatype.XSD.DATETIME
-									&& rightCoreDatatype == CoreDatatype.XSD.DATETIME) {
-								throw INDETERMINATE_DATE_TIME_EXCEPTION;
-							}
-						} else {
-							return compareWithOperator(operator, compare);
-						}
-
-					} else if (!strict && commonDatatype.isDurationDatatype()) {
-						Duration left = XMLDatatypeUtil.parseDuration(leftLit.getLabel());
-						Duration right = XMLDatatypeUtil.parseDuration(rightLit.getLabel());
-						int compare = left.compare(right);
-						if (compare != DatatypeConstants.INDETERMINATE) {
-							return compareWithOperator(operator, compare);
-						} else {
-							return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype,
-									leftLangLit, rightLangLit);
-						}
-
-					} else if (commonDatatype == CoreDatatype.XSD.STRING) {
-						return compareWithOperator(operator, leftLit.getLabel().compareTo(rightLit.getLabel()));
-					}
-				} catch (IllegalArgumentException e) {
-					// One of the basic-type method calls failed, try syntactic match before throwing an error
-					if (leftLit.equals(rightLit)) {
-						switch (operator) {
-						case EQ:
-							return true;
-						case NE:
-							return false;
-						}
-					}
-
-					throw new ValueExprEvaluationException(e);
-				}
-			}
-		}
-
-		// All other cases, e.g. literals with languages, unequal or
-		// unordered datatypes, etc. These arguments can only be compared
-		// using the operators 'EQ' and 'NE'. See SPARQL's RDFterm-equal
-		// operator
-
-		return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit);
-
+	public static Result compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict) {
+		Order order = compareLiterals(leftLit, rightLit, strict);
+		return order.toResult(operator);
 	}
 
-	private static boolean otherCases(Literal leftLit, Literal rightLit, CompareOp operator,
+	private static Order handleCommonDatatype(Literal leftLit, Literal rightLit, boolean strict,
+			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
+			boolean rightLangLit, CoreDatatype.XSD commonDatatype) {
+		if (commonDatatype == CoreDatatype.XSD.DOUBLE) {
+			return Order.from(Double.compare(leftLit.doubleValue(), rightLit.doubleValue()));
+		} else if (commonDatatype == CoreDatatype.XSD.FLOAT) {
+			return Order.from(Float.compare(leftLit.floatValue(), rightLit.floatValue()));
+		} else if (commonDatatype == CoreDatatype.XSD.DECIMAL) {
+			return Order.from(leftLit.decimalValue().compareTo(rightLit.decimalValue()));
+		} else if (commonDatatype.isIntegerDatatype()) {
+			return Order.from(leftLit.integerValue().compareTo(rightLit.integerValue()));
+		} else if (commonDatatype == CoreDatatype.XSD.BOOLEAN) {
+			return Order.from(Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));
+		} else if (commonDatatype.isCalendarDatatype()) {
+			XMLGregorianCalendar left = leftLit.calendarValue();
+			XMLGregorianCalendar right = rightLit.calendarValue();
+
+			int compare = left.compare(right);
+
+			// Note: XMLGregorianCalendar.compare() returns compatible values (-1, 0, 1) but INDETERMINATE
+			// needs special treatment
+			if (compare == DatatypeConstants.INDETERMINATE) {
+				// If we compare two CoreDatatype.XSD:dateTime we should use the specific comparison specified in SPARQL
+				// 1.1
+				if (leftCoreDatatype == CoreDatatype.XSD.DATETIME && rightCoreDatatype == CoreDatatype.XSD.DATETIME) {
+					return Order.incompatibleValueExpression;
+				}
+			} else {
+				return Order.from(compare);
+			}
+
+		} else if (!strict && commonDatatype.isDurationDatatype()) {
+			Duration left = XMLDatatypeUtil.parseDuration(leftLit.getLabel());
+			Duration right = XMLDatatypeUtil.parseDuration(rightLit.getLabel());
+			int compare = left.compare(right);
+			if (compare != DatatypeConstants.INDETERMINATE) {
+				return Order.from(compare);
+			} else {
+				return otherCases(leftLit, rightLit, leftCoreDatatype, rightCoreDatatype, leftLangLit,
+						rightLangLit);
+			}
+
+		} else if (commonDatatype == CoreDatatype.XSD.STRING) {
+			return Order.from(leftLit.getLabel().compareTo(rightLit.getLabel()));
+		}
+
+		return null;
+	}
+
+	private static Order otherCases(Literal leftLit, Literal rightLit,
 			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
 			boolean rightLangLit) {
 		boolean literalsEqual = leftLit.equals(rightLit);
@@ -261,11 +257,11 @@ public class QueryEvaluationUtil {
 
 				// we need to check that the lexical-to-value mapping for both datatypes succeeds
 				if (!XMLDatatypeUtil.isValidValue(leftLit.getLabel(), leftCoreDatatype)) {
-					throw new ValueExprEvaluationException("not a valid datatype value: " + leftLit);
+					return Order.incompatibleValueExpression;
 				}
 
 				if (!XMLDatatypeUtil.isValidValue(rightLit.getLabel(), rightCoreDatatype)) {
-					throw new ValueExprEvaluationException("not a valid datatype value: " + rightLit);
+					return Order.incompatibleValueExpression;
 				}
 
 				boolean leftString = leftCoreDatatype == CoreDatatype.XSD.STRING;
@@ -277,33 +273,24 @@ public class QueryEvaluationUtil {
 				boolean rightDate = rightCoreDatatype.isCalendarDatatype();
 
 				if (leftString != rightString) {
-					throw STRING_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
+					return Order.incompatibleValueExpression;
 				}
 				if (leftNumeric != rightNumeric) {
-					throw NUMERIC_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
+					return Order.incompatibleValueExpression;
 				}
 				if (leftDate != rightDate) {
-					throw DATE_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;
+					return Order.incompatibleValueExpression;
 				}
 			} else if (!leftLangLit && !rightLangLit) {
 				// For literals with unsupported datatypes we don't know if their values are equal
-				throw UNSUPPOERTED_TYPES_EXCEPTION;
+				return Order.incompatibleValueExpression;
 			}
 		}
 
-		switch (operator) {
-		case EQ:
-			return literalsEqual;
-		case NE:
-			return !literalsEqual;
-		case LT:
-		case LE:
-		case GE:
-		case GT:
-			throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
-		default:
-			throw new IllegalArgumentException("Unknown operator: " + operator);
+		if (literalsEqual) {
+			return Order.equal;
 		}
+		return Order.notEqual;
 	}
 
 	private static CoreDatatype.XSD getCommonDatatype(boolean strict, CoreDatatype.XSD leftCoreDatatype,
@@ -333,25 +320,6 @@ public class QueryEvaluationUtil {
 		return null;
 	}
 
-	private static boolean compareWithOperator(CompareOp operator, int i) {
-		switch (operator) {
-		case LT:
-			return i < 0;
-		case LE:
-			return i <= 0;
-		case EQ:
-			return i == 0;
-		case NE:
-			return i != 0;
-		case GE:
-			return i >= 0;
-		case GT:
-			return i > 0;
-		default:
-			throw new IllegalArgumentException("Unknown operator: " + operator);
-		}
-	}
-
 	/**
 	 * Checks whether the supplied value is a "plain literal". A "plain literal" is a literal with no datatype and
 	 * optionally a language tag.
@@ -371,11 +339,6 @@ public class QueryEvaluationUtil {
 		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
-//	public static boolean isPlainLiteral(Literal l) {
-//		return l.getCoreDatatype().filter(d -> d == CoreDatatype.XSD.STRING).isPresent();
-////		return l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
-//	}
-
 	/**
 	 * Checks whether the supplied value is a "simple literal". A "simple literal" is a literal with no language tag nor
 	 * datatype.
@@ -390,6 +353,11 @@ public class QueryEvaluationUtil {
 		return false;
 	}
 
+//	public static boolean isPlainLiteral(Literal l) {
+//		return l.getCoreDatatype().filter(d -> d == CoreDatatype.XSD.STRING).isPresent();
+////		return l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
+//	}
+
 	/**
 	 * Checks whether the supplied literal is a "simple literal". A "simple literal" is a literal with no language tag
 	 * and the datatype {@link CoreDatatype.XSD#STRING}.
@@ -397,7 +365,7 @@ public class QueryEvaluationUtil {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(Literal l) {
-		return l.getCoreDatatype() == CoreDatatype.XSD.STRING && !Literals.isLanguageLiteral(l);
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING;
 	}
 
 	/**
@@ -407,7 +375,7 @@ public class QueryEvaluationUtil {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#simple_literal">SPARQL Simple Literal Documentation</a>
 	 */
 	public static boolean isSimpleLiteral(boolean isLang, CoreDatatype datatype) {
-		return !isLang && datatype == CoreDatatype.XSD.STRING;
+		return datatype == CoreDatatype.XSD.STRING;
 	}
 
 	/**
@@ -452,12 +420,127 @@ public class QueryEvaluationUtil {
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#func-string">SPARQL Functions on Strings Documentation</a>
 	 */
 	public static boolean isStringLiteral(Literal l) {
-		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || Literals.isLanguageLiteral(l);
+		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
 	private static boolean isSupportedDatatype(CoreDatatype.XSD datatype) {
-		return datatype != null && (datatype == CoreDatatype.XSD.STRING ||
-				datatype.isNumericDatatype() ||
-				datatype.isCalendarDatatype());
+		return datatype != null && (datatype == CoreDatatype.XSD.STRING || datatype.isNumericDatatype()
+				|| datatype.isCalendarDatatype());
+	}
+
+	public enum Result {
+		_true(true),
+		_false(false),
+		incompatibleValueExpression(),
+		illegalArgument();
+
+		static Result fromBoolean(boolean b) {
+			if (b) {
+				return _true;
+			}
+			return _false;
+		}
+
+		private final boolean value;
+		private final boolean isIncompatible;
+
+		Result(boolean value) {
+			this.value = value;
+			isIncompatible = false;
+		}
+
+		Result() {
+			isIncompatible = true;
+			value = false;
+		}
+
+		public boolean orElse(boolean alternative) {
+			if (this == incompatibleValueExpression) {
+				return alternative;
+			} else if (this == illegalArgument) {
+				throw new IllegalStateException("IllegalArgument needs to be handled");
+			}
+			return value;
+		}
+	}
+
+	enum Order {
+		smaller(-1),
+		greater(1),
+		equal(0),
+		notEqual(0),
+		incompatibleValueExpression(0),
+		illegalArgument(0);
+
+		private final int value;
+
+		Order(int value) {
+			this.value = value;
+		}
+
+		public static Order from(int value) {
+			if (value < 0) {
+				return smaller;
+			}
+			if (value > 0) {
+				return greater;
+			}
+			return equal;
+		}
+
+		public int asInt() {
+			if (!isValid() && this != notEqual) {
+				throw new IllegalStateException();
+			}
+			return value;
+		}
+
+		public boolean isValid() {
+			return !(this == incompatibleValueExpression || this == illegalArgument);
+		}
+
+		public Result toResult(CompareOp operator) {
+			if (!isValid()) {
+				if (this == incompatibleValueExpression) {
+					return Result.incompatibleValueExpression;
+				}
+				if (this == illegalArgument) {
+					return Result.illegalArgument;
+				}
+			}
+
+			if (this == notEqual) {
+				switch (operator) {
+				case EQ:
+					return Result._false;
+				case NE:
+					return Result._true;
+				case LT:
+				case LE:
+				case GE:
+				case GT:
+					return Result.incompatibleValueExpression;
+				default:
+					return Result.illegalArgument;
+				}
+			}
+
+			switch (operator) {
+			case LT:
+				return Result.fromBoolean(value < 0);
+			case LE:
+				return Result.fromBoolean(value <= 0);
+			case EQ:
+				return Result.fromBoolean(value == 0);
+			case NE:
+				return Result.fromBoolean(value != 0);
+			case GE:
+				return Result.fromBoolean(value >= 0);
+			case GT:
+				return Result.fromBoolean(value > 0);
+			default:
+				return Result.illegalArgument;
+			}
+		}
 	}
 }

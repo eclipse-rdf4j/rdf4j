@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * The SPARQL built-in {@link Function} CONTAINS, as defined in
@@ -51,8 +51,8 @@ public class Contains implements Function {
 				} else {
 					throw new ValueExprEvaluationException("incompatible operands for CONTAINS function");
 				}
-			} else if (QueryEvaluationUtil.isStringLiteral(leftLit)) {
-				if (QueryEvaluationUtil.isStringLiteral(rightLit)) {
+			} else if (QueryEvaluationUtility.isStringLiteral(leftLit)) {
+				if (QueryEvaluationUtility.isStringLiteral(rightLit)) {
 					String leftLexVal = leftLit.getLabel();
 					String rightLexVal = rightLit.getLabel();
 

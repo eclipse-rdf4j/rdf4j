@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * The SPARQL built-in {@link Function} STRSTARTS, as defined in
@@ -42,7 +42,7 @@ public class StrStarts implements Function {
 			Literal leftLit = (Literal) leftVal;
 			Literal rightLit = (Literal) rightVal;
 
-			if (QueryEvaluationUtil.compatibleArguments(leftLit, rightLit)) {
+			if (QueryEvaluationUtility.compatibleArguments(leftLit, rightLit)) {
 
 				String leftLexVal = leftLit.getLabel();
 				String rightLexVal = rightLit.getLabel();

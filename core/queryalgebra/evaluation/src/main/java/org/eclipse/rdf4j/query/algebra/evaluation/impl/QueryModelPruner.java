@@ -20,8 +20,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
@@ -80,15 +79,11 @@ public class QueryModelPruner implements QueryOptimizer {
 			} else if (rightArg instanceof SingletonSet) {
 				leftJoin.replaceWith(leftArg);
 			} else if (condition instanceof ValueConstant) {
-				boolean conditionValue;
-				try {
-					conditionValue = QueryEvaluationUtil
-							.getEffectiveBooleanValue(((ValueConstant) condition).getValue());
-				} catch (ValueExprEvaluationException e) {
-					conditionValue = false;
-				}
+				boolean conditionValue = QueryEvaluationUtility
+						.getEffectiveBooleanValue(((ValueConstant) condition).getValue())
+						.orElse(false);
 
-				if (conditionValue == false) {
+				if (!conditionValue) {
 					// Constraint is always false
 					leftJoin.replaceWith(leftArg);
 				} else {

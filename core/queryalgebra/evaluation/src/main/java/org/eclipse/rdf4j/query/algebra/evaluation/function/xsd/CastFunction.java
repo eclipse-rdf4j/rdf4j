@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * Abstract superclass for {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function}s that cast an argument
@@ -42,7 +42,7 @@ public abstract class CastFunction implements Function {
 			Literal literal = (Literal) args[0];
 			IRI datatype = literal.getDatatype();
 
-			if (QueryEvaluationUtil.isStringLiteral(literal)) {
+			if (QueryEvaluationUtility.isStringLiteral(literal)) {
 				String lexicalValue = XMLDatatypeUtil.collapseWhiteSpace(literal.getLabel());
 				if (isValidForDatatype(lexicalValue)) {
 					return valueFactory.createLiteral(lexicalValue, getXsdDatatype());
