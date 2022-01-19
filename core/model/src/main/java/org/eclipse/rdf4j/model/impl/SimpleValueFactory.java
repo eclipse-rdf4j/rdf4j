@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -110,7 +111,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	@Override
 	public Literal createLiteral(String value) {
-		return new SimpleLiteral(value, XSD.Datatype.STRING);
+		return new SimpleLiteral(value, CoreDatatype.XSD.STRING);
 	}
 
 	@Override
@@ -172,7 +173,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(byte value) {
-		return createIntegerLiteral(value, XSD.Datatype.BYTE);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.BYTE);
 	}
 
 	/**
@@ -180,7 +181,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(short value) {
-		return createIntegerLiteral(value, XSD.Datatype.SHORT);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.SHORT);
 	}
 
 	/**
@@ -188,7 +189,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(int value) {
-		return createIntegerLiteral(value, XSD.Datatype.INT);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.INT);
 	}
 
 	/**
@@ -196,7 +197,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(long value) {
-		return createIntegerLiteral(value, XSD.Datatype.LONG);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.LONG);
 	}
 
 	/**
@@ -215,7 +216,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(float value) {
-		return createFPLiteral(value, XSD.Datatype.FLOAT);
+		return createFPLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.FLOAT);
 	}
 
 	/**
@@ -223,17 +224,17 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(double value) {
-		return createFPLiteral(value, XSD.Datatype.DOUBLE);
+		return createFPLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.DOUBLE);
 	}
 
 	@Override
 	public Literal createLiteral(BigInteger bigInteger) {
-		return createIntegerLiteral(bigInteger, XSD.INTEGER);
+		return createIntegerLiteral(bigInteger, org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER);
 	}
 
 	@Override
 	public Literal createLiteral(BigDecimal bigDecimal) {
-		return createNumericLiteral(bigDecimal, XSD.DECIMAL);
+		return createNumericLiteral(bigDecimal, org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL);
 	}
 
 	/**
@@ -260,7 +261,18 @@ public class SimpleValueFactory extends AbstractValueFactory {
 		return new NumericLiteral(number, datatype);
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected Literal createNumericLiteral(Number number, XSD.Datatype datatype) {
+		if (number instanceof BigDecimal) {
+			return new DecimalLiteral((BigDecimal) number, datatype);
+		}
+		if (number instanceof BigInteger) {
+			return new IntegerLiteral((BigInteger) number, datatype);
+		}
+		return new NumericLiteral(number, datatype);
+	}
+
+	protected Literal createNumericLiteral(Number number, CoreDatatype datatype) {
 		if (number instanceof BigDecimal) {
 			return new DecimalLiteral((BigDecimal) number, datatype);
 		}

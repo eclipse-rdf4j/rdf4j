@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -52,7 +53,7 @@ public abstract class EquivalentTest {
 
 	private static Literal xyz_EN = vf.createLiteral("xyz", "EN");
 
-	private static Literal xyz_string = vf.createLiteral("xyz", XSD.STRING);
+	private static Literal xyz_string = vf.createLiteral("xyz", CoreDatatype.XSD.STRING);
 
 	private static Literal xyz_integer = vf.createLiteral("xyz", XSD.INTEGER);
 
@@ -68,7 +69,7 @@ public abstract class EquivalentTest {
 
 	private static Literal abc_string = vf.createLiteral("abc", XSD.STRING);
 
-	private static Literal abc_integer = vf.createLiteral("abc", XSD.INTEGER);
+	private static Literal abc_integer = vf.createLiteral("abc", CoreDatatype.XSD.INTEGER);
 
 	private static Literal abc_unknown = vf.createLiteral("abc", vf.createIRI("http://example/unknown"));
 

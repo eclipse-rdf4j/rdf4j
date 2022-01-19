@@ -45,6 +45,7 @@ import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -60,7 +61,6 @@ import javax.xml.namespace.QName;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.base.AbstractIRI.GenericIRI;
 
 /**
  * Base class for {@link Literal}, offering common functionality.
@@ -73,37 +73,12 @@ public abstract class AbstractLiteral implements Literal {
 
 	private static final long serialVersionUID = -1286527360744086451L;
 
-	private static final String RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
-	private static final String XSD = "http://www.w3.org/2001/XMLSchema#";
-
-	private static final IRI RDF_LANGSTRING = new GenericIRI(RDF, "langString");
-
-	private static final IRI XSD_STRING = new GenericIRI(XSD, "string");
-	private static final IRI XSD_BOOLEAN = new GenericIRI(XSD, "boolean");
-
-	private static final IRI XSD_BYTE = new GenericIRI(XSD, "byte");
-	private static final IRI XSD_SHORT = new GenericIRI(XSD, "short");
-	private static final IRI XSD_INT = new GenericIRI(XSD, "int");
-	private static final IRI XSD_LONG = new GenericIRI(XSD, "long");
-	private static final IRI XSD_FLOAT = new GenericIRI(XSD, "float");
-	private static final IRI XSD_DOUBLE = new GenericIRI(XSD, "double");
-	private static final IRI XSD_INTEGER = new GenericIRI(XSD, "integer");
-	private static final IRI XSD_DECIMAL = new GenericIRI(XSD, "decimal");
-
-	private static final IRI XSD_DATETIME = new GenericIRI(XSD, "dateTime");
-	private static final IRI XSD_DATE = new GenericIRI(XSD, "date");
-	private static final IRI XSD_TIME = new GenericIRI(XSD, "time");
-	private static final IRI XSD_GYEARMONTH = new GenericIRI(XSD, "gYearMonth");
-	private static final IRI XSD_GMONTHDAY = new GenericIRI(XSD, "gMonthDay");
-	private static final IRI XSD_GYEAR = new GenericIRI(XSD, "gYear");
-	private static final IRI XSD_GMONTH = new GenericIRI(XSD, "gMonth");
-	private static final IRI XSD_GDAY = new GenericIRI(XSD, "gDay");
-	private static final IRI XSD_DURATION = new GenericIRI(XSD, "duration");
-	private static final IRI XSD_DURATION_DAYTIME = new GenericIRI(XSD, "dayTimeDuration");
-	private static final IRI XSD_DURATION_YEARMONTH = new GenericIRI(XSD, "yearMonthDuration");
-
 	static boolean reserved(IRI datatype) {
-		return RDF_LANGSTRING.equals(datatype);
+		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype);
+	}
+
+	static boolean reserved(CoreDatatype datatype) {
+		return CoreDatatype.RDF.LANGSTRING == datatype;
 	}
 
 	/**
@@ -216,7 +191,7 @@ public abstract class AbstractLiteral implements Literal {
 
 					final IRI datatype = getDatatype();
 
-					return datatype.equals(XSD_STRING) ? label
+					return datatype.equals(CoreDatatype.XSD.STRING) ? label
 							: label + "^^<" + datatype.stringValue() + ">";
 
 				});
@@ -234,17 +209,31 @@ public abstract class AbstractLiteral implements Literal {
 
 		private static final long serialVersionUID = -19640527584237291L;
 
-		private String label;
-		private IRI datatype;
+		private final String label;
+		private final CoreDatatype coreDatatype;
+		private final IRI datatype;
 
 		TypedLiteral(String label) {
 			this.label = label;
-			this.datatype = XSD_STRING;
+			this.coreDatatype = CoreDatatype.XSD.STRING;
+			this.datatype = CoreDatatype.XSD.STRING.getIri();
 		}
 
 		TypedLiteral(String label, IRI datatype) {
 			this.label = label;
-			this.datatype = datatype != null ? datatype : XSD_STRING;
+			if (datatype == null) {
+				this.datatype = CoreDatatype.XSD.STRING.getIri();
+				this.coreDatatype = CoreDatatype.XSD.STRING;
+			} else {
+				this.datatype = datatype;
+				this.coreDatatype = CoreDatatype.from(datatype);
+			}
+		}
+
+		TypedLiteral(String label, CoreDatatype datatype) {
+			this.label = label;
+			this.coreDatatype = Objects.requireNonNull(datatype);
+			this.datatype = datatype.getIri();
 		}
 
 		@Override
@@ -262,14 +251,18 @@ public abstract class AbstractLiteral implements Literal {
 			return datatype;
 		}
 
+		@Override
+		public CoreDatatype getCoreDatatype() {
+			return coreDatatype;
+		}
 	}
 
 	static class TaggedLiteral extends AbstractLiteral {
 
 		private static final long serialVersionUID = -19640527584237291L;
 
-		private String label;
-		private String language;
+		private final String label;
+		private final String language;
 
 		TaggedLiteral(String label, String language) {
 			this.label = label;
@@ -288,9 +281,13 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return RDF_LANGSTRING;
+			return CoreDatatype.RDF.LANGSTRING.getIri();
 		}
 
+		@Override
+		public CoreDatatype.RDF getCoreDatatype() {
+			return CoreDatatype.RDF.LANGSTRING;
+		}
 	}
 
 	static class BooleanLiteral extends AbstractLiteral {
@@ -310,7 +307,7 @@ public abstract class AbstractLiteral implements Literal {
 					.orElse(null);
 		}
 
-		private boolean value;
+		private final boolean value;
 
 		BooleanLiteral(boolean value) {
 			this.value = value;
@@ -328,7 +325,12 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return XSD_BOOLEAN;
+			return CoreDatatype.XSD.BOOLEAN.getIri();
+		}
+
+		@Override
+		public CoreDatatype.XSD getCoreDatatype() {
+			return CoreDatatype.XSD.BOOLEAN;
 		}
 
 		@Override
@@ -376,34 +378,34 @@ public abstract class AbstractLiteral implements Literal {
 
 		protected Number value;
 
-		private String label;
-		private IRI datatype;
+		private final String label;
+		private final CoreDatatype datatype;
 
 		NumberLiteral(byte value) {
-			this(value, Byte.toString(value), XSD_BYTE);
+			this(value, Byte.toString(value), CoreDatatype.XSD.BYTE);
 		}
 
 		NumberLiteral(short value) {
-			this(value, Short.toString(value), XSD_SHORT);
+			this(value, Short.toString(value), CoreDatatype.XSD.SHORT);
 		}
 
 		NumberLiteral(int value) {
-			this(value, Integer.toString(value), XSD_INT);
+			this(value, Integer.toString(value), CoreDatatype.XSD.INT);
 		}
 
 		NumberLiteral(long value) {
-			this(value, Long.toString(value), XSD_LONG);
+			this(value, Long.toString(value), CoreDatatype.XSD.LONG);
 		}
 
 		NumberLiteral(float value) {
-			this(value, toString(value), XSD_FLOAT);
+			this(value, toString(value), CoreDatatype.XSD.FLOAT);
 		}
 
 		NumberLiteral(double value) {
-			this(value, toString(value), XSD_DOUBLE);
+			this(value, toString(value), CoreDatatype.XSD.DOUBLE);
 		}
 
-		NumberLiteral(Number value, String label, IRI datatype) {
+		NumberLiteral(Number value, String label, CoreDatatype datatype) {
 			this.value = value;
 			this.label = label;
 			this.datatype = datatype;
@@ -421,7 +423,7 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return datatype;
+			return datatype.getIri();
 		}
 
 		@Override
@@ -454,6 +456,10 @@ public abstract class AbstractLiteral implements Literal {
 			return value.doubleValue();
 		}
 
+		@Override
+		public CoreDatatype getCoreDatatype() {
+			return datatype;
+		}
 	}
 
 	static class IntegerLiteral extends NumberLiteral {
@@ -461,7 +467,7 @@ public abstract class AbstractLiteral implements Literal {
 		private static final long serialVersionUID = -4274941248972496665L;
 
 		IntegerLiteral(BigInteger value) {
-			super(value, value.toString(), XSD_INTEGER);
+			super(value, value.toString(), CoreDatatype.XSD.INTEGER);
 		}
 
 		@Override
@@ -481,7 +487,7 @@ public abstract class AbstractLiteral implements Literal {
 		private static final long serialVersionUID = -4382147098035463886L;
 
 		DecimalLiteral(BigDecimal value) {
-			super(value, value.toPlainString(), XSD_DECIMAL);
+			super(value, value.toPlainString(), CoreDatatype.XSD.DECIMAL);
 		}
 
 		@Override
@@ -579,12 +585,12 @@ public abstract class AbstractLiteral implements Literal {
 
 				.toFormatter();
 
-		private static final Map<Integer, IRI> DATATYPES = datatypes();
-		private static final Map<IRI, DateTimeFormatter> FORMATTERS = formatters();
+		private static final Map<Integer, CoreDatatype> DATATYPES = datatypes();
+		private static final Map<CoreDatatype.XSD, DateTimeFormatter> FORMATTERS = formatters();
 
 		static TemporalAccessor parseTemporalAccessor(String label) throws DateTimeException {
 
-			final TemporalAccessor value = formatter(label).parse(label);
+			TemporalAccessor value = formatter(label).parse(label);
 
 			if (!DATATYPES.containsKey(key(value))) {
 				throw new DateTimeException(String.format(
@@ -595,50 +601,50 @@ public abstract class AbstractLiteral implements Literal {
 			return value;
 		}
 
-		private static Map<Integer, IRI> datatypes() {
+		private static Map<Integer, CoreDatatype> datatypes() {
 
-			final Map<Integer, IRI> datatypes = new HashMap<>();
+			int date = key(YEAR, MONTH_OF_YEAR, DAY_OF_MONTH);
+			int time = key(HOUR_OF_DAY, MINUTE_OF_HOUR, SECOND_OF_MINUTE);
+			int nano = key(NANO_OF_SECOND);
+			int zone = key(OFFSET_SECONDS);
 
-			final int date = key(YEAR, MONTH_OF_YEAR, DAY_OF_MONTH);
-			final int time = key(HOUR_OF_DAY, MINUTE_OF_HOUR, SECOND_OF_MINUTE);
-			final int nano = key(NANO_OF_SECOND);
-			final int zone = key(OFFSET_SECONDS);
+			Map<Integer, CoreDatatype> datatypes = new HashMap<>();
 
-			datatypes.put(date + time, XSD_DATETIME);
-			datatypes.put(date + time + nano, XSD_DATETIME);
-			datatypes.put((date + time + zone), XSD_DATETIME);
-			datatypes.put((date + time + nano + zone), XSD_DATETIME);
+			datatypes.put(date + time, CoreDatatype.XSD.DATETIME);
+			datatypes.put(date + time + nano, CoreDatatype.XSD.DATETIME);
+			datatypes.put((date + time + zone), CoreDatatype.XSD.DATETIME);
+			datatypes.put((date + time + nano + zone), CoreDatatype.XSD.DATETIME);
 
-			datatypes.put(time, XSD_TIME);
-			datatypes.put(time + nano, XSD_TIME);
-			datatypes.put(time + zone, XSD_TIME);
-			datatypes.put(time + nano + zone, XSD_TIME);
+			datatypes.put(time, CoreDatatype.XSD.TIME);
+			datatypes.put(time + nano, CoreDatatype.XSD.TIME);
+			datatypes.put(time + zone, CoreDatatype.XSD.TIME);
+			datatypes.put(time + nano + zone, CoreDatatype.XSD.TIME);
 
-			datatypes.put(date, XSD_DATE);
-			datatypes.put(date + zone, XSD_DATE);
+			datatypes.put(date, CoreDatatype.XSD.DATE);
+			datatypes.put(date + zone, CoreDatatype.XSD.DATE);
 
-			datatypes.put(key(YEAR, MONTH_OF_YEAR), XSD_GYEARMONTH);
-			datatypes.put(key(YEAR), XSD_GYEAR);
-			datatypes.put(key(MONTH_OF_YEAR, DAY_OF_MONTH), XSD_GMONTHDAY);
-			datatypes.put(key(DAY_OF_MONTH), XSD_GDAY);
-			datatypes.put(key(MONTH_OF_YEAR), XSD_GMONTH);
+			datatypes.put(key(YEAR, MONTH_OF_YEAR), CoreDatatype.XSD.GYEARMONTH);
+			datatypes.put(key(YEAR), CoreDatatype.XSD.GYEAR);
+			datatypes.put(key(MONTH_OF_YEAR, DAY_OF_MONTH), CoreDatatype.XSD.GMONTHDAY);
+			datatypes.put(key(DAY_OF_MONTH), CoreDatatype.XSD.GDAY);
+			datatypes.put(key(MONTH_OF_YEAR), CoreDatatype.XSD.GMONTH);
 
 			return datatypes;
 		}
 
-		private static Map<IRI, DateTimeFormatter> formatters() {
+		private static Map<CoreDatatype.XSD, DateTimeFormatter> formatters() {
 
-			final Map<IRI, DateTimeFormatter> formatters = new HashMap<>();
+			final Map<CoreDatatype.XSD, DateTimeFormatter> formatters = new EnumMap<>(CoreDatatype.XSD.class);
 
-			formatters.put(XSD_DATETIME, DATETIME_FORMATTER);
-			formatters.put(XSD_TIME, OFFSET_TIME_FORMATTER);
-			formatters.put(XSD_DATE, OFFSET_DATE_FORMATTER);
+			formatters.put(CoreDatatype.XSD.DATETIME, DATETIME_FORMATTER);
+			formatters.put(CoreDatatype.XSD.TIME, OFFSET_TIME_FORMATTER);
+			formatters.put(CoreDatatype.XSD.DATE, OFFSET_DATE_FORMATTER);
 
-			formatters.put(XSD_GYEARMONTH, LOCAL_DATE_FORMATTER);
-			formatters.put(XSD_GYEAR, LOCAL_DATE_FORMATTER);
-			formatters.put(XSD_GMONTHDAY, DASH_FORMATTER);
-			formatters.put(XSD_GDAY, DASH_FORMATTER);
-			formatters.put(XSD_GMONTH, DASH_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GYEARMONTH, LOCAL_DATE_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GYEAR, LOCAL_DATE_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GMONTHDAY, DASH_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GDAY, DASH_FORMATTER);
+			formatters.put(CoreDatatype.XSD.GMONTH, DASH_FORMATTER);
 
 			return formatters;
 		}
@@ -680,16 +686,16 @@ public abstract class AbstractLiteral implements Literal {
 			return index;
 		}
 
-		private TemporalAccessor value;
+		private final TemporalAccessor value;
 
-		private String label;
-		private IRI datatype;
+		private final String label;
+		private final CoreDatatype datatype;
 
 		TemporalAccessorLiteral(TemporalAccessor value) {
 
 			this.value = value;
 
-			final IRI datatype = DATATYPES.get(key(value));
+			datatype = DATATYPES.get(key(value));
 
 			if (datatype == null) {
 				throw new IllegalArgumentException(String.format(
@@ -698,7 +704,6 @@ public abstract class AbstractLiteral implements Literal {
 			}
 
 			this.label = FORMATTERS.get(datatype).format(value);
-			this.datatype = datatype;
 		}
 
 		@Override
@@ -713,12 +718,17 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return datatype;
+			return datatype.getIri();
 		}
 
 		@Override
 		public TemporalAccessor temporalAccessorValue() {
 			return value;
+		}
+
+		@Override
+		public CoreDatatype getCoreDatatype() {
+			return datatype;
 		}
 
 	}
@@ -742,9 +752,9 @@ public abstract class AbstractLiteral implements Literal {
 				"(?:(?<" + SECONDS + ">\\d+)(?:\\.(?<" + NANOS + ">\\d+))?S)?"
 		);
 
-		private TemporalAmount value;
+		private final TemporalAmount value;
 
-		private String label;
+		private final String label;
 
 		TemporalAmountLiteral(TemporalAmount value) {
 
@@ -893,12 +903,17 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return XSD_DURATION;
+			return CoreDatatype.XSD.DURATION.getIri();
 		}
 
 		@Override
 		public TemporalAmount temporalAmountValue() throws DateTimeException {
 			return value;
+		}
+
+		@Override
+		public CoreDatatype.XSD getCoreDatatype() {
+			return CoreDatatype.XSD.DURATION;
 		}
 
 	}
@@ -919,43 +934,37 @@ public abstract class AbstractLiteral implements Literal {
 			}
 		});
 
-		private static IRI datatype(QName qname) {
+		private static final Map<QName, CoreDatatype.XSD> DATATYPES = datatypes();
 
-			if (DatatypeConstants.DATETIME == qname) {
-				return XSD_DATETIME;
-			} else if (DatatypeConstants.DATE == qname) {
-				return XSD_DATE;
-			} else if (DatatypeConstants.TIME == qname) {
-				return XSD_TIME;
-			} else if (DatatypeConstants.GYEARMONTH == qname) {
-				return XSD_GYEARMONTH;
-			} else if (DatatypeConstants.GMONTHDAY == qname) {
-				return XSD_GMONTHDAY;
-			} else if (DatatypeConstants.GYEAR == qname) {
-				return XSD_GYEAR;
-			} else if (DatatypeConstants.GMONTH == qname) {
-				return XSD_GMONTH;
-			} else if (DatatypeConstants.GDAY == qname) {
-				return XSD_GDAY;
-			} else if (DatatypeConstants.DURATION == qname) {
-				return XSD_DURATION;
-			} else if (DatatypeConstants.DURATION_DAYTIME == qname) {
-				return XSD_DURATION_DAYTIME;
-			} else if (DatatypeConstants.DURATION_YEARMONTH == qname) {
-				return XSD_DURATION_YEARMONTH;
-			} else {
-				throw new IllegalArgumentException("QName cannot be mapped to an XML Schema IRI: " + qname.toString());
-			}
+		private static Map<QName, CoreDatatype.XSD> datatypes() {
+
+			final Map<QName, CoreDatatype.XSD> datatypes = new HashMap<>();
+
+			datatypes.put(DatatypeConstants.DATETIME, CoreDatatype.XSD.DATETIME);
+			datatypes.put(DatatypeConstants.TIME, CoreDatatype.XSD.TIME);
+			datatypes.put(DatatypeConstants.DATE, CoreDatatype.XSD.DATE);
+
+			datatypes.put(DatatypeConstants.GYEARMONTH, CoreDatatype.XSD.GYEARMONTH);
+			datatypes.put(DatatypeConstants.GYEAR, CoreDatatype.XSD.GYEAR);
+			datatypes.put(DatatypeConstants.GMONTHDAY, CoreDatatype.XSD.GMONTHDAY);
+			datatypes.put(DatatypeConstants.GDAY, CoreDatatype.XSD.GDAY);
+			datatypes.put(DatatypeConstants.GMONTH, CoreDatatype.XSD.GMONTH);
+
+			datatypes.put(DatatypeConstants.DURATION, CoreDatatype.XSD.DURATION);
+			datatypes.put(DatatypeConstants.DURATION_DAYTIME, CoreDatatype.XSD.DAYTIMEDURATION);
+			datatypes.put(DatatypeConstants.DURATION_YEARMONTH, CoreDatatype.XSD.YEARMONTHDURATION);
+
+			return datatypes;
 		}
 
 		private static XMLGregorianCalendar parseCalendar(String label) {
 			return DATATYPE_FACTORY.get().newXMLGregorianCalendar(label);
 		}
 
-		private XMLGregorianCalendar value;
+		private final XMLGregorianCalendar value;
 
-		private String label;
-		private IRI datatype;
+		private final String label;
+		private final CoreDatatype.XSD datatype;
 
 		CalendarLiteral(GregorianCalendar calendar) {
 			this(DATATYPE_FACTORY.get().newXMLGregorianCalendar(calendar));
@@ -966,7 +975,15 @@ public abstract class AbstractLiteral implements Literal {
 			this.value = calendar;
 
 			this.label = calendar.toXMLFormat();
-			this.datatype = datatype(calendar.getXMLSchemaType());
+			QName qname = calendar.getXMLSchemaType();
+
+			datatype = DATATYPES.get(qname);
+
+			if (datatype == null) {
+				throw new IllegalArgumentException(String.format(
+						"QName <%s> cannot be mapped to an XML Schema date/time datatype", qname
+				));
+			}
 		}
 
 		@Override
@@ -981,7 +998,7 @@ public abstract class AbstractLiteral implements Literal {
 
 		@Override
 		public IRI getDatatype() {
-			return datatype;
+			return datatype.getIri();
 		}
 
 		@Override
@@ -989,6 +1006,10 @@ public abstract class AbstractLiteral implements Literal {
 			return value;
 		}
 
+		@Override
+		public CoreDatatype getCoreDatatype() {
+			return datatype;
+		}
 	}
 
 }

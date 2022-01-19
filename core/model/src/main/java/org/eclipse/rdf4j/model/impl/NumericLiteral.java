@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model.impl;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -30,7 +31,13 @@ public class NumericLiteral extends SimpleLiteral {
 		this.number = number;
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected NumericLiteral(Number number, XSD.Datatype datatype) {
+		super(XMLDatatypeUtil.toString(number), datatype);
+		this.number = number;
+	}
+
+	protected NumericLiteral(Number number, CoreDatatype datatype) {
 		super(XMLDatatypeUtil.toString(number), datatype);
 		this.number = number;
 	}

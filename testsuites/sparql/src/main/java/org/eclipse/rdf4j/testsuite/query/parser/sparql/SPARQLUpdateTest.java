@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -548,7 +549,7 @@ public abstract class SPARQLUpdateTest {
 
 		IRI age = f.createIRI(EX_NS, "age");
 		Literal originalAgeValue = f.createLiteral("42", XSD.INTEGER);
-		Literal correctAgeValue = f.createLiteral("43", XSD.INTEGER);
+		Literal correctAgeValue = f.createLiteral("43", CoreDatatype.XSD.INTEGER);
 		Literal inCorrectAgeValue = f.createLiteral("46", XSD.INTEGER);
 
 		assertTrue(con.hasStatement(bob, age, originalAgeValue, true));
@@ -861,7 +862,8 @@ public abstract class SPARQLUpdateTest {
 
 		String msg = "new statement about ex:book1 should have been inserted";
 
-		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral("the number four", XSD.INTEGER), true));
+		assertTrue(msg,
+				con.hasStatement(book1, DC.TITLE, f.createLiteral("the number four", CoreDatatype.XSD.INTEGER), true));
 	}
 
 	@Test

@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.Random;
 
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -122,7 +123,7 @@ public abstract class AbstractQueryResultIOTest {
 		solution1.addBinding("a", vf.createIRI("foo:bar"));
 
 		MapBindingSet solution2 = new MapBindingSet(bindingNames.size());
-		solution2.addBinding("a", vf.createLiteral("2.0", XSD.DOUBLE));
+		solution2.addBinding("a", vf.createLiteral("2.0", CoreDatatype.XSD.DOUBLE));
 
 		MapBindingSet solution3 = new MapBindingSet(bindingNames.size());
 		solution3.addBinding("a", vf.createBNode("bnode3"));
@@ -134,7 +135,7 @@ public abstract class AbstractQueryResultIOTest {
 		solution5.addBinding("a", vf.createLiteral("\"\"double-quoted string", XSD.STRING));
 
 		MapBindingSet solution6 = new MapBindingSet(bindingNames.size());
-		solution6.addBinding("a", vf.createLiteral("space at the end         ", XSD.STRING));
+		solution6.addBinding("a", vf.createLiteral("space at the end         ", CoreDatatype.XSD.STRING));
 
 		MapBindingSet solution7 = new MapBindingSet(bindingNames.size());
 		solution7.addBinding("a", vf.createLiteral("space at the end         ", XSD.STRING));
@@ -143,7 +144,7 @@ public abstract class AbstractQueryResultIOTest {
 		solution8.addBinding("a", vf.createLiteral("\"\"double-quoted string with no datatype"));
 
 		MapBindingSet solution9 = new MapBindingSet(bindingNames.size());
-		solution9.addBinding("a", vf.createLiteral("newline at the end \n", XSD.STRING));
+		solution9.addBinding("a", vf.createLiteral("newline at the end \n", CoreDatatype.XSD.STRING));
 
 		MapBindingSet solution10 = new MapBindingSet(bindingNames.size());
 		solution10.addBinding("a", vf.createTriple(vf.createIRI("urn:a"), RDF.TYPE, vf.createIRI("urn:b")));
@@ -165,7 +166,7 @@ public abstract class AbstractQueryResultIOTest {
 		solution1.addBinding("c", vf.createLiteral("baz"));
 
 		MapBindingSet solution2 = new MapBindingSet(bindingNames.size());
-		solution2.addBinding("a", vf.createLiteral("1", XSD.INTEGER));
+		solution2.addBinding("a", vf.createLiteral("1", CoreDatatype.XSD.INTEGER));
 		solution2.addBinding("c", vf.createLiteral("Hello World!", "en"));
 
 		MapBindingSet solution3 = new MapBindingSet(bindingNames.size());
