@@ -40,18 +40,21 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 0)
+@Warmup(iterations = 10)
 @BenchmarkMode({ Mode.AverageTime })
-// use G1GC because the workload is multi-threaded
+// use UseSerialGC to make GC more evident
 @Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms400M", "-Xmx400M", "-XX:+UseSerialGC",  "-XX:StartFlightRecording=delay=60s,duration=240s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 100)
+@Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class SortBenchmark {
 
@@ -71,14 +74,12 @@ public class SortBenchmark {
 	List<Value> valuesList;
 
 	public static void main(String[] args) throws RunnerException, IOException, InterruptedException {
-		SortBenchmark sortBenchmark = new SortBenchmark();
-		sortBenchmark.setup();
-		System.out.println("sort");
-		while (true) {
-			sortBenchmark.sortDirectly();
-			System.out.println(".");
-		}
-//		sortBenchmark.tearDown();
+		Options opt = new OptionsBuilder()
+				.include("SortBenchmark.*") // adapt to run other benchmark tests
+				.forks(1)
+				.build();
+
+		new Runner(opt).run();
 	}
 
 	@Setup(Level.Trial)
