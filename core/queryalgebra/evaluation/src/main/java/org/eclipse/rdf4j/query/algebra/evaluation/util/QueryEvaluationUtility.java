@@ -13,19 +13,22 @@ import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
-import org.eclipse.rdf4j.query.algebra.Or;
 
 /**
+ * This class will take over for QueryEvaluationUtil. Currently marked as InternalUseOnly because there may still be
+ * changes to how this class works.
+ *
  * @author Arjohn Kampman
  * @author Håvard M. Ottestad
  */
+@InternalUseOnly()
 public class QueryEvaluationUtility {
 
 	/**
@@ -150,8 +153,8 @@ public class QueryEvaluationUtility {
 			if (commonDatatype != null) {
 
 				try {
-					Order order = handleCommonDatatype(leftLit, rightLit, strict, leftXSDDatatype,
-							rightXSDDatatype, leftLangLit, rightLangLit, commonDatatype);
+					Order order = handleCommonDatatype(leftLit, rightLit, strict, leftXSDDatatype, rightXSDDatatype,
+							leftLangLit, rightLangLit, commonDatatype);
 
 					if (order == Order.illegalArgument) {
 						if (leftLit.equals(rightLit)) {
@@ -234,8 +237,7 @@ public class QueryEvaluationUtility {
 			if (compare != DatatypeConstants.INDETERMINATE) {
 				return Order.from(compare);
 			} else {
-				return otherCases(leftLit, rightLit, leftCoreDatatype, rightCoreDatatype, leftLangLit,
-						rightLangLit);
+				return otherCases(leftLit, rightLit, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit);
 			}
 
 		} else if (commonDatatype == CoreDatatype.XSD.STRING) {
@@ -245,9 +247,8 @@ public class QueryEvaluationUtility {
 		return null;
 	}
 
-	private static Order otherCases(Literal leftLit, Literal rightLit,
-			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
-			boolean rightLangLit) {
+	private static Order otherCases(Literal leftLit, Literal rightLit, CoreDatatype.XSD leftCoreDatatype,
+			CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit, boolean rightLangLit) {
 		boolean literalsEqual = leftLit.equals(rightLit);
 
 		if (!literalsEqual) {

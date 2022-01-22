@@ -26,16 +26,16 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * SELECT ?s ?p ?o
  * WHERE {?s ?p ?o }
  * </code> Does not need a projection as the inner statement pattern returns the same result.
- * 
+ *
  * While <code>
- *  * SELECT ?s ?p 
+ *  * SELECT ?s ?p
  * WHERE {?s ?p ?o }
  * </code> Does as the statement pattern has one more variable in use than the projection.
- * 
+ *
  * Note: this optimiser should run after optimisations ran that depend on Projections. e.g.
- * 
+ *
  * @see UnionScopeChangeOptimizer
- * 
+ *
  * @author Jerven Bolleman
  */
 public class ProjectionRemovalOptimizer implements QueryOptimizer {
