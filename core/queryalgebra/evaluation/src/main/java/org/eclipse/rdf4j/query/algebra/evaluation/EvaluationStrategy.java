@@ -94,7 +94,7 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	/**
 	 * Prepare a QueryEvaluationStep that tries to do as much work once per query avoiding repeated calls to the same
 	 * code as much as possible. This depends on java invoke dynamic for performance.
-	 * 
+	 *
 	 * @param expr that is to be evaluated later
 	 * @return a QueryEvaluationStep that may avoid doing repeating the same work over and over.
 	 */

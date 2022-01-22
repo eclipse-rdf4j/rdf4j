@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * The SPARQL built-in {@link Function} SHA512, as defined in
@@ -39,7 +39,7 @@ public class SHA512 extends HashFunction {
 		if (args[0] instanceof Literal) {
 			Literal literal = (Literal) args[0];
 
-			if (QueryEvaluationUtil.isSimpleLiteral(literal) || XSD.STRING.equals(literal.getDatatype())) {
+			if (QueryEvaluationUtility.isSimpleLiteral(literal) || XSD.STRING.equals(literal.getDatatype())) {
 				String lexValue = literal.getLabel();
 
 				try {

@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * The SPARQL built-in {@link Function} STRBEFORE, as defined in
@@ -44,7 +44,7 @@ public class StrBefore implements Function {
 			Literal leftLit = (Literal) leftArg;
 			Literal rightLit = (Literal) rightArg;
 
-			if (QueryEvaluationUtil.compatibleArguments(leftLit, rightLit)) {
+			if (QueryEvaluationUtility.compatibleArguments(leftLit, rightLit)) {
 				Optional<String> leftLanguage = leftLit.getLanguage();
 				IRI leftDt = leftLit.getDatatype();
 

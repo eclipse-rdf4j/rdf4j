@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -41,13 +42,13 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * <code>
  *    ModelBuilder builder = new ModelBuilder();
  *
- *    // set some namespaces 
+ *    // set some namespaces
  *    builder.setNamespace("ex", "http://example.org/").setNamespace(FOAF.NS);
  *
  *    // add a new named graph to the model
  *    builder.namedGraph("ex:graph1")
  *               // add statements about resource ex:john
- *              .subject("ex:john")                      
+ *              .subject("ex:john")
  *           	  .add(FOAF.NAME, "John") // add the triple (ex:john, foaf:name "John") to the named graph
  *           	  .add(FOAF.AGE, 42)
  *           	  .add(FOAF.MBOX, "john@example.org");
@@ -79,7 +80,7 @@ public class ModelBuilder {
 
 	/**
 	 * Create a new {@link ModelBuilder} which will append to the supplied {@link Model}.
-	 * 
+	 *
 	 * @param model
 	 */
 	public ModelBuilder(Model model) {
@@ -202,7 +203,7 @@ public class ModelBuilder {
 
 		if (objectValue == null) {
 			Literal literal = Values.literal(object);
-			if (!literal.getDatatype().equals(XSD.STRING)) {
+			if (literal.getCoreDatatype() != CoreDatatype.XSD.STRING) {
 				model.setNamespace(XSD.NS);
 			}
 			objectValue = literal;

@@ -47,7 +47,7 @@ public interface QueryEvaluationStep {
 
 	/**
 	 * A fall back implementation that wraps a pre-existing evaluate method on a strategy
-	 * 
+	 *
 	 * @param strategy that can evaluate the tuple expr.
 	 * @param expr     that is going to be evaluated
 	 * @return a thin wrapper arround the evaluation call.
@@ -64,7 +64,7 @@ public interface QueryEvaluationStep {
 	/**
 	 * Wrap an QueryEvalationStep: where we apply a function on every evaluation result of the wrapped EvaluationStep.
 	 * Useful to add a timing function
-	 * 
+	 *
 	 * @param qes  an QueryEvaluationStep that needs to return modified evaluation results
 	 * @param wrap the function that will do the modification
 	 * @return a new evaluation step that executes wrap on the inner qes.

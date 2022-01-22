@@ -276,7 +276,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	/**
-	 * 
+	 *
 	 * @param statementPattern
 	 * @param contextValue
 	 * @return the contexts that are valid for this statement pattern or null
@@ -348,7 +348,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	/**
 	 * Converts statements into the required bindingsets. A lot of work is done in the constructor and then uses
 	 * invokedynamic code with lambdas for the actual conversion.
-	 * 
+	 *
 	 * This allows avoiding of significant work during the iteration. Which pays of if the iteration is long, otherwise
 	 * it of course is an unneeded expense.
 	 */
@@ -383,10 +383,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	/**
 	 * We are going to chain biconsumer functions allowing us to avoid a lot of equals etc. code
-	 * 
+	 *
 	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
 	 * evaluate(bs).
-	 * 
+	 *
 	 * @return a converter from statement into MutableBindingSet
 	 */
 	private static BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context,
@@ -449,7 +449,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	/**
 	 * A convience function to chain the consumers together if one exists otherwise returns the new one.
-	 * 
+	 *
 	 * @param co  an earlier chain
 	 * @param and the consumer to add to the chain
 	 * @return a chain or the new (and) one

@@ -263,10 +263,17 @@ public interface CoreDatatype {
 			return optional;
 		}
 
+		@Override
+		public String toString() {
+			return iri.toString();
+		}
+
 	}
 
 	enum RDF implements CoreDatatype {
 
+		HTML(iri("HTML")),
+		XMLLITERAL(iri("XMLLiteral")),
 		LANGSTRING(iri("langString"));
 
 		public static final String NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
@@ -297,6 +304,11 @@ public interface CoreDatatype {
 		@Override
 		public Optional<RDF> asRDFDatatype() {
 			return optional;
+		}
+
+		@Override
+		public String toString() {
+			return iri.toString();
 		}
 
 	}
@@ -335,6 +347,10 @@ public interface CoreDatatype {
 			return optional;
 		}
 
+		@Override
+		public String toString() {
+			return iri.toString();
+		}
 	}
 
 }

@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep.ConstantQueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class RegexValueEvaluationStepSupplier {
@@ -51,8 +51,8 @@ public class RegexValueEvaluationStepSupplier {
 				farg = strategy.evaluate(flagsArg, bindings);
 			}
 
-			if (QueryEvaluationUtil.isStringLiteral(arg) && QueryEvaluationUtil.isSimpleLiteral(parg)
-					&& (farg == null || QueryEvaluationUtil.isSimpleLiteral(farg))) {
+			if (QueryEvaluationUtility.isStringLiteral(arg) && QueryEvaluationUtility.isSimpleLiteral(parg)
+					&& (farg == null || QueryEvaluationUtility.isSimpleLiteral(farg))) {
 				String text = ((Literal) arg).getLabel();
 				String ptn = ((Literal) parg).getLabel();
 				// TODO should this Pattern be cached?
@@ -91,8 +91,8 @@ public class RegexValueEvaluationStepSupplier {
 		if (flagsArg != null) {
 			farg = fargStep.evaluate(EmptyBindingSet.getInstance());
 		}
-		if (QueryEvaluationUtil.isSimpleLiteral(parg)
-				&& (farg == null || QueryEvaluationUtil.isSimpleLiteral(farg))) {
+		if (QueryEvaluationUtility.isSimpleLiteral(parg)
+				&& (farg == null || QueryEvaluationUtility.isSimpleLiteral(farg))) {
 			String ptn = ((Literal) parg).getLabel();
 			int f = extractRegexFlags(farg);
 			Pattern pattern = Pattern.compile(ptn, f);
@@ -103,7 +103,7 @@ public class RegexValueEvaluationStepSupplier {
 				public Value evaluate(BindingSet bindings)
 						throws ValueExprEvaluationException, QueryEvaluationException {
 					Value arg = argStep.evaluate(bindings);
-					if (QueryEvaluationUtil.isStringLiteral(arg)) {
+					if (QueryEvaluationUtility.isStringLiteral(arg)) {
 						String text = ((Literal) arg).getLabel();
 						boolean result = pattern.matcher(text).find();
 						BooleanLiteral valueOf = BooleanLiteral.valueOf(result);
@@ -125,8 +125,8 @@ public class RegexValueEvaluationStepSupplier {
 		if (flagsArg != null) {
 			farg = fargStep.evaluate(EmptyBindingSet.getInstance());
 		}
-		if (QueryEvaluationUtil.isStringLiteral(arg) && QueryEvaluationUtil.isSimpleLiteral(parg)
-				&& (farg == null || QueryEvaluationUtil.isSimpleLiteral(farg))) {
+		if (QueryEvaluationUtility.isStringLiteral(arg) && QueryEvaluationUtility.isSimpleLiteral(parg)
+				&& (farg == null || QueryEvaluationUtility.isSimpleLiteral(farg))) {
 			String text = ((Literal) arg).getLabel();
 			String ptn = ((Literal) parg).getLabel();
 			int f = extractRegexFlags(farg);

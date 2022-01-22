@@ -11,11 +11,10 @@ import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
@@ -36,29 +35,27 @@ public class XMLDatatypeMathUtil {
 	 * @return a datatype literal
 	 */
 	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op) throws ValueExprEvaluationException {
-		IRI leftDatatype = leftLit.getDatatype();
-		IRI rightDatatype = rightLit.getDatatype();
+		CoreDatatype.XSD leftDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);
+		CoreDatatype.XSD rightDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);
 
-		if (XMLDatatypeUtil.isNumericDatatype(leftDatatype) && XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {
-			return MathUtil.compute(leftLit, rightLit, op);
-		} else if (XMLDatatypeUtil.isDurationDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
-			return operationsBetweenDurations(leftLit, rightLit, op);
-		} else if (XMLDatatypeUtil.isDecimalDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
-			return operationsBetweenDurationAndDecimal(rightLit, leftLit, op);
-		} else if (XMLDatatypeUtil.isDurationDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isDecimalDatatype(rightDatatype)) {
-			return operationsBetweenDurationAndDecimal(leftLit, rightLit, op);
-		} else if (XMLDatatypeUtil.isCalendarDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isDurationDatatype(rightDatatype)) {
-			return operationsBetweenCalendarAndDuration(leftLit, rightLit, op);
-		} else if (XMLDatatypeUtil.isDurationDatatype(leftDatatype)
-				&& XMLDatatypeUtil.isCalendarDatatype(rightDatatype)) {
-			return operationsBetweenDurationAndCalendar(leftLit, rightLit, op);
-		} else {
-			throw new ValueExprEvaluationException("Mathematical operators are not supported on these operands");
+		if (leftDatatype != null && rightDatatype != null) {
+			if (leftDatatype.isNumericDatatype() && rightDatatype.isNumericDatatype()) {
+				return MathUtil.compute(leftLit, rightLit, op);
+			} else if (leftDatatype.isDurationDatatype() && rightDatatype.isDurationDatatype()) {
+				return operationsBetweenDurations(leftLit, rightLit, op);
+			} else if (leftDatatype.isDecimalDatatype() && rightDatatype.isDurationDatatype()) {
+				return operationsBetweenDurationAndDecimal(rightLit, leftLit, op);
+			} else if (leftDatatype.isDurationDatatype() && rightDatatype.isDecimalDatatype()) {
+				return operationsBetweenDurationAndDecimal(leftLit, rightLit, op);
+			} else if (leftDatatype.isCalendarDatatype() && rightDatatype.isDurationDatatype()) {
+				return operationsBetweenCalendarAndDuration(leftLit, rightLit, op);
+			} else if (leftDatatype.isDurationDatatype() && rightDatatype.isCalendarDatatype()) {
+				return operationsBetweenDurationAndCalendar(leftLit, rightLit, op);
+			}
 		}
+
+		throw new ValueExprEvaluationException("Mathematical operators are not supported on these operands");
+
 	}
 
 	private static Literal operationsBetweenDurations(Literal leftLit, Literal rightLit, MathOp op) {
@@ -156,7 +153,7 @@ public class XMLDatatypeMathUtil {
 		return SimpleValueFactory.getInstance().createLiteral(duration.toString(), getDatatypeForDuration(duration));
 	}
 
-	private static IRI getDatatypeForDuration(Duration duration) {
+	private static CoreDatatype.XSD getDatatypeForDuration(Duration duration) {
 		// Could not be implemented with Duration.getXMLSchemaType that is too strict ("P1Y" is considered invalid)
 
 		boolean yearSet = duration.isSet(DatatypeConstants.YEARS);
@@ -167,11 +164,11 @@ public class XMLDatatypeMathUtil {
 		boolean secondSet = duration.isSet(DatatypeConstants.SECONDS);
 
 		if (!yearSet && !monthSet) {
-			return XSD.DAYTIMEDURATION;
+			return CoreDatatype.XSD.DAYTIMEDURATION;
 		}
 		if (!daySet && !hourSet && !minuteSet && !secondSet) {
-			return XSD.YEARMONTHDURATION;
+			return CoreDatatype.XSD.YEARMONTHDURATION;
 		}
-		return XSD.DURATION;
+		return CoreDatatype.XSD.DURATION;
 	}
 }

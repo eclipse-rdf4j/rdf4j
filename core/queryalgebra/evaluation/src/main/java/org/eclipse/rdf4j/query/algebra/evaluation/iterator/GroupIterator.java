@@ -31,9 +31,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -169,7 +169,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	/**
 	 * Only create a disk based set once the contents are large enough that it starts to pay off.
-	 * 
+	 *
 	 * @param <T> of the contents of the set.
 	 */
 	private class MemoryTillSizeXSet<T> extends AbstractSet<T> {
@@ -517,7 +517,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	/**
 	 * This is to collect together in operation an aggregate function the name of it. And the suppliers that will give
 	 * the unique set and final value collectors per final binding set.
-	 * 
+	 *
 	 * Making an aggregate function is quite a lot of work and we do not want to repeat that for each final binding.
 	 */
 	private class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
@@ -656,7 +656,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		@Override
 		public Value getFinalValue() {
-			return vf.createLiteral(Long.toString(value), XSD.INTEGER);
+			return vf.createLiteral(Long.toString(value), CoreDatatype.XSD.INTEGER);
 		}
 	}
 
@@ -670,7 +670,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	private class IntegerCollector implements AggregateCollector {
-		private Literal value = vf.createLiteral("0", XSD.INTEGER);
+		private Literal value = vf.createLiteral("0", CoreDatatype.XSD.INTEGER);
 
 		@Override
 		public Value getFinalValue() {
@@ -679,7 +679,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	private class AvgCollector implements AggregateCollector {
-		private Literal sum = vf.createLiteral("0", XSD.INTEGER);
+		private Literal sum = vf.createLiteral("0", CoreDatatype.XSD.INTEGER);
 		private long count;
 		private ValueExprEvaluationException typeError = null;
 
@@ -692,7 +692,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 
 			if (count == 0) {
-				return vf.createLiteral("0", XSD.INTEGER);
+				return vf.createLiteral("0", CoreDatatype.XSD.INTEGER);
 			}
 
 			Literal sizeLit = vf.createLiteral(count);

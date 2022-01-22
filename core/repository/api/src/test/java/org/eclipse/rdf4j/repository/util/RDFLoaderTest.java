@@ -50,14 +50,14 @@ import com.github.tomakehurst.wiremock.junit.WireMockRule;
 
 /**
  * Unit tests for {@link RDFLoader}.
- * 
+ *
  * @author Manuel Fiorelli
  *
  */
 public class RDFLoaderTest {
 
 	@ClassRule
-	public static WireMockRule wireMockRule = new WireMockRule(wireMockConfig().dynamicPort().dynamicHttpsPort());
+	public static WireMockRule wireMockRule = new WireMockRule(wireMockConfig().dynamicPort());
 
 	@Test
 	public void testTurtleJavaResource() throws Exception {
@@ -172,7 +172,7 @@ public class RDFLoaderTest {
 			try {
 				stubFor(get("/Socrates")
 						.willReturn(
-								permanentRedirect("https://localhost:" + wireMockRule.httpsPort() + "/Socrates.ttl")));
+								permanentRedirect("http://localhost:" + wireMockRule.port() + "/Socrates.ttl")));
 
 				stubFor(get("/Socrates.ttl")
 						.willReturn(aResponse()

@@ -28,7 +28,7 @@ public class CalendarLiteral extends SimpleLiteral {
 	 * {@link XMLGregorianCalendar#getXMLSchemaType()}.
 	 */
 	protected CalendarLiteral(XMLGregorianCalendar calendar) {
-		super(calendar.toXMLFormat(), XMLDatatypeUtil.qnameToURI(calendar.getXMLSchemaType()));
+		super(calendar.toXMLFormat(), XMLDatatypeUtil.qnameToCoreDatatype(calendar.getXMLSchemaType()));
 		this.calendar = calendar;
 	}
 

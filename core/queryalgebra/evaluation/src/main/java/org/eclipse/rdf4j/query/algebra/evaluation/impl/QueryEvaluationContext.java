@@ -23,10 +23,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * A QueryEvaluationContext stores values and methods that are valid throughout the lifetime of a query execution.
- * 
+ *
  * A classic case is the case of NOW() evaluation to the same instant for all invocations of that function in one query
  * evaluation.
- * 
+ *
  */
 public interface QueryEvaluationContext {
 

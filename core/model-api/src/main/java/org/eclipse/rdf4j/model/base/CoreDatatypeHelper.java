@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.IRI;
 @InternalUseOnly
 class CoreDatatypeHelper {
 
-	static Map<IRI, CoreDatatype> reverseLookup;
+	private static Map<IRI, CoreDatatype> reverseLookup;
 
 	static Map<IRI, CoreDatatype> getReverseLookup() {
 
@@ -55,7 +55,7 @@ class CoreDatatypeHelper {
 		public DatatypeIRI(String namespace, String localName) {
 			this.namespace = namespace;
 			this.localName = localName;
-			this.stringValue = namespace.concat(localName);
+			this.stringValue = namespace.concat(localName).intern();
 		}
 
 		@Override
@@ -73,5 +73,9 @@ class CoreDatatypeHelper {
 			return localName;
 		}
 
+		@Override
+		public String toString() {
+			return stringValue;
+		}
 	}
 }

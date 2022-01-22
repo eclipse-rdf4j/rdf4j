@@ -29,7 +29,7 @@ public class DecimalLiteral extends SimpleLiteral {
 	 * Creates an xsd:decimal literal with the specified value.
 	 */
 	protected DecimalLiteral(BigDecimal value) {
-		this(value, XSD.DECIMAL);
+		this(value, CoreDatatype.XSD.DECIMAL);
 	}
 
 	/**

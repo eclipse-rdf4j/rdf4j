@@ -12,6 +12,7 @@ import java.io.IOException;
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 
 /**
@@ -39,10 +40,15 @@ public class CalendarMemLiteral extends MemLiteral {
 	}
 
 	public CalendarMemLiteral(Object creator, String label, XMLGregorianCalendar calendar) {
-		this(creator, label, XMLDatatypeUtil.qnameToURI(calendar.getXMLSchemaType()), calendar);
+		this(creator, label, XMLDatatypeUtil.qnameToCoreDatatype(calendar.getXMLSchemaType()), calendar);
 	}
 
 	public CalendarMemLiteral(Object creator, String label, IRI datatype, XMLGregorianCalendar calendar) {
+		super(creator, label, datatype);
+		this.calendar = calendar;
+	}
+
+	public CalendarMemLiteral(Object creator, String label, CoreDatatype datatype, XMLGregorianCalendar calendar) {
 		super(creator, label, datatype);
 		this.calendar = calendar;
 	}

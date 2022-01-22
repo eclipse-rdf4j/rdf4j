@@ -236,6 +236,16 @@ public abstract class AbstractLiteral implements Literal {
 			this.datatype = datatype.getIri();
 		}
 
+		TypedLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {
+			assert datatype != null;
+			assert coreDatatype != null;
+			assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
+
+			this.label = label;
+			this.datatype = datatype;
+			this.coreDatatype = coreDatatype;
+		}
+
 		@Override
 		public String getLabel() {
 			return label;
@@ -379,7 +389,7 @@ public abstract class AbstractLiteral implements Literal {
 		protected Number value;
 
 		private final String label;
-		private final CoreDatatype datatype;
+		private final CoreDatatype.XSD datatype;
 
 		NumberLiteral(byte value) {
 			this(value, Byte.toString(value), CoreDatatype.XSD.BYTE);
@@ -405,7 +415,7 @@ public abstract class AbstractLiteral implements Literal {
 			this(value, toString(value), CoreDatatype.XSD.DOUBLE);
 		}
 
-		NumberLiteral(Number value, String label, CoreDatatype datatype) {
+		NumberLiteral(Number value, String label, CoreDatatype.XSD datatype) {
 			this.value = value;
 			this.label = label;
 			this.datatype = datatype;
@@ -585,7 +595,7 @@ public abstract class AbstractLiteral implements Literal {
 
 				.toFormatter();
 
-		private static final Map<Integer, CoreDatatype> DATATYPES = datatypes();
+		private static final Map<Integer, CoreDatatype.XSD> DATATYPES = datatypes();
 		private static final Map<CoreDatatype.XSD, DateTimeFormatter> FORMATTERS = formatters();
 
 		static TemporalAccessor parseTemporalAccessor(String label) throws DateTimeException {
@@ -601,14 +611,14 @@ public abstract class AbstractLiteral implements Literal {
 			return value;
 		}
 
-		private static Map<Integer, CoreDatatype> datatypes() {
+		private static Map<Integer, CoreDatatype.XSD> datatypes() {
 
 			int date = key(YEAR, MONTH_OF_YEAR, DAY_OF_MONTH);
 			int time = key(HOUR_OF_DAY, MINUTE_OF_HOUR, SECOND_OF_MINUTE);
 			int nano = key(NANO_OF_SECOND);
 			int zone = key(OFFSET_SECONDS);
 
-			Map<Integer, CoreDatatype> datatypes = new HashMap<>();
+			Map<Integer, CoreDatatype.XSD> datatypes = new HashMap<>();
 
 			datatypes.put(date + time, CoreDatatype.XSD.DATETIME);
 			datatypes.put(date + time + nano, CoreDatatype.XSD.DATETIME);
@@ -689,7 +699,7 @@ public abstract class AbstractLiteral implements Literal {
 		private final TemporalAccessor value;
 
 		private final String label;
-		private final CoreDatatype datatype;
+		private final CoreDatatype.XSD datatype;
 
 		TemporalAccessorLiteral(TemporalAccessor value) {
 

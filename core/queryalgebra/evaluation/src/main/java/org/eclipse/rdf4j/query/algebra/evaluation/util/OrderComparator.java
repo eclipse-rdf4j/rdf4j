@@ -10,12 +10,15 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -32,7 +35,7 @@ import org.slf4j.LoggerFactory;
  */
 public class OrderComparator implements Comparator<BindingSet> {
 
-	private final transient Logger logger = LoggerFactory.getLogger(OrderComparator.class);
+	private final static Logger logger = LoggerFactory.getLogger(OrderComparator.class);
 
 	private final ValueComparator cmp;
 
@@ -45,16 +48,12 @@ public class OrderComparator implements Comparator<BindingSet> {
 		for (OrderElem element : order.getElements()) {
 			final QueryValueEvaluationStep prepared = strategy.precompile(element.getExpr(), context);
 			final boolean ascending = element.isAscending();
-			Comparator<BindingSet> comparator = new Comparator<BindingSet>() {
+			Comparator<BindingSet> comparator = (o1, o2) -> {
+				Value v1 = prepared.evaluate(o1);
+				Value v2 = prepared.evaluate(o2);
 
-				@Override
-				public int compare(BindingSet o1, BindingSet o2) {
-					Value v1 = prepared.evaluate(o1);
-					Value v2 = prepared.evaluate(o2);
-
-					int compare = cmp.compare(v1, v2);
-					return ascending ? compare : -compare;
-				}
+				int compare = cmp.compare(v1, v2);
+				return ascending ? compare : -compare;
 			};
 			allComparator = andThen(allComparator, comparator);
 		}
@@ -75,7 +74,6 @@ public class OrderComparator implements Comparator<BindingSet> {
 
 	@Override
 	public int compare(BindingSet o1, BindingSet o2) {
-
 		try {
 			int comparedContents = bindingContentsComparator.compare(o1, o2);
 			if (comparedContents != 0) {
@@ -104,14 +102,24 @@ public class OrderComparator implements Comparator<BindingSet> {
 
 			// we create an ordered list of binding names (using natural string order) to use for
 			// consistent iteration over binding names and binding values.
-			final ArrayList<String> o1bindingNamesOrdered = new ArrayList<>(o1.getBindingNames());
-			Collections.sort(o1bindingNamesOrdered);
+			List<String> o1bindingNamesOrdered;
+			List<String> o2bindingNamesOrdered;
+
+			if (o1 instanceof ArrayBindingSet && o2 instanceof ArrayBindingSet) {
+				o1bindingNamesOrdered = ((ArrayBindingSet) o1).getSortedBindingNames();
+				o2bindingNamesOrdered = ((ArrayBindingSet) o2).getSortedBindingNames();
+			} else {
+				o1bindingNamesOrdered = getSortedBindingNames(o1.getBindingNames());
+				o2bindingNamesOrdered = null;
+			}
 
 			// binding set sizes are equal. compare on binding names.
-			if (!o1.getBindingNames().equals(o2.getBindingNames())) {
+			if ((o2bindingNamesOrdered != null && !sortedEquals(o1bindingNamesOrdered, o2bindingNamesOrdered))
+					|| (!o1.getBindingNames().equals(o2.getBindingNames()))) {
 
-				final ArrayList<String> o2bindingNamesOrdered = new ArrayList<>(o2.getBindingNames());
-				Collections.sort(o2bindingNamesOrdered);
+				if (o2bindingNamesOrdered == null) {
+					o2bindingNamesOrdered = getSortedBindingNames(o2.getBindingNames());
+				}
 
 				for (int i = 0; i < o1bindingNamesOrdered.size(); i++) {
 					String o1bn = o1bindingNamesOrdered.get(i);
@@ -140,4 +148,29 @@ public class OrderComparator implements Comparator<BindingSet> {
 			return 0;
 		}
 	}
+
+	private boolean sortedEquals(List<String> o1bindingNamesOrdered, List<String> o2bindingNamesOrdered) {
+		if (o1bindingNamesOrdered.size() != o2bindingNamesOrdered.size()) {
+			return false;
+		}
+
+		for (int i = 0; i < o1bindingNamesOrdered.size(); i++) {
+			if (!o1bindingNamesOrdered.get(i).equals(o2bindingNamesOrdered.get(i))) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	private static List<String> getSortedBindingNames(Set<String> bindingNames) {
+		if (bindingNames.size() == 1) {
+			return Collections.singletonList(bindingNames.iterator().next());
+		}
+
+		ArrayList<String> list = new ArrayList<>(bindingNames);
+		Collections.sort(list);
+		return list;
+	}
+
 }

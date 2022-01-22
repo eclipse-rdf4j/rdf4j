@@ -27,11 +27,10 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -143,6 +142,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.EvaluationStrategies;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.util.UUIDable;
@@ -1068,7 +1068,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 				@Override
 				public Value evaluate(BindingSet bindings)
-						throws ValueExprEvaluationException, QueryEvaluationException {
+						throws QueryEvaluationException {
 					Value value = getValue.apply(bindings);
 					if (value == null) {
 						throw new ValueExprEvaluationException();
@@ -1128,7 +1128,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (argValue instanceof Literal) {
 			Literal literal = (Literal) argValue;
 
-			if (QueryEvaluationUtil.isSimpleLiteral(literal)) {
+			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
 				return literal;
 			} else {
 				return tripleSource.getValueFactory().createLiteral(literal.getLabel());
@@ -1149,7 +1149,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		if (argValue instanceof Literal) {
 			Literal literal = (Literal) argValue;
 
-			if (QueryEvaluationUtil.isSimpleLiteral(literal)) {
+			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
 				return literal;
 			} else {
 				return tripleSource.getValueFactory().createLiteral(literal.getLabel());
@@ -1184,10 +1184,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				// literal with datatype
 				return literal.getDatatype();
 			} else if (literal.getLanguage().isPresent()) {
-				return RDF.LANGSTRING;
+				return CoreDatatype.RDF.LANGSTRING.getIri();
 			} else {
 				// simple literal
-				return XSD.STRING;
+				return CoreDatatype.XSD.STRING.getIri();
 			}
 
 		}
@@ -1271,7 +1271,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	/**
 	 * Determines whether the operand (a variable) contains a numeric datatyped literal, i.e. a literal with datatype
-	 * xsd:float, xsd:double, xsd:decimal, or a derived datatype of xsd:decimal.
+	 * CoreDatatype.XSD:float, CoreDatatype.XSD:double, CoreDatatype.XSD:decimal, or a derived datatype of
+	 * CoreDatatype.XSD:decimal.
 	 *
 	 * @return <var>true</var> if the operand contains a numeric datatyped literal, <var>false</var> otherwise.
 	 */
@@ -1373,7 +1374,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	private Value evaluateLangMatch(Value langTagValue, Value langRangeValue) {
-		if (QueryEvaluationUtil.isSimpleLiteral(langTagValue) && QueryEvaluationUtil.isSimpleLiteral(langRangeValue)) {
+		if (QueryEvaluationUtility.isSimpleLiteral(langTagValue)
+				&& QueryEvaluationUtility.isSimpleLiteral(langRangeValue)) {
 			String langTag = ((Literal) langTagValue).getLabel();
 			String langRange = ((Literal) langRangeValue).getLabel();
 
@@ -1529,8 +1531,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		boolean allConstant = true;
 		for (int i = 0; i < args.size(); i++) {
 			argSteps[i] = precompile(args.get(i), context);
-			if (!argSteps[i].isConstant())
+			if (!argSteps[i].isConstant()) {
 				allConstant = false;
+			}
 		}
 		if (allConstant) {
 			Value[] argValues = evaluateAllArguments(args, argSteps, EmptyBindingSet.getInstance());
@@ -1541,7 +1544,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 				@Override
 				public Value evaluate(BindingSet bindings)
-						throws ValueExprEvaluationException, QueryEvaluationException {
+						throws QueryEvaluationException {
 					Value[] argValues = evaluateAllArguments(args, argSteps, bindings);
 					return function.evaluate(tripleSource, argValues);
 				}
@@ -1562,7 +1565,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	public Value evaluate(And node, BindingSet bindings) throws QueryEvaluationException {
 		try {
 			Value leftValue = evaluate(node.getLeftArg(), bindings);
-			if (!QueryEvaluationUtil.getEffectiveBooleanValue(leftValue)) {
+			if (QueryEvaluationUtility.getEffectiveBooleanValue(leftValue) == QueryEvaluationUtility.Result._false) {
 				// Left argument evaluates to false, we don't need to look any
 				// further
 				return BooleanLiteral.FALSE;
@@ -1571,7 +1574,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// Failed to evaluate the left argument. Result is 'false' when
 			// the right argument evaluates to 'false', failure otherwise.
 			Value rightValue = evaluate(node.getRightArg(), bindings);
-			if (!QueryEvaluationUtil.getEffectiveBooleanValue(rightValue)) {
+			if (QueryEvaluationUtility.getEffectiveBooleanValue(rightValue) == QueryEvaluationUtility.Result._false) {
 				return BooleanLiteral.FALSE;
 			} else {
 				throw new ValueExprEvaluationException();
@@ -1633,7 +1636,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * During the execution of a single query NOW() should always return the same result and is in practical terms a
 	 * constant during evaluation.
-	 * 
+	 *
 	 * @param node    that represent the NOW() function
 	 * @param context that holds the shared now() of the query invocation
 	 * @return a constant value evaluation step
@@ -1867,21 +1870,13 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	@Override
 	public boolean isTrue(ValueExpr expr, BindingSet bindings) throws QueryEvaluationException {
-		try {
-			Value value = evaluate(expr, bindings);
-			return QueryEvaluationUtil.getEffectiveBooleanValue(value);
-		} catch (ValueExprEvaluationException e) {
-			return false;
-		}
+		Value value = evaluate(expr, bindings);
+		return QueryEvaluationUtility.getEffectiveBooleanValue(value).orElse(false);
 	}
 
 	public boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings) throws QueryEvaluationException {
-		try {
-			Value value = expr.evaluate(bindings);
-			return QueryEvaluationUtil.getEffectiveBooleanValue(value);
-		} catch (ValueExprEvaluationException e) {
-			return false;
-		}
+		Value value = expr.evaluate(bindings);
+		return QueryEvaluationUtility.getEffectiveBooleanValue(value).orElse(false);
 	}
 
 	protected boolean isReducedOrDistinct(QueryModelNode node) {
@@ -2054,7 +2049,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * Supply a QueryValueEvalationStep that will invoke the function (operator passed in). It will try to optimise
 	 * constant argument to be called only once per query run,
-	 * 
+	 *
 	 * @param node      the node to evaluate
 	 * @param operation the function that wraps the operator.
 	 * @param context   in which the query is running.
@@ -2075,7 +2070,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 				@Override
 				public Value evaluate(BindingSet bindings)
-						throws ValueExprEvaluationException, QueryEvaluationException {
+						throws QueryEvaluationException {
 					Value rightVal = rightStep.evaluate(bindings);
 					return operation.apply(leftVal, rightVal);
 				}
@@ -2086,7 +2081,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 				@Override
 				public Value evaluate(BindingSet bindings)
-						throws ValueExprEvaluationException, QueryEvaluationException {
+						throws QueryEvaluationException {
 					Value leftVal = leftStep.evaluate(bindings);
 					Value result = operation.apply(leftVal, rightVal);
 					return result;
@@ -2097,7 +2092,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 				@Override
 				public Value evaluate(BindingSet bindings)
-						throws ValueExprEvaluationException, QueryEvaluationException {
+						throws QueryEvaluationException {
 					Value leftVal = leftStep.evaluate(bindings);
 					Value rightVal = rightStep.evaluate(bindings);
 					return operation.apply(leftVal, rightVal);
@@ -2108,7 +2103,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	/**
 	 * Return a QueryEvaluationStep that applies constant propegation.
-	 * 
+	 *
 	 * @param node      that will be evaluated/prepared
 	 * @param operation the task to be done
 	 * @param context   in which the evaluation takes place
@@ -2126,7 +2121,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 				@Override
 				public Value evaluate(BindingSet bindings)
-						throws ValueExprEvaluationException, QueryEvaluationException {
+						throws QueryEvaluationException {
 					Value argValue = argStep.evaluate(bindings);
 					return operation.apply(argValue);
 				}

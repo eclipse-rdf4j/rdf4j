@@ -789,19 +789,19 @@ public class Values {
 		Objects.requireNonNull(object, "object may not be null");
 
 		if (object instanceof Boolean) {
-			return valueFactory.createLiteral(((Boolean) object).booleanValue());
+			return valueFactory.createLiteral((Boolean) object);
 		} else if (object instanceof Byte) {
-			return valueFactory.createLiteral(((Byte) object).byteValue());
+			return valueFactory.createLiteral((Byte) object);
 		} else if (object instanceof Double) {
-			return valueFactory.createLiteral(((Double) object).doubleValue());
+			return valueFactory.createLiteral((Double) object);
 		} else if (object instanceof Float) {
-			return valueFactory.createLiteral(((Float) object).floatValue());
+			return valueFactory.createLiteral((Float) object);
 		} else if (object instanceof Integer) {
-			return valueFactory.createLiteral(((Integer) object).intValue());
+			return valueFactory.createLiteral((Integer) object);
 		} else if (object instanceof Long) {
-			return valueFactory.createLiteral(((Long) object).longValue());
+			return valueFactory.createLiteral((Long) object);
 		} else if (object instanceof Short) {
-			return valueFactory.createLiteral(((Short) object).shortValue());
+			return valueFactory.createLiteral((Short) object);
 		} else if (object instanceof XMLGregorianCalendar) {
 			return valueFactory.createLiteral((XMLGregorianCalendar) object);
 		} else if (object instanceof Date) {
@@ -809,12 +809,12 @@ public class Values {
 		} else if (object instanceof TemporalAccessor) {
 			return valueFactory.createLiteral((TemporalAccessor) object);
 		} else if (object instanceof String) {
-			return valueFactory.createLiteral(object.toString(), XSD.STRING);
+			return valueFactory.createLiteral(object.toString(), CoreDatatype.XSD.STRING);
 		} else {
 			if (throwExceptionOnFailure) {
 				throw new IllegalArgumentException("Unrecognized object type: " + object);
 			}
-			return valueFactory.createLiteral(object.toString(), XSD.STRING);
+			return valueFactory.createLiteral(object.toString(), CoreDatatype.XSD.STRING);
 		}
 	}
 }

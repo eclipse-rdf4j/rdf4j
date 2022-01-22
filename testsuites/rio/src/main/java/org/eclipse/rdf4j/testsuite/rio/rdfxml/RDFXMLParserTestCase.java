@@ -9,12 +9,13 @@ package org.eclipse.rdf4j.testsuite.rio.rdfxml;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.xml.parsers.ParserConfigurationException;
 
@@ -24,6 +25,7 @@ import org.apache.xml.security.c14n.InvalidCanonicalizerException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -53,11 +55,11 @@ public abstract class RDFXMLParserTestCase {
 	 * Constants *
 	 *-----------*/
 
-	private static String W3C_TESTS_DIR = "http://www.w3.org/2000/10/rdf-tests/rdfcore/";
+	private static final String W3C_TESTS_DIR = "http://www.w3.org/2000/10/rdf-tests/rdfcore/";
 
-	private static String LOCAL_TESTS_DIR = "/testcases/rdfxml/";
+	private static final String LOCAL_TESTS_DIR = "/testcases/rdfxml/";
 
-	private static String W3C_MANIFEST_FILE = W3C_TESTS_DIR + "Manifest.rdf";
+	private static final String W3C_MANIFEST_FILE = W3C_TESTS_DIR + "Manifest.rdf";
 
 	/*--------------------*
 	 * Static initializer *
@@ -140,9 +142,9 @@ public abstract class RDFXMLParserTestCase {
 		 * Variables *
 		 *-----------*/
 
-		private String inputURL;
+		private final String inputURL;
 
-		private String outputURL;
+		private final String outputURL;
 
 		/*--------------*
 		 * Constructors *
@@ -170,9 +172,9 @@ public abstract class RDFXMLParserTestCase {
 			StatementCollector inputCollector = new StatementCollector(inputCollection);
 			rdfxmlParser.setRDFHandler(inputCollector);
 
-			InputStream in = resolveURL(inputURL).openStream();
-			rdfxmlParser.parse(in, base(inputURL));
-			in.close();
+			try (InputStream in = resolveURL(inputURL).openStream()) {
+				rdfxmlParser.parse(in, base(inputURL));
+			}
 
 			// Parse expected output data
 			NTriplesParser ntriplesParser = new NTriplesParser();
@@ -184,24 +186,18 @@ public abstract class RDFXMLParserTestCase {
 			StatementCollector outputCollector = new StatementCollector(outputCollection);
 			ntriplesParser.setRDFHandler(outputCollector);
 
-			in = resolveURL(outputURL).openStream();
-			ntriplesParser.parse(in, base(inputURL));
-			in.close();
+			try (InputStream in = resolveURL(outputURL).openStream()) {
+				ntriplesParser.parse(in, base(inputURL));
+			}
 
 			// Check equality of the two models
 			if (!Models.isomorphic(inputCollection, outputCollection)) {
-				StringBuilder sb = new StringBuilder(1024);
-				sb.append("models not equal\n");
-				sb.append("Expected:\n");
-				for (Statement st : outputCollection) {
-					sb.append(st).append("\n");
-				}
-				sb.append("Actual:\n");
-				for (Statement st : inputCollection) {
-					sb.append(st).append("\n");
-				}
 
-				fail(sb.toString());
+				String expected = outputCollection.stream().map(Objects::toString).collect(Collectors.joining());
+				String actual = inputCollection.stream().map(Objects::toString).collect(Collectors.joining("\n"));
+
+				assertEquals(expected, actual);
+
 			}
 		}
 
@@ -217,7 +213,7 @@ public abstract class RDFXMLParserTestCase {
 		 * Variables *
 		 *-----------*/
 
-		private String inputURL;
+		private final String inputURL;
 
 		/*--------------*
 		 * Constructors *
@@ -260,7 +256,7 @@ public abstract class RDFXMLParserTestCase {
 
 	private static class CanonXMLValueFactory extends SimpleValueFactory {
 
-		private Canonicalizer c14n;
+		private final Canonicalizer c14n;
 
 		public CanonXMLValueFactory() throws InvalidCanonicalizerException, ParserConfigurationException {
 			org.apache.xml.security.Init.init();
@@ -271,25 +267,44 @@ public abstract class RDFXMLParserTestCase {
 		@Override
 		public Literal createLiteral(String value, IRI datatype) {
 			if (RDF.XMLLITERAL.equals(datatype)) {
-				// Canonicalize the literal value
-				try {
-					value = new String(c14n.canonicalize(value.getBytes(StandardCharsets.UTF_8)),
-							StandardCharsets.UTF_8);
-				} catch (UnsupportedEncodingException e) {
-					throw new RuntimeException(e);
-				} catch (CanonicalizationException | SAXException e) {
-					// ignore
-				} catch (ParserConfigurationException e) {
-					throw new RuntimeException(e);
-				} catch (IOException e) {
-					throw new RuntimeException(e);
-				}
-				// ignore
-
+				value = canonicalizeXmlLiteral(value);
 			}
 
 			return super.createLiteral(value, datatype);
 		}
+
+		@Override
+		public Literal createLiteral(String value, CoreDatatype datatype) {
+			if (datatype == CoreDatatype.RDF.XMLLITERAL) {
+				value = canonicalizeXmlLiteral(value);
+			}
+
+			return super.createLiteral(value, datatype);
+		}
+
+		@Override
+		public Literal createLiteral(String value, IRI datatype, CoreDatatype coreDatatype) {
+			if (coreDatatype == CoreDatatype.RDF.XMLLITERAL) {
+				assert RDF.XMLLITERAL.equals(datatype);
+				value = canonicalizeXmlLiteral(value);
+			} else {
+				assert !RDF.XMLLITERAL.equals(datatype);
+			}
+
+			return super.createLiteral(value, datatype, coreDatatype);
+		}
+
+		private String canonicalizeXmlLiteral(String value) {
+			// Canonicalize the literal value
+			try {
+				return new String(c14n.canonicalize(value.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);
+			} catch (ParserConfigurationException | IOException e) {
+				throw new RuntimeException(e);
+			} catch (CanonicalizationException | SAXException e) {
+				return value;
+			}
+		}
+
 	}
 
 	private static URL url(String uri) throws MalformedURLException {

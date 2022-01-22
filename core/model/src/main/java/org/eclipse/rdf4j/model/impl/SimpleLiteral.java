@@ -49,6 +49,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 * The literal's language tag.
 	 */
 	private String language;
+	transient private Optional<String> optionalLanguageCache = null;
 
 	/**
 	 * The literal's datatype.
@@ -72,6 +73,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	protected SimpleLiteral(String label) {
 		setLabel(label);
 		setDatatype(org.eclipse.rdf4j.model.vocabulary.XSD.STRING);
+		optionalLanguageCache = Optional.empty();
 	}
 
 	/**
@@ -100,6 +102,28 @@ public class SimpleLiteral extends AbstractLiteral {
 		} else {
 			setDatatype(datatype);
 		}
+		optionalLanguageCache = Optional.empty();
+
+	}
+
+	/**
+	 * Creates a new datatyped literal with the supplied label and datatype.
+	 *
+	 * @param label    The label for the literal, must not be <var>null</var>.
+	 * @param datatype The datatype for the literal.
+	 */
+	protected SimpleLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {
+		assert coreDatatype != null;
+		assert datatype != null;
+		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
+
+		if (CoreDatatype.RDF.LANGSTRING == coreDatatype) {
+			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		}
+
+		setLabel(label);
+		setDatatype(datatype, coreDatatype);
+		optionalLanguageCache = Optional.empty();
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
@@ -122,6 +146,7 @@ public class SimpleLiteral extends AbstractLiteral {
 		} else {
 			setDatatype(datatype);
 		}
+		optionalLanguageCache = Optional.empty();
 
 	}
 
@@ -145,17 +170,31 @@ public class SimpleLiteral extends AbstractLiteral {
 			throw new IllegalArgumentException("Language tag cannot be empty");
 		}
 		this.language = language;
-		setDatatype(org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING);
+		optionalLanguageCache = Optional.of(language);
+		setDatatype(CoreDatatype.RDF.LANGSTRING);
 	}
 
 	@Override
 	public Optional<String> getLanguage() {
-		return Optional.ofNullable(language);
+		if (optionalLanguageCache == null) {
+			optionalLanguageCache = Optional.ofNullable(language);
+		}
+		return optionalLanguageCache;
 	}
 
 	protected void setDatatype(IRI datatype) {
 		this.datatype = datatype;
 		coreDatatype = CoreDatatype.from(datatype);
+	}
+
+	protected void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
+		assert datatype != null;
+		assert coreDatatype != null;
+		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
+
+		this.datatype = datatype;
+		this.coreDatatype = coreDatatype;
+
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
@@ -165,6 +204,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	}
 
 	protected void setDatatype(CoreDatatype datatype) {
+		Objects.requireNonNull(datatype);
 		this.datatype = datatype.getIri();
 		this.coreDatatype = datatype;
 	}
@@ -195,22 +235,32 @@ public class SimpleLiteral extends AbstractLiteral {
 		if (o instanceof Literal) {
 			Literal other = (Literal) o;
 
+			CoreDatatype coreDatatype = getCoreDatatype();
+
+			// Compare core datatypes
+			if (coreDatatype != ((Literal) o).getCoreDatatype()) {
+				return false;
+			} else if (coreDatatype == CoreDatatype.NONE) {
+				// Compare other datatypes
+				if (!datatype.equals(other.getDatatype())) {
+					return false;
+				}
+			}
+
 			// Compare labels
 			if (!label.equals(other.getLabel())) {
 				return false;
 			}
 
-			// Compare datatypes
-			if (!datatype.equals(other.getDatatype())) {
-				return false;
-			}
+			Optional<String> language = getLanguage();
+			Optional<String> otherLanguage = other.getLanguage();
 
-			if (getLanguage().isPresent() && other.getLanguage().isPresent()) {
-				return getLanguage().get().equalsIgnoreCase(other.getLanguage().get());
+			if (language.isPresent() && otherLanguage.isPresent()) {
+				return language.get().equalsIgnoreCase(otherLanguage.get());
 			}
 			// If only one has a language, then return false
 			else {
-				return !getLanguage().isPresent() && !other.getLanguage().isPresent();
+				return language.isEmpty() && otherLanguage.isEmpty();
 			}
 		}
 

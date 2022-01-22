@@ -13,8 +13,7 @@ import java.util.Objects;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Compare;
-import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * @author Håvard Ottestad
@@ -35,13 +34,7 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 	@Override
 	boolean checkTuple(ValidationTuple t) {
 		Value literal = t.getValue();
-
-		try {
-			return QueryEvaluationUtil.compare(compareTo, literal, this.compareOp);
-		} catch (ValueExprEvaluationException e) {
-			return false;
-		}
-
+		return QueryEvaluationUtility.compare(compareTo, literal, this.compareOp).orElse(false);
 	}
 
 	@Override

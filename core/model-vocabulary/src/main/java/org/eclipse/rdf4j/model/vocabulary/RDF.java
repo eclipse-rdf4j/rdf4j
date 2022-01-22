@@ -32,77 +32,57 @@ public class RDF {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#type */
-	public final static IRI TYPE;
+	public final static IRI TYPE = Vocabularies.createIRI(RDF.NAMESPACE, "type");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#Property */
-	public final static IRI PROPERTY;
+	public final static IRI PROPERTY = Vocabularies.createIRI(RDF.NAMESPACE, "Property");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral */
-	public final static IRI XMLLITERAL;
+	public final static IRI XMLLITERAL = CoreDatatype.RDF.XMLLITERAL.getIri();
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#subject */
-	public final static IRI SUBJECT;
+	public final static IRI SUBJECT = Vocabularies.createIRI(RDF.NAMESPACE, "subject");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate */
-	public final static IRI PREDICATE;
+	public final static IRI PREDICATE = Vocabularies.createIRI(RDF.NAMESPACE, "predicate");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#object */
-	public final static IRI OBJECT;
+	public final static IRI OBJECT = Vocabularies.createIRI(RDF.NAMESPACE, "object");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement */
-	public final static IRI STATEMENT;
+	public final static IRI STATEMENT = Vocabularies.createIRI(RDF.NAMESPACE, "Statement");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#Bag */
-	public final static IRI BAG;
+	public final static IRI BAG = Vocabularies.createIRI(RDF.NAMESPACE, "Bag");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#Alt */
-	public final static IRI ALT;
+	public final static IRI ALT = Vocabularies.createIRI(RDF.NAMESPACE, "Alt");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#Seq */
-	public final static IRI SEQ;
+	public final static IRI SEQ = Vocabularies.createIRI(RDF.NAMESPACE, "Seq");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#value */
-	public final static IRI VALUE;
+	public final static IRI VALUE = Vocabularies.createIRI(RDF.NAMESPACE, "value");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#li */
-	public final static IRI LI;
+	public final static IRI LI = Vocabularies.createIRI(RDF.NAMESPACE, "li");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#List */
-	public final static IRI LIST;
+	public final static IRI LIST = Vocabularies.createIRI(RDF.NAMESPACE, "List");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#first */
-	public final static IRI FIRST;
+	public final static IRI FIRST = Vocabularies.createIRI(RDF.NAMESPACE, "first");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#rest */
-	public final static IRI REST;
+	public final static IRI REST = Vocabularies.createIRI(RDF.NAMESPACE, "rest");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#nil */
-	public final static IRI NIL;
+	public final static IRI NIL = Vocabularies.createIRI(RDF.NAMESPACE, "nil");
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#langString */
-	public static final IRI LANGSTRING;
+	public static final IRI LANGSTRING = CoreDatatype.RDF.LANGSTRING.getIri();
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML */
-	public static final IRI HTML;
+	public static final IRI HTML = CoreDatatype.RDF.HTML.getIri();
 
-	static {
-		TYPE = Vocabularies.createIRI(RDF.NAMESPACE, "type");
-		PROPERTY = Vocabularies.createIRI(RDF.NAMESPACE, "Property");
-		XMLLITERAL = Vocabularies.createIRI(RDF.NAMESPACE, "XMLLiteral");
-		SUBJECT = Vocabularies.createIRI(RDF.NAMESPACE, "subject");
-		PREDICATE = Vocabularies.createIRI(RDF.NAMESPACE, "predicate");
-		OBJECT = Vocabularies.createIRI(RDF.NAMESPACE, "object");
-		STATEMENT = Vocabularies.createIRI(RDF.NAMESPACE, "Statement");
-		BAG = Vocabularies.createIRI(RDF.NAMESPACE, "Bag");
-		ALT = Vocabularies.createIRI(RDF.NAMESPACE, "Alt");
-		SEQ = Vocabularies.createIRI(RDF.NAMESPACE, "Seq");
-		VALUE = Vocabularies.createIRI(RDF.NAMESPACE, "value");
-		LI = Vocabularies.createIRI(RDF.NAMESPACE, "li");
-		LIST = Vocabularies.createIRI(RDF.NAMESPACE, "List");
-		FIRST = Vocabularies.createIRI(RDF.NAMESPACE, "first");
-		REST = Vocabularies.createIRI(RDF.NAMESPACE, "rest");
-		NIL = Vocabularies.createIRI(RDF.NAMESPACE, "nil");
-		LANGSTRING = CoreDatatype.RDF.LANGSTRING.getIri();
-		HTML = Vocabularies.createIRI(RDF.NAMESPACE, "HTML");
-	}
 }

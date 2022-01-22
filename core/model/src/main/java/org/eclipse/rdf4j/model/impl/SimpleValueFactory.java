@@ -288,11 +288,11 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 *
 	 * @see XMLGregorianCalendar#toXMLFormat()
 	 * @see XMLGregorianCalendar#getXMLSchemaType()
-	 * @see XMLDatatypeUtil#qnameToURI(javax.xml.namespace.QName)
+	 * @see XMLDatatypeUtil#qnameToCoreDatatype(javax.xml.namespace.QName)
 	 */
 	@Override
 	public Literal createLiteral(XMLGregorianCalendar calendar) {
-		return createLiteral(calendar.toXMLFormat(), XMLDatatypeUtil.qnameToURI(calendar.getXMLSchemaType()));
+		return createLiteral(calendar.toXMLFormat(), XMLDatatypeUtil.qnameToCoreDatatype(calendar.getXMLSchemaType()));
 	}
 
 	/**
