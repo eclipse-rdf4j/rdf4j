@@ -575,6 +575,8 @@ class ValueStore extends AbstractValueFactory {
 				if (isOwnValue) {
 					// Store id in value for fast access in any consecutive calls
 					((LmdbValue) value).setInternalID(id, revision);
+					// Store id in cache
+					valueIDCache.put((LmdbValue) value, id);
 				} else {
 					// Store id in cache
 					LmdbValue nv = getLmdbValue(value);
