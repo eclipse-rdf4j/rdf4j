@@ -42,6 +42,10 @@ public class ReadPrefReadWriteLockManager extends AbstractReadWriteLockManager {
 		super(trackLocks);
 	}
 
+	ReadPrefReadWriteLockManager(boolean trackLocks, int waitToCollect) {
+		super(trackLocks, waitToCollect);
+	}
+
 	/*
 	 * --------- Methods ---------
 	 */

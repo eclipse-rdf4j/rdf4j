@@ -42,6 +42,10 @@ public class ExclusiveLockManager {
 		this.lock = new LockManager(trackLocks || Properties.lockTrackingEnabled());
 	}
 
+	ExclusiveLockManager(boolean trackLocks, int waitToCollect) {
+		this.lock = new LockManager(trackLocks || Properties.lockTrackingEnabled(), waitToCollect);
+	}
+
 	/*
 	 * --------- Methods ---------
 	 */
