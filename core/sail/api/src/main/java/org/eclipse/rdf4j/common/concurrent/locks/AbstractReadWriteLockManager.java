@@ -53,6 +53,12 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 		activeReaders = new LockManager(trace);
 	}
 
+	AbstractReadWriteLockManager(boolean trackLocks, int waitToCollect) {
+		boolean trace = trackLocks || Properties.lockTrackingEnabled();
+		activeWriter = new LockManager(trace, waitToCollect);
+		activeReaders = new LockManager(trace, waitToCollect);
+	}
+
 	/*
 	 * --------- Methods ---------
 	 */
