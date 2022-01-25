@@ -69,8 +69,10 @@ import org.slf4j.LoggerFactory;
  * <p>
  *
  * <pre>
- * import ch.qos.logback.classic.Level;
- * import ch.qos.logback.classic.Logger;
+ * import java.io.IOException;
+ * import java.io.StringReader;
+ *
+ * import org.eclipse.rdf4j.common.exception.ValidationException;
  * import org.eclipse.rdf4j.model.Model;
  * import org.eclipse.rdf4j.model.vocabulary.RDF4J;
  * import org.eclipse.rdf4j.repository.RepositoryException;
@@ -78,83 +80,80 @@ import org.slf4j.LoggerFactory;
  * import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
  * import org.eclipse.rdf4j.rio.RDFFormat;
  * import org.eclipse.rdf4j.rio.Rio;
+ * import org.eclipse.rdf4j.rio.WriterConfig;
+ * import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  * import org.eclipse.rdf4j.sail.memory.MemoryStore;
  * import org.eclipse.rdf4j.sail.shacl.ShaclSail;
- * import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
- * import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
- * import org.slf4j.LoggerFactory;
- *
- * import java.io.IOException;
- * import java.io.StringReader;
  *
  * public class ShaclSampleCode {
  *
- *  	public static void main(String[] args) throws IOException {
+ *     public static void main(String[] args) throws IOException {
  *
- *  		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+ *         ShaclSail shaclSail = new ShaclSail(new MemoryStore());
  *
- *  		// Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
- *  		// root.setLevel(Level.INFO);
+ *         SailRepository sailRepository = new SailRepository(shaclSail);
+ *         sailRepository.init();
  *
- *  		// shaclSail.setLogValidationPlans(true);
- *  		// shaclSail.setGlobalLogValidationExecution(true);
- *  		// shaclSail.setLogValidationViolations(true);
+ *         try (SailRepositoryConnection connection = sailRepository.getConnection()) {
  *
- *  		SailRepository sailRepository = new SailRepository(shaclSail);
- *  		sailRepository.init();
+ *             connection.begin();
  *
- *  		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+ *             StringReader shaclRules = new StringReader(String.join("\n", "",
+ *                     "@prefix ex: &#x3C;http://example.com/ns#&#x3E; .",
+ *                     "@prefix sh: &#x3C;http://www.w3.org/ns/shacl#&#x3E; .",
+ *                     "@prefix xsd: &#x3C;http://www.w3.org/2001/XMLSchema#&#x3E; .",
+ *                     "@prefix foaf: &#x3C;http://xmlns.com/foaf/0.1/&#x3E;.",
  *
- *  			connection.begin();
+ *                     "ex:PersonShape",
+ *                     "    a sh:NodeShape  ;",
+ *                     "    sh:targetClass foaf:Person ;",
+ *                     "    sh:property ex:PersonShapeProperty .",
  *
- *  			StringReader shaclRules = new StringReader(String.join("\n", "",
- *  				"@prefix ex: <http://example.com/ns#> .",
- *  				"@prefix sh: <http://www.w3.org/ns/shacl#> .",
- *  				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
- *  				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
+ *                     "ex:PersonShapeProperty ",
+ *                     "    sh:path foaf:age ;",
+ *                     "    sh:datatype xsd:int ;",
+ *                     "    sh:maxCount 1 ;",
+ *                     "    sh:minCount 1 ."
+ *             ));
  *
- *  				"ex:PersonShape",
- *  				"	a sh:NodeShape  ;",
- *  				"	sh:targetClass foaf:Person ;",
- *  				"	sh:property ex:PersonShapeProperty .",
+ *             connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+ *             connection.commit();
  *
- *  				"ex:PersonShapeProperty ",
- *  				"	sh:path foaf:age ;",
- *  				"	sh:datatype xsd:int ;",
- *  				"  sh:maxCount 1 ;",
- *  				"  sh:minCount 1 ."));
+ *             connection.begin();
  *
- *  			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
- *  			connection.commit();
+ *             StringReader invalidSampleData = new StringReader(String.join("\n", "",
+ *                     "@prefix ex: &#x3C;http://example.com/ns#&#x3E; .",
+ *                     "@prefix foaf: &#x3C;http://xmlns.com/foaf/0.1/&#x3E;.",
+ *                     "@prefix xsd: &#x3C;http://www.w3.org/2001/XMLSchema#&#x3E; .",
  *
- *  			connection.begin();
+ *                     "ex:peter a foaf:Person ;",
+ *                     "    foaf:age 20, \"30\"^^xsd:int  ."
  *
- *  			StringReader invalidSampleData = new StringReader(String.join("\n", "",
- *  				"@prefix ex: <http://example.com/ns#> .",
- *  				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
- *  				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+ *             ));
  *
- *  				"ex:peter a foaf:Person ;",
- *  				"	foaf:age 20, \"30\"^^xsd:int  ."
+ *             connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+ *             try {
+ *                 connection.commit();
+ *             } catch (RepositoryException exception) {
+ *                 Throwable cause = exception.getCause();
+ *                 if (cause instanceof ValidationException) {
  *
- *  			));
+ *                     // use the validationReportModel to understand validation violations
+ *                     Model validationReportModel = ((ValidationException) cause).validationReportAsModel();
  *
- *  			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
- *  			try {
- *  				connection.commit();
- *            } catch (RepositoryException exception) {
- *  				Throwable cause = exception.getCause();
- *  				if (cause instanceof ShaclSailValidationException) {
- *  					ValidationReport validationReport = ((ShaclSailValidationException) cause).getValidationReport();
- *  					Model validationReportModel = ((ShaclSailValidationException) cause).validationReportAsModel();
- *  					// use validationReport or validationReportModel to understand validation violations
+ *                     // Pretty print the validation report
+ *                     WriterConfig writerConfig = new WriterConfig()
+ *                             .set(BasicWriterSettings.PRETTY_PRINT, true)
+ *                             .set(BasicWriterSettings.INLINE_BLANK_NODES, true);
  *
- *  					Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
- *                }
- *  				throw exception;
- *            }
- *        }
- *    }
+ *                     Rio.write(validationReportModel, System.out, RDFFormat.TURTLE, writerConfig);
+ *                     System.out.println();
+ *                 }
+ *
+ *                 throw exception;
+ *             }
+ *         }
+ *     }
  * }
  * </pre>
  *
