@@ -35,7 +35,10 @@ public class LmdbStoreConcurrencyTest extends SailConcurrencyTest {
 	@Override
 	protected NotifyingSail createSail() throws SailException {
 		try {
-			return new LmdbStore(tempDir.newFolder(), new LmdbStoreConfig("spoc,posc"));
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+			config.setValueDBSize(52428800); // 50 MiB
+			config.setTripleDBSize(config.getValueDBSize());
+			return new LmdbStore(tempDir.newFolder(), config);
 		} catch (IOException e) {
 			throw new AssertionError(e);
 		}

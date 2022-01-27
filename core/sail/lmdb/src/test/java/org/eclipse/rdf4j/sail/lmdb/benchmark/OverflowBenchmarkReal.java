@@ -68,7 +68,7 @@ public class OverflowBenchmarkReal {
 		File temporaryFolder = Files.newTemporaryFolder();
 		SailRepository sailRepository = null;
 		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder));
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createConfig()));
 
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 

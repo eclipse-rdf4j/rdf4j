@@ -62,7 +62,10 @@ public class QueryBenchmarkTest {
 		tempDir.create();
 		File file = tempDir.newFolder();
 
-		repository = new SailRepository(new LmdbStore(file, new LmdbStoreConfig("spoc,ospc,psoc")));
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		config.setValueDBSize(209715200); // 200 MiB
+		config.setTripleDBSize(config.getValueDBSize());
+		repository = new SailRepository(new LmdbStore(file, config));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
