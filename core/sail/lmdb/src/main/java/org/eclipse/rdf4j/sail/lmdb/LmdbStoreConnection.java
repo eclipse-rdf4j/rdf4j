@@ -41,8 +41,6 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	 */
 	private volatile Lock txnLock;
 
-	private int addedCount;
-
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -59,7 +57,6 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void startTransactionInternal() throws SailException {
-		addedCount = 0;
 		if (!lmdbStore.isWritable()) {
 			throw new SailReadOnlyException("Unable to start transaction: data file is locked or read-only");
 		}

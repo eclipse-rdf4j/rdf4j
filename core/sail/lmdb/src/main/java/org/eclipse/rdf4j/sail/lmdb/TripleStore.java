@@ -341,7 +341,7 @@ class TripleStore implements Closeable {
 
 								dataValue.mv_data(record.val);
 
-								mdb_put(txn, addedIndex.getDB(explicit), keyValue, dataValue, 0);
+								E(mdb_put(txn, addedIndex.getDB(explicit), keyValue, dataValue, 0));
 							}
 						} finally {
 							if (sourceIter[0] != null) {
@@ -438,7 +438,7 @@ class TripleStore implements Closeable {
 	}
 
 	private RecordIterator getTriplesUsingIndex(long subj, long pred, long obj, long context,
-			boolean explicit, TripleIndex index, boolean rangeSearch) {
+			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(pool, index, rangeSearch, subj, pred, obj, context, explicit, readTxnRef);
 	}
 
@@ -571,9 +571,9 @@ class TripleStore implements Closeable {
 			boolean stAdded = !(foundExplicit || foundImplicit);
 			if (stAdded || explicit && foundImplicit) {
 				if (explicit && foundImplicit) {
-					mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal);
+					E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));
 				}
-				mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, 0);
+				E(mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, 0));
 
 				for (int i = 1; i < indexes.size(); i++) {
 					TripleIndex index = indexes.get(i);
@@ -585,9 +585,9 @@ class TripleStore implements Closeable {
 					keyVal.mv_data(keyBuf);
 
 					if (explicit && foundImplicit) {
-						mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal);
+						E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));
 					}
-					mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
+					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
 			}
 
@@ -633,7 +633,7 @@ class TripleStore implements Closeable {
 					// update buffer positions in MDBVal
 					keyValue.mv_data(keyBuf);
 
-					mdb_del(writeTxn, index.getDB(explicit), keyValue, null);
+					E(mdb_del(writeTxn, index.getDB(explicit), keyValue, null));
 				}
 
 				perContextCounts.merge(quad[CONTEXT_IDX], 1L, (c, one) -> c + one);
@@ -661,12 +661,12 @@ class TripleStore implements Closeable {
 		if (writeTxn != 0) {
 			if (commit) {
 				mdb_txn_commit(writeTxn);
-				// invalidate open read transaction so that they are not re-used
-				// otherwise iterators won't see the updated data
-				readTxnRef.invalidate();
 			} else {
 				mdb_txn_abort(writeTxn);
 			}
+			// invalidate open read transaction so that they are not re-used
+			// otherwise iterators won't see the updated data
+			readTxnRef.invalidate();
 			writeTxn = 0;
 		}
 	}

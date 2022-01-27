@@ -64,6 +64,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	private SailStore store;
 
+	private LmdbSailStore backingStore;
+
 	// used to decide if store is writable, is true if the store was writable during initialization
 	private boolean isWritable;
 
@@ -235,8 +237,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			if (!VERSION.equals(version) && upgradeStore(dataDir, version)) {
 				FileUtils.writeStringToFile(versionFile, VERSION, StandardCharsets.UTF_8);
 			}
-			final LmdbSailStore mainStore = new LmdbSailStore(dataDir, config);
-			this.store = new SnapshotSailStore(mainStore, () -> new MemoryOverflowModel() {
+			backingStore = new LmdbSailStore(dataDir, config);
+			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
 				@Override
 				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
 					// Model can't fit into memory, use another LmdbSailStore to store delta
@@ -248,7 +250,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				public SailSource getExplicitSailSource() {
 					if (isIsolationDisabled()) {
 						// no isolation, use LmdbSailStore directly
-						return mainStore.getExplicitSailSource();
+						return backingStore.getExplicitSailSource();
 					} else {
 						return super.getExplicitSailSource();
 					}
@@ -258,7 +260,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				public SailSource getInferredSailSource() {
 					if (isIsolationDisabled()) {
 						// no isolation, use LmdbSailStore directly
-						return mainStore.getInferredSailSource();
+						return backingStore.getInferredSailSource();
 					} else {
 						return super.getInferredSailSource();
 					}
@@ -377,6 +379,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	SailStore getSailStore() {
 		return store;
+	}
+
+	LmdbSailStore getBackingStore() {
+		return backingStore;
 	}
 
 	private boolean upgradeStore(File dataDir, String version) throws IOException, SailException {
