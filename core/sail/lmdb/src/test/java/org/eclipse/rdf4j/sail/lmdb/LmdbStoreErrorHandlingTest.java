@@ -37,6 +37,7 @@ public class LmdbStoreErrorHandlingTest {
 		// set small db size
 		config.setValueDBSize(50000);
 		config.setTripleDBSize(50000);
+		config.setAutoGrow(false);
 		Repository repo = new SailRepository(new LmdbStore(dataDir, config));
 
 		RepositoryException expected = null;

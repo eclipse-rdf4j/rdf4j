@@ -23,6 +23,8 @@ import java.util.Comparator;
 
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.Pointer;
 import org.lwjgl.util.lmdb.MDBCmpFuncI;
 import org.lwjgl.util.lmdb.MDBVal;
 
@@ -106,6 +108,25 @@ final class LmdbUtil {
 			}
 			return dbi;
 		});
+	}
+
+	/**
+	 * Returns the next unallocated page for a given transaction handle.
+	 *
+	 * The function expects the following layout of the transaction struct:
+	 * 
+	 * <pre>
+	 * <code>
+	 * struct MDB_txn {
+	 *     size_t mt_parent;
+	 *     size_t mt_child;
+	 *     size_t mt_next_pgno;
+	 *     ...
+	 * }</code>
+	 * </pre>
+	 */
+	static long mdbTxnMtNextPgno(long txn) {
+		return MemoryUtil.memGetAddress(txn + 2 * Pointer.POINTER_SIZE);
 	}
 
 	@FunctionalInterface

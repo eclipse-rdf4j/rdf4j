@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.mdbTxnMtNextPgno;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -25,13 +26,18 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_renew;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 
 import java.io.File;
 import java.io.IOException;
@@ -54,6 +60,7 @@ import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
+import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
@@ -62,6 +69,8 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
+import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
@@ -117,10 +126,12 @@ class ValueStore extends AbstractValueFactory {
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
 	private long env;
+	private int pageSize;
+	private long mapSize;
 	private int dbi;
 	private long writeTxn;
 	private final boolean forceSync;
-	private final long dbSize;
+	private final boolean autoGrow;
 
 	/**
 	 * An object that indicates the revision of the value store, which is used to check if cached value IDs are still
@@ -135,7 +146,8 @@ class ValueStore extends AbstractValueFactory {
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
 		this.forceSync = config.getForceSync();
-		this.dbSize = config.getValueDBSize();
+		this.autoGrow = config.getAutoGrow();
+		this.mapSize = config.getValueDBSize();
 		open();
 
 		valueCache = new LmdbValue[config.getValueCacheSize()];
@@ -183,8 +195,6 @@ class ValueStore extends AbstractValueFactory {
 			env = pp.get(0);
 		}
 
-		mdb_env_set_mapsize(env, dbSize);
-
 		// Open environment
 		int flags = MDB_NOTLS;
 		if (!forceSync) {
@@ -194,6 +204,30 @@ class ValueStore extends AbstractValueFactory {
 
 		// Open database
 		dbi = openDatabase(env, null, MDB_CREATE, null);
+
+		// initialize page size and set map size for env
+		readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			mdb_stat(txn, dbi, stat);
+
+			boolean isEmpty = stat.ms_entries() == 0;
+			pageSize = stat.ms_psize();
+			// align map size with page size
+			long configMapSize = (mapSize / pageSize) * pageSize;
+			if (isEmpty) {
+				// this is an empty db, use configured map size
+				mdb_env_set_mapsize(env, configMapSize);
+			}
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			mdb_env_info(env, info);
+			mapSize = info.me_mapsize();
+			if (mapSize < configMapSize) {
+				// configured map size is larger than map size stored in env, increase map size
+				mdb_env_set_mapsize(env, configMapSize);
+				mapSize = configMapSize;
+			}
+			return null;
+		});
 	}
 
 	private long nextId(byte type) throws IOException {
@@ -362,6 +396,32 @@ class ValueStore extends AbstractValueFactory {
 		return false;
 	}
 
+	private void resizeMap(long txn, int requiredSize) throws IOException {
+		if (autoGrow) {
+			long nextPageNo = mdbTxnMtNextPgno(txn);
+			if (mapSize - (nextPageNo + 10) * pageSize < requiredSize) {
+				boolean activeWriteTxn = writeTxn != 0;
+				boolean txnIsRead = txn != writeTxn;
+				// map is full, resize
+				if (activeWriteTxn) {
+					endTransaction(true);
+				}
+				if (txnIsRead) {
+					mdb_txn_reset(txn);
+				}
+				// duplicate size but grow at least by requiredSize
+				mapSize = Math.max(mapSize * 2, mapSize + (requiredSize / pageSize + 1) * pageSize);
+				mdb_env_set_mapsize(mdb_txn_env(txn), mapSize);
+				if (activeWriteTxn) {
+					startTransaction();
+				}
+				if (txnIsRead) {
+					mdb_txn_renew(txn);
+				}
+			}
+		}
+	}
+
 	private long findId(byte[] data, boolean create) throws IOException {
 		Long id = LmdbUtil.<Long>readTransaction(env, writeTxn, (stack, txn) -> {
 			if (data.length < MAX_KEY_SIZE) {
@@ -375,6 +435,8 @@ class ValueStore extends AbstractValueFactory {
 					return null;
 				}
 				// id was not found, create a new one
+				resizeMap(txn, 2 * data.length + 2 * (2 + Long.BYTES));
+
 				long newId = nextId(data[0]);
 				writeTransaction((stack2, writeTxn) -> {
 					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
@@ -389,7 +451,8 @@ class ValueStore extends AbstractValueFactory {
 
 				ByteBuffer dataBb = ByteBuffer.wrap(data);
 				long dataHash = hash(data);
-				ByteBuffer hashBb = stack.malloc(2 + 2 * Long.BYTES + 2);
+				int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
+				ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
 				hashBb.put(HASH_KEY);
 				Varint.writeUnsigned(hashBb, dataHash);
 				int hashLength = hashBb.position();
@@ -411,6 +474,9 @@ class ValueStore extends AbstractValueFactory {
 					if (!create) {
 						return null;
 					}
+
+					resizeMap(txn, 2 * data.length + 2 * (2 + Long.BYTES));
+
 					long newId = nextId(data[0]);
 					writeTransaction((stack2, writeTxn) -> {
 						dataVal.mv_size(data.length);
@@ -465,6 +531,8 @@ class ValueStore extends AbstractValueFactory {
 				}
 
 				// id was not found, create a new one
+				resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2 * data.length);
+
 				long newId = nextId(data[0]);
 				writeTransaction((stack2, writeTxn) -> {
 					// encode ID
