@@ -145,11 +145,12 @@ public class StatementsController extends AbstractController {
 			} catch (IOException e) {
 				throw new ClientHTTPException(SC_BAD_REQUEST, "Error reading request message body", e);
 			}
-			if (sparqlUpdateString.isEmpty()) {
-				sparqlUpdateString = null;
-			}
 		} else {
 			sparqlUpdateString = request.getParameterValues(Protocol.UPDATE_PARAM_NAME)[0];
+		}
+
+		if (sparqlUpdateString.isEmpty()) {
+			throw new ClientHTTPException("Updates must be non-empty");
 		}
 
 		// default query language is SPARQL
