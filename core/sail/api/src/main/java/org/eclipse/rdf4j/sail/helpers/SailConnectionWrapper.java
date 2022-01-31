@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.UpdateContext;
+import org.eclipse.rdf4j.sail.features.ThreadSafetyAware;
 
 /**
  * An implementation of the SailConnection interface that wraps another SailConnection object and forwards any method
@@ -37,7 +38,8 @@ import org.eclipse.rdf4j.sail.UpdateContext;
  *
  * @author Jeen Broekstra
  */
-public class SailConnectionWrapper implements SailConnection, FederatedServiceResolverClient {
+public class SailConnectionWrapper
+		implements SailConnection, FederatedServiceResolverClient, ThreadSafetyAware {
 
 	/*-----------*
 	 * Variables *
@@ -243,4 +245,10 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 		return wrappedCon.isActive();
 	}
 
+	@Override
+	public boolean supportsConcurrentReads() {
+		if (wrappedCon instanceof ThreadSafetyAware)
+			return ((ThreadSafetyAware) wrappedCon).supportsConcurrentReads();
+		return false;
+	}
 }

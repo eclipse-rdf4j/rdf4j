@@ -99,8 +99,10 @@ public class TransactionValidationLimitTest {
 			assertEquals(ShaclSail.TransactionSettings.ValidationApproach.Bulk,
 					shaclSailConnection.getTransactionSettings().getValidationApproach(),
 					"We have added more than 3 statements so the validation approach should have switched to Bulk.");
+
 			assertFalse(shaclSailConnection.getTransactionSettings().isCacheSelectNodes(),
 					"Bulk validation should by default disable caching select nodes.");
+
 			assertFalse(shaclSailConnection.getTransactionSettings().isParallelValidation(),
 					"Bulk validation should by default disable parallel validation.");
 
