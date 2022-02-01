@@ -100,7 +100,7 @@ public class FederationManager {
 	 * @return the initialized and configured {@link FederationEvaluationStrategyFactory}
 	 */
 	/* package */ FederationEvaluationStrategyFactory getFederationEvaluationStrategyFactory() {
-		FederationEvaluationStrategyFactory strategyFactory = new FederationEvaluationStrategyFactory();
+		FederationEvaluationStrategyFactory strategyFactory = federation.getFederationEvaluationStrategyFactory();
 		strategyFactory.setFederationType(federationType);
 		strategyFactory.setFederationContext(federationContext);
 		return strategyFactory;

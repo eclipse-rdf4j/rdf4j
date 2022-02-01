@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
  * @see FedXFactory
  *
  */
-/* package */ class FedXRepositoryWrapper extends RepositoryWrapper
+public class FedXRepositoryWrapper extends RepositoryWrapper
 		implements RepositoryResolverClient, FederatedServiceResolverClient {
 
 	private final FedXRepositoryConfig fedXConfig;
@@ -46,7 +46,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
 	private FederatedServiceResolver serviceResolver;
 
-	/* package */ FedXRepositoryWrapper(FedXRepositoryConfig fedXConfig) {
+	public FedXRepositoryWrapper(FedXRepositoryConfig fedXConfig) {
 		super();
 		this.fedXConfig = fedXConfig;
 	}
@@ -76,6 +76,26 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 			return;
 		}
 
+		FedXRepository fedxRepo;
+		try {
+			FedXFactory factory = createFactory();
+
+			fedxRepo = factory.create();
+
+			fedxRepo.init();
+		} catch (Exception e) {
+			throw new RepositoryException(e);
+		}
+		setDelegate(fedxRepo);
+	}
+
+	/**
+	 * Create the initialized {@link FedXFactory}
+	 * 
+	 * @return
+	 */
+	protected FedXFactory createFactory() {
+
 		File baseDir = getDataDir();
 		if (baseDir == null) {
 			baseDir = new File(".");
@@ -95,33 +115,25 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 					"No federation members defined: neither explicitly nor via data config.");
 		}
 
-		FedXRepository fedxRepo;
-		try {
-			// apply a repository resolver (if any) set from RepositoryManager
-			FedXFactory factory = FedXFactory.newFederation()
-					.withRepositoryResolver(repositoryResolver)
-					.withFederatedServiceResolver(serviceResolver)
-					.withFedXBaseDir(baseDir);
+		// apply a repository resolver (if any) set from RepositoryManager
+		FedXFactory factory = FedXFactory.newFederation()
+				.withRepositoryResolver(repositoryResolver)
+				.withFederatedServiceResolver(serviceResolver)
+				.withFedXBaseDir(baseDir);
 
-			if (dataConfigFile != null) {
-				factory.withMembers(dataConfigFile);
-			}
-
-			if (members != null) {
-				factory.withMembers(members);
-			}
-
-			if (fedXConfig.getConfig() != null) {
-				factory.withConfig(fedXConfig.getConfig());
-			}
-
-			fedxRepo = factory.create();
-
-			fedxRepo.init();
-		} catch (Exception e) {
-			throw new RepositoryException(e);
+		if (dataConfigFile != null) {
+			factory.withMembers(dataConfigFile);
 		}
-		setDelegate(fedxRepo);
+
+		if (members != null) {
+			factory.withMembers(members);
+		}
+
+		if (fedXConfig.getConfig() != null) {
+			factory.withConfig(fedXConfig.getConfig());
+		}
+
+		return factory;
 	}
 
 	@Override
