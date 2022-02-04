@@ -40,65 +40,66 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(
-        classes = {
-            TestConfig.class,
-            InMemoryRepositoryConfig.class,
-            RemoteRepositoryConfig.class,
-            PoolConfig.class,
-            ResultCacheConfig.class,
-            TxConfig.class,
-            OperationLogConfig.class,
-            OperationLogJmxConfig.class,
-            UUIDSequenceConfig.class,
-            NoveltyCheckingUUIDSourceConfig.class,
-            SimpleRepositoryUUIDSourceConfig.class,
-            ReadonlyTests.Config.class
-        })
+		classes = {
+				TestConfig.class,
+				InMemoryRepositoryConfig.class,
+				RemoteRepositoryConfig.class,
+				PoolConfig.class,
+				ResultCacheConfig.class,
+				TxConfig.class,
+				OperationLogConfig.class,
+				OperationLogJmxConfig.class,
+				UUIDSequenceConfig.class,
+				NoveltyCheckingUUIDSourceConfig.class,
+				SimpleRepositoryUUIDSourceConfig.class,
+				ReadonlyTests.Config.class
+		})
 @ComponentScan(
-        value = {
-            "at.researchstudio.sat.merkmalservice.readonly",
-            "at.researchstudio.sat.merkmalservice.service"
-        })
+		value = {
+				"at.researchstudio.sat.merkmalservice.readonly",
+				"at.researchstudio.sat.merkmalservice.service"
+		})
 @TestPropertySource("classpath:application.properties")
 @TestPropertySource(
-        properties = {
-            "rdf4j.spring.repository.inmemory.enabled=true",
-            "rdf4j.spring.repository.inmemory.use-shacl-sail=true",
-            "rdf4j.spring.tx.enabled=true"
-        })
+		properties = {
+				"rdf4j.spring.repository.inmemory.enabled=true",
+				"rdf4j.spring.repository.inmemory.use-shacl-sail=true",
+				"rdf4j.spring.tx.enabled=true"
+		})
 public class ReadonlyTests {
 
-    @Configuration
-    public static class Config {
-        @Bean
-        public TestHelperService getTestHelperService(@Autowired ArtistDao artistDao) {
-            return new TestHelperService(artistDao);
-        }
-    }
+	@Configuration
+	public static class Config {
+		@Bean
+		public TestHelperService getTestHelperService(@Autowired ArtistDao artistDao) {
+			return new TestHelperService(artistDao);
+		}
+	}
 
-    @Autowired TestHelperService testHelperService;
+	@Autowired
+	TestHelperService testHelperService;
 
-    private static IRI projectId = null;
+	private static IRI projectId = null;
 
-    @Test
-    @Order(1)
-    public void testReadonlyTransactionBehaviour() {
-        projectId = testHelperService.createArtist();
-        assertNotNull(projectId);
-    }
+	@Test
+	@Order(1)
+	public void testReadonlyTransactionBehaviour() {
+		projectId = testHelperService.createArtist();
+		assertNotNull(projectId);
+	}
 
-    @Test
-    @Order(2)
-    public void testReadonlyTransactionBehaviour2() {
-        Optional<Artist> artist = testHelperService.loadProject(projectId);
-        assertTrue(artist.isPresent());
-    }
+	@Test
+	@Order(2)
+	public void testReadonlyTransactionBehaviour2() {
+		Optional<Artist> artist = testHelperService.loadProject(projectId);
+		assertTrue(artist.isPresent());
+	}
 
-    @Test
-    @Order(3)
-    public void test3() {
-        assertThrows(
-                WriteDeniedException.class,
-                () -> testHelperService.createProjectInReadonlyTransaction());
-    }
+	@Test
+	@Order(3)
+	public void test3() {
+		assertThrows(
+				WriteDeniedException.class,
+				() -> testHelperService.createProjectInReadonlyTransaction());
+	}
 }

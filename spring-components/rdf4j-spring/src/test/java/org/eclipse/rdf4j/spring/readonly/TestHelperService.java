@@ -21,34 +21,34 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @Component
 public class TestHelperService {
-    ArtistDao artistDao;
+	ArtistDao artistDao;
 
-    public TestHelperService(ArtistDao artistDao) {
-        this.artistDao = artistDao;
-    }
+	public TestHelperService(ArtistDao artistDao) {
+		this.artistDao = artistDao;
+	}
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public IRI createArtist() {
-        Artist artist = new Artist();
-        artist.setFirstName("Leonardo");
-        artist.setLastName("Da Vinci");
-        Artist created = artistDao.save(artist);
-        assertNotNull(created.getId());
-        return created.getId();
-    }
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public IRI createArtist() {
+		Artist artist = new Artist();
+		artist.setFirstName("Leonardo");
+		artist.setLastName("Da Vinci");
+		Artist created = artistDao.save(artist);
+		assertNotNull(created.getId());
+		return created.getId();
+	}
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
-    public IRI createProjectInReadonlyTransaction() {
-        Artist artist = new Artist();
-        artist.setFirstName("Leonardo");
-        artist.setLastName("Da Vinci");
-        Artist created = artistDao.save(artist);
-        assertNotNull(created.getId());
-        return created.getId();
-    }
+	@Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+	public IRI createProjectInReadonlyTransaction() {
+		Artist artist = new Artist();
+		artist.setFirstName("Leonardo");
+		artist.setLastName("Da Vinci");
+		Artist created = artistDao.save(artist);
+		assertNotNull(created.getId());
+		return created.getId();
+	}
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Optional<Artist> loadProject(IRI id) {
-        return artistDao.getByIdOptional(id);
-    }
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public Optional<Artist> loadProject(IRI id) {
+		return artistDao.getByIdOptional(id);
+	}
 }
