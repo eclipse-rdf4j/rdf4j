@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.spring.readonly;
 
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.Optional;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.spring.TestConfig;
 import org.eclipse.rdf4j.spring.domain.dao.ArtistDao;
@@ -33,10 +37,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
-
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(

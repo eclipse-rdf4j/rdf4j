@@ -8,16 +8,16 @@
 
 package org.eclipse.rdf4j.spring.readonly;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+import java.util.Optional;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.spring.domain.dao.ArtistDao;
 import org.eclipse.rdf4j.spring.domain.model.Artist;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @Component
 public class TestHelperService {
