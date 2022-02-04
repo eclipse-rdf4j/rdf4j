@@ -8,9 +8,13 @@
 
 package org.eclipse.rdf4j.spring.tx;
 
+import static org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils.findWrapper;
+import static org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils.wrapOnce;
+
 import java.lang.invoke.MethodHandles;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.spring.support.ShaclSailValidationReportHelper;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.tx.exception.CommitException;
 import org.eclipse.rdf4j.spring.tx.exception.ConnectionClosedException;
@@ -111,11 +115,18 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 
 	public TransactionObject createTransaction() {
 		logger.debug("Trying to create new transaction");
-		RepositoryConnection con = delegateFactory.getConnection();
-		TransactionObject data = new TransactionObject(con);
-		transactionData.set(data);
+		RepositoryConnection delegate = delegateFactory.getConnection();
+		RepositoryConnection wrappedCon = wrapOnce(
+				delegate,
+				con -> new TransactionalRepositoryConnection(con.getRepository(), con),
+				TransactionalRepositoryConnection.class);
+		TransactionObject txObj = new TransactionObject(wrappedCon);
+		transactionData.set(txObj);
+		TransactionalRepositoryConnection txCon = findWrapper(wrappedCon, TransactionalRepositoryConnection.class)
+				.get();
+		txCon.setTransactionObject(txObj);
 		logger.debug("Transaction created");
-		return data;
+		return txObj;
 	}
 
 	public void endTransaction(boolean rollback) {
@@ -133,7 +144,19 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 			throw new ConnectionClosedException("Cannot obtain connection: connection closed");
 		}
 		if (data.isReadOnly()) {
-			logger.debug("transaction is readonly - neither rolling back nor committing");
+			logger.debug("transaction is readonly");
+			if (con.isActive()) {
+				logger.debug("however, the connection is active - rolling back");
+				try {
+					con.rollback();
+				} catch (Exception e) {
+					throw new RollbackException(
+							"Cannot rollback changes in readonly transaction: an error occurred",
+							e);
+				}
+			} else {
+				logger.debug("The connection is inactive, no updates have been attempted.");
+			}
 		} else {
 			if (con.isActive()) {
 				if (rollback) {
@@ -151,6 +174,7 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 						con.commit();
 						logger.debug("con.commit() called");
 					} catch (Throwable t) {
+						ShaclSailValidationReportHelper.logValidationReportFromThrowableCause(t);
 						throw new CommitException(
 								"Cannot commit transaction: an error occurred", t);
 					}
