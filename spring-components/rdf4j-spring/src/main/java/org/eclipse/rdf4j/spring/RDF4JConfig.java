@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.spring.resultcache.ResultCacheProperties;
 import org.eclipse.rdf4j.spring.support.DirectOperationInstantiator;
 import org.eclipse.rdf4j.spring.support.OperationInstantiator;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
+import org.eclipse.rdf4j.spring.support.UUIDSource;
 import org.eclipse.rdf4j.spring.support.connectionfactory.DirectRepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.tx.TransactionalRepositoryConnectionFactory;
@@ -33,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 /**
@@ -45,9 +47,10 @@ public class RDF4JConfig {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
 	@Bean
-	RDF4JTemplate getRdf4JTemplate(
-			@Autowired RepositoryConnectionFactory repositoryConnectionFactory,
-			@Autowired(required = false) OperationCacheProperties operationCacheProperties) {
+	RDF4JTemplate getRdf4JTemplate(@Autowired RepositoryConnectionFactory repositoryConnectionFactory,
+			@Autowired(required = false) OperationCacheProperties operationCacheProperties,
+			@Autowired ResourceLoader resourceLoader,
+			@Autowired(required = false) UUIDSource uuidSource) {
 		OperationInstantiator operationInstantiator;
 		if (operationCacheProperties != null && operationCacheProperties.isEnabled()) {
 			logger.debug("Operation caching is enabled");
@@ -56,7 +59,7 @@ public class RDF4JConfig {
 			logger.debug("Operation caching is not enabled");
 			operationInstantiator = new DirectOperationInstantiator();
 		}
-		return new RDF4JTemplate(repositoryConnectionFactory, operationInstantiator);
+		return new RDF4JTemplate(repositoryConnectionFactory, operationInstantiator, resourceLoader, uuidSource);
 	}
 
 	@Bean

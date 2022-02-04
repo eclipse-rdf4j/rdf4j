@@ -62,18 +62,22 @@ public class RDF4JTemplate {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private RepositoryConnectionFactory repositoryConnectionFactory;
 	private OperationInstantiator operationInstantiator;
-	@Autowired
 	private ResourceLoader resourceLoader;
-
-	@Autowired(required = false)
 	private UUIDSource uuidSource;
 
 	public RDF4JTemplate(
-			RepositoryConnectionFactory repositoryConnectionFactory,
-			OperationInstantiator operationInstantiator) {
+			@Autowired RepositoryConnectionFactory repositoryConnectionFactory,
+			@Autowired OperationInstantiator operationInstantiator,
+			@Autowired ResourceLoader resourceLoader,
+			@Autowired(required = false) UUIDSource uuidSource) {
 		this.repositoryConnectionFactory = repositoryConnectionFactory;
 		this.operationInstantiator = operationInstantiator;
-		this.uuidSource = new DefaultUUIDSource();
+		this.resourceLoader = resourceLoader;
+		if (uuidSource == null) {
+			this.uuidSource = new DefaultUUIDSource();
+		} else {
+			this.uuidSource = uuidSource;
+		}
 	}
 
 	public void consumeConnection(final Consumer<RepositoryConnection> fun) {
