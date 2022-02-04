@@ -104,4 +104,8 @@ public class TypeMappingUtils {
 	public static List<IRI> toIRI(Collection<String> from) {
 		return from.stream().map(TypeMappingUtils::toIRI).collect(Collectors.toList());
 	}
+
+	public static final String toString(Value from) {
+		return from.toString();
+	}
 }
