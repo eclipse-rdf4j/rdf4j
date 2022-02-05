@@ -267,6 +267,11 @@ class SailSourceBranch implements SailSource {
 					prepared = null;
 				}
 			}
+		} catch (SailException e) {
+			// clear changes if flush fails
+			changes.clear();
+			prepared = null;
+			throw e;
 		} finally {
 			semaphore.unlock();
 		}
