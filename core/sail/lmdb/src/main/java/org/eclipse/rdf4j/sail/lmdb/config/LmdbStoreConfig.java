@@ -22,12 +22,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default size of the triple database.
 	 */
-	public static final long TRIPLE_DB_SIZE = 10_737_418_240L; // 10 GiB
+	public static final long TRIPLE_DB_SIZE = 10_485_760; // 10 MiB
 
 	/**
 	 * The default size of the value database.
 	 */
-	public static final long VALUE_DB_SIZE = 10_737_418_240L; // 10 GiB
+	public static final long VALUE_DB_SIZE = 10_485_760; // 10 MiB
 
 	/**
 	 * The default value cache size.

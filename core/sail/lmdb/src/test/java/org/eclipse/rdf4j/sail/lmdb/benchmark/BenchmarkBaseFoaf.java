@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 public class BenchmarkBaseFoaf {
 
@@ -43,7 +42,7 @@ public class BenchmarkBaseFoaf {
 		}
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, new LmdbStoreConfig("spoc,ospc,psoc").setForceSync(false));
+		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig());
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 

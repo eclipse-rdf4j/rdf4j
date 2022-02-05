@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -100,7 +99,7 @@ public class QueryBenchmark {
 		tempDir.create();
 		File file = tempDir.newFolder();
 
-		repository = new SailRepository(new LmdbStore(file, new LmdbStoreConfig("spoc,ospc,psoc")));
+		repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig()));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
