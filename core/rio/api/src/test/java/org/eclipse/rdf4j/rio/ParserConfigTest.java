@@ -15,9 +15,7 @@ import static org.junit.Assert.fail;
 import java.util.Collections;
 import java.util.HashSet;
 
-import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -59,36 +57,6 @@ public class ParserConfigTest {
 		// values
 		assertFalse(testConfig.get(BasicParserSettings.PRESERVE_BNODE_IDS));
 		assertFalse(testConfig.isPreserveBNodeIDs());
-	}
-
-	/**
-	 * Test that the explicit constructor sets all of the basic settings using the default values.
-	 */
-	@Test
-	public final void testParserConfigSameAsDefaults() {
-		ParserConfig testConfig = new ParserConfig(true, true, false, DatatypeHandling.VERIFY);
-
-		// check that the basic settings are explicitly set
-		assertTrue(testConfig.isSet(BasicParserSettings.PRESERVE_BNODE_IDS));
-
-		// check that the basic settings all return their expected default values
-		assertFalse(testConfig.get(BasicParserSettings.PRESERVE_BNODE_IDS));
-		assertFalse(testConfig.isPreserveBNodeIDs());
-	}
-
-	/**
-	 * Test that the explicit constructor sets all of the basic settings using non-default values.
-	 */
-	@Test
-	public final void testParserConfigNonDefaults() {
-		ParserConfig testConfig = new ParserConfig(false, false, true, DatatypeHandling.IGNORE);
-
-		// check that the basic settings are explicitly set
-		assertTrue(testConfig.isSet(BasicParserSettings.PRESERVE_BNODE_IDS));
-
-		// check that the basic settings all return their set values
-		assertTrue(testConfig.get(BasicParserSettings.PRESERVE_BNODE_IDS));
-		assertTrue(testConfig.isPreserveBNodeIDs());
 	}
 
 	/**
@@ -195,34 +163,6 @@ public class ParserConfigTest {
 		testConfig.addNonFatalError(BasicParserSettings.PRESERVE_BNODE_IDS);
 
 		assertFalse(testConfig.getNonFatalErrors().isEmpty());
-	}
-
-	/**
-	 * Test method for {@link org.eclipse.rdf4j.rio.ParserConfig#verifyData()}.
-	 */
-	@Test
-	public final void testVerifyData() {
-		ParserConfig testConfig = new ParserConfig();
-
-		assertTrue(testConfig.verifyData());
-
-		testConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);
-
-		assertFalse(testConfig.verifyData());
-	}
-
-	/**
-	 * Test method for {@link org.eclipse.rdf4j.rio.ParserConfig#stopAtFirstError()}. Test specifically for SES-1947
-	 */
-	@Test
-	public final void testStopAtFirstError() {
-		ParserConfig testConfig = new ParserConfig();
-
-		assertTrue(testConfig.stopAtFirstError());
-
-		testConfig.addNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
-
-		assertFalse(testConfig.stopAtFirstError());
 	}
 
 	/**

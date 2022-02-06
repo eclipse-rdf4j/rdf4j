@@ -230,14 +230,6 @@ public abstract class AbstractRDFParser implements RDFParser {
 		this.parserConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, verifyData);
 	}
 
-	/**
-	 * @deprecated Use specific settings instead.
-	 */
-	@Deprecated
-	public boolean verifyData() {
-		return this.parserConfig.verifyData();
-	}
-
 	@Override
 	public void setPreserveBNodeIDs(boolean preserveBNodeIDs) {
 		this.parserConfig.set(BasicParserSettings.PRESERVE_BNODE_IDS, preserveBNodeIDs);
@@ -260,14 +252,6 @@ public abstract class AbstractRDFParser implements RDFParser {
 			set.remove(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
 			getParserConfig().setNonFatalErrors(set);
 		}
-	}
-
-	/**
-	 * @deprecated Check specific settings instead.
-	 */
-	@Deprecated
-	public boolean stopAtFirstError() {
-		return this.parserConfig.stopAtFirstError();
 	}
 
 	@SuppressWarnings("deprecation")
