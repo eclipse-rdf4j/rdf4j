@@ -14,6 +14,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.spring.dao.exception.RDF4JSpringException;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
 import org.slf4j.Logger;
@@ -42,13 +43,7 @@ public class DataInserter {
 		logger.debug("Loading data from {}...", dataFile);
 		try {
 			RepositoryConnection con = connectionFactory.getConnection();
-			RDFFormat fmt = RDFFormat.matchFileName(
-					dataFile.getFilename(),
-					Set.of(
-							RDFFormat.TURTLE,
-							RDFFormat.TRIG,
-							RDFFormat.NTRIPLES,
-							RDFFormat.NQUADS))
+			RDFFormat fmt = Rio.getParserFormatForFileName(dataFile.getFilename())
 					.orElseThrow(
 							() -> new IllegalArgumentException(
 									"Failed to determine file format of input file "
