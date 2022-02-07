@@ -191,7 +191,6 @@ public abstract class RDFJSONParserTestCase {
 		protected void runTest() throws Exception {
 			// Parse input data
 			RDFParser rdfjsonParser = createRDFParser();
-			rdfjsonParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
 
 			Set<Statement> inputCollection = new LinkedHashSet<>();
 			StatementCollector inputCollector = new StatementCollector(inputCollection);
@@ -203,7 +202,6 @@ public abstract class RDFJSONParserTestCase {
 
 			// Parse expected output data
 			NTriplesParser ntriplesParser = new NTriplesParser();
-			ntriplesParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
 
 			Set<Statement> outputCollection = new LinkedHashSet<>();
 			StatementCollector outputCollector = new StatementCollector(outputCollection);
@@ -271,7 +269,6 @@ public abstract class RDFJSONParserTestCase {
 				// Try parsing the input; this should result in an error being
 				// reported.
 				RDFParser rdfjsonParser = createRDFParser();
-				rdfjsonParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
 
 				rdfjsonParser.setRDFHandler(new StatementCollector());
 

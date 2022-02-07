@@ -140,10 +140,6 @@ public class SPARQL10ManifestTest {
 			RDFParser rdfParser = new TurtleParser();
 			rdfParser.setValueFactory(vf);
 
-			rdfParser.setVerifyData(false);
-			rdfParser.setStopAtFirstError(true);
-			rdfParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
-
 			RDFInserter rdfInserter = new RDFInserter(con);
 			rdfInserter.enforceContext(contexts);
 			rdfParser.setRDFHandler(rdfInserter);

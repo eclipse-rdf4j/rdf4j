@@ -101,8 +101,6 @@ public class PositiveParserTest extends TestCase {
 
 		if (outputURL != null) {
 			// Parse expected output data
-			ntriplesParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
-
 			Set<Statement> outputCollection = new LinkedHashSet<>();
 			StatementCollector outputCollector = new StatementCollector(outputCollection);
 			ntriplesParser.setRDFHandler(outputCollector);

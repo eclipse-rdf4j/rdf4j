@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -141,8 +140,6 @@ public abstract class SPARQLComplianceTest {
 			con.begin();
 			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
 			RDFParser rdfParser = Rio.createParser(rdfFormat, getDataRepository().getValueFactory());
-			rdfParser.setVerifyData(false);
-			rdfParser.setDatatypeHandling(DatatypeHandling.IGNORE);
 			// rdfParser.setPreserveBNodeIDs(true);
 
 			RDFInserter rdfInserter = new RDFInserter(con);
