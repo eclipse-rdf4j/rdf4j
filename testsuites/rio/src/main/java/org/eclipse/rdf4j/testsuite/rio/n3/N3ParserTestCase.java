@@ -124,7 +124,6 @@ public abstract class N3ParserTestCase {
 		protected void runTest() throws Exception {
 			// Parse input data
 			RDFParser turtleParser = createRDFParser();
-			turtleParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
 
 			Set<Statement> inputCollection = new LinkedHashSet<>();
 			StatementCollector inputCollector = new StatementCollector(inputCollection);
@@ -136,7 +135,6 @@ public abstract class N3ParserTestCase {
 
 			// Parse expected output data
 			NTriplesParser ntriplesParser = new NTriplesParser();
-			ntriplesParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
 
 			Set<Statement> outputCollection = new LinkedHashSet<>();
 			StatementCollector outputCollector = new StatementCollector(outputCollection);
@@ -203,7 +201,6 @@ public abstract class N3ParserTestCase {
 				// Try parsing the input; this should result in an error being
 				// reported.
 				RDFParser turtleParser = createRDFParser();
-				turtleParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
 
 				turtleParser.setRDFHandler(new StatementCollector());
 

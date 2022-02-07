@@ -15,7 +15,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
@@ -226,55 +225,12 @@ public abstract class AbstractRDFParser implements RDFParser {
 	}
 
 	@Override
-	public void setVerifyData(boolean verifyData) {
-		this.parserConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, verifyData);
-	}
-
-	@Override
 	public void setPreserveBNodeIDs(boolean preserveBNodeIDs) {
 		this.parserConfig.set(BasicParserSettings.PRESERVE_BNODE_IDS, preserveBNodeIDs);
 	}
 
 	public boolean preserveBNodeIDs() {
 		return this.parserConfig.get(BasicParserSettings.PRESERVE_BNODE_IDS);
-	}
-
-	@Deprecated
-	@Override
-	public void setStopAtFirstError(boolean stopAtFirstError) {
-		getParserConfig().set(NTriplesParserSettings.FAIL_ON_INVALID_LINES, stopAtFirstError);
-		if (!stopAtFirstError) {
-			getParserConfig().addNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
-		} else {
-			// TODO: Add a ParserConfig.removeNonFatalError function to avoid
-			// this
-			Set<RioSetting<?>> set = new HashSet<>(getParserConfig().getNonFatalErrors());
-			set.remove(NTriplesParserSettings.FAIL_ON_INVALID_LINES);
-			getParserConfig().setNonFatalErrors(set);
-		}
-	}
-
-	@SuppressWarnings("deprecation")
-	@Override
-	public void setDatatypeHandling(DatatypeHandling datatypeHandling) {
-		if (datatypeHandling == DatatypeHandling.VERIFY) {
-			this.parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
-			this.parserConfig.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
-		} else if (datatypeHandling == DatatypeHandling.NORMALIZE) {
-			this.parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
-			this.parserConfig.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);
-			this.parserConfig.set(BasicParserSettings.NORMALIZE_DATATYPE_VALUES, true);
-		} else {
-			// Only ignore if they have not explicitly set any of the relevant
-			// settings before this point
-			if (!this.parserConfig.isSet(BasicParserSettings.NORMALIZE_DATATYPE_VALUES)
-					&& !this.parserConfig.isSet(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES)
-					&& !this.parserConfig.isSet(BasicParserSettings.NORMALIZE_DATATYPE_VALUES)) {
-				this.parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
-				this.parserConfig.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, false);
-				this.parserConfig.set(BasicParserSettings.NORMALIZE_DATATYPE_VALUES, false);
-			}
-		}
 	}
 
 	/**

@@ -52,7 +52,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -222,7 +221,6 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 				.orElseThrow(Rio.unsupportedFormat(resultFileURL));
 
 		RDFParser parser = Rio.createParser(rdfFormat);
-		parser.setDatatypeHandling(DatatypeHandling.IGNORE);
 		parser.setPreserveBNodeIDs(true);
 		parser.setValueFactory(getDataRepository().getValueFactory());
 

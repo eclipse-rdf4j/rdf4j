@@ -56,7 +56,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -435,8 +434,6 @@ public abstract class SPARQLQueryTest extends TestCase {
 			con.begin();
 			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
 			RDFParser rdfParser = Rio.createParser(rdfFormat, dataRep.getValueFactory());
-			rdfParser.setVerifyData(false);
-			rdfParser.setDatatypeHandling(DatatypeHandling.IGNORE);
 			// rdfParser.setPreserveBNodeIDs(true);
 
 			RDFInserter rdfInserter = new RDFInserter(con);
@@ -516,7 +513,6 @@ public abstract class SPARQLQueryTest extends TestCase {
 				.orElseThrow(Rio.unsupportedFormat(resultFileURL));
 
 		RDFParser parser = Rio.createParser(rdfFormat);
-		parser.setDatatypeHandling(DatatypeHandling.IGNORE);
 		parser.setPreserveBNodeIDs(true);
 		parser.setValueFactory(dataRep.getValueFactory());
 

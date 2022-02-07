@@ -47,7 +47,6 @@ public abstract class AbstractNTriplesParserUnitTest {
 	@Test
 	public void testNTriplesFile() throws Exception {
 		RDFParser ntriplesParser = createRDFParser();
-		ntriplesParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 
@@ -68,7 +67,6 @@ public abstract class AbstractNTriplesParserUnitTest {
 		String data = "invalid nt";
 
 		RDFParser ntriplesParser = createRDFParser();
-		ntriplesParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
 		Model model = new LinkedHashModel();
 		ntriplesParser.setRDFHandler(new StatementCollector(model));
 
