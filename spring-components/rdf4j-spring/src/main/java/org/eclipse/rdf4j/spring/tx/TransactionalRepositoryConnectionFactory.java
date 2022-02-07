@@ -14,7 +14,7 @@ import static org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils.wr
 import java.lang.invoke.MethodHandles;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.spring.support.ShaclSailValidationReportHelper;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationReportHelper;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.tx.exception.CommitException;
 import org.eclipse.rdf4j.spring.tx.exception.ConnectionClosedException;
