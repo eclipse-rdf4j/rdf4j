@@ -36,6 +36,7 @@ class LockManagerTest {
 		Logger logger = (Logger) LoggerFactory.getLogger(LockManager.class.getName());
 		memoryAppender = new MemoryAppender();
 		memoryAppender.setContext((LoggerContext) LoggerFactory.getILoggerFactory());
+		logger.detachAndStopAllAppenders();
 		logger.setLevel(Level.WARN);
 		logger.addAppender(memoryAppender);
 		memoryAppender.start();
@@ -51,13 +52,12 @@ class LockManagerTest {
 	}
 
 	@Test
-	@Timeout(10)
+	@Timeout(2)
 	void cleanupUnreleasedLocks() throws InterruptedException {
 
 		lock(lockManager);
 
-		System.gc();
-		Thread.sleep(100);
+		TestHelper.callGC(lockManager);
 
 		lockManager.waitForActiveLocks();
 
@@ -65,23 +65,24 @@ class LockManagerTest {
 	}
 
 	@Test
-	@Timeout(10)
+	@Timeout(2)
 	void cleanupUnreleasedLocksWithTracking() throws InterruptedException {
 
 		lock(lockManagerTracking);
 
-		System.gc();
-		Thread.sleep(100);
+		TestHelper.callGC(lockManagerTracking);
 
 		lockManagerTracking.waitForActiveLocks();
 
 		assertFalse(lockManagerTracking.isActiveLock());
 
+		memoryAppender.waitForEvents();
+
 		assertThat(memoryAppender.countEventsForLogger(LockManager.class.getName())).isEqualTo(1);
-		assertThat(memoryAppender.contains("alias1 lock abandoned; lock was acquired in main", Level.WARN)).isTrue();
-		assertThat(memoryAppender.contains(
+		memoryAppender.assertContains("\"alias1\" lock abandoned; lock was acquired in main", Level.WARN);
+		memoryAppender.assertContains(
 				"at org.eclipse.rdf4j.common.concurrent.locks.LockManagerTest.cleanupUnreleasedLocksWithTracking",
-				Level.WARN)).isTrue();
+				Level.WARN);
 
 	}
 

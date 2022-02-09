@@ -88,8 +88,8 @@ public abstract class AbstractSail implements Sail {
 	private volatile File dataDir;
 
 	/**
-	 * Flag indicating whether the Sail has been initialized. Sails are initialized from {@link #initialize()
-	 * initialization} until {@link #shutDown() shutdown}.
+	 * Flag indicating whether the Sail has been initialized. Sails are initialized from {@link #init() initialization}
+	 * until {@link #shutDown() shutdown}.
 	 */
 	private volatile boolean initialized = false;
 
@@ -165,8 +165,8 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	/**
-	 * Checks whether the Sail has been initialized. Sails are initialized from {@link #initialize() initialization}
-	 * until {@link #shutDown() shutdown}.
+	 * Checks whether the Sail has been initialized. Sails are initialized from {@link #init() initialization} until
+	 * {@link #shutDown() shutdown}.
 	 *
 	 * @return <var>true</var> if the Sail has been initialized, <var>false</var> otherwise.
 	 */

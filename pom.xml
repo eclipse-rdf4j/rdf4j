@@ -781,7 +781,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>3.0.0-M5</version>
+					<version>3.0.0-M4</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<argLine>-Xmx2048M</argLine>
@@ -790,7 +790,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
-					<version>3.0.0-M5</version>
+					<version>3.0.0-M4</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<forkCount>1</forkCount>

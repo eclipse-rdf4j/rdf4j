@@ -13,6 +13,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.assertj.core.api.Assertions;
+
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.StackTraceElementProxy;
@@ -23,9 +25,27 @@ public class MemoryAppender extends ListAppender<ILoggingEvent> {
 		this.list.clear();
 	}
 
-	public boolean contains(String string, Level level) {
-		return this.list.stream()
-				.anyMatch(event -> event.getLevel().equals(level) && getString(event).contains(string));
+	public void assertContains(String string, Level level) {
+		Assertions.assertThat(
+				this.list.stream()
+						.map(ILoggingEvent::getLevel)
+						.collect(Collectors.toList())
+		).contains(level);
+
+		Assertions.assertThat(
+				this.list.stream()
+						.map(this::getString)
+						.collect(Collectors.joining("\n\n"))
+		).contains(string);
+	}
+
+	public void assertNotContains(String string, Level level) {
+		Assertions.assertThat(
+				this.list.stream()
+						.filter(e -> e.getLevel().equals(level))
+						.map(this::getString)
+						.collect(Collectors.joining("\n\n"))
+		).doesNotContain(string);
 	}
 
 	private String getString(ILoggingEvent e) {
@@ -72,5 +92,15 @@ public class MemoryAppender extends ListAppender<ILoggingEvent> {
 	@Override
 	public String toString() {
 		return this.list.stream().map(this::getString).collect(Collectors.joining("\n\n"));
+	}
+
+	public void waitForEvents() {
+		while (list.isEmpty()) {
+			try {
+				Thread.sleep(1);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
 	}
 }

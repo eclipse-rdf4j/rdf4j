@@ -22,4 +22,49 @@ public interface Lock {
 	 * Release the lock, making it inactive.
 	 */
 	void release();
+
+	/**
+	 * Functional interface for supplying a lock with support for InterruptedException.
+	 */
+	interface Supplier {
+		Lock getLock() throws InterruptedException;
+	}
+
+	/**
+	 * Extension of the Lock.Supplier interface to support tryLock().
+	 */
+	interface ExtendedSupplier extends Supplier {
+		Lock tryLock();
+
+		static Wrapper wrap(Supplier getLockSupplier, Supplier tryLockSupplier) {
+			return new Wrapper(getLockSupplier, tryLockSupplier);
+		}
+
+		class Wrapper implements ExtendedSupplier {
+			Supplier getLockSupplier;
+			Supplier tryLockSupplier;
+
+			private Wrapper(Supplier getLockSupplier, Supplier tryLockSupplier) {
+				this.getLockSupplier = getLockSupplier;
+				this.tryLockSupplier = tryLockSupplier;
+			}
+
+			@Override
+			public Lock tryLock() {
+				try {
+					return tryLockSupplier.getLock();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(e);
+				}
+			}
+
+			@Override
+			public Lock getLock() throws InterruptedException {
+				return getLockSupplier.getLock();
+			}
+		}
+
+	}
+
 }

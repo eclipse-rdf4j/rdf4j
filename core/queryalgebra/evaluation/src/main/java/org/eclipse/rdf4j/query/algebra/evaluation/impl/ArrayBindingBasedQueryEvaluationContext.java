@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -33,10 +35,13 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
 	private final QueryEvaluationContext context;
 	private final String[] allVariables;
+	private final LinkedHashSet<String> allVariablesSet;
 
 	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables) {
 		this.context = context;
 		this.allVariables = allVariables;
+		this.allVariablesSet = new LinkedHashSet<>();
+		this.allVariablesSet.addAll(Arrays.asList(allVariables));
 	}
 
 	@Override
@@ -124,7 +129,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public ArrayBindingSet createBindingSet(BindingSet bindings) {
-		return new ArrayBindingSet(bindings, allVariables);
+		if (bindings instanceof ArrayBindingSet) {
+			return new ArrayBindingSet(((ArrayBindingSet) bindings), allVariables);
+		}
+
+		return new ArrayBindingSet(bindings, allVariablesSet, allVariables);
 	}
 
 	public static String[] findAllVariablesUsedInQuery(QueryRoot node) {

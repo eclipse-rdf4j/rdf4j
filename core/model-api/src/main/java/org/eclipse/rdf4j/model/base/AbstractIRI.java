@@ -9,13 +9,14 @@
 package org.eclipse.rdf4j.model.base;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * Base class for {@link IRI}, offering common functionality.
  *
  * @author Alessandro Bollini
  * @since 3.5.0
- * 
+ *
  * @implNote Wherever feasible, in order to avoid severe performance degradation of the {@link #equals(Object)} method,
  *           concrete subclasses should override {@link #stringValue()} to provide a constant pre-computed value
  */
@@ -30,8 +31,16 @@ public abstract class AbstractIRI implements IRI {
 
 	@Override
 	public boolean equals(Object o) {
-		return this == o || o instanceof IRI
-				&& stringValue().equals(o.toString());
+		if (this == o)
+			return true;
+		if (o != null) {
+			if (o instanceof AbstractIRI) {
+				return stringValue().equals(o.toString());
+			} else {
+				return o.equals(this);
+			}
+		}
+		return false;
 	}
 
 	@Override

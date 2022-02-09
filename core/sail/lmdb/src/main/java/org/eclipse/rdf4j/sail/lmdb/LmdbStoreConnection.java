@@ -74,7 +74,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			}
 			super.startTransactionInternal();
 		} finally {
-			if (releaseLock && txnLock != null) {
+			if (releaseLock && txnLock != null && txnLock.isActive()) {
 				txnLock.release();
 			}
 		}
@@ -85,7 +85,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		try {
 			super.commitInternal();
 		} finally {
-			if (txnLock != null) {
+			if (txnLock != null && txnLock.isActive()) {
 				txnLock.release();
 			}
 		}
@@ -101,7 +101,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		try {
 			super.rollbackInternal();
 		} finally {
-			if (txnLock != null) {
+			if (txnLock != null && txnLock.isActive()) {
 				txnLock.release();
 			}
 		}

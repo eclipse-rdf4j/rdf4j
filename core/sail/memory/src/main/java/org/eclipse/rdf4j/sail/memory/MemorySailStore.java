@@ -11,12 +11,16 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockingIteration;
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -121,7 +125,14 @@ class MemorySailStore implements SailStore {
 	private final Object snapshotCleanupThreadLockObject = new Object();
 
 	public MemorySailStore(boolean debug) {
-		statementListLockManager = new ReadPrefReadWriteLockManager(debug);
+		if (debug || Properties.lockTrackingEnabled()) {
+			statementListLockManager = new ReadPrefReadWriteLockManager("MemorySailStore statementListLockManager",
+					LockDiagnostics.releaseAbandoned, LockDiagnostics.detectStalledOrDeadlock,
+					LockDiagnostics.stackTrace);
+		} else {
+			statementListLockManager = new ReadPrefReadWriteLockManager("MemorySailStore statementListLockManager",
+					LockDiagnostics.releaseAbandoned);
+		}
 	}
 
 	@Override
@@ -132,13 +143,20 @@ class MemorySailStore implements SailStore {
 	@Override
 	public void close() {
 		try {
+			synchronized (snapshotCleanupThreadLockObject) {
+				if (snapshotCleanupThread != null) {
+					snapshotCleanupThread.interrupt();
+				}
+			}
 			Lock stLock = statementListLockManager.getWriteLock();
 			try {
 				valueFactory.clear();
 				statements.clear();
 				invalidateCache();
 			} finally {
-				stLock.release();
+				if (stLock.isActive()) {
+					stLock.release();
+				}
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
@@ -337,8 +355,12 @@ class MemorySailStore implements SailStore {
 	 * @throws InterruptedException
 	 */
 	protected void cleanSnapshots() throws InterruptedException {
-		// System.out.println("cleanSnapshots() starting...");
-		// long startTime = System.currentTimeMillis();
+
+		StopWatch stopWatch = null;
+		if (logger.isDebugEnabled()) {
+			stopWatch = StopWatch.createStarted();
+			logger.debug("Started cleaning snapshots.");
+		}
 
 		// Sets used to keep track of which lists have already been processed
 		HashSet<MemValue> processedSubjects = new HashSet<>();
@@ -351,7 +373,9 @@ class MemorySailStore implements SailStore {
 		try {
 			lastStmtPos = statements.size() - 1;
 		} finally {
-			stReadLock.release();
+			if (stReadLock.isActive()) {
+				stReadLock.release();
+			}
 		}
 
 		/*
@@ -362,6 +386,10 @@ class MemorySailStore implements SailStore {
 
 		int nextSnapshot = currentSnapshot;
 		for (int i = lastStmtPos; i >= 0; i--) {
+			if (Thread.currentThread().isInterrupted()) {
+				break;
+			}
+
 			// As we are running in the background, yield the write lock frequently to other writers.
 			Lock stWriteLock = statementListLockManager.getWriteLock();
 			try {
@@ -398,12 +426,14 @@ class MemorySailStore implements SailStore {
 				}
 			} finally {
 				stWriteLock.release();
+
 			}
 		}
 
-		// long endTime = System.currentTimeMillis();
-		// System.out.println("cleanSnapshots() took " + (endTime - startTime) +
-		// " ms");
+		if (logger.isDebugEnabled() && stopWatch != null) {
+			stopWatch.stop();
+			logger.debug("Cleaning snapshots took {} seconds.", stopWatch.getTime(TimeUnit.SECONDS));
+		}
 	}
 
 	protected void scheduleSnapshotCleanup() {
@@ -412,10 +442,12 @@ class MemorySailStore implements SailStore {
 			if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
 				Runnable runnable = () -> {
 					try {
+						// sleep for 10 seconds because we don't need to start snapshot cleanup immediately
+						Thread.sleep(10 * 1000);
 						cleanSnapshots();
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
-						logger.warn("snapshot cleanup interrupted");
+						logger.info("snapshot cleanup interrupted");
 					}
 				};
 
@@ -543,7 +575,7 @@ class MemorySailStore implements SailStore {
 					txnLockManager.unlock();
 				}
 			} finally {
-				if (txnStLock != null) {
+				if (txnStLock.isActive()) {
 					txnStLock.release();
 				}
 			}
@@ -816,33 +848,24 @@ class MemorySailStore implements SailStore {
 		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
 			CloseableIteration<? extends Statement, SailException> stIter1 = null;
-			CloseableIteration<? extends Statement, SailException> stIter2 = null;
+
 			boolean allGood = false;
 			Lock stLock = openStatementsReadLock();
 			try {
 				stIter1 = createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
-				if (stIter1 instanceof EmptyIteration) {
-					stLock.release();
-					allGood = true;
-					return stIter1;
-				} else {
-					stIter2 = new LockingIteration<Statement, SailException>(stLock, stIter1);
-					allGood = true;
-					return stIter2;
-				}
+				CloseableIteration<? extends Statement, SailException> stIter2 = LockingIteration.getInstance(stLock,
+						stIter1);
+				allGood = true;
+				return stIter2;
 			} finally {
 				if (!allGood) {
 					try {
-						stLock.release();
+						if (stIter1 != null) {
+							stIter1.close();
+						}
 					} finally {
-						try {
-							if (stIter2 != null) {
-								stIter2.close();
-							}
-						} finally {
-							if (stIter1 != null) {
-								stIter1.close();
-							}
+						if (stLock != null) {
+							stLock.release();
 						}
 					}
 				}
@@ -853,27 +876,24 @@ class MemorySailStore implements SailStore {
 		public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 				throws SailException {
 			CloseableIteration<? extends Triple, SailException> stIter1 = null;
-			CloseableIteration<? extends Triple, SailException> stIter2 = null;
+
 			boolean allGood = false;
 			Lock stLock = openStatementsReadLock();
 			try {
 				stIter1 = createTripleIterator(subj, pred, obj, getCurrentSnapshot());
-				stIter2 = new LockingIteration<Triple, SailException>(stLock, stIter1);
+				CloseableIteration<? extends Triple, SailException> stIter2 = LockingIteration.getInstance(stLock,
+						stIter1);
 				allGood = true;
 				return stIter2;
 			} finally {
 				if (!allGood) {
 					try {
-						stLock.release();
+						if (stIter1 != null) {
+							stIter1.close();
+						}
 					} finally {
-						try {
-							if (stIter2 != null) {
-								stIter2.close();
-							}
-						} finally {
-							if (stIter1 != null) {
-								stIter1.close();
-							}
+						if (stLock != null) {
+							stLock.release();
 						}
 					}
 				}

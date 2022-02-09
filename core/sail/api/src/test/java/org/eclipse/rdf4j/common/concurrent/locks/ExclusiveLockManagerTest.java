@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.common.concurrent.locks;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,9 +34,10 @@ class ExclusiveLockManagerTest {
 		lockManager = new ExclusiveLockManager(false, 1);
 		lockManagerTracking = new ExclusiveLockManager(true, 1);
 
-		Logger logger = (Logger) LoggerFactory.getLogger(LockManager.class.getName());
+		Logger logger = (Logger) LoggerFactory.getLogger(ExclusiveLockManager.class.getName());
 		memoryAppender = new MemoryAppender();
 		memoryAppender.setContext((LoggerContext) LoggerFactory.getILoggerFactory());
+		logger.detachAndStopAllAppenders();
 		logger.setLevel(Level.INFO);
 		logger.addAppender(memoryAppender);
 		memoryAppender.start();
@@ -53,13 +53,12 @@ class ExclusiveLockManagerTest {
 	}
 
 	@Test
-	@Timeout(10)
+	@Timeout(2)
 	void cleanupUnreleasedLocks() throws InterruptedException {
 
 		lock(lockManager);
 
-		System.gc();
-		Thread.sleep(100);
+		TestHelper.callGC(lockManager);
 
 		Lock exclusiveLock = lockManager.getExclusiveLock();
 		exclusiveLock.release();
@@ -67,27 +66,70 @@ class ExclusiveLockManagerTest {
 	}
 
 	@Test
-	@Timeout(10)
+	@Timeout(2)
 	void cleanupUnreleasedLocksWithTracking() throws InterruptedException {
 
 		lock(lockManagerTracking);
 
-		System.gc();
-		Thread.sleep(100);
-
 		Lock exclusiveLock = lockManagerTracking.getExclusiveLock();
 		exclusiveLock.release();
 
-		assertThat(memoryAppender.countEventsForLogger(LockManager.class.getName())).isEqualTo(1);
-		assertThat(memoryAppender.contains(
+		memoryAppender.waitForEvents();
+
+		assertThat(memoryAppender.countEventsForLogger(ExclusiveLockManager.class.getName())).isEqualTo(1);
+		memoryAppender.assertContains(
 				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveLockManagerTest.cleanupUnreleasedLocksWithTracking",
-				Level.WARN)).isTrue();
+				Level.WARN);
 
 	}
 
 	@Test
-	@Timeout(10)
+	@Timeout(2)
 	void deadlockTest() throws InterruptedException {
+
+		Thread thread = null;
+		try {
+			thread = new Thread(() -> {
+				Lock lock1 = null;
+				Lock lock2 = null;
+				try {
+					lock1 = lockManagerTracking.getExclusiveLock();
+					lock2 = lockManagerTracking.getExclusiveLock();
+				} catch (InterruptedException ignored) {
+
+				} finally {
+					if (lock1 != null) {
+						lock1.release();
+					}
+					if (lock2 != null) {
+						lock2.release();
+					}
+				}
+			});
+
+			thread.setDaemon(true);
+			thread.start();
+
+			memoryAppender.waitForEvents();
+
+		} finally {
+			TestHelper.interruptAndJoin(thread);
+		}
+
+		Lock lock = lockManagerTracking.getExclusiveLock();
+		assertTrue(lock.isActive());
+		lock.release();
+
+		assertThat(memoryAppender.countEventsForLogger(ExclusiveLockManager.class.getName())).isEqualTo(1);
+		memoryAppender.assertContains("is possibly deadlocked waiting on \"ExclusiveLockManager\" with id", Level.WARN);
+		memoryAppender.assertContains(
+				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveLockManagerTest.lambda$deadlockTest$0(ExclusiveLockManagerTest.",
+				Level.WARN);
+	}
+
+	@Test
+	@Timeout(2)
+	void stalledTest() throws InterruptedException {
 
 		Lock exclusiveLock1 = lockManagerTracking.getExclusiveLock();
 		Thread thread = null;
@@ -103,13 +145,10 @@ class ExclusiveLockManagerTest {
 			thread.setDaemon(true);
 			thread.start();
 
-			while (memoryAppender.getLoggedEvents().isEmpty()) {
-				Thread.yield();
-			}
+			memoryAppender.waitForEvents();
+
 		} finally {
-			if (thread != null) {
-				thread.interrupt();
-			}
+			TestHelper.interruptAndJoin(thread);
 		}
 
 		assertNull(lockManagerTracking.tryExclusiveLock());
@@ -117,12 +156,12 @@ class ExclusiveLockManagerTest {
 		exclusiveLock1.release();
 		assertFalse(exclusiveLock1.isActive());
 
-		assertThat(memoryAppender.countEventsForLogger(LockManager.class.getName())).isEqualTo(1);
-		assertThat(memoryAppender.contains("is waiting on an active Exclusive lock acquired in main", Level.INFO))
-				.isTrue();
-		assertThat(memoryAppender.contains(
-				"org.eclipse.rdf4j.common.concurrent.locks.ExclusiveLockManagerTest.lambda$deadlockTest", Level.INFO))
-						.isTrue();
+		assertThat(memoryAppender.countEventsForLogger(ExclusiveLockManager.class.getName())).isGreaterThanOrEqualTo(1);
+		memoryAppender.assertContains("is waiting on a possibly stalled lock \"ExclusiveLockManager\" with id",
+				Level.INFO);
+		memoryAppender.assertContains(
+				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveLockManagerTest.stalledTest(ExclusiveLockManagerTest.java:",
+				Level.INFO);
 
 	}
 

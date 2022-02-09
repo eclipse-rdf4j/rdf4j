@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.common.concurrent.locks;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 
-class ReadPrefReadWriteLockManagerTest extends AbstractReadWriteLockManagerTest {
+class ReadPrefReadWriteLockManagerTestIT extends AbstractReadWriteLockManagerTestIT {
 
 	@Override
 	void setUpLockManagers() {
@@ -22,4 +22,8 @@ class ReadPrefReadWriteLockManagerTest extends AbstractReadWriteLockManagerTest 
 				LockDiagnostics.releaseAbandoned, LockDiagnostics.stackTrace);
 	}
 
+	@Override
+	void writeLockShouldSucceed() throws InterruptedException {
+		// this test can take a very long time to succeed
+	}
 }

@@ -9,8 +9,9 @@
 package org.eclipse.rdf4j.common.concurrent.locks;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,70 +30,77 @@ class LockTrackingLoggingTest {
 	void beforeEach() {
 		Properties.setLockTrackingEnabled(true);
 
-		Logger logger = (Logger) LoggerFactory.getLogger(LockManager.class.getName());
 		memoryAppender = new MemoryAppender();
 		memoryAppender.setContext((LoggerContext) LoggerFactory.getILoggerFactory());
-		logger.setLevel(Level.INFO);
-		logger.addAppender(memoryAppender);
+
+		Stream.of(LockManager.class, ExclusiveLockManager.class, ReadPrefReadWriteLockManager.class,
+				WritePrefReadWriteLockManager.class).forEach(clazz -> {
+					Logger logger = (Logger) LoggerFactory.getLogger(clazz);
+					logger.detachAndStopAllAppenders();
+					logger.setLevel(Level.INFO);
+					logger.addAppender(memoryAppender);
+				});
+
 		memoryAppender.start();
 
 	}
 
 	@Test
-	@Timeout(10)
+	@Timeout(2)
 	void exclusiveLockManager() throws InterruptedException {
 
 		ExclusiveLockManager exclusiveLockManager = new ExclusiveLockManager(false, 1);
 
 		createLock(exclusiveLockManager);
 
-		System.gc();
-		Thread.sleep(1);
+		TestHelper.callGC(exclusiveLockManager);
 
 		Lock exclusiveLock = exclusiveLockManager.getExclusiveLock();
 		exclusiveLock.release();
+		memoryAppender.waitForEvents();
 
-		assertThat(memoryAppender.countEventsForLogger(LockManager.class.getName())).isEqualTo(1);
-		assertThat(memoryAppender.contains("at org.eclipse.rdf4j.common.concurrent.locks.LockTrackingLoggingTest.",
-				Level.WARN)).isTrue();
+		assertThat(memoryAppender.countEventsForLogger(ExclusiveLockManager.class.getName())).isEqualTo(1);
+		memoryAppender.assertContains("at org.eclipse.rdf4j.common.concurrent.locks.LockTrackingLoggingTest.",
+				Level.WARN);
 	}
 
 	@Test
-	@Timeout(10)
+	@Timeout(2)
 	void readPrefReadWriteLockManager() throws InterruptedException {
 
-		ReadPrefReadWriteLockManager lockManager = new ReadPrefReadWriteLockManager(false, 1);
+		ReadPrefReadWriteLockManager lockManager = new ReadPrefReadWriteLockManager(false);
 
 		createLock(lockManager);
 
-		System.gc();
-		Thread.sleep(1);
+		TestHelper.callGC(lockManager);
 
 		Lock writeLock = lockManager.getWriteLock();
 		writeLock.release();
+		memoryAppender.waitForEvents();
 
-		assertThat(memoryAppender.countEventsForLogger(LockManager.class.getName())).isEqualTo(1);
-		assertThat(memoryAppender.contains("at org.eclipse.rdf4j.common.concurrent.locks.LockTrackingLoggingTest.",
-				Level.WARN)).isTrue();
+		assertThat(memoryAppender.countEventsForLogger(ReadPrefReadWriteLockManager.class.getName())).isEqualTo(1);
+		memoryAppender.assertContains("at org.eclipse.rdf4j.common.concurrent.locks.LockTrackingLoggingTest.",
+				Level.WARN);
 	}
 
 	@Test
-	@Timeout(10)
+	@Timeout(2)
 	void writePrefReadWriteLockManager() throws InterruptedException {
 
-		WritePrefReadWriteLockManager lockManager = new WritePrefReadWriteLockManager(false, 1);
+		WritePrefReadWriteLockManager lockManager = new WritePrefReadWriteLockManager(false);
 
 		createLock(lockManager);
 
-		System.gc();
-		Thread.sleep(1);
+		TestHelper.callGC(lockManager);
 
 		Lock writeLock = lockManager.getWriteLock();
 		writeLock.release();
 
-		assertThat(memoryAppender.countEventsForLogger(LockManager.class.getName())).isEqualTo(1);
-		assertThat(memoryAppender.contains("at org.eclipse.rdf4j.common.concurrent.locks.LockTrackingLoggingTest.",
-				Level.WARN)).isTrue();
+		memoryAppender.waitForEvents();
+
+		assertThat(memoryAppender.countEventsForLogger(WritePrefReadWriteLockManager.class.getName())).isEqualTo(1);
+		memoryAppender.assertContains("at org.eclipse.rdf4j.common.concurrent.locks.LockTrackingLoggingTest.",
+				Level.WARN);
 	}
 
 	private void createLock(ExclusiveLockManager lockManager) throws InterruptedException {
