@@ -216,7 +216,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.pipeline = new StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics);
-//		EvaluationStrategies.register(this);
 		this.trackResultSize = trackResultSize;
 	}
 
@@ -224,6 +223,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * Methods *
 	 *---------*/
 
+	@Deprecated(forRemoval = true, since = "4.0.0")
 	@Override
 	synchronized public UUID getUUID() {
 		if (uuid == null) {
