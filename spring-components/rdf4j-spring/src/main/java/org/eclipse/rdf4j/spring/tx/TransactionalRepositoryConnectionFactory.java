@@ -16,11 +16,7 @@ import java.lang.invoke.MethodHandles;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationReportHelper;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
-import org.eclipse.rdf4j.spring.tx.exception.CommitException;
-import org.eclipse.rdf4j.spring.tx.exception.ConnectionClosedException;
-import org.eclipse.rdf4j.spring.tx.exception.NoTransactionException;
-import org.eclipse.rdf4j.spring.tx.exception.RDF4JTransactionException;
-import org.eclipse.rdf4j.spring.tx.exception.RollbackException;
+import org.eclipse.rdf4j.spring.tx.exception.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -174,7 +170,10 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 						con.commit();
 						logger.debug("con.commit() called");
 					} catch (Throwable t) {
-						ShaclSailValidationReportHelper.logValidationReportFromThrowableCause(t);
+						ShaclSailValidationReportHelper
+								.getValidationReportAsString(t)
+								.ifPresent(report -> logger.error(
+										"SHACL validation failed, cannot commit. Validation report:\n{}", report));
 						throw new CommitException(
 								"Cannot commit transaction: an error occurred", t);
 					}
