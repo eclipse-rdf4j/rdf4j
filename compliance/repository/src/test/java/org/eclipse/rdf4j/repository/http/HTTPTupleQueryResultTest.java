@@ -8,10 +8,12 @@
 package org.eclipse.rdf4j.repository.http;
 
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.testsuite.repository.TupleQueryResultTest;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
+import org.junit.Test;
 
 public class HTTPTupleQueryResultTest extends TupleQueryResultTest {
 
@@ -38,7 +40,7 @@ public class HTTPTupleQueryResultTest extends TupleQueryResultTest {
 		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 	}
 
-	@Override
+	@Test(expected = SailException.class)
 	@Ignore
 	public void testNotClosingResultThrowsException() throws InterruptedException {
 		// ignored
