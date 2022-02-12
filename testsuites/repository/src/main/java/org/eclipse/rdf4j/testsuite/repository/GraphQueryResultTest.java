@@ -14,6 +14,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.query.GraphQueryResult;
@@ -66,6 +67,7 @@ public abstract class GraphQueryResultTest {
 
 		buildQueries();
 		addData();
+
 	}
 
 	@After
@@ -81,10 +83,14 @@ public abstract class GraphQueryResultTest {
 
 	protected Repository createRepository() throws Exception {
 		Repository repository = newRepository();
+
 		try (RepositoryConnection con = repository.getConnection()) {
+			con.begin(IsolationLevels.NONE);
 			con.clear();
 			con.clearNamespaces();
+			con.commit();
 		}
+
 		return repository;
 	}
 
@@ -106,11 +112,10 @@ public abstract class GraphQueryResultTest {
 	}
 
 	private void addData() throws IOException, UnsupportedRDFormatException, RDFParseException, RepositoryException {
-		InputStream defaultGraph = GraphQueryResultTest.class.getResourceAsStream("/testcases/graph3.ttl");
-		try {
+		try (InputStream defaultGraph = GraphQueryResultTest.class.getResourceAsStream("/testcases/graph3.ttl")) {
+			con.begin(IsolationLevels.NONE);
 			con.add(defaultGraph, "", RDFFormat.TURTLE);
-		} finally {
-			defaultGraph.close();
+			con.commit();
 		}
 	}
 

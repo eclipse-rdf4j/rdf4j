@@ -11,6 +11,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.testsuite.repository.TupleQueryResultTest;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 
 public class HTTPTupleQueryResultTest extends TupleQueryResultTest {
 
@@ -37,4 +38,9 @@ public class HTTPTupleQueryResultTest extends TupleQueryResultTest {
 		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 	}
 
+	@Override
+	@Ignore
+	public void testNotClosingResultThrowsException() throws InterruptedException {
+		// ignored
+	}
 }

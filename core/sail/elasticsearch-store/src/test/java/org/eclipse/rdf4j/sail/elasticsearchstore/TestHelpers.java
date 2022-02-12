@@ -24,14 +24,15 @@ public class TestHelpers {
 			throws IOException, InterruptedException {
 
 		ElasticsearchClusterRunner runner = new ElasticsearchClusterRunner();
-		runner.onBuild(new ElasticsearchClusterRunner.Builder() {
-			@Override
-			public void build(int number, Builder settingsBuilder) {
-				// settingsBuilder.put("indices.breaker.total.limit", "1100m");
-			}
+
+		runner.onBuild((number, settingsBuilder) -> {
+			settingsBuilder.put("discovery.type", "single-node");
+			settingsBuilder.put("cluster.max_shards_per_node", "1");
 		});
+
 		runner.build(ElasticsearchClusterRunner.newConfigs()
 				.numOfNode(1)
+				.indexStoreType("hybridfs")
 				.basePath(installLocation.toString())
 				.clusterName(CLUSTER));
 

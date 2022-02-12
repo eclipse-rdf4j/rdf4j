@@ -26,6 +26,9 @@ import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.reindex.BulkByScrollResponse;
+import org.elasticsearch.index.reindex.DeleteByQueryAction;
+import org.elasticsearch.index.reindex.DeleteByQueryRequestBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.sort.FieldSortBuilder;
@@ -91,8 +94,15 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 
 	@Override
 	public void clear() {
-		clientProvider.getClient().admin().indices().prepareDelete(index).get();
-		init();
+
+		BulkByScrollResponse response = new DeleteByQueryRequestBuilder(clientProvider.getClient(),
+				DeleteByQueryAction.INSTANCE)
+						.filter(QueryBuilders.matchAllQuery())
+						.abortOnVersionConflict(false)
+						.source(index)
+						.get();
+
+		long deleted = response.getDeleted();
 	}
 
 	@Override

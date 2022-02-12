@@ -167,7 +167,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		return new LookAheadIteration<ExtensibleStatement, SailException>() {
 
-			CloseableIteration<SearchHit, RuntimeException> iterator = ElasticsearchHelper
+			final CloseableIteration<SearchHit, RuntimeException> iterator = ElasticsearchHelper
 					.getScrollingIterator(queryBuilder, clientProvider.getClient(), index, scrollTimeout);
 
 			@Override
@@ -621,11 +621,11 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 				.forEachOrdered(o -> {
 
 					if (o instanceof IRI) {
-						stringBuilder.append("IRI<").append(o.toString()).append(">");
+						stringBuilder.append("IRI<").append(o).append(">");
 					} else if (o instanceof BNode) {
-						stringBuilder.append("Bnode<").append(o.toString()).append(">");
+						stringBuilder.append("Bnode<").append(o).append(">");
 					} else if (o instanceof Literal) {
-						stringBuilder.append("Literal<").append(o.toString()).append(">");
+						stringBuilder.append("Literal<").append(o).append(">");
 					} else if (o instanceof Boolean) {
 						stringBuilder.append("Boolean<").append(o).append(">");
 					} else if (o == null) {
