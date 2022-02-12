@@ -103,6 +103,7 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 						.get();
 
 		long deleted = response.getDeleted();
+		clientProvider.getClient().admin().indices().prepareRefresh(index).get();
 	}
 
 	@Override
