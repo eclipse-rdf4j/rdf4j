@@ -43,7 +43,7 @@ public class QueryCostEstimatesTest {
 				"         StatementPattern (costEstimate=1, resultSizeEstimate=1)" + LINE_SEP +
 				"            Var (name=_const_5c6ba46_uri, value=ex:s2, anonymous)" + LINE_SEP +
 				"            Var (name=_const_af00e088_uri, value=ex:pred, anonymous)" + LINE_SEP +
-				"            Var (name=_const_17c09_lit_e2eec718_0, value=\"bah\", anonymous)" + LINE_SEP +
+				"            Var (name=_const_17c09_lit_e2eec718, value=\"bah\", anonymous)" + LINE_SEP +
 				"         Join" + LINE_SEP +
 				"            StatementPattern (costEstimate=10, resultSizeEstimate=10)" + LINE_SEP +
 				"               Var (name=_const_5c6ba45_uri, value=ex:s1, anonymous)" + LINE_SEP +
