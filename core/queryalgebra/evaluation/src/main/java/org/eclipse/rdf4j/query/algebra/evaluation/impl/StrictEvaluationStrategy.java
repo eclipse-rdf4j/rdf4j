@@ -138,7 +138,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.EvaluationStrategies;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -185,7 +184,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	// track the exeution time of each node in the plan
 	private boolean trackTime;
 
-	private final UUID uuid;
+	private UUID uuid;
 
 	private QueryOptimizerPipeline pipeline;
 
@@ -217,8 +216,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.pipeline = new StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics);
-		this.uuid = UUID.randomUUID();
-		EvaluationStrategies.register(this);
 		this.trackResultSize = trackResultSize;
 	}
 
@@ -226,8 +223,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * Methods *
 	 *---------*/
 
+	@Deprecated(forRemoval = true, since = "4.0.0")
 	@Override
-	public UUID getUUID() {
+	synchronized public UUID getUUID() {
+		if (uuid == null) {
+			uuid = UUID.randomUUID();
+		}
 		return uuid;
 	}
 
