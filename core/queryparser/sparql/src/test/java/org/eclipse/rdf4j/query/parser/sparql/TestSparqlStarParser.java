@@ -78,7 +78,7 @@ public class TestSparqlStarParser {
 	 *         ValueExprTripleRef
 	 *            Var (name=_const_6a63478_uri, value=urn:A, anonymous)
 	 *            Var (name=_const_6a63479_uri, value=urn:B, anonymous)
-	 *            Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
+	 *            Var (name=_const_31_lit_5fc8fb17, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
 	 *      SingletonSet
 	 *
 	 * @throws Exception
@@ -175,7 +175,7 @@ public class TestSparqlStarParser {
 	 *      TripleRef
 	 *         Var (name=_const_6a63478_uri, value=urn:A, anonymous)
 	 *         Var (name=_const_6a63479_uri, value=urn:B, anonymous)
-	 *         Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
+	 *         Var (name=_const_31_lit_5fc8fb17, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
 	 *         Var (name=_anon_ee568c3a_eff4_4b69_a4f4_080503da7375, anonymous)
 	 * @throws Exception
 	 */
@@ -865,7 +865,7 @@ public class TestSparqlStarParser {
 	      StatementPattern
 	         Var (name=_anon_ec2f43ed_6a93_44ff_ad7d_e1f403b4a5e9, anonymous)
 	         Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
-	         Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
+	         Var (name=_const_31_lit_5fc8fb17, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
 	 * @throws Exception
 	 */
 	@Test
@@ -900,8 +900,8 @@ public class TestSparqlStarParser {
 		   StatementPattern
 		      Var (name=_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9, anonymous)
 		      Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
-		      Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
-	 
+		      Var (name=_const_31_lit_5fc8fb17, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
+	
 		   Extension
 		      ExtensionElem (_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9)
 		         ValueExprTripleRef
@@ -917,7 +917,7 @@ public class TestSparqlStarParser {
 		         StatementPattern
 		            Var (name=_anon_9e07cd00_0c02_4754_89ad_0ce4a5264d6e, anonymous)
 		            Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
-		            Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)	 
+		            Var (name=_const_31_lit_5fc8fb17, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
 	 * @throws Exception
 	 */
 	@Test
