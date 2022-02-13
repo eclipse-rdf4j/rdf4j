@@ -11,7 +11,7 @@ import java.io.File;
 import java.io.IOException;
 
 import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
-import org.elasticsearch.common.settings.Settings.Builder;
+import org.elasticsearch.common.settings.Settings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,11 +23,18 @@ public class TestHelpers {
 	public static ElasticsearchClusterRunner startElasticsearch(File installLocation)
 			throws IOException, InterruptedException {
 
+		ElasticsearchStore.indexSettings = Settings.builder()
+				.put("index.refresh_interval", "-1")
+				.put("index.translog.durability", "async")
+				.put("index.translog.sync_interval", "600s")
+				.build();
+
 		ElasticsearchClusterRunner runner = new ElasticsearchClusterRunner();
 
 		runner.onBuild((number, settingsBuilder) -> {
-			settingsBuilder.put("discovery.type", "single-node");
-			settingsBuilder.put("cluster.max_shards_per_node", "1");
+			settingsBuilder.put("discovery.type", "single-node")
+					.put("cluster.max_shards_per_node", "1")
+					.put("index.store.type", "hybridfs");
 		});
 
 		runner.build(ElasticsearchClusterRunner.newConfigs()

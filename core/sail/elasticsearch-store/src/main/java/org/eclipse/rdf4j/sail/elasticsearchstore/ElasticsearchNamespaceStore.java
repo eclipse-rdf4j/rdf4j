@@ -24,6 +24,7 @@ import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.Requests;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.reindex.BulkByScrollResponse;
@@ -116,9 +117,11 @@ class ElasticsearchNamespaceStore implements NamespaceStoreInterface {
 				.isExists();
 
 		if (!indexExistsAlready) {
-			CreateIndexRequest request = new CreateIndexRequest(index);
+			CreateIndexRequest request = Requests.createIndexRequest(index);
+			request.settings(ElasticsearchStore.indexSettings);
 			request.mapping(ELASTICSEARCH_TYPE, MAPPING, XContentType.JSON);
 			clientProvider.getClient().admin().indices().create(request).actionGet();
+
 		}
 
 	}

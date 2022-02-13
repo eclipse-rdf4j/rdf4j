@@ -26,6 +26,7 @@ import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.cluster.health.ClusterHealthStatus;
+import org.elasticsearch.common.settings.Settings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,6 +58,10 @@ public class ElasticsearchStore extends ExtensibleStore<ElasticsearchDataStructu
 	private int port;
 	private String clusterName;
 	private String index;
+
+	static Settings indexSettings = Settings.builder()
+			.put("index.refresh_interval", "-1")
+			.build();
 
 	public ElasticsearchStore(String hostname, int port, String clusterName, String index) {
 		this(hostname, port, clusterName, index, true);

@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementIm
  */
 class ElasticsearchStatement extends ExtensibleStatementImpl implements ElasticsearchId {
 
-	private String elasticsearchId;
+	private final String elasticsearchId;
 
 	ElasticsearchStatement(String elasticsearchId, Resource subject, IRI predicate, Value object, boolean inferred) {
 		super(subject, predicate, object, inferred);

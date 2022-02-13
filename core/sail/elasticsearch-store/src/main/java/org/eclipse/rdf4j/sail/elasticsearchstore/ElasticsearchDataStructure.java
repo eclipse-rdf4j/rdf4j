@@ -43,6 +43,7 @@ import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.IndicesAdminClient;
+import org.elasticsearch.client.Requests;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.engine.VersionConflictEngineException;
 import org.elasticsearch.index.query.BoolQueryBuilder;
@@ -528,7 +529,8 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 				.isExists();
 
 		if (!indexExistsAlready) {
-			CreateIndexRequest request = new CreateIndexRequest(index);
+			CreateIndexRequest request = Requests.createIndexRequest(index);
+			request.settings(ElasticsearchStore.indexSettings);
 			request.mapping(ELASTICSEARCH_TYPE, MAPPING, XContentType.JSON);
 			clientProvider.getClient().admin().indices().create(request).actionGet();
 		}

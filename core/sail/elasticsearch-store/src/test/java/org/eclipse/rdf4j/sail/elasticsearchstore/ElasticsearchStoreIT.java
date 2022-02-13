@@ -55,7 +55,7 @@ public class ElasticsearchStoreIT {
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	private static ElasticsearchClusterRunner runner;
-	private static File installLocation = Files.newTemporaryFolder();
+	private static final File installLocation = Files.newTemporaryFolder();
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {
@@ -69,22 +69,17 @@ public class ElasticsearchStoreIT {
 
 	@After
 	public void after() throws UnknownHostException {
-		runner.admin().indices().refresh(Requests.refreshRequest("*")).actionGet();
-		printAllDocs();
-
+//		printAllDocs();
 		deleteAllIndexes();
-
 	}
 
 	@Before
 	public void before() throws UnknownHostException {
-//		embeddedElastic.refreshIndices();
-//
-//		embeddedElastic.deleteIndices();
-
 	}
 
 	private void printAllDocs() {
+		runner.admin().indices().refresh(Requests.refreshRequest("*")).actionGet();
+
 		for (String index : getIndexes()) {
 			logger.info("INDEX: " + index);
 			ActionFuture<SearchResponse> res = runner.client().search(Requests.searchRequest(index));
@@ -96,11 +91,7 @@ public class ElasticsearchStoreIT {
 	}
 
 	private void deleteAllIndexes() {
-		for (String index : getIndexes()) {
-			logger.info("deleting index: " + index);
-			runner.admin().indices().delete(Requests.deleteIndexRequest(index)).actionGet();
-
-		}
+		runner.admin().indices().delete(Requests.deleteIndexRequest("_all")).actionGet();
 	}
 
 	private String[] getIndexes() {
@@ -183,15 +174,17 @@ public class ElasticsearchStoreIT {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
+		} finally {
+			elasticsearchStore.shutDown();
 		}
-		elasticsearchStore.shutDown();
 
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
+		} finally {
+			elasticsearchStore.shutDown();
 		}
-		elasticsearchStore.shutDown();
 
 	}
 
@@ -241,6 +234,9 @@ public class ElasticsearchStoreIT {
 			assertEquals(count, connection.size());
 			stopWatch.stop();
 			ElasticsearchStoreTransactionsIT.logTime(stopWatch, "Getting size", TimeUnit.SECONDS);
+
+		} finally {
+			elasticsearchStore.shutDown();
 
 		}
 
@@ -295,6 +291,9 @@ public class ElasticsearchStoreIT {
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			String namespace = connection.getNamespace(SHACL.PREFIX);
 			assertEquals(SHACL.NAMESPACE, namespace);
+		} finally {
+			elasticsearchStore.shutDown();
+
 		}
 	}
 
