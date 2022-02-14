@@ -21,6 +21,7 @@ import static org.mockito.Mockito.verify;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDateTime;
+import java.time.Period;
 import java.util.Date;
 import java.util.GregorianCalendar;
 
@@ -579,6 +580,15 @@ public class ValuesTest {
 	}
 
 	@Test
+	public void testLiteralObjectBigDecimal() throws Exception {
+		Object obj = BigDecimal.valueOf(42.1);
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.DECIMAL);
+		assertThat(l.decimalValue().doubleValue()).isEqualTo(42.1);
+	}
+
+	@Test
 	public void testLiteralObjectInteger() throws Exception {
 		Object obj = Integer.valueOf(42);
 		Literal l = literal(obj);
@@ -588,12 +598,12 @@ public class ValuesTest {
 	}
 
 	@Test
-	public void testLiteralObjectLong() throws Exception {
-		Object obj = Long.valueOf(42l);
+	public void testLiteralObjectBigInteger() throws Exception {
+		Object obj = BigInteger.valueOf(42l);
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
-		assertThat(l.getDatatype()).isEqualTo(XSD.LONG);
-		assertThat(l.longValue()).isEqualTo(42l);
+		assertThat(l.getDatatype()).isEqualTo(XSD.INTEGER);
+		assertThat(l.integerValue()).isEqualTo(42l);
 	}
 
 	@Test
@@ -617,7 +627,6 @@ public class ValuesTest {
 		} catch (DatatypeConfigurationException e) {
 			fail("Could not instantiate javax.xml.datatype.DatatypeFactory");
 		}
-
 	}
 
 	@Test
@@ -626,6 +635,15 @@ public class ValuesTest {
 		Literal l = literal(obj);
 		assertThat(l).isNotNull();
 		assertThat(l.getDatatype()).isEqualTo(XSD.DATETIME);
+	}
+
+	@Test
+	public void testLiteralTemporalPeriod() throws Exception {
+		Object obj = Period.ofWeeks(42);
+		Literal l = literal(obj);
+		assertThat(l).isNotNull();
+		assertThat(l.getDatatype()).isEqualTo(XSD.DURATION);
+		assertThat(l.temporalAmountValue()).isEqualTo(Period.ofWeeks(42));
 	}
 
 	@Test
