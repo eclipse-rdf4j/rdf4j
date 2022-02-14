@@ -8,9 +8,12 @@
 
 package org.eclipse.rdf4j.spring.operationcache;
 
+import static org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils.findWrapper;
+
 import java.lang.invoke.MethodHandles;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 import java.util.WeakHashMap;
 import java.util.function.Supplier;
 
@@ -122,15 +125,15 @@ public class CachingOperationInstantiator extends DirectOperationInstantiator {
 	}
 
 	private void renewLocalCacheIfPossible(Operation op, RepositoryConnection con) {
-		if (con instanceof CachingRepositoryConnection) {
+		Optional<CachingRepositoryConnection> wrapperOpt = findWrapper(con, CachingRepositoryConnection.class);
+		if (wrapperOpt.isPresent()) {
+			CachingRepositoryConnection cachingCon = wrapperOpt.get();
 			if (op instanceof ResultCachingGraphQuery) {
-				((CachingRepositoryConnection) con)
-						.renewLocalResultCache((ResultCachingGraphQuery) op);
+				cachingCon.renewLocalResultCache((ResultCachingGraphQuery) op);
 			} else if (op instanceof ResultCachingTupleQuery) {
-				((CachingRepositoryConnection) con)
-						.renewLocalResultCache((ResultCachingTupleQuery) op);
+				cachingCon.renewLocalResultCache((ResultCachingTupleQuery) op);
 			} else if (op instanceof ClearableAwareUpdate) {
-				((ClearableAwareUpdate) op).renewClearable((CachingRepositoryConnection) con);
+				((ClearableAwareUpdate) op).renewClearable(cachingCon);
 			}
 		}
 	}

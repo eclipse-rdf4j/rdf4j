@@ -37,6 +37,8 @@ public class ClearableAwareUpdate extends DelegatingUpdate {
 		super.execute();
 		Clearable clearable = clearableRef.get();
 		if (clearable == null) {
+			logger.debug(
+					"update executed, but reference to clearable (i.e. result-caching connection) is gone - cannot mark it dirty");
 			return;
 		}
 		if (logger.isDebugEnabled()) {
