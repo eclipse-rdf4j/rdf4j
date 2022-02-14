@@ -94,6 +94,7 @@ public interface ValueFactory {
 	 * object must be <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a>.
 	 *
 	 * @param label The literal's label, must not be <tt>null</tt>.
+	 * @return A literal for the specified value.
 	 */
 	Literal createLiteral(String label);
 
@@ -104,6 +105,7 @@ public interface ValueFactory {
 	 *
 	 * @param label    The literal's label, must not be <tt>null</tt>.
 	 * @param language The literal's language attribute, must not be <tt>null</tt>.
+	 * @return A literal for the specified value and language attribute.
 	 */
 	Literal createLiteral(String label, String language);
 
@@ -114,6 +116,7 @@ public interface ValueFactory {
 	 * @param datatype The literal's datatype. If it is null, the datatype
 	 *                 <a href="http://www.w3.org/2001/XMLSchema#string">{@code xsd:string}</a> will be assigned to this
 	 *                 literal.
+	 * @return A literal for the specified value and type.
 	 */
 	Literal createLiteral(String label, IRI datatype);
 
@@ -188,12 +191,18 @@ public interface ValueFactory {
 	Literal createLiteral(double value);
 
 	/**
-	 * Creates a new literal representing the specified bigDecimal that is typed as an <tt>xsd:Decimal</tt>.
+	 * Creates a new literal representing the specified bigDecimal that is typed as an <tt>xsd:decimal</tt>.
+	 * 
+	 * @param bigDecimal The value for the literal.
+	 * @return An <tt>xsd:decimal</tt>-typed literal for the specified value.
 	 */
 	Literal createLiteral(BigDecimal bigDecimal);
 
 	/**
-	 * Creates a new literal representing the specified bigInteger that is typed as an <tt>xsd:Integer</tt>.
+	 * Creates a new literal representing the specified bigInteger that is typed as an <tt>xsd:integer</tt>.
+	 * 
+	 * @param bigInteger The value for the literal.
+	 * @return An <tt>xsd:integer</tt>-typed literal for the specified value.
 	 */
 	Literal createLiteral(BigInteger bigInteger);
 
@@ -257,6 +266,9 @@ public interface ValueFactory {
 	/**
 	 * Creates a new literal representing the specified date that is typed using the appropriate XML Schema date/time
 	 * datatype.
+	 * 
+	 * @param date The value for the literal.
+	 * @return A typed literal for the specified date.
 	 */
 	Literal createLiteral(Date date);
 
