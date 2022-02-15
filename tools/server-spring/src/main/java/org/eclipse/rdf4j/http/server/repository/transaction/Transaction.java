@@ -385,14 +385,7 @@ class Transaction implements AutoCloseable {
 	public void close() throws InterruptedException, ExecutionException {
 		if (isClosed.compareAndSet(false, true)) {
 			try {
-				// Stop new tasks being submitted to the executor from now
-				Future<Boolean> result = submitAndShutdown(() -> {
-					txnConnection.close();
-					return true;
-				});
-				// Shutdown is atomic with the close operation above, so just need to block for it to complete before
-				// returning
-				getFromFuture(result);
+				txnConnection.close();
 			} finally {
 				try {
 					if (!executor.isTerminated()) {
