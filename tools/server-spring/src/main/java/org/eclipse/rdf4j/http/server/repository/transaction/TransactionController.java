@@ -85,6 +85,7 @@ import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.eclipse.rdf4j.rio.Rio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.context.ApplicationContextException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.View;
@@ -95,7 +96,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
  *
  * @author Jeen Broekstra
  */
-public class TransactionController extends AbstractController {
+public class TransactionController extends AbstractController implements DisposableBean {
 
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -174,7 +175,11 @@ public class TransactionController extends AbstractController {
 				try {
 					transaction.rollback();
 				} finally {
-					ActiveTransactionRegistry.INSTANCE.deregister(transaction);
+					try {
+						transaction.close();
+					} finally {
+						ActiveTransactionRegistry.INSTANCE.deregister(transaction);
+					}
 				}
 				result = new ModelAndView(EmptySuccessView.getInstance());
 				logger.info("transaction rollback request finished.");
@@ -189,7 +194,9 @@ public class TransactionController extends AbstractController {
 			}
 			break;
 		}
-		ActiveTransactionRegistry.INSTANCE.active(transaction);
+		if (!(transaction.isClosed() || transaction.isComplete())) {
+			ActiveTransactionRegistry.INSTANCE.active(transaction);
+		}
 		return result;
 	}
 
@@ -657,6 +664,13 @@ public class TransactionController extends AbstractController {
 			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());
 			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
 		}
+	}
+
+	// Comes from disposableBean interface so to be able to stop the ActiveTransactionRegistry scheduler
+	@Override
+	public void destroy()
+			throws Exception {
+		ActiveTransactionRegistry.INSTANCE.destroyScheduler();
 	}
 
 }

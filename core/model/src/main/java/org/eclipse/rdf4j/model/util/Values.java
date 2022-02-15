@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.model.util;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.temporal.TemporalAccessor;
+import java.time.temporal.TemporalAmount;
 import java.util.Date;
 import java.util.Objects;
 
@@ -634,8 +635,9 @@ public class Values {
 	 * Creates a new typed {@link Literal} out of the supplied object, mapping the runtime type of the object to the
 	 * appropriate {@link XSD} datatype.
 	 * <p>
-	 * Recognized types are {@link Boolean}, {@link Byte}, {@link Double}, {@link Float}, {@link Integer}, {@link Long},
-	 * {@link Short}, {@link XMLGregorianCalendar } , {@link TemporalAccessor} and {@link Date}.
+	 * Recognized types are {@link Boolean}, {@link Byte}, {@link Double}, {@link Float}, {@link BigDecimal},
+	 * {@link Integer}, {@link BigInteger}, {@link Long}, {@link Short}, {@link XMLGregorianCalendar},
+	 * {@link TemporalAccessor}, {@link TemporalAmpount} and {@link Date}.
 	 *
 	 * @param object            an object to be converted to a typed literal.
 	 * @param failOnUnknownType If no mapping is available and <code>failOnUnknownType</code> is <code>false</code> the
@@ -796,8 +798,12 @@ public class Values {
 			return valueFactory.createLiteral((Double) object);
 		} else if (object instanceof Float) {
 			return valueFactory.createLiteral((Float) object);
+		} else if (object instanceof BigDecimal) {
+			return valueFactory.createLiteral((BigDecimal) object);
 		} else if (object instanceof Integer) {
 			return valueFactory.createLiteral((Integer) object);
+		} else if (object instanceof BigInteger) {
+			return valueFactory.createLiteral((BigInteger) object);
 		} else if (object instanceof Long) {
 			return valueFactory.createLiteral((Long) object);
 		} else if (object instanceof Short) {
@@ -808,6 +814,8 @@ public class Values {
 			return valueFactory.createLiteral((Date) object);
 		} else if (object instanceof TemporalAccessor) {
 			return valueFactory.createLiteral((TemporalAccessor) object);
+		} else if (object instanceof TemporalAmount) {
+			return valueFactory.createLiteral((TemporalAmount) object);
 		} else if (object instanceof String) {
 			return valueFactory.createLiteral(object.toString(), CoreDatatype.XSD.STRING);
 		} else {
