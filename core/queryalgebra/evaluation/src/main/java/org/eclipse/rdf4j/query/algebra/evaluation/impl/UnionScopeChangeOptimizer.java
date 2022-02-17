@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * Inspect Union clauses to check if scope change can be avoided (allowing injection of pre-bound vars into union
@@ -30,7 +30,11 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new UnionScopeChangeFixer());
 	}
 
-	private static class UnionScopeChangeFixer extends AbstractQueryModelVisitor<RuntimeException> {
+	private static class UnionScopeChangeFixer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		private UnionScopeChangeFixer() {
+			super(true);
+		}
 
 		@Override
 		public void meet(Union union) {
@@ -42,7 +46,6 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 					return;
 				}
 
-				checker.containsBindOrValues = false;
 				union.getRightArg().visit(checker);
 
 				if (checker.containsBindOrValues) {
@@ -56,9 +59,13 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private static class UnionArgChecker extends AbstractQueryModelVisitor<RuntimeException> {
+	private static class UnionArgChecker extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		boolean containsBindOrValues = false;
+
+		private UnionArgChecker() {
+			super(false);
+		}
 
 		@Override
 		public void meet(Union union) {
@@ -70,7 +77,6 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Projection subselect) {
 			// do not check deeper in the tree
-			return;
 		}
 
 		@Override

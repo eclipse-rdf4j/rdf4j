@@ -7,12 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.Value;
 
 /**
  * A variable that can contain a Value.
  */
-public class Var extends AbstractQueryModelNode implements ValueExpr {
+public final class Var implements ValueExpr, QueryModelNode {
 
 	/*-----------*
 	 * Variables *
@@ -25,6 +27,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	private boolean anonymous = false;
 
 	private boolean constant = false;
+
+	private QueryModelNode parent;
 
 	/*--------------*
 	 * Constructors *
@@ -75,15 +79,44 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	@Override
-	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+	public final <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
+	}
+
+	@Override
+	public final <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+
+	}
+
+	@Override
+	public QueryModelNode getParentNode() {
+		return parent;
+	}
+
+	@Override
+	public void setParentNode(QueryModelNode parent) {
+		this.parent = parent;
+	}
+
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+
+	}
+
+	@Override
+	public void replaceWith(QueryModelNode replacement) {
+		if (parent == null) {
+			throw new IllegalStateException("Node has no parent");
+		}
+
+		parent.replaceChildNode(this, replacement);
 	}
 
 	@Override
 	public String getSignature() {
 		StringBuilder sb = new StringBuilder(64);
 
-		sb.append(super.getSignature());
+		sb.append(this.getClass().getSimpleName());
 
 		sb.append(" (name=").append(name);
 
@@ -102,9 +135,11 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public boolean equals(Object other) {
+		if (this == other)
+			return true;
 		if (other instanceof Var) {
 			Var o = (Var) other;
-			return name.equals(o.getName()) && nullEquals(value, o.getValue()) && anonymous == o.isAnonymous();
+			return name.equals(o.getName()) && Objects.equals(value, o.getValue()) && anonymous == o.isAnonymous();
 		}
 		return false;
 	}
@@ -121,9 +156,40 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		return result;
 	}
 
+//	@Override
+//	public boolean equals(Object o) {
+//		if (this == o) {
+//			return true;
+//		}
+//		if (o == null || getClass() != o.getClass()) {
+//			return false;
+//		}
+//		Var var = (Var) o;
+//		return anonymous == var.anonymous && Objects.equals(name, var.name) && Objects.equals(value, var.value);
+//	}
+//
+//	int hashCode = 0;
+//
+//	@Override
+//	public int hashCode() {
+//		if(hashCode == 0) {
+//			int result = 1;
+//			result = 31 * result + (name == null ? 0 : name.hashCode());
+//			result = 31 * result + (value == null ? 0 : value.hashCode());
+//			result = 31 * result + Boolean.hashCode(anonymous);
+//			hashCode = result;
+//		}
+//		return hashCode;
+//	}
+
 	@Override
 	public Var clone() {
-		return (Var) super.clone();
+		try {
+			return (Var) super.clone();
+		} catch (CloneNotSupportedException e) {
+			throw new IllegalStateException();
+		}
+
 	}
 
 	/**

@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -98,7 +99,9 @@ public interface SailSink extends SailClosable {
 	 * @param ctx  The context to add the statement to.
 	 * @throws SailException If the statement could not be added, for example because no transaction is active.
 	 */
-	void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException;
+	default void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+		approve(Statements.statement(subj, pred, obj, ctx));
+	}
 
 	/**
 	 * Adds a statement to the store.
@@ -106,26 +109,7 @@ public interface SailSink extends SailClosable {
 	 * @param statement The statement to add.
 	 * @throws SailException If the statement could not be added, for example because no transaction is active.
 	 */
-	default void approve(Statement statement) throws SailException {
-		approve(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext());
-	}
-
-	/**
-	 * Removes a statement with the specified subject, predicate, object, and context. All four parameters may be
-	 * non-null.
-	 *
-	 * Deprecated since 3.1.0 2019.
-	 *
-	 * @param subj The subject of the statement that should be removed
-	 * @param pred The predicate of the statement that should be removed
-	 * @param obj  The object of the statement that should be removed
-	 * @param ctx  The context from which to remove the statement
-	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
-	 */
-	@Deprecated
-	default void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
-		deprecate(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx));
-	}
+	void approve(Statement statement) throws SailException;
 
 	/**
 	 * Removes a statement.

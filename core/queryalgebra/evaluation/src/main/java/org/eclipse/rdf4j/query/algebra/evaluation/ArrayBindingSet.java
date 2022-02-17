@@ -63,7 +63,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		Set<String> toCopyBindingNames = toCopy.getBindingNames();
 
-		if (names.containsAll(toCopyBindingNames)) {
+		if (names == toCopyBindingNames || names.containsAll(toCopyBindingNames)) {
 			this.bindingNames = namesArray;
 			this.whichBindingsHaveBeenSet = new BitSet(this.bindingNames.length);
 			this.values = new Value[this.bindingNames.length];

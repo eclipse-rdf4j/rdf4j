@@ -143,6 +143,11 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		// no-op for backwards compatibility
 	}
 
+	@Experimental
+	default boolean isTrackResultSize() {
+		return false;
+	}
+
 	/**
 	 * Enable or disable time tracking for the query plan. Useful to determine which parts of a query plan take the most
 	 * time to evaluate.

@@ -11,7 +11,9 @@ package org.eclipse.rdf4j.sail.memory;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Optional;
+import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.memory.model.MemStatement;
 import org.junit.Test;
@@ -37,17 +39,20 @@ public class InferredMemStatementTest {
 		// make the statement inferred
 		try (MemoryStoreConnection connection = (MemoryStoreConnection) memoryStore.getConnection()) {
 			connection.begin();
-			MemStatement statement = connection.getStatements(RDF.TYPE, RDF.TYPE, RDF.TYPE, true)
-					.stream()
-					.map(s -> (MemStatement) s)
-					.findAny()
-					.get();
+			try (Stream<? extends Statement> stream = connection.getStatements(RDF.TYPE, RDF.TYPE, RDF.TYPE, true)
+					.stream()) {
+				MemStatement statement = stream
+						.map(s -> (MemStatement) s)
+						.findAny()
+						.get();
 
-			assertThat(statement.isExplicit()).isTrue();
-			statement.setExplicit(false);
-			assertThat(statement.isExplicit()).isFalse();
+				assertThat(statement.isExplicit()).isTrue();
+				statement.setExplicit(false);
+				assertThat(statement.isExplicit()).isFalse();
 
-			connection.commit();
+				connection.commit();
+			}
+
 		}
 
 		// we need to add an inferred statement so that the MemorySailStore doesn't assume that the inferred branch is

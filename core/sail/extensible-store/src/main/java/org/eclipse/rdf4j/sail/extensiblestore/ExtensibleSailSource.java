@@ -108,11 +108,6 @@ class ExtensibleSailSource implements SailSource {
 			}
 
 			@Override
-			public void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
-				throw new IllegalStateException("Unsupported operation. Use deprecate(Statement statement) instead!");
-			}
-
-			@Override
 			public void deprecate(Statement statement) throws SailException {
 				dataStructure.removeStatement(extensibleStatementHelper.fromStatement(statement, inferred));
 			}

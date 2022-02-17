@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -52,7 +53,7 @@ public class TestPropPathMisbehaviour {
 		String query1 = "select ?iri ?value where { \n" +
 				"    ?iri (<urn:p>+) / <urn:q> ?value .\n" +
 				"}";
-		ParsedQuery q = parser.parseQuery(query1, "http://base.org/");
+		ParsedQuery q = parser.parseQuery(query1, "http://base.org/", SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -80,7 +81,7 @@ public class TestPropPathMisbehaviour {
 		String query1 = "select ?value where { \n" +
 				"    <urn:non-existent> ^(<urn:p>*) / <urn:q>? ?value .\n" +
 				"}";
-		ParsedQuery q = parser.parseQuery(query1, "http://base.org/");
+		ParsedQuery q = parser.parseQuery(query1, "http://base.org/", SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();

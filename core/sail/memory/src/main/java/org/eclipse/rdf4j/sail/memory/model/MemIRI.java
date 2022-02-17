@@ -41,7 +41,7 @@ public class MemIRI implements IRI, MemResource {
 	/**
 	 * The MemURI's hash code, 0 if not yet initialized.
 	 */
-	private int hashCode = 0;
+	private volatile int hashCode = 0;
 
 	/**
 	 * The list of statements for which this MemURI is the subject.
@@ -125,6 +125,10 @@ public class MemIRI implements IRI, MemResource {
 
 		if (other instanceof MemIRI) {
 			MemIRI o = (MemIRI) other;
+			if (o.creator == creator) {
+				// two different MemIRI from the same MemoryStore can not be equal.
+				return false;
+			}
 			return namespace.equals(o.getNamespace()) && localName.equals(o.getLocalName());
 		} else if (other instanceof IRI) {
 			String otherStr = ((IRI) other).stringValue();

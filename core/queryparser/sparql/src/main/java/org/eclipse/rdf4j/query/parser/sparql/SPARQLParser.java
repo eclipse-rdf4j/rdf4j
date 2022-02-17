@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.IncompatibleOperationException;
@@ -59,7 +60,8 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 public class SPARQLParser implements QueryParser {
 
 	@Override
-	public ParsedUpdate parseUpdate(String updateStr, String baseURI) throws MalformedQueryException {
+	public ParsedUpdate parseUpdate(String updateStr, String baseURI, ValueFactory valueFactory)
+			throws MalformedQueryException {
 		try {
 
 			ParsedUpdate update = new ParsedUpdate(updateStr);
@@ -120,7 +122,7 @@ public class SPARQLParser implements QueryParser {
 					}
 				}
 
-				UpdateExprBuilder updateExprBuilder = new UpdateExprBuilder(SimpleValueFactory.getInstance());
+				UpdateExprBuilder updateExprBuilder = new UpdateExprBuilder(valueFactory);
 
 				ASTUpdate updateNode = uc.getUpdate();
 				if (updateNode != null) {
@@ -158,11 +160,11 @@ public class SPARQLParser implements QueryParser {
 		} catch (RDFParseException | ParseException | TokenMgrError | VisitorException | IOException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
-
 	}
 
 	@Override
-	public ParsedQuery parseQuery(String queryStr, String baseURI) throws MalformedQueryException {
+	public ParsedQuery parseQuery(String queryStr, String baseURI, ValueFactory valueFactory)
+			throws MalformedQueryException {
 		try {
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(queryStr);
 			StringEscapesProcessor.process(qc);
@@ -175,7 +177,7 @@ public class SPARQLParser implements QueryParser {
 
 				// handle query operation
 
-				TupleExpr tupleExpr = buildQueryModel(qc);
+				TupleExpr tupleExpr = buildQueryModel(qc, valueFactory);
 
 				// Ensure we always return a rooted query.
 				if (!(tupleExpr instanceof QueryRoot)) {
@@ -212,8 +214,8 @@ public class SPARQLParser implements QueryParser {
 		}
 	}
 
-	private TupleExpr buildQueryModel(Node qc) throws MalformedQueryException {
-		TupleExprBuilder tupleExprBuilder = new TupleExprBuilder(SimpleValueFactory.getInstance());
+	private TupleExpr buildQueryModel(Node qc, ValueFactory valueFactory) throws MalformedQueryException {
+		TupleExprBuilder tupleExprBuilder = new TupleExprBuilder(valueFactory);
 		try {
 			return (TupleExpr) qc.jjtAccept(tupleExprBuilder, null);
 		} catch (VisitorException e) {
@@ -245,7 +247,7 @@ public class SPARQLParser implements QueryParser {
 					try {
 						long start = System.currentTimeMillis();
 						ParsedOperation parsedQuery = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryStr,
-								null);
+								null, SimpleValueFactory.getInstance());
 						long finish = System.currentTimeMillis();
 
 						System.out.println("Parsed query: ");

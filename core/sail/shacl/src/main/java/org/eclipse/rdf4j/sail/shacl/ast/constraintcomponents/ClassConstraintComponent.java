@@ -114,6 +114,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode joined = new BulkedExternalInnerJoin(
 					addedTargets,
 					connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,

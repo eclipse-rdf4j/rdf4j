@@ -35,7 +35,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	 */
 	public static <E> SailClosingIteration<E, SailException> makeClosable(
 			CloseableIteration<? extends E, SailException> iter, SailClosable... closes) {
-		return new SailClosingIteration<E, SailException>(iter, closes) {
+		return new SailClosingIteration<>(iter, closes) {
 
 			@Override
 			protected void handleSailException(SailException e) throws SailException {
@@ -116,24 +116,34 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 		try {
 			super.handleClose();
 		} finally {
+
 			// Attempt to call close more often on all SailClosable instances by delaying handling
-			List<SailException> exceptions = new ArrayList<>();
-			List<Throwable> extraOrdinaryExceptions = new ArrayList<>();
+			List<SailException> exceptions = null;
+			List<Throwable> extraOrdinaryExceptions = null;
+
 			for (SailClosable closing : closes) {
 				try {
 					closing.close();
 				} catch (SailException e) {
+					if (exceptions == null) {
+						exceptions = new ArrayList<>(closes.length);
+					}
 					exceptions.add(e);
 				}
 				// Delay all other exceptions also, but don't pass them through the handler
 				catch (Throwable e) {
+					if (extraOrdinaryExceptions == null) {
+						extraOrdinaryExceptions = new ArrayList<>(closes.length);
+					}
 					extraOrdinaryExceptions.add(e);
 				}
 			}
-			for (SailException nextException : exceptions) {
-				handleSailException(nextException);
+			if (exceptions != null) {
+				for (SailException nextException : exceptions) {
+					handleSailException(nextException);
+				}
 			}
-			if (!extraOrdinaryExceptions.isEmpty()) {
+			if (extraOrdinaryExceptions != null && !extraOrdinaryExceptions.isEmpty()) {
 				throw new UndeclaredThrowableException(extraOrdinaryExceptions.get(0));
 			}
 		}

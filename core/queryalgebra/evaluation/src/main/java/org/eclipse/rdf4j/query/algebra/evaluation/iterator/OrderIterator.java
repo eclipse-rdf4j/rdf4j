@@ -19,6 +19,7 @@ import java.util.AbstractQueue;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -209,7 +210,9 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 			while (iterators.get(i).hasNext()) {
 				E key = iterators.get(i).next();
 				if (!head.containsKey(key)) {
-					head.put(key, new LinkedList<>(Arrays.asList(i)));
+					LinkedList<Integer> integers = new LinkedList<>();
+					integers.add(i);
+					head.put(key, integers);
 					break;
 				} else if (!distinct) {
 					head.get(key).add(i);

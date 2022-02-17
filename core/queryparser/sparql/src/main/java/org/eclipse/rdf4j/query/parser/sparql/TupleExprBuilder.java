@@ -95,7 +95,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
@@ -224,7 +224,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
  * A SPARQL AST visitor implementation that creates a query algebra representation of the query.
- * 
+ *
  * @author Arjohn Kampman
  *
  * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
@@ -232,6 +232,9 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  */
 @InternalUseOnly
 public class TupleExprBuilder extends AbstractASTVisitor {
+
+	private static final String UNIQUE_SEED = UUID.randomUUID().toString().replace("-", "_");
+	private int varCounter = 0;
 
 	/*-----------*
 	 * Variables *
@@ -310,7 +313,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// the
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
-		final Var var = new Var("_anon_" + UUID.randomUUID().toString().replace("-", "_"));
+		final Var var = new Var("_anon_" + UNIQUE_SEED + varCounter++);
 		var.setAnonymous(true);
 		return var;
 	}
@@ -677,9 +680,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return result;
 	}
 
-	private class GroupFinder extends AbstractQueryModelVisitor<VisitorException> {
+	private static class GroupFinder extends AbstractSimpleQueryModelVisitor<VisitorException> {
 
 		private Group group;
+
+		private GroupFinder() {
+			super(true);
+		}
 
 		@Override
 		public void meet(Projection projection) {
@@ -893,7 +900,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 					if (subj.equals(left) || subj.equals(right)) {
 						if (obj.equals(left) || obj.equals(right)) {
-							sp.setObjectVar(subj);
+							sp.replaceChildNode(sp.getObjectVar(), subj);
 						}
 					}
 				}
@@ -976,7 +983,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (resource instanceof Var) {
 				projectionElements.addElement(new ProjectionElem(((Var) resource).getName()));
 			} else {
-				String alias = "_describe_" + UUID.randomUUID().toString().replace("-", "_");
+				String alias = "_describe_" + UNIQUE_SEED + varCounter++;
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));
@@ -1554,9 +1561,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return te;
 	}
 
-	protected class VarCollector extends AbstractQueryModelVisitor<VisitorException> {
+	protected static class VarCollector extends AbstractSimpleQueryModelVisitor<VisitorException> {
 
 		private final Set<Var> collectedVars = new HashSet<>();
+
+		protected VarCollector() {
+			super(true);
+		}
 
 		@Override
 		public void meet(Var var) {
@@ -1572,9 +1583,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	}
 
-	protected class SameTermCollector extends AbstractQueryModelVisitor<VisitorException> {
+	protected static class SameTermCollector extends AbstractSimpleQueryModelVisitor<VisitorException> {
 
 		private final Set<SameTerm> collectedSameTerms = new HashSet<>();
+
+		protected SameTermCollector() {
+			super(true);
+		}
 
 		@Override
 		public void meet(SameTerm st) {
@@ -1590,13 +1605,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	}
 
-	private class VarReplacer extends AbstractQueryModelVisitor<VisitorException> {
+	private static class VarReplacer extends AbstractSimpleQueryModelVisitor<VisitorException> {
 
-		private Var toBeReplaced;
-
-		private Var replacement;
+		private final Var toBeReplaced;
+		private final Var replacement;
 
 		public VarReplacer(Var toBeReplaced, Var replacement) {
+			super(true);
 			this.toBeReplaced = toBeReplaced;
 			this.replacement = replacement;
 		}
@@ -2466,9 +2481,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return new Avg(ve, node.isDistinct());
 	}
 
-	static class AggregateCollector extends AbstractQueryModelVisitor<VisitorException> {
+	static class AggregateCollector extends AbstractSimpleQueryModelVisitor<VisitorException> {
 
-		private Collection<AggregateOperator> operators = new ArrayList<>();
+		private final Collection<AggregateOperator> operators = new ArrayList<>();
+
+		AggregateCollector() {
+			super(true);
+		}
 
 		public Collection<AggregateOperator> getOperators() {
 			return operators;
@@ -2522,13 +2541,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	}
 
-	static class AggregateOperatorReplacer extends AbstractQueryModelVisitor<VisitorException> {
+	static class AggregateOperatorReplacer extends AbstractSimpleQueryModelVisitor<VisitorException> {
 
-		private Var replacement;
-
-		private AggregateOperator operator;
+		private final Var replacement;
+		private final AggregateOperator operator;
 
 		public AggregateOperatorReplacer(AggregateOperator operator, Var replacement) {
+			super(true);
 			this.operator = operator;
 			this.replacement = replacement;
 		}
@@ -2619,7 +2638,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * Internal class for keeping track of contextual information relevant for path sequence processing: current scope,
 	 * context, start and end variable of the path expression. Passed through to visitor methods via the
 	 * <code>data</code> input parameter.
-	 * 
+	 *
 	 * @author Jeen Broekstra
 	 */
 	private static class PathSequenceContext {
@@ -2631,7 +2650,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		/**
 		 * Create a new {@link PathSequenceContext} that is a copy of the supplied <code>pathSequenceContext</code>.
-		 * 
+		 *
 		 * @param pathSequenceContext the {@link PathSequenceContext} to copy.
 		 */
 		public PathSequenceContext(PathSequenceContext pathSequenceContext) {

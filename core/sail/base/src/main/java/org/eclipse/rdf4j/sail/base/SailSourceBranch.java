@@ -401,9 +401,8 @@ class SailSourceBranch implements SailSource {
 					};
 				}
 			}
-			Iterator<Changeset> iter = changes.iterator();
-			while (iter.hasNext()) {
-				derivedFrom = new SailDatasetImpl(derivedFrom, iter.next());
+			for (Changeset change : changes) {
+				derivedFrom = new SailDatasetImpl(derivedFrom, change);
 			}
 			return derivedFrom;
 		} finally {
@@ -414,9 +413,8 @@ class SailSourceBranch implements SailSource {
 	private void prepare(SailSink sink) throws SailException {
 		try {
 			semaphore.lock();
-			Iterator<Changeset> iter = changes.iterator();
-			while (iter.hasNext()) {
-				prepare(iter.next(), sink);
+			for (Changeset change : changes) {
+				prepare(change, sink);
 			}
 		} finally {
 			semaphore.unlock();

@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * A query optimizer that replaces {@link Compare} operators with {@link SameTerm}s, if possible.
@@ -36,7 +36,11 @@ public class CompareOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new CompareVisitor());
 	}
 
-	protected static class CompareVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class CompareVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		protected CompareVisitor() {
+			super(true);
+		}
 
 		@Override
 		public void meet(Compare compare) {

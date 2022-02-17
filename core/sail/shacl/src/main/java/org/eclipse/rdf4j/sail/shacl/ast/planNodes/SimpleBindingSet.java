@@ -26,6 +26,7 @@ class SimpleBindingSet extends AbstractBindingSet {
 
 	private final Binding[] bindings;
 	private final Set<String> bindingNamesSet;
+	private final List<Binding> bindingsList;
 
 	public SimpleBindingSet(Set<String> bindingNamesSet, List<String> varNamesList, List<Value> values) {
 
@@ -37,11 +38,13 @@ class SimpleBindingSet extends AbstractBindingSet {
 			bindings[i] = new SimpleBinding(varNamesList.get(i), values.get(i));
 		}
 
+		this.bindingsList = Arrays.asList(bindings);
+
 	}
 
 	@Override
 	public Iterator<Binding> iterator() {
-		return Arrays.asList(bindings).iterator();
+		return bindingsList.iterator();
 	}
 
 	@Override

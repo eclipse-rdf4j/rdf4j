@@ -133,8 +133,6 @@ public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 		if (exprVar != null) {
 			exprVar.visit(visitor);
 		}
-
-		super.visitChildren(visitor);
 	}
 
 	@Override

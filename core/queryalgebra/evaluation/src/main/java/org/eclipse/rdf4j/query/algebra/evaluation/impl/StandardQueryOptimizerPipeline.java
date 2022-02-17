@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -57,7 +58,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	 */
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		return Arrays.asList(
+		return List.of(
 				BINDING_ASSIGNER,
 				BINDING_SET_ASSIGNMENT_INLINER,
 				new ConstantOptimizer(strategy),
@@ -69,11 +70,12 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
-				new QueryJoinOptimizer(evaluationStatistics),
+				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				FILTER_OPTIMIZER,
 				ORDER_LIMIT_OPTIMIZER,
-				PARENT_REFERENCE_CLEANER);
+				PARENT_REFERENCE_CLEANER
+		);
 	}
 
 }

@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * A query optimizer that optimize disjunctive constraints on tuple expressions. Currently, this optimizer {@link Union
@@ -34,7 +34,11 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new OrSameTermOptimizer());
 	}
 
-	protected static class OrSameTermOptimizer extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class OrSameTermOptimizer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		protected OrSameTermOptimizer() {
+			super(false);
+		}
 
 		@Override
 		public void meet(Filter filter) {

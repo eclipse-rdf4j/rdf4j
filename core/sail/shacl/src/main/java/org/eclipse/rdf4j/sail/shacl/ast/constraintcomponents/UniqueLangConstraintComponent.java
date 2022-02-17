@@ -126,6 +126,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 					targets,
 					connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(),
 					path.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
@@ -169,6 +170,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
 				allRelevantTargets,
 				connectionsGroup.getBaseConnection(),
+				connectionsGroup.getBaseValueFactory(),
 				path.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),

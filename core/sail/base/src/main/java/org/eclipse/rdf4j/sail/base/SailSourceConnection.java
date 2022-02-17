@@ -209,7 +209,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
-		flush();
+//		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		if (cloneTupleExpression) {
@@ -385,7 +385,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
-		flush();
+//		flush();
 		SailSource branch = branch(IncludeInferred.explicitOnly);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getContextIDs(), snapshot, branch);
@@ -394,7 +394,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
-		flush();
+//		flush();
 		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
@@ -402,7 +402,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-		flush();
+//		flush();
 		try (Stream<? extends Statement> stream = getStatementsInternal(null, null, null, false, contexts).stream()) {
 			return stream.count();
 		}
@@ -600,12 +600,18 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected void endUpdateInternal(UpdateContext op) throws SailException {
 		synchronized (datasets) {
+			if (inferredOnlySink == null && explicitOnlyDataset == null && inferredOnlyDataset == null
+					&& datasets.isEmpty() && explicitSinks.isEmpty()) {
+				return;
+			}
+
 			SailSink toCloseInferredSink = inferredOnlySink;
 			inferredOnlySink = null;
 			SailDataset toCloseExplicitOnlyDataset = explicitOnlyDataset;
 			explicitOnlyDataset = null;
 			SailDataset toCloseInferredDataset = inferredOnlyDataset;
 			inferredOnlyDataset = null;
+
 			try {
 				if (toCloseInferredSink != null) {
 					toCloseInferredSink.flush();
@@ -678,7 +684,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 						notifyStatementAdded(vf.createStatement(subj, pred, obj));
 						modified = true;
 					}
-					inferredOnlySink.approve(subj, pred, obj, null);
+					inferredOnlySink.approve(vf.createStatement(subj, pred, obj));
 				}
 			} else {
 				for (Resource ctx : contexts) {
@@ -692,7 +698,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
 							modified = true;
 						}
-						inferredOnlySink.approve(subj, pred, obj, ctx);
+						inferredOnlySink.approve(vf.createStatement(subj, pred, obj, ctx));
 					}
 				}
 			}
@@ -706,13 +712,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
 				notifyStatementAdded(vf.createStatement(subj, pred, obj));
 			}
-			sink.approve(subj, pred, obj, null);
+			sink.approve(vf.createStatement(subj, pred, obj));
 		} else {
 			for (Resource ctx : contexts) {
 				if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, ctx)) {
 					notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
 				}
-				sink.approve(subj, pred, obj, ctx);
+				sink.approve(vf.createStatement(subj, pred, obj, ctx));
 			}
 		}
 	}
@@ -928,8 +934,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	private <T, X extends Exception> CloseableIteration<T, QueryEvaluationException> interlock(
 			CloseableIteration<T, QueryEvaluationException> iter, SailClosable... closes) {
-		return new SailClosingIteration<T, QueryEvaluationException>(iter, closes) {
-
+		return new SailClosingIteration<>(iter, closes) {
 			@Override
 			protected void handleSailException(SailException e) throws QueryEvaluationException {
 				throw new QueryEvaluationException(e);

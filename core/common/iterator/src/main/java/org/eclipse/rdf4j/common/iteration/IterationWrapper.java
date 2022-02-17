@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 /**
  * Abstract superclass for Iterations that wrap other Iterations. The abstract class <var>IterationWrapper</var> itself
@@ -17,21 +18,7 @@ import java.util.NoSuchElementException;
  */
 public class IterationWrapper<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
-	/**
-	 * The wrapped Iteration.
-	 *
-	 * @deprecated This will be changed to private, possibly with an accessor in future. Do not rely on it.
-	 */
-	@Deprecated
-	protected final Iteration<? extends E, ? extends X> wrappedIter;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	private final Iteration<? extends E, ? extends X> wrappedIter;
 
 	/**
 	 * Creates a new IterationWrapper that operates on the supplied Iteration.
@@ -39,8 +26,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * @param iter The wrapped Iteration for this <var>IterationWrapper</var>, must not be <var>null</var>.
 	 */
 	protected IterationWrapper(Iteration<? extends E, ? extends X> iter) {
-		assert iter != null;
-		wrappedIter = iter;
+		wrappedIter = Objects.requireNonNull(iter);
 	}
 
 	/*---------*

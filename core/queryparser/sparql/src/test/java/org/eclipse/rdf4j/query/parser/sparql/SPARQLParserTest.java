@@ -18,6 +18,7 @@ import static org.junit.Assert.fail;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -76,7 +77,7 @@ public class SPARQLParserTest {
 	public void testSourceStringAssignment() throws Exception {
 		String simpleSparqlQuery = "SELECT * WHERE {?X ?P ?Y }";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		assertEquals(simpleSparqlQuery, q.getSourceString());
@@ -100,7 +101,7 @@ public class SPARQLParserTest {
 		String deleteDataString = "DELETE DATA {\n incorrect reference }";
 
 		try {
-			ParsedUpdate u = parser.parseUpdate(deleteDataString, null);
+			ParsedUpdate u = parser.parseUpdate(deleteDataString, null, SimpleValueFactory.getInstance());
 			fail("should have resulted in parse exception");
 		} catch (MalformedQueryException e) {
 			assertTrue(e.getMessage().contains("line 2,"));
@@ -138,7 +139,8 @@ public class SPARQLParserTest {
 		StringBuilder qb = new StringBuilder();
 		qb.append("ASK {?a <foo:bar> \"test\"}");
 
-		ParsedBooleanQuery q = (ParsedBooleanQuery) parser.parseQuery(qb.toString(), null);
+		ParsedBooleanQuery q = (ParsedBooleanQuery) parser.parseQuery(qb.toString(), null,
+				SimpleValueFactory.getInstance());
 		TupleExpr te = q.getTupleExpr();
 		assertTrue(te instanceof QueryRoot);
 		te = ((QueryRoot) te).getArg();
@@ -157,7 +159,7 @@ public class SPARQLParserTest {
 		StringBuilder update = new StringBuilder();
 		update.append("INSERT { <urn:a> <urn:b> <urn:c> . } WHERE { SELECT * {?s ?p ?o } }");
 
-		ParsedUpdate parsedUpdate = parser.parseUpdate(update.toString(), null);
+		ParsedUpdate parsedUpdate = parser.parseUpdate(update.toString(), null, SimpleValueFactory.getInstance());
 		List<UpdateExpr> exprs = parsedUpdate.getUpdateExprs();
 		assertEquals(1, exprs.size());
 
@@ -178,7 +180,7 @@ public class SPARQLParserTest {
 	public void testParseIntegerObjectValue() throws Exception {
 		// test that the parser correctly parses the object value as an integer, instead of as a decimal.
 		String query = "select ?Concept where { ?Concept a 1. ?Concept2 a 1. } ";
-		ParsedTupleQuery q = (ParsedTupleQuery) parser.parseQuery(query, null);
+		ParsedTupleQuery q = (ParsedTupleQuery) parser.parseQuery(query, null, SimpleValueFactory.getInstance());
 
 		// all we're verifying is that the query is parsed without error. If it doesn't parse as integer but as a
 		// decimal, the
@@ -191,7 +193,8 @@ public class SPARQLParserTest {
 		StringBuilder qb = new StringBuilder();
 		qb.append("SELECT *  {?a <foo:bar> \"test\"}");
 
-		ParsedTupleQuery q = (ParsedTupleQuery) parser.parseQuery(qb.toString(), null);
+		ParsedTupleQuery q = (ParsedTupleQuery) parser.parseQuery(qb.toString(), null,
+				SimpleValueFactory.getInstance());
 		TupleExpr tupleExpr = q.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
@@ -205,7 +208,8 @@ public class SPARQLParserTest {
 		StringBuilder qb = new StringBuilder();
 		qb.append("CONSTRUCT WHERE {?a <foo:bar> \"test\"}");
 
-		ParsedGraphQuery q = (ParsedGraphQuery) parser.parseQuery(qb.toString(), null);
+		ParsedGraphQuery q = (ParsedGraphQuery) parser.parseQuery(qb.toString(), null,
+				SimpleValueFactory.getInstance());
 
 		TupleExpr te = q.getTupleExpr();
 		assertTrue(te instanceof QueryRoot);
@@ -219,7 +223,7 @@ public class SPARQLParserTest {
 	public void testOrderByWithAliases1() throws Exception {
 		String queryString = " SELECT ?x (SUM(?v1)/COUNT(?v1) as ?r) WHERE { ?x <urn:foo> ?v1 } GROUP BY ?x ORDER BY ?r";
 
-		ParsedQuery query = parser.parseQuery(queryString, null);
+		ParsedQuery query = parser.parseQuery(queryString, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(query);
 		TupleExpr te = query.getTupleExpr();
@@ -242,7 +246,7 @@ public class SPARQLParserTest {
 		StringBuilder qb = new StringBuilder();
 		qb.append("ASK {?a <foo:bar> \"test\". ?a <foo:foo> \"test\"@en .} ");
 
-		ParsedQuery q = parser.parseQuery(qb.toString(), null);
+		ParsedQuery q = parser.parseQuery(qb.toString(), null, SimpleValueFactory.getInstance());
 		TupleExpr te = q.getTupleExpr();
 		assertTrue(te instanceof QueryRoot);
 		te = ((QueryRoot) te).getArg();
@@ -268,7 +272,7 @@ public class SPARQLParserTest {
 		StringBuilder qb = new StringBuilder();
 		qb.append("ASK {?a <foo:bar> \"test\". ?a <foo:foo> \"test\"^^<foo:bar> .} ");
 
-		ParsedQuery q = parser.parseQuery(qb.toString(), null);
+		ParsedQuery q = parser.parseQuery(qb.toString(), null, SimpleValueFactory.getInstance());
 		TupleExpr te = q.getTupleExpr();
 		assertTrue(te instanceof QueryRoot);
 		te = ((QueryRoot) te).getArg();
@@ -291,7 +295,7 @@ public class SPARQLParserTest {
 	@Test
 	public void testLongUnicode() throws Exception {
 		ParsedUpdate ru = parser.parseUpdate("insert data {<urn:test:foo> <urn:test:bar> \"\\U0001F61F\" .}",
-				"urn:test");
+				"urn:test", SimpleValueFactory.getInstance());
 		InsertData insertData = (InsertData) ru.getUpdateExprs().get(0);
 		String[] lines = insertData.getDataBlock().split("\n");
 		assertEquals("\uD83D\uDE1F", lines[lines.length - 1].replaceAll(".*\"(.*)\".*", "$1"));
@@ -302,7 +306,7 @@ public class SPARQLParserTest {
 
 		String query = "PREFIX : <http://example.org/>\n ASK {:IBM ((:|!:)|(^:|!^:))* :Jane.} ";
 
-		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null, SimpleValueFactory.getInstance());
 
 		// parsing should not throw exception
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
@@ -314,7 +318,7 @@ public class SPARQLParserTest {
 
 		String query = "PREFIX : <http://example.org/>\n ASK {:IBM ^(:|!:) ?jane.} ";
 
-		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null, SimpleValueFactory.getInstance());
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
@@ -334,7 +338,7 @@ public class SPARQLParserTest {
 
 		String query = "PREFIX : <http://example.org/>\n ASK {:IBM ^(:|!:) :Jane.} ";
 
-		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null, SimpleValueFactory.getInstance());
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();
@@ -355,7 +359,7 @@ public class SPARQLParserTest {
 
 		String query = "PREFIX : <http://example.org/>\n ASK { ?a (:comment/^(:subClassOf|(:type/:label))/:type)* ?b } ";
 
-		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		ParsedQuery parsedQuery = parser.parseQuery(query, null, SimpleValueFactory.getInstance());
 		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
 		assertTrue(tupleExpr instanceof QueryRoot);
 		tupleExpr = ((QueryRoot) tupleExpr).getArg();

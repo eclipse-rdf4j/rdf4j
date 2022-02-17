@@ -35,7 +35,6 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 		if (graph != null) {
 			graph.visit(visitor);
 		}
-		super.visitChildren(visitor);
 	}
 
 	@Override

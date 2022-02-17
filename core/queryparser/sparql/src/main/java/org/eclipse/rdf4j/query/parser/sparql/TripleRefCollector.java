@@ -14,10 +14,14 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 // constructs a map from variable name to TripleRef or ValueExprTripleRef for processing extensions
-public class TripleRefCollector extends AbstractQueryModelVisitor<RuntimeException> {
+public class TripleRefCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+	public TripleRefCollector() {
+		super(true);
+	}
 
 	public static Map<String, Object> process(QueryModelNode node) {
 		TripleRefCollector collector = new TripleRefCollector();

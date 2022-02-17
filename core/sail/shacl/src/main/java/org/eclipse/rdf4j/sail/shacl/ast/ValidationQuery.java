@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
@@ -114,7 +115,7 @@ public class ValidationQuery {
 		this.query = query;
 	}
 
-	public PlanNode getValidationPlan(SailConnection baseConnection) {
+	public PlanNode getValidationPlan(SailConnection baseConnection, ValueFactory valueFactory) {
 
 		assert query != null;
 
@@ -129,7 +130,7 @@ public class ValidationQuery {
 		}
 		fullQuery.append("{\n").append(query).append("\n}");
 
-		Select select = new Select(baseConnection, fullQuery.toString(), null, bindings -> {
+		Select select = new Select(baseConnection, valueFactory, fullQuery.toString(), null, bindings -> {
 
 			if (scope_validationReport == ConstraintComponent.Scope.propertyShape) {
 				if (propertyShapeWithValue_validationReport) {
@@ -230,7 +231,7 @@ public class ValidationQuery {
 		}
 
 		@Override
-		public PlanNode getValidationPlan(SailConnection baseConnection) {
+		public PlanNode getValidationPlan(SailConnection baseConnection, ValueFactory valueFactory) {
 			return EmptyNode.getInstance();
 		}
 

@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 
@@ -91,4 +93,21 @@ public class RDFS {
 		SEEALSO = Vocabularies.createIRI(RDFS.NAMESPACE, "seeAlso");
 		CONTAINERMEMBERSHIPPROPERTY = Vocabularies.createIRI(RDFS.NAMESPACE, "ContainerMembershipProperty");
 	}
+
+	public static final List<IRI> all = List.of(RESOURCE,
+			LITERAL,
+			CLASS,
+			SUBCLASSOF,
+			SUBPROPERTYOF,
+			DOMAIN,
+			RANGE,
+			COMMENT,
+			LABEL,
+			DATATYPE,
+			CONTAINER,
+			MEMBER,
+			ISDEFINEDBY,
+			SEEALSO,
+			CONTAINERMEMBERSHIPPROPERTY
+	);
 }

@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.memory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -33,7 +34,10 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -130,9 +134,9 @@ class MemorySailStore implements SailStore {
 					LockDiagnostics.releaseAbandoned, LockDiagnostics.detectStalledOrDeadlock,
 					LockDiagnostics.stackTrace);
 		} else {
-			statementListLockManager = new ReadPrefReadWriteLockManager("MemorySailStore statementListLockManager",
-					LockDiagnostics.releaseAbandoned);
+			statementListLockManager = new ReadPrefReadWriteLockManager("MemorySailStore statementListLockManager");
 		}
+
 	}
 
 	@Override
@@ -200,6 +204,7 @@ class MemorySailStore implements SailStore {
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
 			Boolean explicit, int snapshot, Resource... contexts) {
 		// Perform look-ups for value-equivalents of the specified values
+
 		MemResource memSubj = valueFactory.getMemResource(subj);
 		if (subj != null && memSubj == null) {
 			// non-existent subject
@@ -248,7 +253,7 @@ class MemorySailStore implements SailStore {
 				return EMPTY_ITERATION;
 			}
 
-			memContexts = contextSet.toArray(new MemResource[contextSet.size()]);
+			memContexts = contextSet.toArray(new MemResource[0]);
 			smallestList = statements;
 		}
 
@@ -257,7 +262,7 @@ class MemorySailStore implements SailStore {
 	}
 
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(MemResource subj, MemIRI pred,
-			MemValue obj, Boolean explicit, int snapshot, MemResource... contexts) {
+			MemValue obj, MemResource... contexts) {
 
 		MemResource[] memContexts;
 		MemStatementList smallestList;
@@ -273,7 +278,7 @@ class MemorySailStore implements SailStore {
 			smallestList = statements;
 		}
 
-		return getMemStatementIterator(subj, pred, obj, explicit, snapshot, memContexts, smallestList);
+		return getMemStatementIterator(subj, pred, obj, null, Integer.MAX_VALUE - 1, memContexts, smallestList);
 	}
 
 	private CloseableIteration<MemStatement, SailException> getMemStatementIterator(MemResource subj, MemIRI pred,
@@ -640,6 +645,14 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
+		public synchronized void approve(Statement statement) throws SailException {
+			acquireExclusiveTransactionLock();
+			invalidateCache();
+			addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+					statement.getContext(), explicit);
+		}
+
+		@Override
 		public synchronized void deprecate(Statement statement) throws SailException {
 			acquireExclusiveTransactionLock();
 			invalidateCache();
@@ -699,7 +712,7 @@ class MemorySailStore implements SailStore {
 				// statement is already present. Check this.
 
 				try (CloseableIteration<MemStatement, SailException> stIter = createStatementIterator(memSubj, memPred,
-						memObj, null, Integer.MAX_VALUE - 1, memContext)) {
+						memObj, memContext)) {
 					if (stIter.hasNext()) {
 						// statement is already present, update its transaction
 						// status if appropriate

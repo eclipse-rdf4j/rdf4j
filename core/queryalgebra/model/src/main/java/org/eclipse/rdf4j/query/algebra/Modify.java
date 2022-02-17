@@ -44,7 +44,6 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 		if (whereExpr != null) {
 			whereExpr.visit(visitor);
 		}
-		super.visitChildren(visitor);
 	}
 
 	@Override

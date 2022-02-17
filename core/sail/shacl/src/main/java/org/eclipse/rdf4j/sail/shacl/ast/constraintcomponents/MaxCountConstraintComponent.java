@@ -98,6 +98,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 			relevantTargetsWithPath = new BulkedExternalInnerJoin(
 					mergeNode,
 					connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(),
 					getTargetChain().getPath()
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
@@ -111,6 +112,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 			relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 					mergeNode,
 					connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(),
 					getTargetChain().getPath()
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),

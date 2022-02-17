@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * A query optimizer that embeds {@link Filter}s with {@link SameTerm} operators in statement patterns as much as
@@ -48,7 +48,11 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new SameTermFilterVisitor());
 	}
 
-	protected static class SameTermFilterVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class SameTermFilterVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		protected SameTermFilterVisitor() {
+			super(false);
+		}
 
 		@Override
 		public void meet(Filter filter) {
@@ -163,13 +167,14 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	protected static class VarRenamer extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class VarRenamer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final Var oldVar;
 
 		private final Var newVar;
 
 		public VarRenamer(Var oldVar, Var newVar) {
+			super(true);
 			this.oldVar = oldVar;
 			this.newVar = newVar;
 		}
@@ -189,9 +194,13 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	protected static class BindingSetAssignmentCollector extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class BindingSetAssignmentCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
-		private List<BindingSetAssignment> assignments = new ArrayList<>();
+		private final List<BindingSetAssignment> assignments = new ArrayList<>();
+
+		protected BindingSetAssignmentCollector() {
+			super(true);
+		}
 
 		@Override
 		public void meet(BindingSetAssignment bsa) {
@@ -203,13 +212,14 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	protected static class VarBinder extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class VarBinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final String varName;
 
 		private final Value value;
 
 		public VarBinder(String varName, Value value) {
+			super(true);
 			this.varName = varName;
 			this.value = value;
 		}

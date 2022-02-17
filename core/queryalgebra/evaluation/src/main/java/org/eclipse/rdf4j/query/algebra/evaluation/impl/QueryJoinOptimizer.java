@@ -8,8 +8,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,8 +27,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
@@ -38,13 +40,20 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 public class QueryJoinOptimizer implements QueryOptimizer {
 
 	protected final EvaluationStatistics statistics;
+	private final boolean trackResultSize;
 
 	public QueryJoinOptimizer() {
 		this(new EvaluationStatistics());
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
+		this(statistics, false);
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
 		this.statistics = statistics;
+		this.trackResultSize = trackResultSize;
+
 	}
 
 	/**
@@ -63,9 +72,13 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 *             release.
 	 */
 	@Deprecated
-	protected class JoinVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	protected class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		Set<String> boundVars = new HashSet<>();
+
+		protected JoinVisitor() {
+			super(trackResultSize);
+		}
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
@@ -84,8 +97,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(StatementPattern node) throws RuntimeException {
-			super.meet(node);
-			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
+			if (trackResultSize) {
+				node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
+			}
 		}
 
 		private void optimizePriorityJoin(Set<String> origBoundVars, TupleExpr join) {
@@ -134,6 +148,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					for (TupleExpr tupleExpr : joinArgs) {
 						double cardinality = statistics.getCardinality(tupleExpr);
+
 						tupleExpr.setResultSizeEstimate(Math.max(cardinality, tupleExpr.getResultSizeEstimate()));
 						cardinalityMap.put(tupleExpr, cardinality);
 						if (tupleExpr instanceof ZeroLengthPath) {
@@ -219,19 +234,54 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected List<Var> getStatementPatternVars(TupleExpr tupleExpr) {
-			List<StatementPattern> stPatterns = StatementPatternCollector.process(tupleExpr);
-			List<Var> varList = new ArrayList<>(stPatterns.size() * 4);
-			for (StatementPattern sp : stPatterns) {
-				sp.getVars(varList);
+			if (tupleExpr instanceof StatementPattern) {
+				return ((StatementPattern) tupleExpr).getVarList();
 			}
-			return varList;
+
+			return new StatementPatternVarCollector(tupleExpr).getVars();
+		}
+
+		class StatementPatternVarCollector extends StatementPatternVisitor {
+
+			private final TupleExpr tupleExpr;
+			private List<Var> vars;
+
+			public StatementPatternVarCollector(TupleExpr tupleExpr) {
+				this.tupleExpr = tupleExpr;
+			}
+
+			@Override
+			protected void accept(StatementPattern node) {
+				if (vars == null) {
+					vars = new ArrayList<>(node.getVarList());
+				} else {
+					vars.addAll(node.getVarList());
+				}
+			}
+
+			public List<Var> getVars() {
+				if (vars == null) {
+					try {
+						tupleExpr.visit(this);
+					} catch (Exception e) {
+						throw new IllegalStateException(e);
+					}
+					if (vars == null) {
+						vars = Collections.emptyList();
+					}
+				}
+
+				return vars;
+			}
 		}
 
 		protected <M extends Map<Var, Integer>> M getVarFreqMap(List<Var> varList, M varFreqMap) {
 			for (Var var : varList) {
-				Integer freq = varFreqMap.get(var);
-				freq = (freq == null) ? 1 : freq + 1;
-				varFreqMap.put(var, freq);
+				varFreqMap.compute(var, (k, v) -> {
+					if (v == null)
+						return 1;
+					return v + 1;
+				});
 			}
 			return varFreqMap;
 		}
@@ -519,4 +569,5 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return result;
 		}
 	}
+
 }

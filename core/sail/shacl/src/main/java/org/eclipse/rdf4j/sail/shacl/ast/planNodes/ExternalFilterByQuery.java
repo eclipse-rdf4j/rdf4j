@@ -13,6 +13,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -39,12 +40,15 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	private final StatementMatcher.Variable queryVariable;
 	private final Function<ValidationTuple, Value> filterOn;
 	private final String queryString;
+	private final ValueFactory valueFactory;
 
-	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, String queryFragment,
+	public ExternalFilterByQuery(SailConnection connection, ValueFactory valueFactory, PlanNode parent,
+			String queryFragment,
 			StatementMatcher.Variable queryVariable,
 			Function<ValidationTuple, Value> filterOn) {
 		super(parent);
 		this.connection = connection;
+		this.valueFactory = valueFactory;
 		this.queryVariable = queryVariable;
 		this.filterOn = filterOn;
 
@@ -55,7 +59,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 		queryFragment = "SELECT ?" + queryVariable.getName() + " WHERE {\n" + queryFragment + "\n}";
 		this.queryString = queryFragment;
 		try {
-			this.query = queryParserFactory.getParser().parseQuery(queryFragment, null);
+			this.query = queryParserFactory.getParser().parseQuery(queryFragment, null, this.valueFactory);
 		} catch (MalformedQueryException e) {
 			logger.error("Malformed query: \n{}", queryFragment);
 			throw e;

@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * A query optimizer that prunes query model trees by removing superfluous parts and/or by reducing complex parts with
@@ -46,7 +46,11 @@ public class QueryModelPruner implements QueryOptimizer {
 		tupleExpr.visit(new TreeSanitizer());
 	}
 
-	protected static class TreeSanitizer extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class TreeSanitizer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		protected TreeSanitizer() {
+			super(true);
+		}
 
 		@Override
 		public void meet(Join join) {

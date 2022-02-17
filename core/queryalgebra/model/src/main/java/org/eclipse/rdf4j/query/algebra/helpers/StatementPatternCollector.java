@@ -18,7 +18,11 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
  * A QueryModelVisitor that collects StatementPattern's from a query model. StatementPatterns thet are part of
  * filters/constraints are not included in the result.
  */
-public class StatementPatternCollector extends AbstractQueryModelVisitor<RuntimeException> {
+public class StatementPatternCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+	public StatementPatternCollector() {
+		super(true);
+	}
 
 	public static List<StatementPattern> process(QueryModelNode node) {
 		StatementPatternCollector collector = new StatementPatternCollector();
@@ -26,7 +30,7 @@ public class StatementPatternCollector extends AbstractQueryModelVisitor<Runtime
 		return collector.getStatementPatterns();
 	}
 
-	private List<StatementPattern> stPatterns = new ArrayList<>();
+	private final List<StatementPattern> stPatterns = new ArrayList<>();
 
 	public List<StatementPattern> getStatementPatterns() {
 		return stPatterns;

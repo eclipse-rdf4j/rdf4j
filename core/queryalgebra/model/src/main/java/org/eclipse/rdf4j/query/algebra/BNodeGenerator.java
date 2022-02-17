@@ -44,6 +44,11 @@ public class BNodeGenerator extends AbstractQueryModelNode implements ValueExpr 
 	}
 
 	@Override
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+		// no-op
+	}
+
+	@Override
 	public boolean equals(Object other) {
 		return other instanceof BNodeGenerator;
 	}

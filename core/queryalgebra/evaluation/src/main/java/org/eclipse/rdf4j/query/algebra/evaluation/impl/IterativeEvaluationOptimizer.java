@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * @author Arjohn Kampman
@@ -28,7 +28,11 @@ public class IterativeEvaluationOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new IEOVisitor());
 	}
 
-	protected static class IEOVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class IEOVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		protected IEOVisitor() {
+			super(false);
+		}
 
 		@Override
 		public void meet(Union union) {

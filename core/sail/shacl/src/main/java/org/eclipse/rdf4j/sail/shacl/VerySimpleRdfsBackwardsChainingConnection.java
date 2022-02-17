@@ -60,19 +60,24 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 				&& RDF.TYPE.equals(pred)) {
 
 			Set<Resource> types = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
-			if (types.size() > 10) {
+			if (types.size() == 1) {
+				// when backwards chaining the types for a resource, the explicit type will always be included
+				return false;
+			} else if (types.size() > 10) {
 				try (CloseableIteration<? extends Statement, SailException> statements = super.getStatements(subj,
 						RDF.TYPE, null, false, contexts)) {
-					return statements.stream()
-							.map(Statement::getObject)
-							.filter(Value::isResource)
-							.map(type -> ((Resource) type))
-							.anyMatch(types::contains);
+					while (statements.hasNext()) {
+						Value object = statements.next().getObject();
+						if (object.isResource() && types.contains(object)) {
+							return true;
+						}
+					}
 				}
 			} else {
-				return types
-						.stream()
-						.anyMatch(type -> super.hasStatement(subj, pred, type, false, contexts));
+				for (Resource type : types) {
+					if (super.hasStatement(subj, pred, type, false, contexts))
+						return true;
+				}
 			}
 
 		}

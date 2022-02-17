@@ -509,6 +509,13 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public void approve(Statement statement) throws SailException {
+			addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit,
+					statement.getContext());
+
+		}
+
+		@Override
 		public void deprecate(Statement statement) throws SailException {
 			removeStatements(statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit,
 					statement.getContext());

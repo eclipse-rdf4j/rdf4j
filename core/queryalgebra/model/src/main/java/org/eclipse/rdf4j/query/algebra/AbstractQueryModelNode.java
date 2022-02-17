@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 
@@ -66,14 +67,6 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Deprecated
 	public void setGraphPatternGroup(boolean isGraphPatternGroup) {
 		setVariableScopeChange(isGraphPatternGroup);
-	}
-
-	/**
-	 * Dummy implementation of {@link QueryModelNode#visitChildren} that does nothing. Subclasses should override this
-	 * method when they have child nodes.
-	 */
-	@Override
-	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 	}
 
 	/**
@@ -139,7 +132,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	}
 
 	protected boolean nullEquals(Object o1, Object o2) {
-		return o1 == o2 || o1 != null && o1.equals(o2);
+		return Objects.equals(o1, o2);
 	}
 
 	@Override

@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
 public class ConnectionsGroup implements Closeable {
 
 	private final SailConnection baseConnection;
+	private final ValueFactory baseValueFactory;
 	private final SailConnection previousStateConnection;
 
 	private final Sail addedStatements;
@@ -49,10 +51,12 @@ public class ConnectionsGroup implements Closeable {
 	private final Map<PlanNode, BufferedSplitter> nodeCache = new HashMap<>();
 
 	ConnectionsGroup(SailConnection baseConnection,
-			SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
+			ValueFactory baseValueFactory, SailConnection previousStateConnection, Sail addedStatements,
+			Sail removedStatements,
 			Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider,
 			ShaclSailConnection.Settings transactionSettings, boolean sparqlValidation) {
 		this.baseConnection = baseConnection;
+		this.baseValueFactory = baseValueFactory;
 		this.previousStateConnection = previousStateConnection;
 		this.addedStatements = addedStatements;
 		this.removedStatements = removedStatements;
@@ -120,6 +124,18 @@ public class ConnectionsGroup implements Closeable {
 
 	public boolean isSparqlValidation() {
 		return sparqlValidation;
+	}
+
+	public ValueFactory getBaseValueFactory() {
+		return baseValueFactory;
+	}
+
+	public ValueFactory getAddedStatementsValueFactory() {
+		return addedStatements.getValueFactory();
+	}
+
+	public ValueFactory getRemovedStatementsValueFactory() {
+		return removedStatements.getValueFactory();
 	}
 
 	interface RdfsSubClassOfReasonerProvider {

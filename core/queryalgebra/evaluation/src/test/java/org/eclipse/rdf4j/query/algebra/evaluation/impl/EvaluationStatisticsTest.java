@@ -36,11 +36,11 @@ public class EvaluationStatisticsTest {
 		assertThat(checker.getInconsistentNodes()).isEmpty();
 	}
 
-	private class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	private static class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final ArrayDeque<QueryModelNode> ancestors = new ArrayDeque<>();
 
-		private List<QueryModelNode> inconsistentNodes = new ArrayList<>();
+		private final List<QueryModelNode> inconsistentNodes = new ArrayList<>();
 
 		public void reset() {
 			inconsistentNodes.clear();

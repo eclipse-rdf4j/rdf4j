@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -501,14 +501,14 @@ public class QueryAlgebraUtil {
 	 * @author Andreas Schwarte
 	 *
 	 */
-	private static class InsertBindingsVisitor extends AbstractQueryModelVisitor<QueryEvaluationException> {
+	private static class InsertBindingsVisitor extends AbstractSimpleQueryModelVisitor<QueryEvaluationException> {
 
 		private final BindingSet bindings;
 
 		private final Set<String> freeVars = Sets.newHashSet();
 
 		private InsertBindingsVisitor(BindingSet bindings) {
-			super();
+			super(true);
 			this.bindings = bindings;
 		}
 

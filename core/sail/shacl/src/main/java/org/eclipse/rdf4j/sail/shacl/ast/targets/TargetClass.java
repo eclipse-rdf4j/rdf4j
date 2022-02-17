@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -17,6 +18,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -36,7 +38,11 @@ public class TargetClass extends Target {
 	private final Set<Resource> targetClass;
 
 	public TargetClass(Set<Resource> targetClass) {
-		this.targetClass = targetClass;
+		if (targetClass.size() == 1) {
+			this.targetClass = Collections.singleton(((Resource) targetClass.toArray()[0]));
+		} else {
+			this.targetClass = targetClass;
+		}
 		assert !this.targetClass.isEmpty();
 	}
 
@@ -47,11 +53,12 @@ public class TargetClass extends Target {
 
 	@Override
 	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		return getAddedRemovedInner(connectionsGroup, scope, connectionsGroup.getAddedStatements());
+		return getAddedRemovedInner(connectionsGroup.getAddedStatements(),
+				connectionsGroup.getAddedStatementsValueFactory(), scope);
 	}
 
-	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
-			SailConnection connection) {
+	private PlanNode getAddedRemovedInner(SailConnection connection, ValueFactory valueFactory,
+			ConstraintComponent.Scope scope) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
@@ -59,6 +66,7 @@ public class TargetClass extends Target {
 					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 		} else {
 			planNode = new Select(connection,
+					valueFactory,
 					getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider()),
 					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false));
 		}

@@ -414,7 +414,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	ConnectionsGroup getConnectionsGroup() {
 
 		return new ConnectionsGroup(new VerySimpleRdfsBackwardsChainingConnection(this, rdfsSubClassOfReasoner),
-				previousStateConnection, addedStatements, removedStatements, stats,
+				sail.getValueFactory(), previousStateConnection, addedStatements, removedStatements, stats,
 				this::getRdfsSubClassOfReasoner, transactionSettings, sail.sparqlValidation);
 	}
 
@@ -437,6 +437,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						shapePlanNodeTuple.setPlanNode(new SingleCloseablePlanNode(shapePlanNodeTuple.getPlanNode()));
 						return shapePlanNodeTuple;
 					})
+					.collect(Collectors.toList())
+					.stream()
 					.map(shapePlanNodeTuple -> () -> {
 
 						PlanNode planNode = shapePlanNodeTuple.getPlanNode();
@@ -800,7 +802,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			try {
 				try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(
 						new VerySimpleRdfsBackwardsChainingConnection(serializableConnection, rdfsSubClassOfReasoner),
-						previousStateSerializableConnection, addedStatements, removedStatements, stats,
+						sail.getValueFactory(), previousStateSerializableConnection, addedStatements, removedStatements,
+						stats,
 						this::getRdfsSubClassOfReasoner, transactionSettings, sail.sparqlValidation)) {
 
 					connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);

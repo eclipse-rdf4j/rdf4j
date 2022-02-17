@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 /**
@@ -38,9 +39,10 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
  *
  * @author Arjohn Kampman
  */
-public class QueryModelNormalizer extends AbstractQueryModelVisitor<RuntimeException> implements QueryOptimizer {
+public class QueryModelNormalizer extends AbstractSimpleQueryModelVisitor<RuntimeException> implements QueryOptimizer {
 
 	public QueryModelNormalizer() {
+		super(false);
 	}
 
 	@Override

@@ -2043,6 +2043,11 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	@Override
+	public boolean isTrackResultSize() {
+		return trackResultSize;
+	}
+
+	@Override
 	public void setTrackTime(boolean trackTime) {
 		this.trackTime = trackTime;
 	}

@@ -16,8 +16,11 @@ import java.util.Objects;
 import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -29,6 +32,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
@@ -55,11 +59,13 @@ public class TargetChainRetriever implements PlanNode {
 	private final ConstraintComponent.Scope scope;
 	private StackTraceElement[] stackTrace;
 	private ValidationExecutionLogger validationExecutionLogger;
+	private final ValueFactory valueFactory;
 
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
 			List<StatementMatcher> statementMatchers, List<StatementMatcher> removedStatementMatchers, String query,
 			List<StatementMatcher.Variable> vars, ConstraintComponent.Scope scope) {
 		this.connectionsGroup = connectionsGroup;
+		this.valueFactory = connectionsGroup.getBaseValueFactory();
 		this.statementMatchers = StatementMatcher.reduce(statementMatchers);
 
 		this.scope = scope;
@@ -161,8 +167,6 @@ public class TargetChainRetriever implements PlanNode {
 
 						}
 
-						MapBindingSet bindings = new MapBindingSet();
-
 						while (statements == null || !statements.hasNext()) {
 							calculateNextStatementMatcher();
 							if (statements == null) {
@@ -171,24 +175,40 @@ public class TargetChainRetriever implements PlanNode {
 						}
 
 						if (parsedQuery == null) {
-							parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+							parsedQuery = queryParserFactory.getParser().parseQuery(query, null, valueFactory);
 						}
 
 						Statement next = statements.next();
 
+						MapBindingSet bindings = new MapBindingSet();
+
 						if (currentStatementMatcher.getSubjectValue() == null
 								&& !currentStatementMatcher.subjectIsWildcard()) {
-							bindings.addBinding(currentStatementMatcher.getSubjectName(), next.getSubject());
+							Resource subject = next.getSubject();
+							if (valueFactory instanceof MemValueFactory) {
+								subject = ((MemValueFactory) valueFactory).getMemResource(subject);
+							}
+							bindings.addBinding(currentStatementMatcher.getSubjectName(), subject);
 						}
 
 						if (currentStatementMatcher.getPredicateValue() == null
 								&& !currentStatementMatcher.predicateIsWildcard()) {
-							bindings.addBinding(currentStatementMatcher.getPredicateName(), next.getPredicate());
+							IRI predicate = next.getPredicate();
+							if (valueFactory instanceof MemValueFactory) {
+								predicate = ((MemValueFactory) valueFactory).getMemURI(predicate);
+							}
+							bindings.addBinding(currentStatementMatcher.getPredicateName(), predicate);
 						}
 
 						if (currentStatementMatcher.getObjectValue() == null
 								&& !currentStatementMatcher.objectIsWildcard()) {
-							bindings.addBinding(currentStatementMatcher.getObjectName(), next.getObject());
+
+							Value object = next.getObject();
+							if (valueFactory instanceof MemValueFactory) {
+								object = ((MemValueFactory) valueFactory).getMemValue(object);
+							}
+
+							bindings.addBinding(currentStatementMatcher.getObjectName(), object);
 						}
 
 						if (bindingsEquivalent(currentStatementMatcher, bindings, previousBindings)) {

@@ -133,8 +133,15 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	@Override
 	public BinaryTupleOperator clone() {
 		BinaryTupleOperator clone = (BinaryTupleOperator) super.clone();
-		clone.setLeftArg(getLeftArg().clone());
-		clone.setRightArg(getRightArg().clone());
+
+		TupleExpr leftArgClone = getLeftArg().clone();
+		leftArgClone.setParentNode(clone);
+		clone.leftArg = leftArgClone;
+
+		TupleExpr rightArgClone = getRightArg().clone();
+		rightArgClone.setParentNode(clone);
+		clone.rightArg = rightArgClone;
+
 		return clone;
 	}
 

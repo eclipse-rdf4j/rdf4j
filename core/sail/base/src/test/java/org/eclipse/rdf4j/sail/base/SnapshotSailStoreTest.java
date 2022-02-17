@@ -88,6 +88,11 @@ public class SnapshotSailStoreTest {
 		}
 
 		@Override
+		public void approve(Statement statement) throws SailException {
+
+		}
+
+		@Override
 		public void deprecate(Statement statement) throws SailException {
 
 		}

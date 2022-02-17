@@ -85,6 +85,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 				Unique.getInstance(new TrimToTarget(target), false),
 				connectionsGroup.getBaseConnection(),
+				connectionsGroup.getBaseValueFactory(),
 				getTargetChain().getPath()
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),

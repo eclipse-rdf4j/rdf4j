@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -33,14 +34,14 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	protected Function<BindingSet, ValidationTuple> mapper;
 	ValidationExecutionLogger validationExecutionLogger;
 
-	ParsedQuery parseQuery(String query) {
+	ParsedQuery parseQuery(String query, ValueFactory valueFactory) {
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
 		// #VALUES_INJECTION_POINT# is an annotation in the query where there is a "new scope" due to the bottom up
 		// semantics of SPARQL but where we don't actually want a new scope.
 		query = query.replace(AbstractConstraintComponent.VALUES_INJECTION_POINT, "\nVALUES (?a) {}\n");
 		String completeQuery = "select * where { \nVALUES (?a) {}\n" + query + "\n}\nORDER BY ?a";
-		return queryParserFactory.getParser().parseQuery(completeQuery, null);
+		return queryParserFactory.getParser().parseQuery(completeQuery, null, valueFactory);
 	}
 
 	void runQuery(ArrayDeque<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection,

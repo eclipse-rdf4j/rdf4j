@@ -201,6 +201,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 					planNode = new BulkedExternalInnerJoin(overrideTargetPlanNode,
 							connectionsGroup.getBaseConnection(),
+							connectionsGroup.getBaseValueFactory(),
 							path.get()
 									.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 											new StatementMatcher.Variable("c"),
@@ -245,6 +246,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
 					effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
 					connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(),
 					path.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),

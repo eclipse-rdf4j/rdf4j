@@ -14,6 +14,7 @@ import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -35,10 +36,13 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	private final SailConnection previousStateConnection;
 	private final String query;
 	private boolean printed = false;
+	private final ValueFactory valueFactory;
 
-	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, String query,
+	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, ValueFactory valueFactory,
+			String query,
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper) {
+		this.valueFactory = valueFactory;
 		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
 		this.leftNode = leftNode;
 		this.query = query;
@@ -74,7 +78,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 				}
 
 				if (parsedQuery == null) {
-					parsedQuery = parseQuery(query);
+					parsedQuery = parseQuery(query, valueFactory);
 				}
 
 				runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, previousStateConnection,

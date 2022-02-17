@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 /**
@@ -33,11 +33,12 @@ public class ConjunctiveConstraintSplitter implements QueryOptimizer {
 		tupleExpr.visit(new ConstraintVisitor(tupleExpr));
 	}
 
-	protected static class ConstraintVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class ConstraintVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		protected final TupleExpr tupleExpr;
 
 		public ConstraintVisitor(TupleExpr tupleExpr) {
+			super(false);
 			this.tupleExpr = tupleExpr;
 		}
 

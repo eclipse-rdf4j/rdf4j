@@ -115,7 +115,8 @@ public class RSXTargetShape extends Target {
 				connectionsGroup.getRdfsSubClassOfReasoner(), new StatementMatcher.StableRandomVariableProvider());
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
-		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, query,
+		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
+				parent, query,
 				new StatementMatcher.Variable("temp1"),
 				ValidationTuple::getActiveTarget)
 						.getTrueNode(UnBufferedPlanNode.class);

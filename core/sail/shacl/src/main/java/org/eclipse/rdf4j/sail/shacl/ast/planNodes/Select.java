@@ -13,6 +13,7 @@ import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -42,10 +43,12 @@ public class Select implements PlanNode {
 	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
+	private final ValueFactory valueFactory;
 
-	public Select(SailConnection connection, String query, String orderBy,
+	public Select(SailConnection connection, ValueFactory valueFactory, String query, String orderBy,
 			Function<BindingSet, ValidationTuple> mapper) {
 		this.connection = connection;
+		this.valueFactory = valueFactory;
 		this.mapper = mapper;
 		if (query.trim().equals("")) {
 			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
@@ -78,7 +81,7 @@ public class Select implements PlanNode {
 						.get();
 
 				try {
-					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null, valueFactory);
 					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
 							new MapBindingSet(), true);
 				} catch (MalformedQueryException e) {

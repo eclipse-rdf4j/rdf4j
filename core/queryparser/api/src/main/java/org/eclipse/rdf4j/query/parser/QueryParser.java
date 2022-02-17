@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser;
 
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 
 /**
@@ -14,7 +16,17 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
  */
 public interface QueryParser {
 
-	ParsedUpdate parseUpdate(String updateStr, String baseURI) throws MalformedQueryException;
+	default ParsedUpdate parseUpdate(String updateStr, String baseURI) throws MalformedQueryException {
+		return parseUpdate(updateStr, baseURI, SimpleValueFactory.getInstance());
+	}
 
-	ParsedQuery parseQuery(String queryStr, String baseURI) throws MalformedQueryException;
+	ParsedUpdate parseUpdate(String updateStr, String baseURI, ValueFactory valueFactory)
+			throws MalformedQueryException;
+
+	default ParsedQuery parseQuery(String queryStr, String baseURI) throws MalformedQueryException {
+		return parseQuery(queryStr, baseURI, SimpleValueFactory.getInstance());
+	}
+
+	ParsedQuery parseQuery(String queryStr, String baseURI, ValueFactory valueFactory) throws MalformedQueryException;
+
 }

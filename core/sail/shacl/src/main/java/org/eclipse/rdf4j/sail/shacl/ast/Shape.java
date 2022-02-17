@@ -374,7 +374,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 					&& Shape.this.getOptimalBulkValidationApproach() == ValidationApproach.SPARQL) {
 				logger.debug("Use validation approach {} for shape {}", validationApproach, this);
 				return Shape.this.generateSparqlValidationQuery(connectionsGroup, logValidationPlans, false, false,
-						Scope.none).getValidationPlan(connectionsGroup.getBaseConnection());
+						Scope.none)
+						.getValidationPlan(connectionsGroup.getBaseConnection(),
+								connectionsGroup.getBaseValueFactory());
 			} else {
 				logger.debug("Use fall back validation approach for bulk validation instead of SPARQL for shape {}",
 						this);

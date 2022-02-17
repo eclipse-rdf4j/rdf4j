@@ -106,7 +106,8 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	@Override
 	public UnaryTupleOperator clone() {
 		UnaryTupleOperator clone = (UnaryTupleOperator) super.clone();
-		clone.setArg(getArg().clone());
+		clone.arg = getArg().clone();
+		clone.arg.setParentNode(clone);
 		return clone;
 	}
 

@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
 	private final QueryEvaluationContext context;
@@ -137,7 +137,8 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	public static String[] findAllVariablesUsedInQuery(QueryRoot node) {
 		Set<String> varNames = new HashSet<>();
-		AbstractQueryModelVisitor<QueryEvaluationException> queryModelVisitorBase = new AbstractQueryModelVisitor<QueryEvaluationException>() {
+		AbstractSimpleQueryModelVisitor<QueryEvaluationException> queryModelVisitorBase = new AbstractSimpleQueryModelVisitor<>(
+				true) {
 
 			@Override
 			public void meet(Var node) throws QueryEvaluationException {

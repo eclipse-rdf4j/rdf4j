@@ -161,6 +161,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 			PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 					target,
 					connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(),
 					getTargetChain().getPath()
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
@@ -205,6 +206,7 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 			allTargetsPlan = new BulkedExternalLeftOuterJoin(
 					allTargetsPlan,
 					connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(),
 					getTargetChain().getPath()
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),

@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.vocabulary;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -84,5 +86,25 @@ public class RDF {
 
 	/** http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML */
 	public static final IRI HTML = CoreDatatype.RDF.HTML.getIri();
+
+	public static final List<IRI> all = List.of(TYPE,
+			PROPERTY,
+			SUBJECT,
+			PREDICATE,
+			OBJECT,
+			STATEMENT,
+			BAG,
+			ALT,
+			SEQ,
+			VALUE,
+			LI,
+			LIST,
+			FIRST,
+			REST,
+			NIL,
+			XMLLITERAL,
+			LANGSTRING,
+			HTML
+	);
 
 }

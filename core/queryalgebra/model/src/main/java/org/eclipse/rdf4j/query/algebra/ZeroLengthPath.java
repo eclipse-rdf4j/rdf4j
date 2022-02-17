@@ -188,7 +188,6 @@ public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr 
 			contextVar.visit(visitor);
 		}
 
-		super.visitChildren(visitor);
 	}
 
 	@Override

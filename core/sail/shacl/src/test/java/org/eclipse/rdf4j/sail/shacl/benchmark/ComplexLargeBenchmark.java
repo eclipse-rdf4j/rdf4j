@@ -8,7 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.*;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.CacheDisabled;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation;
+import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint.SerialValidation;
 import static org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach.Bulk;
 
 import java.io.BufferedInputStream;
@@ -33,7 +36,6 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
-import org.junit.jupiter.api.Test;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -50,7 +52,6 @@ import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
-import org.openjdk.jmh.runner.options.TimeValue;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Logger;
@@ -59,11 +60,11 @@ import ch.qos.logback.classic.Logger;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 10)
+@Warmup(iterations = 0)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Measurement(iterations = 100)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ComplexLargeBenchmark {
 
@@ -86,13 +87,21 @@ public class ComplexLargeBenchmark {
 		}
 	}
 
-	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("ComplexLargeBenchmark.noPreloadingNonEmptyParallel")
-				.forks(0)
-				.build();
+	public static void main(String[] args) throws RunnerException, InterruptedException {
+		ComplexLargeBenchmark complexLargeBenchmark = new ComplexLargeBenchmark();
+		complexLargeBenchmark.setUp();
+		for (int i = 0; i < 20; i++) {
+			System.out.println(i);
+			complexLargeBenchmark.noPreloadingNonEmptyParallel();
+		}
+		complexLargeBenchmark.teardown();
 
-		new Runner(opt).run();
+//		Options opt = new OptionsBuilder()
+//				.include("ComplexLargeBenchmark.noPreloadingNonEmptyParallel")
+//				.forks(0)
+//				.build();
+//
+//		new Runner(opt).run();
 	}
 
 	@Setup(Level.Trial)

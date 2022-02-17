@@ -249,7 +249,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 	@Override
 	public SailQuery prepareQuery(QueryLanguage ql, String queryString, String baseURI) throws MalformedQueryException {
-		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(ql, queryString, baseURI);
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(ql, queryString, baseURI, getValueFactory());
 
 		if (parsedQuery instanceof ParsedTupleQuery) {
 			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.TUPLE, queryString,
@@ -285,7 +285,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 
 		ParsedTupleQuery parsedQuery = sailTupleExpr
 				.map(expr -> new ParsedTupleQuery(queryString, expr))
-				.orElse(QueryParserUtil.parseTupleQuery(ql, queryString, baseURI));
+				.orElse(QueryParserUtil.parseTupleQuery(ql, queryString, baseURI, getValueFactory()));
 		return new SailTupleQuery(parsedQuery, this);
 	}
 
@@ -296,7 +296,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 				baseURI);
 		ParsedGraphQuery parsedQuery = sailTupleExpr
 				.map(expr -> new ParsedGraphQuery(queryString, expr))
-				.orElse(QueryParserUtil.parseGraphQuery(ql, queryString, baseURI));
+				.orElse(QueryParserUtil.parseGraphQuery(ql, queryString, baseURI, getValueFactory()));
 		return new SailGraphQuery(parsedQuery, this);
 	}
 
@@ -307,14 +307,14 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 				baseURI);
 		ParsedBooleanQuery parsedQuery = sailTupleExpr
 				.map(expr -> new ParsedBooleanQuery(queryString, expr))
-				.orElse(QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI));
+				.orElse(QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI, getValueFactory()));
 		return new SailBooleanQuery(parsedQuery, this);
 	}
 
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
 			throws RepositoryException, MalformedQueryException {
-		ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(ql, update, baseURI);
+		ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(ql, update, baseURI, getValueFactory());
 		return new SailUpdate(parsedUpdate, this);
 	}
 

@@ -154,6 +154,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 			PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
 					target,
 					connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(),
 					getTargetChain().getPath()
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
@@ -194,6 +195,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 		allTargetsPlan = new BulkedExternalLeftOuterJoin(
 				allTargetsPlan,
 				connectionsGroup.getBaseConnection(),
+				connectionsGroup.getBaseValueFactory(),
 				getTargetChain().getPath()
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),

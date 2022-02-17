@@ -99,6 +99,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			PlanNode joined = new BulkedExternalLeftOuterJoin(
 					addedTargets,
 					connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,

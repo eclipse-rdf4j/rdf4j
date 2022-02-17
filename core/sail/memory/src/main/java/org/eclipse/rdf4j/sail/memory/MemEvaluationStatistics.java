@@ -45,6 +45,13 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 
 		@Override
 		public double getCardinality(StatementPattern sp) {
+			if (!sp.isCardinalitySet()) {
+				sp.setCardinality(calculateStatementCardinality(sp));
+			}
+			return sp.getCardinality();
+		}
+
+		private double calculateStatementCardinality(StatementPattern sp) {
 
 			Value subj = getConstantValue(sp.getSubjectVar());
 			if (!(subj != null && subj.isResource())) {
@@ -69,53 +76,65 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 				context = null;
 			}
 
-			// Perform look-ups for value-equivalents of the specified values
-			MemResource memSubj = valueFactory.getMemResource((Resource) subj);
-			MemIRI memPred = valueFactory.getMemURI((IRI) pred);
-			MemValue memObj = valueFactory.getMemValue(obj);
-			MemResource memContext = valueFactory.getMemResource((Resource) context);
-
-			if (subj != null && memSubj == null || pred != null && memPred == null || obj != null && memObj == null
-					|| context != null && memContext == null) {
-				// non-existent subject, predicate, object or context
-				return 0.0;
+			if (subj == null && pred == null && obj == null && context == null) {
+				return memStatementList.size();
 			}
 
-			// Search for the smallest list that can be used by the iterator
 			int minListSizes = Integer.MAX_VALUE;
-			if (memSubj != null) {
-				minListSizes = Math.min(minListSizes, memSubj.getSubjectStatementCount());
-			}
-			if (memPred != null) {
-				minListSizes = Math.min(minListSizes, memPred.getPredicateStatementCount());
-			}
-			if (memObj != null) {
-				minListSizes = Math.min(minListSizes, memObj.getObjectStatementCount());
-			}
-			if (memContext != null) {
-				minListSizes = Math.min(minListSizes, memContext.getContextStatementCount());
+			boolean found = false;
+
+			if (subj != null) {
+				// Perform look-ups for value-equivalents of the specified values
+				MemResource memSubj = valueFactory.getMemResource((Resource) subj);
+				if (memSubj != null) {
+					found = true;
+					minListSizes = memSubj.getSubjectStatementCount();
+					if (minListSizes == 0) {
+						return 0;
+					}
+				}
 			}
 
-			double cardinality;
+			if (pred != null) {
+				MemIRI memPred = valueFactory.getMemURI((IRI) pred);
+				if (memPred != null) {
+					found = true;
 
-			if (minListSizes == Integer.MAX_VALUE) {
-				// all wildcards
-				cardinality = memStatementList.size();
+					minListSizes = Math.min(minListSizes, memPred.getPredicateStatementCount());
+					if (minListSizes == 0) {
+						return 0;
+					}
+				}
+			}
+
+			if (obj != null) {
+				MemValue memObj = valueFactory.getMemValue(obj);
+				if (memObj != null) {
+					found = true;
+					minListSizes = Math.min(minListSizes, memObj.getObjectStatementCount());
+					if (minListSizes == 0) {
+						return 0;
+					}
+				}
+			}
+
+			if (context != null) {
+				MemResource memContext = valueFactory.getMemResource((Resource) context);
+				if (memContext != null) {
+					found = true;
+					minListSizes = Math.min(minListSizes, memContext.getContextStatementCount());
+					if (minListSizes == 0) {
+						return 0;
+					}
+				}
+			}
+
+			if (found) {
+				return minListSizes;
 			} else {
-				cardinality = minListSizes;
-
-				// List<Var> vars = getVariables(sp);
-				// int constantVarCount = countConstantVars(vars);
-				//
-				// // Subtract 1 from var count as this was used for the list
-				// size
-				// double unboundVarFactor = (double)(vars.size() -
-				// constantVarCount) / (vars.size() - 1);
-				//
-				// cardinality = Math.pow(cardinality, unboundVarFactor);
+				return 0;
 			}
 
-			return cardinality;
 		}
 
 		protected Value getConstantValue(Var var) {

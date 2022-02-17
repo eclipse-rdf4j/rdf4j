@@ -258,11 +258,11 @@ class SailDatasetImpl implements SailDataset {
 		Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
 		CloseableIteration<? extends Statement, SailException> iter;
 		if (changes.isStatementCleared()
-				|| contexts == null && deprecatedContexts != null && deprecatedContexts.contains(null)
-				|| contexts.length > 0 && deprecatedContexts != null
-						&& deprecatedContexts.containsAll(Arrays.asList(contexts))) {
+				|| (contexts == null && deprecatedContexts != null && deprecatedContexts.contains(null))
+				|| (contexts != null && contexts.length > 0 && deprecatedContexts != null
+						&& deprecatedContexts.containsAll(Arrays.asList(contexts)))) {
 			iter = null;
-		} else if (contexts.length > 0 && deprecatedContexts != null) {
+		} else if (contexts != null && contexts.length > 0 && deprecatedContexts != null) {
 			List<Resource> remaining = new ArrayList<>(Arrays.asList(contexts));
 			remaining.removeAll(deprecatedContexts);
 			iter = derivedFrom.getStatements(subj, pred, obj, remaining.toArray(new Resource[0]));

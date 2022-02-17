@@ -42,7 +42,8 @@ public class AllTargetsPlanNode implements PlanNode {
 
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
-		this.select = new Select(connectionsGroup.getBaseConnection(), query, null,
+		this.select = new Select(connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(), query,
+				null,
 				new AllTargetsBindingSetMapper(varNames, scope, false));
 
 	}

@@ -99,8 +99,6 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 		for (ValueExpr arg : args) {
 			arg.visit(visitor);
 		}
-
-		super.visitChildren(visitor);
 	}
 
 	@Override

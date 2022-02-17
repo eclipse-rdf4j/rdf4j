@@ -52,7 +52,6 @@ public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueE
 		if (objectVar != null) {
 			objectVar.visit(visitor);
 		}
-		super.visitChildren(visitor);
 	}
 
 	@Override

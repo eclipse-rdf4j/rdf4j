@@ -35,11 +35,13 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
+import org.eclipse.rdf4j.sail.memory.model.MemStatement;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
 
 /**
@@ -253,9 +255,9 @@ class FileIO {
 		}
 
 		if (isExplicit) {
-			explicit.approve(memSubj, memPred, memObj, memContext);
+			explicit.approve(Statements.statement(memSubj, memPred, memObj, memContext));
 		} else {
-			inferred.approve(memSubj, memPred, memObj, memContext);
+			inferred.approve(Statements.statement(memSubj, memPred, memObj, memContext));
 		}
 	}
 

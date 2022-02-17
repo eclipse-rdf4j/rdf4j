@@ -26,7 +26,7 @@ public interface QueryEvaluationStep {
 	 * Utility class that removes code duplication and makes a precompiled QueryEvaluationStep available as an iteration
 	 * that may be created and used later.
 	 */
-	public class DelayedEvaluationIteration
+	class DelayedEvaluationIteration
 			extends DelayedIteration<BindingSet, QueryEvaluationException> {
 		private final QueryEvaluationStep arg;
 		private final BindingSet bs;

@@ -98,12 +98,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * Statements that are currently being removed, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, Collection<Statement>> removed = new HashMap<>();
+	private final Map<UpdateContext, Collection<Statement>> removed = new IdentityHashMap<>();
 
 	/**
 	 * Statements that are currently being added, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, Collection<Statement>> added = new HashMap<>();
+	private final Map<UpdateContext, Collection<Statement>> added = new IdentityHashMap<>();
 
 	/**
 	 * Used to indicate a removed statement from all contexts.
@@ -112,9 +112,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private IsolationLevel transactionIsolationLevel;
 
-	private volatile boolean pendingAdds;
+	private volatile boolean statementsAdded;
 
-	private volatile boolean pendingRemovals;
+	private volatile boolean statementsRemoved;
 
 	/*--------------*
 	 * Constructors *
@@ -453,7 +453,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			flushPendingUpdates();
 		}
 		addStatement(null, subj, pred, obj, contexts);
-		pendingAdds = true;
+		statementsAdded = true;
 	}
 
 	@Override
@@ -462,7 +462,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			flushPendingUpdates();
 		}
 		removeStatement(null, subj, pred, obj, contexts);
-		pendingRemovals = true;
+		statementsRemoved = true;
 	}
 
 	@Override
@@ -504,6 +504,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				startUpdate(op);
 			}
 		}
+		statementsAdded = true;
 	}
 
 	/**
@@ -531,6 +532,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				startUpdate(op);
 			}
 		}
+		statementsRemoved = true;
 	}
 
 	@Override
@@ -592,6 +594,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			try {
 				verifyIsActive();
 				clearInternal(contexts);
+				statementsRemoved = true;
 			} finally {
 				updateLock.unlock();
 			}
@@ -690,11 +693,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public boolean pendingRemovals() {
-		return pendingRemovals;
+		return statementsRemoved;
 	}
 
 	protected boolean pendingAdds() {
-		return pendingAdds;
+		return statementsAdded;
 	}
 
 	/**
@@ -847,16 +850,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 */
 	private void flushPendingUpdates() throws SailException {
 
-		if (pendingAdds || pendingRemovals) {
-			if (!isActiveOperation()
-					|| isActive() && !getTransactionIsolation().isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
+		if ((statementsAdded || statementsRemoved) && isActive()) {
+			if (isActive()) {
 				synchronized (this) {
-					if (!isActiveOperation()
-							|| isActive()
-									&& !getTransactionIsolation().isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
+					if ((statementsAdded || statementsRemoved) && isActive()) {
 						flush();
-						pendingAdds = false;
-						pendingRemovals = false;
+						statementsAdded = false;
+						statementsRemoved = false;
 					}
 				}
 			}
@@ -868,7 +868,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 *
 	 * @author James Leigh
 	 */
-	private class WildStatement implements Statement {
+	private static class WildStatement implements Statement {
 
 		private static final long serialVersionUID = 3363010521961228565L;
 

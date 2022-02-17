@@ -115,7 +115,6 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 			var.visit(visitor);
 		}
 
-		super.visitChildren(visitor);
 	}
 
 	@Override

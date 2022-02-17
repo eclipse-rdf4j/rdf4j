@@ -17,11 +17,15 @@ import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 
 @Deprecated
-public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeException> {
+public class QueryModelNodeReplacer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 	private QueryModelNode former;
 
 	private QueryModelNode replacement;
+
+	public QueryModelNodeReplacer() {
+		super(true);
+	}
 
 	public void replaceChildNode(QueryModelNode parent, QueryModelNode former, QueryModelNode replacement) {
 		this.former = former;
@@ -111,7 +115,7 @@ public class QueryModelNodeReplacer extends AbstractQueryModelVisitor<RuntimeExc
 	}
 
 	@Override
-	protected void meetNode(QueryModelNode node) {
+	public void meetUnsupported(QueryModelNode node) {
 		throw new IllegalArgumentException("Unhandled Node: " + node);
 	}
 }

@@ -9,8 +9,10 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -19,9 +21,7 @@ import java.util.Set;
  */
 public class StatementPattern extends AbstractQueryModelNode implements TupleExpr {
 
-	/*------------*
-	 * enum Scope *
-	 *------------*/
+	public static final double CARDINALITY_NOT_SET = Double.MIN_VALUE;
 
 	/**
 	 * Indicates the scope of the statement pattern.
@@ -52,10 +52,16 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 	private Var contextVar;
 
+	private Set<String> assuredBindingNames;
+	private List<Var> varList;
+
+	private double cardinality = CARDINALITY_NOT_SET;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public StatementPattern() {
 	}
 
@@ -109,39 +115,51 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	/**
 	 * Sets the context scope for the statement pattern.
 	 */
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public void setScope(Scope scope) {
-		assert scope != null : "scope must not be null";
-		this.scope = scope;
+		this.scope = Objects.requireNonNull(scope);
+		assuredBindingNames = null;
+		varList = null;
+		cardinality = CARDINALITY_NOT_SET;
 	}
 
 	public Var getSubjectVar() {
 		return subjectVar;
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public void setSubjectVar(Var subject) {
-		assert subject != null : "subject must not be null";
-		subject.setParentNode(this);
+		Objects.requireNonNull(subject).setParentNode(this);
 		subjectVar = subject;
+		assuredBindingNames = null;
+		varList = null;
+		cardinality = CARDINALITY_NOT_SET;
 	}
 
 	public Var getPredicateVar() {
 		return predicateVar;
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public void setPredicateVar(Var predicate) {
-		assert predicate != null : "predicate must not be null";
-		predicate.setParentNode(this);
+		Objects.requireNonNull(predicate).setParentNode(this);
 		predicateVar = predicate;
+		assuredBindingNames = null;
+		varList = null;
+		cardinality = CARDINALITY_NOT_SET;
 	}
 
 	public Var getObjectVar() {
 		return objectVar;
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public void setObjectVar(Var object) {
-		assert object != null : "object must not be null";
-		object.setParentNode(this);
+		Objects.requireNonNull(object).setParentNode(this);
 		objectVar = object;
+		assuredBindingNames = null;
+		varList = null;
+		cardinality = CARDINALITY_NOT_SET;
 	}
 
 	/**
@@ -151,11 +169,15 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		return contextVar;
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public void setContextVar(Var context) {
 		if (context != null) {
 			context.setParentNode(this);
 		}
 		contextVar = context;
+		assuredBindingNames = null;
+		varList = null;
+		cardinality = CARDINALITY_NOT_SET;
 	}
 
 	@Override
@@ -165,7 +187,16 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new HashSet<>(8);
+		Set<String> assuredBindingNames = this.assuredBindingNames;
+		if (assuredBindingNames == null) {
+			assuredBindingNames = getBindingsInternal();
+			this.assuredBindingNames = assuredBindingNames;
+		}
+		return assuredBindingNames;
+	}
+
+	private Set<String> getBindingsInternal() {
+		Set<String> bindingNames = new HashSet<>();
 
 		if (subjectVar != null) {
 			bindingNames.add(subjectVar.getName());
@@ -180,11 +211,38 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 			bindingNames.add(contextVar.getName());
 		}
 
-		return bindingNames;
+		return Collections.unmodifiableSet(bindingNames);
 	}
 
 	public List<Var> getVarList() {
-		return getVars(new ArrayList<>(4));
+		List<Var> varList = this.varList;
+		if (varList == null) {
+			varList = getVarListInternal();
+			this.varList = varList;
+		}
+		return varList;
+	}
+
+	private List<Var> getVarListInternal() {
+		int size = getSize();
+		return Collections.unmodifiableList(getVars(new ArrayList<>(size)));
+	}
+
+	private int getSize() {
+		int size = 0;
+		if (subjectVar != null) {
+			size++;
+		}
+		if (predicateVar != null) {
+			size++;
+		}
+		if (objectVar != null) {
+			size++;
+		}
+		if (contextVar != null) {
+			size++;
+		}
+		return size;
 	}
 
 	/**
@@ -226,8 +284,6 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		if (contextVar != null) {
 			contextVar.visit(visitor);
 		}
-
-		super.visitChildren(visitor);
 	}
 
 	@Override
@@ -286,16 +342,45 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	@Override
 	public StatementPattern clone() {
 		StatementPattern clone = (StatementPattern) super.clone();
-		clone.setSubjectVar(getSubjectVar().clone());
-		clone.setPredicateVar(getPredicateVar().clone());
-		clone.setObjectVar(getObjectVar().clone());
-		clone.setResultSizeEstimate(getResultSizeEstimate());
+
+		Var subjectClone = getSubjectVar().clone();
+		subjectClone.setParentNode(clone);
+		clone.subjectVar = subjectClone;
+
+		Var predicateClone = getPredicateVar().clone();
+		predicateClone.setParentNode(clone);
+		clone.predicateVar = predicateClone;
+
+		Var objectClone = getObjectVar().clone();
+		objectClone.setParentNode(clone);
+		clone.objectVar = objectClone;
 
 		if (getContextVar() != null) {
-			clone.setContextVar(getContextVar().clone());
+			Var contextClone = getContextVar().clone();
+			if (contextClone != null) {
+				contextClone.setParentNode(clone);
+			}
+			clone.contextVar = contextClone;
 		}
+
+		clone.setResultSizeEstimate(getResultSizeEstimate());
+
+		clone.assuredBindingNames = assuredBindingNames;
+		clone.varList = null;
+		clone.cardinality = CARDINALITY_NOT_SET;
 
 		return clone;
 	}
 
+	public double getCardinality() {
+		return cardinality;
+	}
+
+	public void setCardinality(double cardinality) {
+		this.cardinality = cardinality;
+	}
+
+	public boolean isCardinalitySet() {
+		return cardinality != CARDINALITY_NOT_SET;
+	}
 }

@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * A query optimizer that replaces REGEX with {@link FunctionCall}s that are equivalent operators
@@ -41,7 +41,11 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new RegexAsStringFunctionVisitor());
 	}
 
-	protected class RegexAsStringFunctionVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	protected class RegexAsStringFunctionVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		protected RegexAsStringFunctionVisitor() {
+			super(false);
+		}
 
 		@Override
 		public void meet(Regex node) {

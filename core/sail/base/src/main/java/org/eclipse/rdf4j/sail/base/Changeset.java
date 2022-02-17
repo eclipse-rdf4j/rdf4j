@@ -13,10 +13,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -41,11 +45,15 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 abstract class Changeset implements SailSink, ModelFactory {
 
+	AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
+	AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
+	Semaphore prependLock = new Semaphore(1);
+
 	/**
 	 * Set of {@link SailDataset}s that are currently using this {@link Changeset} to derive the state of the
 	 * {@link SailSource}.
 	 */
-	private Set<SailDatasetImpl> refbacks;
+	private List<SailDatasetImpl> refbacks;
 
 	/**
 	 * {@link Changeset}s that have been {@link #flush()}ed to the same {@link SailSourceBranch}, since this object was
@@ -96,7 +104,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	/**
 	 * If all namespaces were removed, other than {@link #addedNamespaces}.
 	 */
-	private boolean namespaceCleared;
+	private volatile boolean namespaceCleared;
 
 	/**
 	 * If all statements were removed, other than {@link #approved}.
@@ -132,168 +140,242 @@ abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	synchronized boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		if (approved == null) {
-			return false;
-		}
+	boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		boolean readLock = readWriteLock.readLock();
+		try {
 
-		return approved.contains(subj, pred, obj, contexts);
-	}
+			if (approved == null) {
+				return false;
+			}
 
-	synchronized boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		if (deprecated == null) {
-			return false;
-		}
-
-		return deprecated.contains(subj, pred, obj, contexts);
-	}
-
-	public synchronized void addRefback(SailDatasetImpl dataset) {
-		if (refbacks == null) {
-			refbacks = new HashSet<>();
-		}
-		refbacks.add(dataset);
-	}
-
-	public synchronized void removeRefback(SailDatasetImpl dataset) {
-		if (refbacks != null) {
-			refbacks.remove(dataset);
+			return approved.contains(subj, pred, obj, contexts);
+		} finally {
+			readWriteLock.unlockReader(readLock);
 		}
 	}
 
-	public synchronized boolean isRefback() {
-		return refbacks != null && !refbacks.isEmpty();
+	boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			if (deprecated == null) {
+				return false;
+			}
+
+			return deprecated.contains(subj, pred, obj, contexts);
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
 	}
 
-	public synchronized void prepend(Changeset changeset) {
-		if (prepend == null) {
-			prepend = new HashSet<>();
+	public void addRefback(SailDatasetImpl dataset) {
+
+		long writeLock = refBacksReadWriteLock.writeLock();
+		try {
+			if (refbacks == null) {
+				refbacks = new ArrayList<>();
+			}
+			refbacks.add(dataset);
+		} finally {
+			refBacksReadWriteLock.unlockWriter(writeLock);
 		}
-		prepend.add(changeset);
+
+	}
+
+	public void removeRefback(SailDatasetImpl dataset) {
+		long writeLock = refBacksReadWriteLock.writeLock();
+		try {
+			if (refbacks != null) {
+				refbacks.removeIf(d -> d == dataset);
+			}
+		} finally {
+			refBacksReadWriteLock.unlockWriter(writeLock);
+		}
+
+	}
+
+	public boolean isRefback() {
+		boolean readLock = refBacksReadWriteLock.readLock();
+		try {
+			return refbacks != null && !refbacks.isEmpty();
+
+		} finally {
+			refBacksReadWriteLock.unlockReader(readLock);
+		}
+
+	}
+
+	public void prepend(Changeset changeset) {
+		prependLock.acquireUninterruptibly();
+
+		try {
+			if (prepend == null) {
+				prepend = Collections.newSetFromMap(new IdentityHashMap<>());
+			}
+			prepend.add(changeset);
+		} finally {
+			prependLock.release();
+		}
+
 	}
 
 	@Override
-	public synchronized void setNamespace(String prefix, String name) {
-		if (removedPrefixes == null) {
-			removedPrefixes = new HashSet<>();
+	public void setNamespace(String prefix, String name) {
+
+		long writeLock = readWriteLock.writeLock();
+		try {
+			if (removedPrefixes == null) {
+				removedPrefixes = new HashSet<>();
+			}
+			removedPrefixes.add(prefix);
+			if (addedNamespaces == null) {
+				addedNamespaces = new HashMap<>();
+			}
+			addedNamespaces.put(prefix, name);
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
 		}
-		removedPrefixes.add(prefix);
-		if (addedNamespaces == null) {
-			addedNamespaces = new HashMap<>();
-		}
-		addedNamespaces.put(prefix, name);
+
 	}
 
 	@Override
-	public synchronized void removeNamespace(String prefix) {
-		if (addedNamespaces != null) {
-			addedNamespaces.remove(prefix);
+	public void removeNamespace(String prefix) {
+		long writeLock = readWriteLock.writeLock();
+		try {
+			if (addedNamespaces != null) {
+				addedNamespaces.remove(prefix);
+			}
+			if (removedPrefixes == null) {
+				removedPrefixes = new HashSet<>();
+			}
+			removedPrefixes.add(prefix);
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
 		}
-		if (removedPrefixes == null) {
-			removedPrefixes = new HashSet<>();
-		}
-		removedPrefixes.add(prefix);
+
 	}
 
 	@Override
-	public synchronized void clearNamespaces() {
-		if (removedPrefixes != null) {
-			removedPrefixes.clear();
-		}
-		if (addedNamespaces != null) {
-			addedNamespaces.clear();
-		}
+	public void clearNamespaces() {
 		namespaceCleared = true;
+
+		long writeLock = readWriteLock.writeLock();
+		try {
+
+			if (removedPrefixes != null) {
+				removedPrefixes.clear();
+			}
+			if (addedNamespaces != null) {
+				addedNamespaces.clear();
+			}
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
+		}
+
 	}
 
 	@Override
-	public synchronized void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
+	public void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailConflictException {
-		if (observed == null) {
-			observed = new HashSet<>();
-		}
-		if (contexts == null) {
-			observed.add(new SimpleStatementPattern(subj, pred, obj, null, false));
-		} else if (contexts.length == 0) {
-			observed.add(new SimpleStatementPattern(subj, pred, obj, null, true));
-		} else {
-			for (Resource ctx : contexts) {
-				observed.add(new SimpleStatementPattern(subj, pred, obj, ctx, false));
+
+		long writeLock = readWriteLock.writeLock();
+		try {
+			if (observed == null) {
+				observed = new HashSet<>();
 			}
+			if (contexts == null) {
+				observed.add(new SimpleStatementPattern(subj, pred, obj, null, false));
+			} else if (contexts.length == 0) {
+				observed.add(new SimpleStatementPattern(subj, pred, obj, null, true));
+			} else {
+				for (Resource ctx : contexts) {
+					observed.add(new SimpleStatementPattern(subj, pred, obj, ctx, false));
+				}
+			}
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
 		}
+
 	}
 
 	@Override
-	public synchronized void clear(Resource... contexts) {
-		if (contexts != null && contexts.length == 0) {
+	public void clear(Resource... contexts) {
+		long writeLock = readWriteLock.writeLock();
+		try {
+			if (contexts != null && contexts.length == 0) {
+				if (approved != null) {
+					approved.clear();
+				}
+				if (approvedContexts != null) {
+					approvedContexts.clear();
+				}
+				statementCleared = true;
+			} else {
+				if (approved != null) {
+					approved.remove(null, null, null, contexts);
+				}
+				if (approvedContexts != null && contexts != null) {
+					for (Resource resource : contexts) {
+						approvedContexts.remove(resource);
+					}
+				}
+				if (deprecatedContexts == null) {
+					deprecatedContexts = new HashSet<>();
+				}
+				if (contexts != null) {
+					deprecatedContexts.addAll(Arrays.asList(contexts));
+				}
+			}
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
+		}
+
+	}
+
+	@Override
+	public void approve(Statement statement) {
+
+		long writeLock = readWriteLock.writeLock();
+		try {
+
+			if (deprecated != null) {
+				deprecated.remove(statement);
+			}
+			if (approved == null) {
+				approved = createEmptyModel();
+			}
+			approved.add(statement);
+			if (statement.getContext() != null) {
+				if (approvedContexts == null) {
+					approvedContexts = new HashSet<>();
+				}
+				approvedContexts.add(statement.getContext());
+			}
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
+		}
+
+	}
+
+	@Override
+	public void deprecate(Statement statement) {
+		long writeLock = readWriteLock.writeLock();
+		try {
 			if (approved != null) {
-				approved.clear();
+				approved.remove(statement);
 			}
-			if (approvedContexts != null) {
-				approvedContexts.clear();
+			if (deprecated == null) {
+				deprecated = createEmptyModel();
 			}
-			statementCleared = true;
-		} else {
-			if (approved != null) {
-				approved.remove(null, null, null, contexts);
+			deprecated.add(statement);
+			Resource ctx = statement.getContext();
+			if (approvedContexts != null && approvedContexts.contains(ctx)
+					&& !approved.contains(null, null, null, ctx)) {
+				approvedContexts.remove(ctx);
 			}
-			if (approvedContexts != null) {
-				approvedContexts.removeAll(Arrays.asList(contexts));
-			}
-			if (deprecatedContexts == null) {
-				deprecatedContexts = new HashSet<>();
-			}
-			deprecatedContexts.addAll(Arrays.asList(contexts));
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
 		}
-	}
 
-	@Override
-	public synchronized void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
-		if (deprecated != null) {
-			deprecated.remove(subj, pred, obj, ctx);
-		}
-		if (approved == null) {
-			approved = createEmptyModel();
-		}
-		approved.add(subj, pred, obj, ctx);
-		if (ctx != null) {
-			if (approvedContexts == null) {
-				approvedContexts = new HashSet<>();
-			}
-			approvedContexts.add(ctx);
-		}
-	}
-
-	@Override
-	public synchronized void approve(Statement statement) {
-		if (deprecated != null) {
-			deprecated.remove(statement);
-		}
-		if (approved == null) {
-			approved = createEmptyModel();
-		}
-		approved.add(statement);
-		if (statement.getContext() != null) {
-			if (approvedContexts == null) {
-				approvedContexts = new HashSet<>();
-			}
-			approvedContexts.add(statement.getContext());
-		}
-	}
-
-	@Override
-	public synchronized void deprecate(Statement statement) {
-		if (approved != null) {
-			approved.remove(statement);
-		}
-		if (deprecated == null) {
-			deprecated = createEmptyModel();
-		}
-		deprecated.add(statement);
-		Resource ctx = statement.getContext();
-		if (approvedContexts != null && approvedContexts.contains(ctx) && !approved.contains(null, null, null, ctx)) {
-			approvedContexts.remove(ctx);
-		}
 	}
 
 	@Override
@@ -348,57 +430,111 @@ abstract class Changeset implements SailSink, ModelFactory {
 		this.statementCleared = from.statementCleared;
 	}
 
-	public synchronized Set<SimpleStatementPattern> getObserved() {
-		return observed == null ? null : Collections.unmodifiableSet(observed);
+	public Set<SimpleStatementPattern> getObserved() {
+		boolean readLock = readWriteLock.readLock();
+		try {
+
+			return observed == null ? null : Collections.unmodifiableSet(observed);
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
 	}
 
 	/**
 	 * @deprecated Use getObserved() instead!
 	 */
 	@Deprecated
-	public synchronized Set<StatementPattern> getObservations() {
+	public Set<StatementPattern> getObservations() {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			if (observed == null) {
+				return null;
+			}
 
-		if (observed == null)
-			return null;
-
-		return observed.stream()
-				.map(simpleStatementPattern -> new StatementPattern(
-						new Var("s", simpleStatementPattern.getSubject()),
-						new Var("p", simpleStatementPattern.getPredicate()),
-						new Var("o", simpleStatementPattern.getObject()),
-						simpleStatementPattern.isAllContexts() ? null
-								: new Var("c", simpleStatementPattern.getContext())
-				)
-				)
-				.collect(Collectors.toCollection(HashSet::new));
+			return observed.stream()
+					.map(simpleStatementPattern -> new StatementPattern(
+							new Var("s", simpleStatementPattern.getSubject()),
+							new Var("p", simpleStatementPattern.getPredicate()),
+							new Var("o", simpleStatementPattern.getObject()),
+							simpleStatementPattern.isAllContexts() ? null
+									: new Var("c", simpleStatementPattern.getContext())
+					)
+					)
+					.collect(Collectors.toCollection(HashSet::new));
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
 	}
 
-	public synchronized Set<Resource> getApprovedContexts() {
-		return cloneSet(approvedContexts);
+	public Set<Resource> getApprovedContexts() {
+
+		boolean readLock = readWriteLock.readLock();
+		try {
+			return cloneSet(approvedContexts);
+
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+
 	}
 
-	public synchronized Set<Resource> getDeprecatedContexts() {
-		return cloneSet(deprecatedContexts);
+	public Set<Resource> getDeprecatedContexts() {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			return cloneSet(deprecatedContexts);
+
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+
 	}
 
-	public synchronized boolean isStatementCleared() {
-		return statementCleared;
+	public boolean isStatementCleared() {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			return statementCleared;
+
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+
 	}
 
-	public synchronized Map<String, String> getAddedNamespaces() {
-		return addedNamespaces;
+	public Map<String, String> getAddedNamespaces() {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			return addedNamespaces;
+
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+
 	}
 
-	public synchronized Set<String> getRemovedPrefixes() {
-		return cloneSet(removedPrefixes);
+	public Set<String> getRemovedPrefixes() {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			return cloneSet(removedPrefixes);
+
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+
 	}
 
-	public synchronized boolean isNamespaceCleared() {
+	public boolean isNamespaceCleared() {
 		return namespaceCleared;
 	}
 
-	public synchronized boolean hasDeprecated() {
-		return deprecated != null && !deprecated.isEmpty();
+	public boolean hasDeprecated() {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			return deprecated != null && !deprecated.isEmpty();
+
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+
 	}
 
 	boolean isChanged() {
@@ -408,97 +544,137 @@ abstract class Changeset implements SailSink, ModelFactory {
 				|| observed != null;
 	}
 
-	synchronized List<Statement> getDeprecatedStatements() {
-		if (deprecated == null) {
-			return Collections.emptyList();
+	List<Statement> getDeprecatedStatements() {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			if (deprecated == null) {
+				return Collections.emptyList();
+			}
+			return new ArrayList<>(deprecated);
+		} finally {
+			readWriteLock.unlockReader(readLock);
 		}
-		return new ArrayList<>(deprecated);
+
 	}
 
-	synchronized List<Statement> getApprovedStatements() {
-		if (approved == null) {
-			return Collections.emptyList();
+	List<Statement> getApprovedStatements() {
+
+		boolean readLock = readWriteLock.readLock();
+		try {
+
+			if (approved == null) {
+				return Collections.emptyList();
+			}
+			return new ArrayList<>(approved);
+		} finally {
+			readWriteLock.unlockReader(readLock);
 		}
-		return new ArrayList<>(approved);
+
 	}
 
-	synchronized boolean hasDeprecated(Statement statement) {
-		if (deprecated == null) {
-			return false;
+	boolean hasDeprecated(Statement statement) {
+
+		boolean readLock = readWriteLock.readLock();
+		try {
+			if (deprecated == null) {
+				return false;
+			}
+			return deprecated.contains(statement);
+		} finally {
+			readWriteLock.unlockReader(readLock);
 		}
-		return deprecated.contains(statement);
+
 	}
 
-	synchronized boolean hasApproved() {
-		return approved != null && !approved.isEmpty();
+	boolean hasApproved() {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			return approved != null && !approved.isEmpty();
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+
 	}
 
-	synchronized Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
+	Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
 			Resource[] contexts) {
+		boolean readLock = readWriteLock.readLock();
+		try {
 
-		if (approved == null) {
-			return Collections.emptyList();
+			if (approved == null) {
+				return Collections.emptyList();
+			}
+
+			Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
+
+			// This is a synchronized context, users of this method will be allowed to use the results at their leisure.
+			// We
+			// provide a copy of the data so that there will be no concurrent modification exceptions!
+			if (statements instanceof Collection) {
+				return new ArrayList<>((Collection<? extends Statement>) statements);
+			} else {
+				return StreamSupport
+						.stream(statements.spliterator(), false)
+						.collect(Collectors.toList());
+			}
+		} finally {
+			readWriteLock.unlockReader(readLock);
 		}
 
-		Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
+	}
 
-		// This is a synchronized context, users of this method will be allowed to use the results at their leisure. We
-		// provide a copy of the data so that there will be no concurrent modification exceptions!
-		if (statements instanceof Collection) {
-			return new ArrayList<>((Collection<? extends Statement>) statements);
-		} else {
-			return StreamSupport
-					.stream(statements.spliterator(), false)
-					.collect(Collectors.toList());
+	Iterable<Triple> getApprovedTriples(Resource subj, IRI pred, Value obj) {
+		boolean readLock = readWriteLock.readLock();
+		try {
+
+			if (approved == null) {
+				return Collections.emptyList();
+			}
+
+			// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
+			// for functionally complete first.
+			Stream<Triple> approvedSubjectTriples = approved.parallelStream()
+					.filter(st -> st.getSubject().isTriple())
+					.map(st -> (Triple) st.getSubject())
+					.filter(t -> {
+						if (subj != null && !subj.equals(t.getSubject())) {
+							return false;
+						}
+						if (pred != null && !pred.equals(t.getPredicate())) {
+							return false;
+						}
+						return obj == null || obj.equals(t.getObject());
+					});
+
+			Stream<Triple> approvedObjectTriples = approved.parallelStream()
+					.filter(st -> st.getObject().isTriple())
+					.map(st -> (Triple) st.getObject())
+					.filter(t -> {
+						if (subj != null && !subj.equals(t.getSubject())) {
+							return false;
+						}
+						if (pred != null && !pred.equals(t.getPredicate())) {
+							return false;
+						}
+						return obj == null || obj.equals(t.getObject());
+					});
+
+			return Stream.concat(approvedSubjectTriples, approvedObjectTriples).collect(Collectors.toList());
+		} finally {
+			readWriteLock.unlockReader(readLock);
 		}
 	}
 
-	synchronized Iterable<Triple> getApprovedTriples(Resource subj, IRI pred, Value obj) {
-		if (approved == null) {
-			return Collections.emptyList();
+	void removeApproved(Statement next) {
+		long writeLock = readWriteLock.writeLock();
+		try {
+			if (approved != null) {
+				approved.remove(next);
+			}
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
 		}
 
-		// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
-		// for functionally complete first.
-		Stream<Triple> approvedSubjectTriples = approved.parallelStream()
-				.filter(st -> st.getSubject() instanceof Triple)
-				.map(st -> (Triple) st.getSubject())
-				.filter(t -> {
-					if (subj != null && !subj.equals(t.getSubject())) {
-						return false;
-					}
-					if (pred != null && !pred.equals(t.getPredicate())) {
-						return false;
-					}
-					if (obj != null && !obj.equals(t.getObject())) {
-						return false;
-					}
-					return true;
-				});
-
-		Stream<Triple> approvedObjectTriples = approved.parallelStream()
-				.filter(st -> st.getObject() instanceof Triple)
-				.map(st -> (Triple) st.getObject())
-				.filter(t -> {
-					if (subj != null && !subj.equals(t.getSubject())) {
-						return false;
-					}
-					if (pred != null && !pred.equals(t.getPredicate())) {
-						return false;
-					}
-					if (obj != null && !obj.equals(t.getObject())) {
-						return false;
-					}
-					return true;
-				});
-
-		return Stream.concat(approvedSubjectTriples, approvedObjectTriples).collect(Collectors.toList());
-	}
-
-	synchronized void removeApproved(Statement next) {
-		if (approved != null) {
-			approved.remove(next);
-		}
 	}
 
 	private <T> Set<T> cloneSet(Set<T> set) {
@@ -565,4 +741,65 @@ abstract class Changeset implements SailSink, ModelFactory {
 			return Objects.hash(subject, predicate, object, context, allContexts);
 		}
 	}
+
+	private static class AdderBasedReadWriteLock {
+
+		// StampedLock for handling writers.
+		private final StampedLock lock = new StampedLock();
+
+		// LongAdder for handling readers. When the count is equal then there are no active readers.
+		private final LongAdder readersLocked = new LongAdder();
+		private final LongAdder readersUnlocked = new LongAdder();
+
+		public boolean readLock() {
+			while (true) {
+				readersLocked.increment();
+				if (!lock.isWriteLocked()) {
+					// Everything is good! We have acquired a read-lock and there are no active writers.
+					return true;
+				} else {
+					// Release our read lock so we don't block any writers.
+					readersUnlocked.increment();
+					Thread.onSpinWait();
+				}
+			}
+		}
+
+		public void unlockReader(boolean locked) {
+			if (locked) {
+				readersUnlocked.increment();
+			} else {
+				throw new IllegalMonitorStateException();
+			}
+		}
+
+		public long writeLock() {
+			// Acquire a write-lock.
+			long writeStamp = lock.writeLock();
+
+			// Wait for active readers to finish.
+			while (true) {
+				// The order is important here.
+				long unlockedSum = readersUnlocked.sum();
+				long lockedSum = readersLocked.sum();
+				if (unlockedSum == lockedSum) {
+					// No active readers.
+					return writeStamp;
+				} else {
+					Thread.onSpinWait();
+				}
+
+			}
+		}
+
+		public void unlockWriter(long stamp) {
+			if (stamp != 0) {
+				lock.unlockWrite(stamp);
+			} else {
+				throw new IllegalMonitorStateException();
+			}
+		}
+
+	}
+
 }

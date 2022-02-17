@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Supplier;
@@ -21,13 +22,15 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.collect.MapMaker;
+
 /**
  * An object registry that uses weak references to keep track of the stored objects. The registry can be used to
  * retrieve stored objects using another, equivalent object. As such, it can be used to prevent the use of duplicates in
  * another data structure, reducing memory usage. The objects that are being stored should properly implement the
  * {@link Object#equals} and {@link Object#hashCode} methods.
  */
-public class WeakObjectRegistry<E> extends AbstractSet<E> {
+public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 
 	private static final Logger logger = LoggerFactory.getLogger(WeakObjectRegistry.class);
 
@@ -38,8 +41,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	/**
 	 * The hash map that is used to store the objects.
 	 */
-	private final Map<E, WeakReference<E>>[] objectMap;
+	private final Map<V, WeakReference<V>>[] objectMap;
 	private final AdderBasedReadWriteLock[] locks;
+	private final ConcurrentMap<K, V> cache;
 
 	/*--------------*
 	 * Constructors *
@@ -48,7 +52,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	/**
 	 * Constructs a new, empty object registry.
 	 */
-	public WeakObjectRegistry() {
+	public WeakObjectRegistry(int cacheSize) {
 		super();
 		int concurrency = Runtime.getRuntime().availableProcessors() * 2;
 
@@ -61,6 +65,13 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		for (int index = 0; index < locks.length; index++) {
 			locks[index] = new AdderBasedReadWriteLock();
 		}
+
+		if (cacheSize > 0) {
+
+			cache = new MapMaker().concurrencyLevel(concurrency).weakKeys().weakValues().makeMap();
+		} else {
+			cache = null;
+		}
 	}
 
 	/**
@@ -69,8 +80,8 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	 * @param c The collection whose elements are to be placed into this object registry.
 	 * @throws NullPointerException If the specified collection is null.
 	 */
-	public WeakObjectRegistry(Collection<? extends E> c) {
-		this();
+	public WeakObjectRegistry(int cacheSize, Collection<? extends V> c) {
+		this(cacheSize);
 		addAll(c);
 	}
 
@@ -84,19 +95,32 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	 * @param key The object that should be used as the search key for the operation.
 	 * @return A stored object that is equal to the supplied key, or <var>null</var> if no such object was found.
 	 */
-	public E get(Object key) {
+	public V get(K key) {
 		if (key == null) {
 			return null;
+		}
+
+		V cached = cache != null ? cache.get(key) : null;
+		if (cached != null) {
+			return cached;
 		}
 
 		int index = getIndex(key);
 		boolean readLock = locks[index].readLock();
 		try {
-			Map<E, WeakReference<E>> weakReferenceMap = objectMap[index];
+			Map<V, WeakReference<V>> weakReferenceMap = objectMap[index];
 
-			WeakReference<E> weakRef = weakReferenceMap.get(key);
+			WeakReference<V> weakRef = weakReferenceMap.get(key);
 			if (weakRef != null) {
-				return weakRef.get(); // may be null
+				V v = weakRef.get();
+				if (cache != null && v != null) {
+					if (key instanceof MemValue) {
+						cache.put(key, v);
+					} else {
+						assert true;
+					}
+				}
+				return v; // may be null
 			} else {
 				return null;
 			}
@@ -112,14 +136,14 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		return i % objectMap.length;
 	}
 
-	public AutoCloseableIterator<E> closeableIterator() {
+	public AutoCloseableIterator<V> closeableIterator() {
 		return new AutoCloseableIterator<>(objectMap, locks);
 	}
 
 	@Override
-	public Iterator<E> iterator() {
+	public Iterator<V> iterator() {
 		logger.warn("This method is not thread safe! Use closeableIterator() instead.");
-		return new AutoCloseableIterator<E>(objectMap, null);
+		return new AutoCloseableIterator<V>(objectMap, null);
 	}
 
 	public static class AutoCloseableIterator<E> implements Iterator<E>, AutoCloseable {
@@ -194,7 +218,7 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 	@Override
 	public int size() {
 		int size = 0;
-		for (Map<E, WeakReference<E>> weakReferenceMap : objectMap) {
+		for (Map<V, WeakReference<V>> weakReferenceMap : objectMap) {
 			size += weakReferenceMap.size();
 		}
 		return size;
@@ -202,24 +226,24 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	@Override
 	public boolean contains(Object key) {
-		return get(key) != null;
+		return get((K) key) != null;
 	}
 
 	@Override
-	public boolean add(E object) {
+	public boolean add(V object) {
 		int index = getIndex(object);
 		long writeLock = locks[index].writeLock();
 		try {
-			Map<E, WeakReference<E>> weakReferenceMap = objectMap[index];
-			WeakReference<E> ref = new WeakReference<>(object);
+			Map<V, WeakReference<V>> weakReferenceMap = objectMap[index];
+			WeakReference<V> ref = new WeakReference<>(object);
 
 			ref = weakReferenceMap.put(object, ref);
 
 			if (ref != null) {
-				E e = ref.get();
-				if (e != null) {
+				V v = ref.get();
+				if (v != null) {
 					// A duplicate was added which replaced the existing object. Undo this operation.
-					weakReferenceMap.put(e, ref);
+					weakReferenceMap.put(v, ref);
 					return false;
 				}
 			}
@@ -232,18 +256,23 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	}
 
-	public E getOrAdd(Object key, Supplier<E> supplier) {
+	public V getOrAdd(K key, Supplier<V> supplier) {
+		V cached = cache != null ? cache.get(key) : null;
+		if (cached != null) {
+			return cached;
+		}
+
 		int index = getIndex(key);
-		Map<E, WeakReference<E>> weakReferenceMap = objectMap[index];
+		Map<V, WeakReference<V>> weakReferenceMap = objectMap[index];
 
 		boolean readLock = locks[index].readLock();
 		try {
-			WeakReference<E> ref = weakReferenceMap.get(key);
+			WeakReference<V> ref = weakReferenceMap.get(key);
 			if (ref != null) {
-				E e = ref.get();
-				if (e != null) {
+				V v = ref.get();
+				if (v != null) {
 					// we found the object
-					return e;
+					return v;
 				}
 			}
 		} finally {
@@ -253,16 +282,16 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 		// we could not find the object, so we will use the supplier to create a new object and add that
 		long writeLock = locks[index].writeLock();
 		try {
-			E object = supplier.get();
-			WeakReference<E> ref = weakReferenceMap.put(object, new WeakReference<>(object));
+			V object = supplier.get();
+			WeakReference<V> ref = weakReferenceMap.put(object, new WeakReference<>(object));
 			if (ref != null) {
-				E e = ref.get();
-				if (e != null) {
+				V v = ref.get();
+				if (v != null) {
 					// Between releasing the read-lock and acquiring the write-lock another thread put the object in the
 					// weakReferenceMap. We need to put back the one that was there before and return that one to the
 					// user.
-					weakReferenceMap.put(e, ref);
-					return e;
+					weakReferenceMap.put(v, ref);
+					object = v;
 				}
 			}
 			assert object != null;
@@ -276,11 +305,15 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	@Override
 	public boolean remove(Object object) {
+		if (cache != null) {
+			cache.clear();
+		}
+
 		int index = getIndex(object);
 		long writeLock = locks[index].writeLock();
 		try {
-			Map<E, WeakReference<E>> weakReferenceMap = objectMap[index];
-			WeakReference<E> ref = weakReferenceMap.remove(object);
+			Map<V, WeakReference<V>> weakReferenceMap = objectMap[index];
+			WeakReference<V> ref = weakReferenceMap.remove(object);
 			return ref != null && ref.get() != null;
 
 		} finally {
@@ -290,6 +323,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 	@Override
 	public void clear() {
+		if (cache != null) {
+			cache.clear();
+		}
 
 		for (int index = 0; index < objectMap.length; index++) {
 			long writeLock = locks[index].writeLock();
@@ -320,6 +356,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 				} else {
 					// Release our read lock so we don't block any writers.
 					readersUnlocked.increment();
+					while (lock.isWriteLocked()) {
+						Thread.onSpinWait();
+					}
 					Thread.onSpinWait();
 				}
 			}

@@ -42,7 +42,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.STRUUID;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.UUID;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -303,7 +303,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		 */
 		@Override
 		public void meet(Regex node) {
-			super.meetNode(node);
+			super.meet(node);
 
 			if (isConstant(node.getArg()) && isConstant(node.getPatternArg()) && isConstant(node.getFlagsArg())) {
 				try {
@@ -322,9 +322,13 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 	}
 
-	protected class VarNameCollector extends AbstractQueryModelVisitor<RuntimeException> {
+	protected class VarNameCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		final Set<String> varNames = new HashSet<>();
+
+		protected VarNameCollector() {
+			super(true);
+		}
 
 		@Override
 		public void meet(Var var) {

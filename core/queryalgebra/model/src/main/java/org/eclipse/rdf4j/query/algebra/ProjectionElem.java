@@ -65,6 +65,11 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	}
 
 	@Override
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+		// no-op
+	}
+
+	@Override
 	public String getSignature() {
 		StringBuilder sb = new StringBuilder(32);
 		sb.append(super.getSignature());

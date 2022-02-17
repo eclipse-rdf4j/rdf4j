@@ -7,8 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.common.transaction;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Enumeration of Transaction {@link IsolationLevel}s supported by Sesame. Note that Sesame stores are not required to
@@ -59,15 +63,31 @@ public enum IsolationLevels implements IsolationLevel {
 	 */
 	SERIALIZABLE(SNAPSHOT, SNAPSHOT_READ, READ_COMMITTED, READ_UNCOMMITTED, NONE);
 
-	private final List<? extends IsolationLevels> compatibleLevels;
+	private final List<IsolationLevels> compatibleLevels;
+	private Set<IsolationLevels> compatibleLevelsSet;
 
-	private IsolationLevels(IsolationLevels... compatibleLevels) {
-		this.compatibleLevels = Arrays.asList(compatibleLevels);
+	IsolationLevels(IsolationLevels... compatibleLevels) {
+		this.compatibleLevels = new ArrayList<>(Arrays.asList(compatibleLevels));
+		this.compatibleLevels.add(this);
+	}
+
+	static {
+		for (IsolationLevels value : IsolationLevels.values()) {
+			Set<IsolationLevels> compatibleLevelsSet = Collections.newSetFromMap(new EnumMap<>(IsolationLevels.class));
+			compatibleLevelsSet.addAll(value.compatibleLevels);
+			value.compatibleLevelsSet = compatibleLevelsSet;
+		}
 	}
 
 	@Override
 	public boolean isCompatibleWith(IsolationLevel otherLevel) {
-		return this.equals(otherLevel) || compatibleLevels.contains(otherLevel);
+		// isolation levels are always compatible with themselves, so we can optimize for that case
+		if (this == otherLevel)
+			return true;
+		if (otherLevel instanceof IsolationLevels) {
+			return compatibleLevelsSet.contains(otherLevel);
+		}
+		return false;
 	}
 
 	/**

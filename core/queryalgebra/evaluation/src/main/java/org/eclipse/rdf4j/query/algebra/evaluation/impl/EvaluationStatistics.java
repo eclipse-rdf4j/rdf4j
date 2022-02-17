@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * Supplies various query model statistics to the query engine/optimizer.
@@ -59,8 +60,10 @@ public class EvaluationStatistics {
 	protected static class CardinalityCalculator extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private static final double VAR_CARDINALITY = 10;
-
 		private static final double UNBOUND_SERVICE_CARDINALITY = 100000;
+
+		private static final String UNIQUE_SEED = UUID.randomUUID().toString().replace("-", "_");
+		private int varCounter = 0;
 
 		protected double cardinality;
 
@@ -107,7 +110,7 @@ public class EvaluationStatistics {
 
 		@Override
 		public void meet(ArbitraryLengthPath node) {
-			final Var pathVar = new Var("_anon_" + UUID.randomUUID().toString().replace("-", "_"));
+			final Var pathVar = new Var("_anon_" + UNIQUE_SEED + varCounter++);
 			pathVar.setAnonymous(true);
 			// cardinality of ALP is determined based on the cost of a
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that
@@ -158,8 +161,11 @@ public class EvaluationStatistics {
 		}
 
 		protected double getCardinality(StatementPattern sp) {
-			return getSubjectCardinality(sp) * getPredicateCardinality(sp) * getObjectCardinality(sp)
-					* getContextCardinality(sp);
+			if (!sp.isCardinalitySet()) {
+				sp.setCardinality(getSubjectCardinality(sp) * getPredicateCardinality(sp) * getObjectCardinality(sp)
+						* getContextCardinality(sp));
+			}
+			return sp.getCardinality();
 		}
 
 		/**
@@ -276,9 +282,13 @@ public class EvaluationStatistics {
 	}
 
 	// count the number of triple patterns
-	private static class ServiceNodeAnalyzer extends AbstractQueryModelVisitor<RuntimeException> {
+	private static class ServiceNodeAnalyzer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private int count = 0;
+
+		private ServiceNodeAnalyzer() {
+			super(true);
+		}
 
 		public int getStatementCount() {
 			return count;

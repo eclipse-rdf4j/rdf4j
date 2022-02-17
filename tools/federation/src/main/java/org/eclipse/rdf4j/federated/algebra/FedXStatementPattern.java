@@ -236,5 +236,10 @@ public abstract class FedXStatementPattern extends StatementPattern
 		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 			visitor.meetOther(this);
 		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			// no-op
+		}
 	}
 }

@@ -49,7 +49,7 @@ public class EffectiveTarget {
 
 		for (Targetable targetable : chain) {
 			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
-					new StatementMatcher.Variable(targetVarPrefix + String.format("%010d", index++)),
+					new StatementMatcher.Variable(targetVarPrefix + EffectiveTarget.formatVariableIndex(index++)),
 					targetable,
 					previous,
 					rdfsSubClassOfReasoner,
@@ -60,7 +60,7 @@ public class EffectiveTarget {
 
 		if (optional != null) {
 			this.optional = new EffectiveTargetObject(
-					new StatementMatcher.Variable(targetVarPrefix + String.format("%010d", index)),
+					new StatementMatcher.Variable(targetVarPrefix + EffectiveTarget.formatVariableIndex(index)),
 					optional,
 					previous,
 					rdfsSubClassOfReasoner,
@@ -70,6 +70,37 @@ public class EffectiveTarget {
 		}
 
 		this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
+	}
+
+	private static String formatVariableIndex(int i) {
+		if (i < 10) {
+			return "00000000" + i;
+		}
+		if (i < 100) {
+			return "0000000" + i;
+		}
+		if (i < 1000) {
+			return "000000" + i;
+		}
+		if (i < 10000) {
+			return "00000" + i;
+		}
+		if (i < 100000) {
+			return "0000" + i;
+		}
+		if (i < 1000000) {
+			return "000" + i;
+		}
+		if (i < 10000000) {
+			return "00" + i;
+		}
+		if (i < 100000000) {
+			return "0" + i;
+		}
+		if (i < 1000000000) {
+			return "" + i;
+		}
+		throw new IllegalArgumentException("Too large!");
 	}
 
 	public StatementMatcher.Variable getTargetVar() {
@@ -111,7 +142,8 @@ public class EffectiveTarget {
 					.getCachedNodeFor(getTargetFilter(connectionsGroup, Unique.getInstance(parent, false)));
 		} else {
 
-			PlanNode parent = new BindSelect(connectionsGroup.getBaseConnection(), query, vars, source, varNames, scope,
+			PlanNode parent = new BindSelect(connectionsGroup.getBaseConnection(),
+					connectionsGroup.getBaseValueFactory(), query, vars, source, varNames, scope,
 					1000, direction, includePropertyShapeValues);
 
 			if (filter != null) {
@@ -272,7 +304,8 @@ public class EffectiveTarget {
 				.orElse("");
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
-		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, query, last.var,
+		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
+				parent, query, last.var,
 				ValidationTuple::getActiveTarget)
 						.getTrueNode(UnBufferedPlanNode.class);
 	}

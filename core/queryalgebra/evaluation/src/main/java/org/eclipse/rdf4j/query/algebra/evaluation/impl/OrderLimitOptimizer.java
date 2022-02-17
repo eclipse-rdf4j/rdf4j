@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * Moves the Order node above the Projection when variables are projected.
@@ -33,11 +33,15 @@ public class OrderLimitOptimizer implements QueryOptimizer {
 		tupleExpr.visit(new OrderOptimizer());
 	}
 
-	protected static class OrderOptimizer extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class OrderOptimizer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private boolean variablesProjected = true;
 
 		private Projection projection;
+
+		protected OrderOptimizer() {
+			super(false);
+		}
 
 		@Override
 		public void meet(Projection node) {

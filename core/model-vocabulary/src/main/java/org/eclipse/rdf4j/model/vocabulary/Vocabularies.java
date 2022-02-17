@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.model.vocabulary;
 
+import java.util.List;
+
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.base.AbstractIRI;
@@ -21,6 +24,7 @@ import org.eclipse.rdf4j.model.base.AbstractNamespace;
  *
  * @implNote To be eventually removed or merged with {@code org.eclipse.rdf4j.model.util.Vocabularies}.
  */
+@InternalUseOnly
 class Vocabularies {
 
 	static Namespace createNamespace(String prefix, String namespace) {

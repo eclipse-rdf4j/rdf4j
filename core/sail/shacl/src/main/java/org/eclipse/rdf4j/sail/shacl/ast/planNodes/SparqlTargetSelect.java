@@ -12,6 +12,7 @@ import java.util.Objects;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -39,12 +40,15 @@ public class SparqlTargetSelect implements PlanNode {
 	private final String query;
 	private final String[] variables;
 	private final ConstraintComponent.Scope scope;
+	private final ValueFactory valueFactory;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public SparqlTargetSelect(SailConnection connection, String query, ConstraintComponent.Scope scope) {
+	public SparqlTargetSelect(SailConnection connection, ValueFactory valueFactory, String query,
+			ConstraintComponent.Scope scope) {
 		this.connection = connection;
 		this.query = query;
+		this.valueFactory = valueFactory;
 		assert query.contains("?this") : "Query should contain ?this: " + query;
 		this.variables = new String[] { "?this" };
 		this.scope = scope;
@@ -64,7 +68,7 @@ public class SparqlTargetSelect implements PlanNode {
 						.get();
 
 				try {
-					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null, valueFactory);
 					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
 							new MapBindingSet(), true);
 				} catch (MalformedQueryException e) {

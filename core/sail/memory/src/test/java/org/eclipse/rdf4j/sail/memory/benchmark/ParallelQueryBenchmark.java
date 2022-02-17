@@ -98,6 +98,7 @@ public class ParallelQueryBenchmark {
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("ParallelQueryBenchmark.*") // adapt to run other benchmark tests
+				.forks(1)
 				.build();
 
 		new Runner(opt).run();

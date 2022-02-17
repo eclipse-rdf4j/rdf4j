@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -87,7 +88,7 @@ public class TestSparqlStarParser {
 	public void testUseInProjection() throws Exception {
 		String simpleSparqlQuery = "SELECT (<<<urn:A> <urn:B> 1>> as ?ref) WHERE {}";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 
@@ -132,7 +133,7 @@ public class TestSparqlStarParser {
 	public void testUseInValues() throws Exception {
 		String simpleSparqlQuery = "SELECT ?ref WHERE { values ?ref {<<<urn:A> <urn:B> 1>>} }";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -183,7 +184,7 @@ public class TestSparqlStarParser {
 	public void testUseInBind() throws Exception {
 		String simpleSparqlQuery = "SELECT ?ref WHERE { bind(<<<urn:A> <urn:B> 1>> as ?ref)}";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -234,7 +235,7 @@ public class TestSparqlStarParser {
 	public void testUseInBindWithVars() throws Exception {
 		String simpleSparqlQuery = "SELECT * WHERE { bind(<<?s ?p ?o>> as ?ref)}";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -297,7 +298,7 @@ public class TestSparqlStarParser {
 	public void testUseInStatementPatternWithVars() throws Exception {
 		String simpleSparqlQuery = "SELECT * WHERE { <<?s ?p ?o>> <urn:pred> ?val}";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -367,7 +368,7 @@ public class TestSparqlStarParser {
 	public void testUseNestedInStatementPatternWithVars() throws Exception {
 		String simpleSparqlQuery = "SELECT * WHERE { <<<<?s ?p ?o>> ?q ?r>> <urn:pred> ?val}";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -445,7 +446,7 @@ public class TestSparqlStarParser {
 	public void testUseInConstructFromStatementPattern() throws Exception {
 		String simpleSparqlQuery = "CONSTRUCT {<<?s ?p ?o>> <urn:pred> <urn:value>} WHERE {?s ?p ?o}";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -753,7 +754,7 @@ public class TestSparqlStarParser {
 	public void testUseInExists() throws Exception {
 		String simpleSparqlQuery = "SELECT * WHERE { ?s ?p ?o . filter exists {<<?s ?p <urn:value>>> <urn:pred> ?q}} ";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -819,7 +820,7 @@ public class TestSparqlStarParser {
 	public void testUseInSTR() throws Exception {
 		String simpleSparqlQuery = "SELECT (str(<<<urn:a> <urn:b> <urn:c>>>) as ?str) WHERE { } ";
 
-		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
+		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -872,7 +873,7 @@ public class TestSparqlStarParser {
 	public void testUpdateWithTripleRefEmptyHead() throws Exception {
 		String simpleSparqlUpdate = "insert {} where {<<<urn:a> <urn:b> <urn:c>>> <urn:p> 1}";
 
-		ParsedUpdate q = parser.parseUpdate(simpleSparqlUpdate, null);
+		ParsedUpdate q = parser.parseUpdate(simpleSparqlUpdate, null, SimpleValueFactory.getInstance());
 
 		assertNotNull(q);
 		List<UpdateExpr> list = q.getUpdateExprs();
@@ -924,7 +925,7 @@ public class TestSparqlStarParser {
 	public void testUpdateWithTripleRefNonEmptyHead() throws Exception {
 		String simpleSparqlUpdate = "insert {<<<urn:a> <urn:b> <urn:c>>> <urn:p> 1} where {<<<urn:a> <urn:b> <urn:c>>> <urn:p> 1}";
 
-		ParsedUpdate q = parser.parseUpdate(simpleSparqlUpdate, null);
+		ParsedUpdate q = parser.parseUpdate(simpleSparqlUpdate, null, SimpleValueFactory.getInstance());
 		assertNotNull(q);
 		List<UpdateExpr> list = q.getUpdateExprs();
 		assertNotNull(list);
@@ -961,7 +962,7 @@ public class TestSparqlStarParser {
 	public void testUpdateExample() {
 		String update = "INSERT {?s ?p ?o} \r\n" +
 				"WHERE { <<?s ?p ?o>> <p:1> 0.9 }";
-		ParsedUpdate q = parser.parseUpdate(update, null);
+		ParsedUpdate q = parser.parseUpdate(update, null, SimpleValueFactory.getInstance());
 		assertNotNull(q);
 		List<UpdateExpr> list = q.getUpdateExprs();
 		assertNotNull(list);
@@ -991,7 +992,7 @@ public class TestSparqlStarParser {
 	public void testDeleteWhereRDFStar() {
 		String update = "DELETE\r\n" +
 				"WHERE { << <u:1> <u:2> <u:3> >> ?p ?o }";
-		ParsedUpdate q = parser.parseUpdate(update, null);
+		ParsedUpdate q = parser.parseUpdate(update, null, SimpleValueFactory.getInstance());
 		assertNotNull(q);
 	}
 }

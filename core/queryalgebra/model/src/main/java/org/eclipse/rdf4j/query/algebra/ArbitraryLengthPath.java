@@ -194,7 +194,6 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 			contextVar.visit(visitor);
 		}
 
-		super.visitChildren(visitor);
 	}
 
 	@Override

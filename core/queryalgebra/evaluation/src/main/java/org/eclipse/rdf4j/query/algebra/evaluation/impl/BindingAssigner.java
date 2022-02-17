@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * Assigns values to variables based on a supplied set of bindings.
@@ -29,11 +29,12 @@ public class BindingAssigner implements QueryOptimizer {
 		}
 	}
 
-	protected static class VarVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class VarVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		protected BindingSet bindings;
 
 		public VarVisitor(BindingSet bindings) {
+			super(true);
 			this.bindings = bindings;
 		}
 

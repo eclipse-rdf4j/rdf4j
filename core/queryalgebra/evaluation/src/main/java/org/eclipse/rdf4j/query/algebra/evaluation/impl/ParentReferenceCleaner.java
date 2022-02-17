@@ -33,7 +33,7 @@ public class ParentReferenceCleaner implements QueryOptimizer {
 		tupleExpr.visit(new ParentFixingVisitor());
 	}
 
-	private class ParentFixingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	private static class ParentFixingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final ArrayDeque<QueryModelNode> ancestors = new ArrayDeque<>();
 

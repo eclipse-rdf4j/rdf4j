@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 /**
@@ -83,11 +84,12 @@ public class FilterOptimizer implements QueryOptimizer {
 	 * Inner class FilterFinder *
 	 *--------------------------*/
 
-	protected static class FilterFinder extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class FilterFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		protected final TupleExpr tupleExpr;
 
 		public FilterFinder(TupleExpr tupleExpr) {
+			super(false);
 			this.tupleExpr = tupleExpr;
 		}
 
@@ -251,7 +253,11 @@ public class FilterOptimizer implements QueryOptimizer {
 	 * Inner class MergeFilterFinder *
 	 *--------------------------*/
 
-	protected static class MergeFilterFinder extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class MergeFilterFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		protected MergeFilterFinder() {
+			super(false);
+		}
 
 		@Override
 		public void meet(Filter filter) {
@@ -273,7 +279,11 @@ public class FilterOptimizer implements QueryOptimizer {
 	 * Inner class DeMergeFilterFinder *
 	 *--------------------------*/
 
-	protected static class DeMergeFilterFinder extends AbstractQueryModelVisitor<RuntimeException> {
+	protected static class DeMergeFilterFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		protected DeMergeFilterFinder() {
+			super(false);
+		}
 
 		@Override
 		public void meet(Filter filter) {
