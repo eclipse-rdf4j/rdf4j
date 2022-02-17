@@ -398,30 +398,28 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 		}
 	}
 
-	static class ReadLock implements Lock {
+}
 
-		private final LongAdder readersUnlocked;
-		private boolean locked = true;
+final class ReadLock implements Lock {
 
-		public ReadLock(LongAdder readersUnlocked) {
-			this.readersUnlocked = readersUnlocked;
-		}
+	private LongAdder readersUnlocked;
 
-		@Override
-		public boolean isActive() {
-			return locked;
-		}
-
-		@Override
-		public void release() {
-			if (!locked) {
-				throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
-			}
-
-			locked = false;
-			readersUnlocked.increment();
-
-		}
+	public ReadLock(LongAdder readersUnlocked) {
+		this.readersUnlocked = readersUnlocked;
 	}
 
+	@Override
+	public boolean isActive() {
+		return readersUnlocked != null;
+	}
+
+	@Override
+	public void release() {
+		if (readersUnlocked == null) {
+			throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
+		}
+
+		readersUnlocked.increment();
+		readersUnlocked = null;
+	}
 }

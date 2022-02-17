@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -45,7 +46,7 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 	}
 
 	private static class VariableFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
-		private final Set<String> vars = new HashSet<>();
+		private Set<String> vars;
 
 		private VariableFinder() {
 			super(true);
@@ -53,12 +54,15 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Var node) throws RuntimeException {
-			vars.add(node.getName());
-			super.meet(node);
+			if (!node.isAnonymous() && node.getName() != null) {
+				if (vars == null)
+					vars = new HashSet<>();
+				vars.add(node.getName());
+			}
 		}
 
 		public Set<String> getVars() {
-			return vars;
+			return vars != null ? vars : Collections.emptySet();
 		}
 
 	}
@@ -76,7 +80,7 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 
 			Set<String> foundChildVariableNames = findVariables.getVars();
 
-			if (foundChildVariableNames.equals(node.getBindingNames())) {
+			if (!foundChildVariableNames.isEmpty() && foundChildVariableNames.equals(node.getBindingNames())) {
 				TupleExpr child = node.getArg();
 				node.getParentNode().replaceChildNode(node, child);
 			}

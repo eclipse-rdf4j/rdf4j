@@ -191,4 +191,23 @@ public class MemTriple implements Triple, MemResource {
 		return false;
 	}
 
+	@Override
+	public boolean hasSubjectStatements() {
+		return !subjectStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasPredicateStatements() {
+		return false;
+	}
+
+	@Override
+	public boolean hasObjectStatements() {
+		return !objectStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasContextStatements() {
+		return false;
+	}
 }

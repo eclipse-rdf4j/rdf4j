@@ -147,11 +147,11 @@ public class Iterations {
 	 * @param setMaker the Supplier that constructs a new set
 	 * @return a Set containing all elements obtained from the specified Iteration.
 	 */
-	public static <E, X extends Exception> Set<E> asSet(Iteration<? extends E, ? extends X> arg2,
+	public static <E, X extends Exception> Set<E> asSet(Iteration<? extends E, ? extends X> iter,
 			Supplier<Set<E>> setMaker) throws X {
 		Set<E> set = setMaker.get();
-		while (arg2.hasNext()) {
-			set.add(arg2.next());
+		while (iter.hasNext()) {
+			set.add(iter.next());
 		}
 		return set;
 	}

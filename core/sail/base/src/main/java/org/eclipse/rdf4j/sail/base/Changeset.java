@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.SailConflictException;
@@ -354,6 +355,11 @@ abstract class Changeset implements SailSink, ModelFactory {
 			readWriteLock.unlockWriter(writeLock);
 		}
 
+	}
+
+	@Override
+	public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+		approve(Statements.statement(subj, pred, obj, ctx));
 	}
 
 	@Override

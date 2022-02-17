@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,18 +47,19 @@ public class RdfsSubClassOfReasoner {
 	private final Map<Resource, Set<Resource>> forwardChainCache = new HashMap<>();
 	private final Map<Resource, Set<Resource>> backwardsChainCache = new HashMap<>();
 
-	public Stream<Statement> forwardChain(Statement statement) {
+	public List<Statement> forwardChain(Statement statement) {
 		if (forwardChainCache.isEmpty()) {
-			return Stream.of(statement);
+			return null;
 		}
 
 		if (statement.getPredicate().equals(RDF.TYPE)
 				&& forwardChainCache.containsKey(statement.getObject())) {
 			return forwardChainCache.get(statement.getObject())
 					.stream()
-					.map(r -> statement(statement.getSubject(), RDF.TYPE, r, statement.getContext()));
+					.map(r -> statement(statement.getSubject(), RDF.TYPE, r, statement.getContext()))
+					.collect(Collectors.toList());
 		}
-		return Stream.of(statement);
+		return null;
 	}
 
 	public Set<Resource> backwardsChain(Resource type) {

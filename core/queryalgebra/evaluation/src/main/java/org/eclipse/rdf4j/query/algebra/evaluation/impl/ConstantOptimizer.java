@@ -322,7 +322,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 	}
 
-	protected class VarNameCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	protected static class VarNameCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		final Set<String> varNames = new HashSet<>();
 

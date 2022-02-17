@@ -92,13 +92,13 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 		if (rdfsSubClassOfReasoner != null && includeInferred && obj != null && obj.isResource()
 				&& RDF.TYPE.equals(pred)) {
 			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
-			if (!inferredTypes.isEmpty()) {
+			if (inferredTypes.size() > 1) {
 
 				CloseableIteration<Statement, SailException>[] statementsMatchingInferredTypes = inferredTypes.stream()
 						.map(r -> super.getStatements(subj, pred, r, false, contexts))
 						.toArray(CloseableIteration[]::new);
 
-				return new LookAheadIteration<Statement, SailException>() {
+				return new LookAheadIteration<>() {
 
 					final UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(
 							statementsMatchingInferredTypes);

@@ -229,15 +229,22 @@ class MemorySailStore implements SailStore {
 		if (contexts.length == 0) {
 			memContexts = EMPTY_CONTEXT;
 			smallestList = statements;
-		} else if (contexts.length == 1 && contexts[0] != null) {
-			MemResource memContext = valueFactory.getMemResource(contexts[0]);
-			if (memContext == null) {
-				// non-existent context
-				return EMPTY_ITERATION;
+		} else if (contexts.length == 1) {
+			if (contexts[0] == null) {
+				memContexts = new MemResource[] { null };
+				smallestList = statements;
+
+			} else {
+				MemResource memContext = valueFactory.getMemResource(contexts[0]);
+				if (memContext == null) {
+					// non-existent context
+					return EMPTY_ITERATION;
+				}
+
+				memContexts = new MemResource[] { memContext };
+				smallestList = memContext.getContextStatementList();
 			}
 
-			memContexts = new MemResource[] { memContext };
-			smallestList = memContext.getContextStatementList();
 		} else {
 			Set<MemResource> contextSet = new LinkedHashSet<>(2 * contexts.length);
 
@@ -706,28 +713,13 @@ class MemorySailStore implements SailStore {
 			MemValue memObj = valueFactory.getOrCreateMemValue(obj);
 			MemResource memContext = (context == null) ? null : valueFactory.getOrCreateMemResource(context);
 
-			if (memSubj.hasStatements() && memPred.hasStatements() && memObj.hasStatements()
-					&& (memContext == null || memContext.hasStatements())) {
+			if (memSubj.hasSubjectStatements() && memPred.hasPredicateStatements() && memObj.hasObjectStatements()
+					&& (memContext == null || memContext.hasContextStatements())) {
 				// All values are used in at least one statement. Possibly, the
 				// statement is already present. Check this.
 
-				try (CloseableIteration<MemStatement, SailException> stIter = createStatementIterator(memSubj, memPred,
-						memObj, memContext)) {
-					if (stIter.hasNext()) {
-						// statement is already present, update its transaction
-						// status if appropriate
-						MemStatement st = stIter.next();
-
-						if (!st.isExplicit() && explicit) {
-							// Implicit statement is now added explicitly
-							st.setTillSnapshot(nextSnapshot);
-						} else if (!st.isInSnapshot(nextSnapshot)) {
-							st.setSinceSnapshot(nextSnapshot);
-						} else {
-							// statement already exists
-							return null;
-						}
-					}
+				if (statementAlreadyExists(explicit, memSubj, memPred, memObj, memContext)) {
+					return null;
 				}
 			}
 
@@ -737,6 +729,29 @@ class MemorySailStore implements SailStore {
 			st.addToComponentLists();
 			invalidateCache();
 			return st;
+		}
+
+		private boolean statementAlreadyExists(boolean explicit, MemResource memSubj, MemIRI memPred, MemValue memObj,
+				MemResource memContext) {
+			try (CloseableIteration<MemStatement, SailException> stIter = createStatementIterator(memSubj, memPred,
+					memObj, memContext)) {
+				if (stIter.hasNext()) {
+					// statement is already present, update its transaction
+					// status if appropriate
+					MemStatement st = stIter.next();
+
+					if (!st.isExplicit() && explicit) {
+						// Implicit statement is now added explicitly
+						st.setTillSnapshot(nextSnapshot);
+					} else if (!st.isInSnapshot(nextSnapshot)) {
+						st.setSinceSnapshot(nextSnapshot);
+					} else {
+						// statement already exists
+						return true;
+					}
+				}
+			}
+			return false;
 		}
 
 		@Override
@@ -862,27 +877,23 @@ class MemorySailStore implements SailStore {
 				Resource... contexts) throws SailException {
 			CloseableIteration<? extends Statement, SailException> stIter1 = null;
 
-			boolean allGood = false;
 			Lock stLock = openStatementsReadLock();
 			try {
 				stIter1 = createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
-				CloseableIteration<? extends Statement, SailException> stIter2 = LockingIteration.getInstance(stLock,
-						stIter1);
-				allGood = true;
-				return stIter2;
-			} finally {
-				if (!allGood) {
-					try {
-						if (stIter1 != null) {
-							stIter1.close();
-						}
-					} finally {
-						if (stLock != null) {
-							stLock.release();
-						}
+				return LockingIteration.getInstance(stLock, stIter1);
+			} catch (Throwable t) {
+				try {
+					if (stIter1 != null) {
+						stIter1.close();
+					}
+				} finally {
+					if (stLock != null) {
+						stLock.release();
 					}
 				}
+				throw t;
 			}
+
 		}
 
 		@Override

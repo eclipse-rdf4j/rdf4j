@@ -7,13 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -33,7 +32,7 @@ public interface SailSink extends SailClosable {
 
 	/**
 	 * Once this method returns successfully, changes that were made to this {@link SailSink} will be visible to
-	 * subsequent {@link SailSource#dataset(org.eclipse.rdf4j.IsolationLevel)}.
+	 * subsequent {@link SailSource#dataset(IsolationLevel)}.
 	 *
 	 * @throws SailException
 	 */
@@ -99,9 +98,7 @@ public interface SailSink extends SailClosable {
 	 * @param ctx  The context to add the statement to.
 	 * @throws SailException If the statement could not be added, for example because no transaction is active.
 	 */
-	default void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
-		approve(Statements.statement(subj, pred, obj, ctx));
-	}
+	void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException;
 
 	/**
 	 * Adds a statement to the store.

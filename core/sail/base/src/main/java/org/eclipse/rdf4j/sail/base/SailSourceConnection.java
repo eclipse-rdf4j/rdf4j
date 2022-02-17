@@ -712,13 +712,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
 				notifyStatementAdded(vf.createStatement(subj, pred, obj));
 			}
-			sink.approve(vf.createStatement(subj, pred, obj));
+			sink.approve(subj, pred, obj, null);
 		} else {
 			for (Resource ctx : contexts) {
 				if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, ctx)) {
 					notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
 				}
-				sink.approve(vf.createStatement(subj, pred, obj, ctx));
+				sink.approve(subj, pred, obj, ctx);
 			}
 		}
 	}

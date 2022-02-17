@@ -164,4 +164,24 @@ public class MemBNode extends SimpleBNode implements MemResource {
 		contextStatements.cleanSnapshots(currentSnapshot);
 
 	}
+
+	@Override
+	public boolean hasSubjectStatements() {
+		return !subjectStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasPredicateStatements() {
+		return false;
+	}
+
+	@Override
+	public boolean hasObjectStatements() {
+		return !objectStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasContextStatements() {
+		return !contextStatements.isEmpty();
+	}
 }

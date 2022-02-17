@@ -594,10 +594,20 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						connection.begin(IsolationLevels.NONE);
 						set.stream()
 								.filter(statement -> !otherSet.contains(statement))
-								.flatMap(statement -> rdfsSubClassOfReasoner == null ? Stream.of(statement)
-										: rdfsSubClassOfReasoner.forwardChain(statement))
-								.forEach(statement -> connection.addStatement(statement.getSubject(),
-										statement.getPredicate(), statement.getObject(), statement.getContext()));
+								.forEach(statement -> {
+									connection.addStatement(statement.getSubject(), statement.getPredicate(),
+											statement.getObject(), statement.getContext());
+
+									if (rdfsSubClassOfReasoner != null) {
+										List<Statement> forwardChained = rdfsSubClassOfReasoner.forwardChain(statement);
+										if (forwardChained != null) {
+											forwardChained.forEach(s -> {
+												connection.addStatement(s.getSubject(), s.getPredicate(), s.getObject(),
+														s.getContext());
+											});
+										}
+									}
+								});
 						connection.commit();
 					}
 

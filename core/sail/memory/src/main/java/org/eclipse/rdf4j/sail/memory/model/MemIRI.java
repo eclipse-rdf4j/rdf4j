@@ -253,6 +253,26 @@ public class MemIRI implements IRI, MemResource {
 	}
 
 	@Override
+	public boolean hasSubjectStatements() {
+		return !subjectStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasPredicateStatements() {
+		return !predicateStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasObjectStatements() {
+		return !objectStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasContextStatements() {
+		return !contextStatements.isEmpty();
+	}
+
+	@Override
 	public MemStatementList getContextStatementList() {
 		return contextStatements;
 	}
