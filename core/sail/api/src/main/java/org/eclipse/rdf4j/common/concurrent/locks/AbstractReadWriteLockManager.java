@@ -180,18 +180,40 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 		return readLockMonitoring.getLock();
 	}
 
-	Lock createReadLockInner() throws InterruptedException {
-
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public boolean lockReadLock() throws InterruptedException {
 		readersLocked.increment();
+
 		while (stampedLock.isWriteLocked()) {
-			try {
-				spinWaitAtReadLock();
-			} catch (InterruptedException e) {
+
+			spinWaitAtReadLock();
+
+			if (Thread.interrupted()) {
 				readersUnlocked.increment();
-				throw e;
+				throw new InterruptedException();
 			}
 		}
 
+		return true;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void unlockReadLock(boolean locked) {
+		if (locked) {
+			readersUnlocked.increment();
+		} else {
+			assert false;
+		}
+	}
+
+	Lock createReadLockInner() throws InterruptedException {
+		lockReadLock();
 		return new ReadLock(readersUnlocked);
 	}
 
@@ -226,6 +248,12 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 					// No active readers.
 					lockAcquired = true;
 				} else {
+
+					if (unlockedSum > lockedSum) {
+						// due to unlockReadLock(boolean) having been called more times than lockReadLock()
+						throw new IllegalMonitorStateException(
+								"Read lock was been released more times than it has been acquired!");
+					}
 
 					// If a thread is allowed to acquire more than one read-lock then we could deadlock if we keep
 					// holding the write-lock while we wait for all readers to finish. This is because no read-locks can
@@ -351,10 +379,6 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 
 		writeLockMonitoring.runCleanup();
 
-		if (Thread.interrupted()) {
-			throw new InterruptedException();
-		}
-
 	}
 
 	private void yieldWait() throws InterruptedException {
@@ -369,38 +393,38 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 
 	}
 
-	static class WriteLock implements Lock {
-
-		private final StampedLock lock;
-		private long stamp;
-
-		public WriteLock(StampedLock lock, long stamp) {
-			assert stamp != 0;
-			this.lock = lock;
-			this.stamp = stamp;
-		}
-
-		@Override
-		public boolean isActive() {
-			return stamp != 0;
-		}
-
-		@Override
-		public void release() {
-			long temp = stamp;
-			stamp = 0;
-
-			if (temp == 0) {
-				throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
-			}
-
-			lock.unlockWrite(temp);
-		}
-	}
-
 }
 
-final class ReadLock implements Lock {
+class WriteLock implements Lock {
+
+	private final StampedLock lock;
+	private long stamp;
+
+	public WriteLock(StampedLock lock, long stamp) {
+		assert stamp != 0;
+		this.lock = lock;
+		this.stamp = stamp;
+	}
+
+	@Override
+	public boolean isActive() {
+		return stamp != 0;
+	}
+
+	@Override
+	public void release() {
+		long temp = stamp;
+		stamp = 0;
+
+		if (temp == 0) {
+			throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
+		}
+
+		lock.unlockWrite(temp);
+	}
+}
+
+class ReadLock implements Lock {
 
 	private LongAdder readersUnlocked;
 

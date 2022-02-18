@@ -66,6 +66,11 @@ abstract class DelegatingSailDataset implements SailDataset {
 	}
 
 	@Override
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		return delegate.hasStatement(subj, pred, obj, contexts);
+	}
+
+	@Override
 	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred,
 			Value obj) throws SailException {
 		return delegate.getTriples(subj, pred, obj);

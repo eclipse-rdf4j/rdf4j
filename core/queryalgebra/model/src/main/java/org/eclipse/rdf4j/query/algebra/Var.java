@@ -133,16 +133,16 @@ public final class Var implements ValueExpr, QueryModelNode {
 		return sb.toString();
 	}
 
-	@Override
-	public boolean equals(Object other) {
-		if (this == other)
-			return true;
-		if (other instanceof Var) {
-			Var o = (Var) other;
-			return name.equals(o.getName()) && Objects.equals(value, o.getValue()) && anonymous == o.isAnonymous();
-		}
-		return false;
-	}
+//	@Override
+//	public boolean equals(Object other) {
+//		if (this == other)
+//			return true;
+//		if (other instanceof Var) {
+//			Var o = (Var) other;
+//			return name.equals(o.getName()) && Objects.equals(value, o.getValue()) && anonymous == o.isAnonymous();
+//		}
+//		return false;
+//	}
 
 	@Override
 	public int hashCode() {
@@ -156,17 +156,17 @@ public final class Var implements ValueExpr, QueryModelNode {
 		return result;
 	}
 
-//	@Override
-//	public boolean equals(Object o) {
-//		if (this == o) {
-//			return true;
-//		}
-//		if (o == null || getClass() != o.getClass()) {
-//			return false;
-//		}
-//		Var var = (Var) o;
-//		return anonymous == var.anonymous && Objects.equals(name, var.name) && Objects.equals(value, var.value);
-//	}
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		Var var = (Var) o;
+		return anonymous == var.anonymous && Objects.equals(name, var.name) && Objects.equals(value, var.value);
+	}
 //
 //	int hashCode = 0;
 //

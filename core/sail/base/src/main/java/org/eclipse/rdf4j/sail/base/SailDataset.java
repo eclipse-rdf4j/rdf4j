@@ -77,6 +77,26 @@ public interface SailDataset extends SailClosable {
 			Resource... contexts) throws SailException;
 
 	/**
+	 * Check if a statement exists matching a specific subject, predicate and/or object. All three parameters may be
+	 * null to indicate wildcards. Optionally a (set of) context(s) may be specified in which case the result will be
+	 * restricted to statements matching one or more of the specified contexts.
+	 *
+	 * @param subj     A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred     A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj      A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param contexts The context(s) to get the statements from. Note that this parameter is a vararg and as such is
+	 *                 optional. If no contexts are supplied the method operates on all contexts.
+	 * @return true if a matching statement exists
+	 * @throws SailException If the triple source failed.
+	 */
+	default boolean hasStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		try (CloseableIteration<? extends Statement, SailException> iteration = getStatements(subj, pred, obj,
+				contexts)) {
+			return iteration.hasNext();
+		}
+	}
+
+	/**
 	 * Gets all RDF-star triples that have a specific subject, predicate and/or object. All three parameters may be null
 	 * to indicate wildcards.
 	 *

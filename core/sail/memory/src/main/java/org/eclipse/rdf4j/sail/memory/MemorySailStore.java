@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.memory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -34,10 +33,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -190,8 +186,7 @@ class MemorySailStore implements SailStore {
 		try {
 			return statementListLockManager.getReadLock();
 		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw convertToSailException(e);
 		}
 	}
 
@@ -842,8 +837,9 @@ class MemorySailStore implements SailStore {
 			// Create a list of all resources that are used as contexts
 			ArrayList<MemResource> contextIDs = new ArrayList<>(32);
 
-			Lock stLock = openStatementsReadLock();
+			boolean locked = false;
 			try {
+				locked = statementListLockManager.lockReadLock();
 				int snapshot = getCurrentSnapshot();
 				try (WeakObjectRegistry.AutoCloseableIterator<MemIRI> memIRIsIterator = valueFactory
 						.getMemIRIsIterator()) {
@@ -865,8 +861,10 @@ class MemorySailStore implements SailStore {
 					}
 				}
 
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
 			} finally {
-				stLock.release();
+				statementListLockManager.unlockReadLock(locked);
 			}
 
 			return new CloseableIteratorIteration<>(contextIDs.iterator());
@@ -876,24 +874,45 @@ class MemorySailStore implements SailStore {
 		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
 			CloseableIteration<? extends Statement, SailException> stIter1 = null;
-
+			boolean allGood = false;
 			Lock stLock = openStatementsReadLock();
 			try {
 				stIter1 = createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
-				return LockingIteration.getInstance(stLock, stIter1);
-			} catch (Throwable t) {
-				try {
-					if (stIter1 != null) {
-						stIter1.close();
-					}
-				} finally {
-					if (stLock != null) {
-						stLock.release();
+				CloseableIteration<? extends Statement, SailException> stIter2 = LockingIteration.getInstance(stLock,
+						stIter1);
+				allGood = true;
+				return stIter2;
+			} finally {
+				if (!allGood) {
+					try {
+						if (stIter1 != null) {
+							stIter1.close();
+						}
+					} finally {
+						if (stLock != null) {
+							stLock.release();
+						}
 					}
 				}
-				throw t;
 			}
+		}
 
+		@Override
+		public boolean hasStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			boolean locked = false;
+			try {
+				locked = statementListLockManager.lockReadLock();
+
+				try (CloseableIteration<MemStatement, SailException> iterator = createStatementIterator(subj, pred, obj,
+						explicit, getCurrentSnapshot(), contexts)) {
+					return iterator.hasNext();
+				}
+
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
+			} finally {
+				statementListLockManager.unlockReadLock(locked);
+			}
 		}
 
 		@Override
@@ -948,5 +967,10 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
+	}
+
+	private SailException convertToSailException(InterruptedException e) {
+		Thread.currentThread().interrupt();
+		return new SailException(e);
 	}
 }

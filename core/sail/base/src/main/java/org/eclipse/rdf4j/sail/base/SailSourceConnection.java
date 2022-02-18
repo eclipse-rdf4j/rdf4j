@@ -209,7 +209,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
-//		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		if (cloneTupleExpression) {
@@ -385,7 +384,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
-//		flush();
 		SailSource branch = branch(IncludeInferred.explicitOnly);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getContextIDs(), snapshot, branch);
@@ -394,15 +392,23 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
-//		flush();
 		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
 	}
 
 	@Override
+	protected boolean hasStatementInternal(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource[] contexts) {
+		try (SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred))) {
+			try (SailDataset snapshot = branch.dataset(getIsolationLevel())) {
+				return snapshot.hasStatement(subj, pred, obj, contexts);
+			}
+		}
+	}
+
+	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-//		flush();
 		try (Stream<? extends Statement> stream = getStatementsInternal(null, null, null, false, contexts).stream()) {
 			return stream.count();
 		}
@@ -944,10 +950,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
-				contexts)) {
-			return iter.hasNext();
-		}
+		return dataset.hasStatement(subj, pred, obj, contexts);
 	}
 
 }

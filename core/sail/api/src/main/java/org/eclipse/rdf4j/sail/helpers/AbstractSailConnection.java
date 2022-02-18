@@ -323,6 +323,28 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	@Override
+	public final boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+			throws SailException {
+		flushPendingUpdates();
+		connectionLock.readLock().lock();
+		try {
+			verifyIsOpen();
+			return hasStatementInternal(subj, pred, obj, includeInferred, contexts);
+		} finally {
+			connectionLock.readLock().unlock();
+		}
+
+	}
+
+	protected boolean hasStatementInternal(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource[] contexts) {
+		try (CloseableIteration<? extends Statement, SailException> iteration = getStatementsInternal(subj, pred, obj,
+				includeInferred, contexts)) {
+			return iteration.hasNext();
+		}
+	}
+
+	@Override
 	public final long size(Resource... contexts) throws SailException {
 		flushPendingUpdates();
 		connectionLock.readLock().lock();

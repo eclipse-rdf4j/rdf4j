@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -67,4 +68,16 @@ class ObservingSailDataset extends DelegatingSailDataset {
 		return super.getStatements(subj, pred, obj, contexts);
 	}
 
+	@Override
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.hasStatement(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
+			throws SailException {
+		observer.observe(subj, pred, obj);
+		return super.getTriples(subj, pred, obj);
+	}
 }

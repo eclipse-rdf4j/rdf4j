@@ -54,8 +54,7 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
-		CloseableIteration<? extends Namespace, SailException>[] result;
-		result = new CloseableIteration[datasets.length];
+		CloseableIteration<? extends Namespace, SailException>[] result = new CloseableIteration[datasets.length];
 		for (int i = 0; i < datasets.length; i++) {
 			result[i] = datasets[i].getNamespaces();
 		}
@@ -75,8 +74,7 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
-		CloseableIteration<? extends Resource, SailException>[] result;
-		result = new CloseableIteration[datasets.length];
+		CloseableIteration<? extends Resource, SailException>[] result = new CloseableIteration[datasets.length];
 		for (int i = 0; i < datasets.length; i++) {
 			result[i] = datasets[i].getContextIDs();
 		}
@@ -86,8 +84,7 @@ class UnionSailDataset implements SailDataset {
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
-		CloseableIteration<? extends Statement, SailException>[] result;
-		result = new CloseableIteration[datasets.length];
+		CloseableIteration<? extends Statement, SailException>[] result = new CloseableIteration[datasets.length];
 		for (int i = 0; i < datasets.length; i++) {
 			result[i] = datasets[i].getStatements(subj, pred, obj, contexts);
 		}
@@ -95,10 +92,19 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
+	public boolean hasStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+
+		for (SailDataset dataset : datasets) {
+			if (dataset.hasStatement(subj, pred, obj, contexts))
+				return true;
+		}
+		return false;
+	}
+
+	@Override
 	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
-		CloseableIteration<? extends Triple, SailException>[] result;
-		result = new CloseableIteration[datasets.length];
+		CloseableIteration<? extends Triple, SailException>[] result = new CloseableIteration[datasets.length];
 		for (int i = 0; i < datasets.length; i++) {
 			result[i] = datasets[i].getTriples(subj, pred, obj);
 		}
