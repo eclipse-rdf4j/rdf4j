@@ -367,7 +367,7 @@
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-		<slf4j.version>1.7.31</slf4j.version>
+		<slf4j.version>1.7.32</slf4j.version>
 		<logback.version>1.2.8</logback.version>
 		<httpclient.version>4.5.13</httpclient.version>
 		<httpcore.version>4.4.14</httpcore.version>
@@ -381,9 +381,9 @@
 		<jetty.version>9.4.43.v20210629</jetty.version>
 		<spring.version>5.3.14</spring.version>
 		<guava.version>30.1.1-jre</guava.version>
-		<jmhVersion>1.21</jmhVersion>
+		<jmhVersion>1.33</jmhVersion>
 		<servlet.version>3.1.0</servlet.version>
-		<junit.version>5.7.2</junit.version>
+		<junit.version>5.8.1</junit.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -589,19 +589,11 @@
 			</dependency>
 			<!-- Testing: JUnit -->
 			<dependency>
-				<groupId>org.junit.jupiter</groupId>
-				<artifactId>junit-jupiter-engine</artifactId>
+				<groupId>org.junit</groupId>
+				<artifactId>junit-bom</artifactId>
 				<version>${junit.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.junit.vintage</groupId>
-				<artifactId>junit-vintage-engine</artifactId>
-				<version>${junit.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.junit.jupiter</groupId>
-				<artifactId>junit-jupiter-params</artifactId>
-				<version>${junit.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
 			</dependency>
 			<dependency>
 				<groupId>org.mockito</groupId>
@@ -681,7 +673,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-compiler-plugin</artifactId>
-					<version>3.7.0</version>
+					<version>3.8.1</version>
 					<configuration>
 						<fork>true</fork>
 						<source>1.8</source>
@@ -801,7 +793,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-source-plugin</artifactId>
-					<version>2.4</version>
+					<version>3.1.0</version>
 				</plugin>
 				<plugin>
 					<groupId>org.codehaus.mojo</groupId>
@@ -823,16 +815,16 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>3.0.0-M5</version>
+					<version>3.0.0-M4</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
-						<argLine>-Xmx1G</argLine>
+						<argLine>-Xmx2048M</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
-					<version>3.0.0-M5</version>
+					<version>3.0.0-M4</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
 						<forkCount>1</forkCount>
@@ -862,7 +854,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-war-plugin</artifactId>
-					<version>2.1.1</version>
+					<version>3.2.3</version>
 					<configuration>
 						<failOnMissingWebXml>false</failOnMissingWebXml>
 						<archive>
