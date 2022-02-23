@@ -23,8 +23,8 @@ jobs:
           ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
-    - name: Check maven install
-      run: mvn -B clean install -DskipTests
+    - name: Build
+      run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Test
       run: mvn -B test -P-formatting -DskipITs -Dmaven.javadoc.skip=true
     - name: Print test failures
@@ -55,7 +55,7 @@ jobs:
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
-      run: mvn -B -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+      run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Verify
       run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip=true -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Print test failures
@@ -86,7 +86,7 @@ jobs:
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
     - name: Build
-      run: mvn -B -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+      run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Verify
       run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Print test failures
