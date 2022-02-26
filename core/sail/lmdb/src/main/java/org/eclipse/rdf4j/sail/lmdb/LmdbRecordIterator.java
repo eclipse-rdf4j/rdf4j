@@ -61,7 +61,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private boolean fetchNext = false;
 
 	LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, TxnRef txnRef) {
+			long context, boolean explicit, TxnRef txnRef) throws IOException {
 		this.pool = pool;
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();

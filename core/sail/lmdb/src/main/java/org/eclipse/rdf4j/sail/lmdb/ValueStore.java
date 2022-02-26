@@ -35,7 +35,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -380,8 +379,8 @@ class ValueStore extends AbstractValueFactory {
 				writeTransaction((stack2, writeTxn) -> {
 					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
 
-					mdb_put(writeTxn, dbi, dataVal, idVal, 0);
-					mdb_put(writeTxn, dbi, idVal, dataVal, 0);
+					E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
+					E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
 					return null;
 				});
 				return newId;
@@ -418,9 +417,9 @@ class ValueStore extends AbstractValueFactory {
 						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
 
 						// store mapping of hash -> ID
-						mdb_put(txn, dbi, hashVal, idVal, 0);
+						E(mdb_put(txn, dbi, hashVal, idVal, 0));
 						// store mapping of ID -> data
-						mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE);
+						E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
 						dataVal.mv_data().put(data);
 						return null;
 					});
@@ -482,11 +481,11 @@ class ValueStore extends AbstractValueFactory {
 
 					// store mapping of hash+ID -> []
 					dataVal.mv_data(stack.bytes());
-					mdb_put(txn, dbi, hashVal, dataVal, 0);
+					E(mdb_put(txn, dbi, hashVal, dataVal, 0));
 
 					dataVal.mv_size(data.length);
 					// store mapping of ID -> data
-					mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE);
+					E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
 					dataVal.mv_data().put(data);
 					return null;
 				});

@@ -51,7 +51,7 @@ class TxnRef {
 		this.pool = mode == Mode.RESET ? new Txn[128] : null;
 	}
 
-	private long startReadTxn() {
+	private long startReadTxn() throws IOException {
 		long readTxn;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -61,7 +61,7 @@ class TxnRef {
 		return readTxn;
 	}
 
-	private Txn createTxnInternal() {
+	private Txn createTxnInternal() throws IOException {
 		Txn newTxn = null;
 		if (mode == Mode.RESET) {
 			synchronized (state) {
@@ -81,7 +81,7 @@ class TxnRef {
 		return newTxn;
 	}
 
-	long create() {
+	long create() throws IOException {
 		TxnState s;
 		synchronized (state) {
 			s = state.get(Thread.currentThread());
