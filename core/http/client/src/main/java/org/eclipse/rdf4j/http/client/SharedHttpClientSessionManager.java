@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.http.client;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,8 +21,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.http.HttpConnection;
+import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.HttpRequestRetryHandler;
+import org.apache.http.client.ServiceUnavailableRetryStrategy;
 import org.apache.http.client.config.CookieSpecs;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.protocol.HttpClientContext;
@@ -65,6 +68,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	private final Map<SPARQLProtocolSession, Boolean> openSessions = new ConcurrentHashMap<>();
 
 	private static final HttpRequestRetryHandler retryHandlerStale = new RetryHandlerStale();
+	private static final ServiceUnavailableRetryStrategy serviceUnavailableRetryHandler = new ServiceUnavailableRetryHandler();
 
 	/**
 	 * Retry handler: closes stale connections and suggests to simply retry the HTTP request once. Just closing the
@@ -97,6 +101,42 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 				}
 			}
 			return false;
+		}
+	}
+
+	private static class ServiceUnavailableRetryHandler implements ServiceUnavailableRetryStrategy {
+		private final Logger logger = LoggerFactory.getLogger(ServiceUnavailableRetryHandler.class);
+
+		@Override
+		public boolean retryRequest(HttpResponse response, int executionCount, HttpContext context) {
+			// only retry on `408`
+			if (response.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_CLIENT_TIMEOUT) {
+				return false;
+			}
+
+			// only try this once
+			if (executionCount > 1) {
+				return false;
+			}
+
+			HttpClientContext clientContext = HttpClientContext.adapt(context);
+			HttpConnection conn = clientContext.getConnection();
+
+			synchronized (this) {
+				try {
+					logger.warn("Cleaning up closed connection");
+					conn.close();
+					return true;
+				} catch (IOException e) {
+					logger.error("Error cleaning up closed connection", e);
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public long getRetryInterval() {
+			return 1000; // doesn't really matter that much, we anyways only try once. But default to 1 second.
 		}
 	}
 
@@ -263,6 +303,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 		return HttpClientBuilder.create()
 				.evictExpiredConnections()
 				.setRetryHandler(retryHandlerStale)
+				.setServiceUnavailableRetryStrategy(serviceUnavailableRetryHandler)
 				.useSystemProperties()
 				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
 				.build();
