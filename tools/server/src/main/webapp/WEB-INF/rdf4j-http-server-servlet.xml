@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop" xsi:schemaLocation=" http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-2.5.xsd">
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-2.5.xsd">
+	<!-- PROPERTIES -->
+	<bean class="org.springframework.context.support.PropertySourcesPlaceholderConfigurer">
+		<property name="locations">
+			<list>
+				<value>classpath:org/eclipse/rdf4j/http/server/application.properties</value>
+			</list>
+		</property>
+		<property name="ignoreUnresolvablePlaceholders" value="true"/>
+	</bean>
 	<!-- RESOURCES -->
 	<bean id="messageSource" class="org.springframework.context.support.ResourceBundleMessageSource">
 		<property name="basenames">
@@ -118,5 +127,7 @@
 	<bean id="rdf4jRepositoryStatementsController" class="org.eclipse.rdf4j.http.server.repository.statements.StatementsController"/>
 	<bean id="rdf4jRepositoryGraphController" class="org.eclipse.rdf4j.http.server.repository.graph.GraphController"/>
 	<bean id="rdf4jRepositoryTransactionController" class="org.eclipse.rdf4j.http.server.repository.transaction.TransactionController"/>
-	<bean id="rdf4jRepositoryTransactionStartController" class="org.eclipse.rdf4j.http.server.repository.transaction.TransactionStartController"/>
+	<bean id="rdf4jRepositoryTransactionStartController" class="org.eclipse.rdf4j.http.server.repository.transaction.TransactionStartController">
+		<property name="externalUrl" value="${rdf4j.externalurl:#{null}}"/>
+	</bean>
 </beans>
