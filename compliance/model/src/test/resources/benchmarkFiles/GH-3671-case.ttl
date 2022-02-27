@@ -1,0 +1,258 @@
+[] a <http://example.org/ontology#WorkRelation>;
+  <http://example.org/ontology#hasRelationType> <http://example.org/relationType#relatedWork>;
+  <http://example.org/ontology#work> [ a <http://example.org/ontology#Work>;
+      <http://example.org/ontology#contributor> [ a <http://example.org/ontology#MainEntry>,
+            <http://example.org/ontology#Contribution>;
+          <http://example.org/ontology#agent> [];
+          <http://example.org/ontology#role> <http://example.org/role#author>
+        ];
+      <http://example.org/ontology#mainTitle> "Summertime"
+    ] .
+
+[] a <http://example.org/ontology#WorkRelation>;
+  <http://example.org/ontology#hasRelationType> <http://example.org/relationType#relatedWork>;
+  <http://example.org/ontology#work> [ a <http://example.org/ontology#Work>;
+      <http://example.org/ontology#contributor> [ a <http://example.org/ontology#MainEntry>,
+            <http://example.org/ontology#Contribution>;
+          <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+              <http://example.org/ontology#bibsysId> "90114178";
+              <http://example.org/ontology#birthYear> "1940";
+              <http://example.org/ontology#catalogueName> "Coetzee, John M.";
+              <http://example.org/ontology#name> "John M. Coetzee"
+            ];
+          <http://example.org/ontology#role> <http://example.org/role#author>
+        ];
+      <http://example.org/ontology#mainTitle> "Summertime"
+    ] .
+
+[] a <http://example.org/ontology#Contribution>;
+  <http://example.org/ontology#agent> [];
+  <http://example.org/ontology#role> <http://example.org/role#director> .
+
+[] a <http://example.org/ontology#WorkRelation>;
+  <http://example.org/ontology#hasRelationType> <http://example.org/relationType#continuationOf>;
+  <http://example.org/ontology#work> [ a <http://example.org/ontology#Work>;
+      <http://example.org/ontology#mainTitle> "Ungdom"
+    ] .
+
+[] a <http://example.org/ontology#Publication>;
+  <http://example.org/ontology#contributor> [ a <http://example.org/ontology#Contribution>;
+      <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+          <http://example.org/ontology#bibsysId> "90389517";
+          <http://example.org/ontology#birthYear> "1939";
+          <http://example.org/ontology#catalogueName> "Bøhle, Solveig";
+          <http://example.org/ontology#name> "Solveig Bøhle"
+        ];
+      <http://example.org/ontology#role> <http://example.org/role#director>
+    ], [ a <http://example.org/ontology#Contribution>;
+      <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+          <http://example.org/ontology#bibsysId> "3046139";
+          <http://example.org/ontology#catalogueName> "Hellem, Terje";
+          <http://example.org/ontology#name> "Terje Hellem"
+        ];
+      <http://example.org/ontology#role> <http://example.org/role#director>
+    ];
+  <http://example.org/ontology#hasIdentifierInPrimaryCataloguingSource> "0135686";
+  <http://example.org/ontology#language> <http://lexvo.org/id/iso639-3/nob>;
+  <http://example.org/ontology#publicationOf> [ a <http://example.org/ontology#Work>;
+      <http://example.org/ontology#audience> <http://example.org/audience#juvenile>;
+      <http://example.org/ontology#fictionNonfiction> <http://example.org/fictionNonfiction#fiction>;
+      <http://example.org/ontology#isRelatedTo> [ a <http://example.org/ontology#WorkRelation>;
+          <http://example.org/ontology#hasRelationType> <http://example.org/relationType#relatedWork>;
+          <http://example.org/ontology#work> [ a <http://example.org/ontology#Work>;
+              <http://example.org/ontology#contributor> [ a <http://example.org/ontology#MainEntry>,
+                    <http://example.org/ontology#Contribution>;
+                  <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+                      <http://example.org/ontology#bibsysId> "90148055";
+                      <http://example.org/ontology#birthYear> "1899";
+                      <http://example.org/ontology#catalogueName> "White, Elwyn Brooks";
+                      <http://example.org/ontology#deathYear> "1985";
+                      <http://example.org/ontology#name> "Elwyn Brooks White"
+                    ];
+                  <http://example.org/ontology#role> <http://example.org/role#author>
+                ];
+              <http://example.org/ontology#mainTitle> "Stuart M"
+            ]
+        ], [ a <http://example.org/ontology#WorkRelation>;
+          <http://example.org/ontology#hasRelationType> <http://example.org/relationType#relatedWork>;
+          <http://example.org/ontology#work> [ a <http://example.org/ontology#Work>;
+              <http://example.org/ontology#contributor> [ a <http://example.org/ontology#MainEntry>,
+                    <http://example.org/ontology#Contribution>;
+                  <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+                      <http://example.org/ontology#bibsysId> "90148055";
+                      <http://example.org/ontology#birthYear> "1899";
+                      <http://example.org/ontology#catalogueName> "White, Elwyn Brooks";
+                      <http://example.org/ontology#deathYear> "1985";
+                      <http://example.org/ontology#name> "Elwyn Brooks White"
+                    ];
+                  <http://example.org/ontology#role> <http://example.org/role#author>
+                ];
+              <http://example.org/ontology#mainTitle> "Stuart M"
+            ]
+        ]
+    ] .
+
+[] a <http://example.org/ontology#Person>;
+  <http://example.org/ontology#bibsysId> "90148055";
+  <http://example.org/ontology#birthYear> "1899";
+  <http://example.org/ontology#catalogueName> "White, Elwyn Brooks";
+  <http://example.org/ontology#deathYear> "1985";
+  <http://example.org/ontology#name> "Elwyn Brooks White" .
+
+[] a <http://example.org/ontology#Person>;
+  <http://example.org/ontology#bibsysId> "90148055";
+  <http://example.org/ontology#birthYear> "1899";
+  <http://example.org/ontology#catalogueName> "White, Elwyn Brooks";
+  <http://example.org/ontology#deathYear> "1985";
+  <http://example.org/ontology#name> "Elwyn Brooks White" .
+
+[] a <http://example.org/ontology#Contribution>;
+  <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+      <http://example.org/ontology#bibsysId> "1533887388192";
+      <http://example.org/ontology#catalogueName> "Rossing, Paul M.";
+      <http://example.org/ontology#name> "Paul M. Rossing"
+    ];
+  <http://example.org/ontology#role> <http://example.org/role#director> .
+
+[] a <http://example.org/ontology#Publication>;
+  <http://example.org/ontology#contributor> [ a <http://example.org/ontology#Contribution>;
+      <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+          <http://example.org/ontology#catalogueName> "Fougner, Bjørn";
+          <http://example.org/ontology#name> "Bjørn Fougner"
+        ];
+      <http://example.org/ontology#role> <http://example.org/role#reader>
+    ];
+  <http://example.org/ontology#duration> "07:09:00"^^<http://example.org/ontology#Duration>;
+  <http://example.org/ontology#hasExtent> "1 lydfil";
+  <http://example.org/ontology#hasIdentifierInPrimaryCataloguingSource> "0647598";
+  <http://example.org/ontology#isbn> "9788202743352";
+  <http://example.org/ontology#language> <http://lexvo.org/id/iso639-3/nob>;
+  <http://example.org/ontology#publicationOf> [ a <http://example.org/ontology#Work>;
+      <http://example.org/ontology#contributor> [ a <http://example.org/ontology#MainEntry>,
+            <http://example.org/ontology#Contribution>;
+          <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+              <http://example.org/ontology#catalogueName> "Hansson, Knut M.";
+              <http://example.org/ontology#name> "Knut M. Hansson"
+            ];
+          <http://example.org/ontology#role> <http://example.org/role#author>
+        ];
+      <http://example.org/ontology#subject> [ a <http://example.org/ontology#Person>;
+          <http://example.org/ontology#catalogueName> "Hansson, Knut M.";
+          <http://example.org/ontology#name> "Knut M. Hansson"
+        ]
+    ] .
+
+[] a <http://example.org/ontology#Publication>;
+  <http://example.org/ontology#contributor> [ a <http://example.org/ontology#Contribution>;
+      <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+          <http://example.org/ontology#bibsysId> "90810034";
+          <http://example.org/ontology#catalogueName> "Biswalo, Paul M.";
+          <http://example.org/ontology#name> "Paul M. Biswalo"
+        ];
+      <http://example.org/ontology#role> <http://example.org/role#editor>
+    ], [ a <http://example.org/ontology#Contribution>;
+      <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+          <http://example.org/ontology#bibsysId> "90553981";
+          <http://example.org/ontology#birthYear> "1955";
+          <http://example.org/ontology#catalogueName> "Klepp, Knut-Inge";
+          <http://example.org/ontology#name> "Knut-Inge Klepp"
+        ];
+      <http://example.org/ontology#role> <http://example.org/role#editor>
+    ], [ a <http://example.org/ontology#Contribution>;
+      <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+          <http://example.org/ontology#bibsysId> "90188074";
+          <http://example.org/ontology#birthYear> "1944";
+          <http://example.org/ontology#catalogueName> "Talle, Aud";
+          <http://example.org/ontology#deathYear> "2011";
+          <http://example.org/ontology#name> "Aud Talle"
+        ];
+      <http://example.org/ontology#role> <http://example.org/role#editor>
+    ];
+  <http://example.org/ontology#hasIdentifierInPrimaryCataloguingSource> "0004502";
+  <http://example.org/ontology#hasPlaceOfPublication> [ a <http://example.org/ontology#Place>;
+      <http://example.org/ontology#prefLabel> "Oslo"
+    ];
+  <http://example.org/ontology#illustrativeMatter> <http://example.org/illustrativeMatter#illustrert>;
+  <http://example.org/ontology#isbn> "8200226980";
+  <http://example.org/ontology#language> <http://lexvo.org/id/iso639-3/eng>;
+  <http://example.org/ontology#mainTitle> "Young people at risk";
+  <http://example.org/ontology#numberOfPages> "243";
+  <http://example.org/ontology#publicationOf> [ a <http://example.org/ontology#Work>;
+      <http://example.org/ontology#fictionNonfiction> <http://example.org/fictionNonfiction#nonfiction>;
+      <http://example.org/ontology#hasClassification> [ a <http://example.org/ontology#ClassificationEntry>;
+          <http://example.org/ontology#hasClassificationNumber> "362.196979"
+        ];
+      <http://example.org/ontology#hasSummary> "Knut-Inge Klepp, Paul M. Biswalo and Aud Talle. Scandinavian University Press, 1995. 243 s. ISBN 82-00-22698-0 Blant de afrikanske land er det Tanzania som har rapportert flest tilfeller av AIDS til WHO. Siden 1989 har det tanzaniansk-norske AIDS-prosjektet kartlagt HIV-og AIDS-epidemien i nord-Tanzania og funnet kulturelle, sosiologiske og psykologiske faktorer som påvirker epedemiens utvikling, samt utviklet og evaluert forebyggende planer. Denne boka fokuserer på unge mennesker, siden disse er særlig utsatt for smitterisiko. Den har en multi- faglig tilnærming til løsing av problemene. Den vil være nyttig for alle somdriver med AIDS-forskning, behandling og U-hjelpsarbeid generelt.";
+      <http://example.org/ontology#mainTitle> "Young people at risk";
+      <http://example.org/ontology#subtitle> "fighting AIDS in Northern Tanzania"
+    ];
+  <http://example.org/ontology#publicationYear> "1995";
+  <http://example.org/ontology#publishedBy> "Universitetsforl.";
+  <http://example.org/ontology#subtitle> "fighting AIDS in Northern Tanzania" .
+
+[] a <http://example.org/ontology#Publication>;
+  <http://example.org/ontology#contributor> [];
+  <http://example.org/ontology#hasIdentifierInPrimaryCataloguingSource> "0260428";
+  <http://example.org/ontology#hasPlaceOfPublication> [];
+  <http://example.org/ontology#isbn> "9788202325145";
+  <http://example.org/ontology#language> <http://lexvo.org/id/iso639-3/nob>;
+  <http://example.org/ontology#mainTitle> "Sommer";
+  <http://example.org/ontology#numberOfPages> "271";
+  <http://example.org/ontology#publicationOf> [ a <http://example.org/ontology#Work>;
+      <http://example.org/ontology#biography> <http://example.org/biography#biographicalContent>;
+      <http://example.org/ontology#contributor> [];
+      <http://example.org/ontology#fictionNonfiction> <http://example.org/fictionNonfiction#fiction>;
+      <http://example.org/ontology#genre> [], [];
+      <http://example.org/ontology#hasClassification> [];
+      <http://example.org/ontology#hasSummary> "Sommer er J. M Coetzees oppfølger til bøkene \"Barndom\" (2002) og \"Ungdom\" (2003). Biografen tar et oppgjør med denne store mannlige narsissisten, ved å intervjue flere kvinner som har stått ham nær. J.M. Coetzee er født i Sør-Afrika i 1940 og har de seneste årene undervist i litteratur ved universitetet i Cape Town. Han er nå bosatt i Australia. En rekke av hans romaner er utgitt på norsk. Han har vunnet flere høythengende priser, blant annet to ganger Booker-prisen og i 2003 Nobelprisen i litteratur.";
+      <http://example.org/ontology#isRelatedTo> [], [], [];
+      <http://example.org/ontology#language> <http://lexvo.org/id/iso639-3/eng>;
+      <http://example.org/ontology#mainTitle> "Summertime";
+      <http://example.org/ontology#subject> [], []
+    ];
+  <http://example.org/ontology#publicationYear> "2010";
+  <http://example.org/ontology#publishedBy> "Cappelen Damm";
+  <http://example.org/ontology#subtitle> "scener fra et provinsielt liv" .
+
+[] a <http://example.org/ontology#Publication>;
+  <http://example.org/ontology#hasIdentifierInPrimaryCataloguingSource> "0613083";
+  <http://example.org/ontology#language> <http://lexvo.org/id/iso639-3/eng>;
+  <http://example.org/ontology#publicationOf> [ a <http://example.org/ontology#Work>;
+      <http://example.org/ontology#audience> <http://example.org/audience#juvenile>;
+      <http://example.org/ontology#biography> <http://example.org/biography#autobiography>;
+      <http://example.org/ontology#contributor> [ a <http://example.org/ontology#MainEntry>,
+            <http://example.org/ontology#Contribution>;
+          <http://example.org/ontology#agent> [ a <http://example.org/ontology#Person>;
+              <http://example.org/ontology#bibsysId> "1615360582051";
+              <http://example.org/ontology#birthYear> "1985";
+              <http://example.org/ontology#catalogueName> "Johnson, George M.";
+              <http://example.org/ontology#name> "George M. Johnson"
+            ];
+          <http://example.org/ontology#role> <http://example.org/role#author>
+        ];
+      <http://example.org/ontology#fictionNonfiction> <http://example.org/fictionNonfiction#nonfiction>;
+      <http://example.org/ontology#genre> [ a <http://example.org/ontology#Genre>;
+          <http://example.org/ontology#prefLabel> "Selvbiografier"
+        ], [ a <http://example.org/ontology#Genre>;
+          <http://example.org/ontology#prefLabel> "Sjølvbiografiar"
+        ], [ a <http://example.org/ontology#Genre>;
+          <http://example.org/ontology#prefLabel> "Oppvekst"
+        ], [ a <http://example.org/ontology#Genre>;
+          <http://example.org/ontology#prefLabel> "Oppvekst"
+        ], [ a <http://example.org/ontology#Genre>;
+          <http://example.org/ontology#prefLabel> "Essay"
+        ], [];
+      <http://example.org/ontology#hasSummary> "I en serie personlige fortellinger utforsker journalist og LGBTQ-aktivist George M. Johnsons den utfordrende oppveksten sin som både svart og skeiv. Han minnes den gangen han som femåring fikk tennene slått ut av mobbere, det kjærlige forholdet til bestemoren og den første seksuelle opplevelsen sin. Det er fortellinger om både triumfer og nederlag, og boken tar opp temaer som kjønnsidentitet, vennskap, familie, strukturell marginalisering, samtykke og Black joy. Johnson reflekterer også rundt samfunnets snevre og skadelige oppfatning av hva som definerer maskulinitet. Boken utkom for første gang i 2020. Omtalen er utarbeidet av BS.";
+      <http://example.org/ontology#subject> [ a <http://example.org/ontology#Person>;
+          <http://example.org/ontology#bibsysId> "1615360582051";
+          <http://example.org/ontology#birthYear> "1985";
+          <http://example.org/ontology#catalogueName> "Johnson, George M.";
+          <http://example.org/ontology#name> "George M. Johnson"
+        ], [ a <http://example.org/ontology#Subject>;
+          <http://example.org/ontology#prefLabel> "Svarte homofile menn"
+        ], [ a <http://example.org/ontology#Subject>;
+          <http://example.org/ontology#prefLabel> "USA"
+        ], [ a <http://example.org/ontology#Subject>;
+          <http://example.org/ontology#prefLabel> "LHBT-identitet"
+        ]
+    ] .
