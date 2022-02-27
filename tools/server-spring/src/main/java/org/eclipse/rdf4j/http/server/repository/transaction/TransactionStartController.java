@@ -47,6 +47,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 public class TransactionStartController extends AbstractController {
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private String externalUrl;
 
 	public TransactionStartController() throws ApplicationContextException {
 		setSupportedMethods(METHOD_POST);
@@ -130,7 +131,7 @@ public class TransactionStartController extends AbstractController {
 			UUID txnId = txn.getID();
 
 			model.put(SimpleResponseView.SC_KEY, SC_CREATED);
-			final StringBuffer txnURL = request.getRequestURL();
+			final StringBuffer txnURL = getUrlBasePath(request);
 			txnURL.append("/" + txnId.toString());
 			Map<String, String> customHeaders = new HashMap<>();
 			customHeaders.put("Location", txnURL.toString());
@@ -153,4 +154,23 @@ public class TransactionStartController extends AbstractController {
 		}
 	}
 
+	private StringBuffer getUrlBasePath(final HttpServletRequest request) {
+		if (externalUrl == null) {
+			return request.getRequestURL();
+		}
+
+		final StringBuffer url = new StringBuffer();
+		if (externalUrl.endsWith("/")) {
+			url.append(externalUrl, 0, externalUrl.length() - 1);
+		} else {
+			url.append(externalUrl);
+		}
+
+		url.append(request.getRequestURI());
+		return url;
+	}
+
+	public void setExternalUrl(final String externalUrl) {
+		this.externalUrl = externalUrl;
+	}
 }

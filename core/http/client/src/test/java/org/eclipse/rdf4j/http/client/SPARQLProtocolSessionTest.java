@@ -30,6 +30,7 @@ import org.apache.http.Header;
 import org.apache.http.HeaderElement;
 import org.apache.http.HeaderIterator;
 import org.apache.http.HttpEntity;
+import org.apache.http.HttpHeaders;
 import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
 import org.apache.http.ParseException;
@@ -50,6 +51,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
 /**
  * Unit tests for {@link SPARQLProtocolSession}
@@ -94,6 +96,37 @@ public class SPARQLProtocolSessionTest {
 	@BeforeEach
 	public void setUp() throws Exception {
 		sparqlSession = createProtocolSession();
+	}
+
+	@Test
+	public void testConnectionTimeoutRetry() throws Exception {
+		// Simulate that the server wants to close the connection after idle timeout
+		// But instead of just shutting down the connection it sends `408` once and then
+		// shuts down the connection.
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
+				.inScenario("Connection Timeout")
+				.whenScenarioStateIs(Scenario.STARTED)
+				.willReturn(aResponse().withStatus(408)
+						.withHeader(HttpHeaders.CONNECTION, "close")
+						.withStatusMessage("Server closed inactive connection"))
+				.willSetStateTo("Connection closed"));
+
+		// When the request is retried (with a refreshed connection) server sends `200`
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
+				.inScenario("Connection Timeout")
+				.whenScenarioStateIs("Connection closed")
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list.xml"))
+				.willSetStateTo("Connection reopened"));
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		TupleQueryResultHandler handler = Mockito.spy(new SPARQLStarResultsJSONWriter(out));
+		// We only send the query once, internally the retry handler makes sure the first 408 response causes
+		// a retry. From user perspective it just looks like everything went fine, the closed connection is gracefully
+		// refreshed.
+		sparqlSession.sendTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o}", null, null, true, -1, handler);
+		assertThat(out.toString()).startsWith("{");
 	}
 
 	@Test
