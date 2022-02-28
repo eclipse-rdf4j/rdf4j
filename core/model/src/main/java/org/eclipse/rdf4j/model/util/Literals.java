@@ -13,6 +13,8 @@ import java.util.Date;
 import java.util.IllformedLocaleException;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -502,20 +504,49 @@ public class Literals {
 
 	/**
 	 * Normalizes the given <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag according to the rules
-	 * defined by the JDK in the {@link Locale} API.
+	 * defined in <a href="https://www.rfc-editor.org/rfc/rfc5646.html#section-2.1.1">RFC 5646, section 2.1.1</a>.
 	 *
 	 * @param languageTag An unnormalized, valid, language tag
 	 * @return A normalized version of the given language tag
 	 * @throws IllformedLocaleException If the given language tag is ill-formed according to the rules specified in
-	 *                                  BCP47.
+	 *                                  BCP47 (RFC 5646).
 	 */
 	public static String normalizeLanguageTag(String languageTag) throws IllformedLocaleException {
-		return new Locale.Builder().setLanguageTag(languageTag).build().toLanguageTag().intern();
+		// check if language tag is well-formed
+		new Locale.Builder().setLanguageTag(languageTag);
+
+		// all subtags are case-insensitive
+		String normalizedTag = languageTag.toLowerCase();
+		StringBuilder sb = new StringBuilder();
+
+		// exception 1: two-letter subtags not preceeded by a singleton and followed by either the end of the tag or
+		// another subtag are fully uppercase
+		Pattern twoLetterSubtags = Pattern.compile("(\\w\\w-)(\\w\\w)($|-)");
+		Matcher matcher = twoLetterSubtags.matcher(normalizedTag);
+		while (matcher.find()) {
+			matcher.appendReplacement(sb, matcher.group(1) + matcher.group(2).toUpperCase() + matcher.group(3));
+		}
+		matcher.appendTail(sb);
+
+		normalizedTag = sb.toString();
+		sb = new StringBuilder();
+
+		// exception 2: four-letter subtags are title case
+		Pattern fourLetterSubtags = Pattern.compile("(\\w\\w-)(\\w)(\\w\\w\\w)($|-)");
+		matcher = fourLetterSubtags.matcher(normalizedTag);
+		while (matcher.find()) {
+			matcher.appendReplacement(sb,
+					matcher.group(1) + matcher.group(2).toUpperCase() + matcher.group(3) + matcher.group(4));
+		}
+		matcher.appendTail(sb);
+
+		return sb.toString();
 	}
 
 	/**
-	 * Checks if the given string is a <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag according to
-	 * the rules defined by the JDK in the {@link Locale} API.
+	 * Checks if the given string is a <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag language tag
+	 * according to the rules defined in <a href="https://www.rfc-editor.org/rfc/rfc5646.html#section-2.1.1">RFC 5646,
+	 * section 2.1.1</a>.
 	 *
 	 * @param languageTag A language tag
 	 * @return <code>true</code> if the given language tag is well-formed according to the rules specified in BCP47.
