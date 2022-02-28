@@ -40,16 +40,17 @@ public interface LanguageHandler {
 
 	/**
 	 * Checks if the given language tag is recognized by this language handler, including cases where the language tag
-	 * is recognized, but is not yet normalized.
+	 * is considered syntactically well-formed, but is not yet normalized.
 	 *
 	 * @param languageTag The language tag to check.
-	 * @return True if the language tag is syntactically valid and could be used with
+	 * @return True if the language tag is syntactically well-formed and could be used with
 	 *         {@link #verifyLanguage(String, String)} and {@link #normalizeLanguage(String, String, ValueFactory)}.
 	 */
 	boolean isRecognizedLanguage(String languageTag);
 
 	/**
-	 * Verifies that the language tag is valid, optionally including an automated check on the literal value.
+	 * Verifies that the language tag is syntactically well-formed, optionally including an automated check on the
+	 * literal value being a match for the given tag.
 	 * <p>
 	 * This method must only be called after verifying that {@link #isRecognizedLanguage(String)} returns true for the
 	 * given language tag.
