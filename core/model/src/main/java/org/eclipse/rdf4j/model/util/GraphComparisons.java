@@ -57,7 +57,7 @@ class GraphComparisons {
 
 	private static final Logger logger = LoggerFactory.getLogger(GraphComparisons.class);
 
-	private static final HashFunction hashFunction = Hashing.murmur3_128();
+	private static final HashFunction hashFunction = Hashing.sha256();
 
 	private static final HashCode initialHashCode = hashFunction.hashString("", StandardCharsets.UTF_8);
 	private static final HashCode outgoing = hashFunction.hashString("+", StandardCharsets.UTF_8);

@@ -85,61 +85,56 @@ public class IsomorphicTest {
 		internallyIsomorphic_2 = getModel("internallyIsomorphic.ttl");
 		manyProperties_2 = getModel("manyProperties.ttl");
 		manyProperties2_2 = getModel("manyProperties2.ttl");
-
 	}
 
 	@Test
 	public void empty() {
-
 		isomorphic(empty, empty_2);
-
 	}
 
 	@Test
 	public void blankNodes() {
-
 		isomorphic(blankNodes, blankNodes_2);
-
 	}
 
 	@Test
 	public void shacl() {
-
 		isomorphic(shacl, shacl_2);
-
 	}
 
 	@Test
 	public void longChain() {
-
 		isomorphic(longChain, longChain_2);
-
 	}
 
 	@Test
 	public void sparqlTestCase() {
-
 		isomorphic(sparqlTestCase, sparqlTestCase_2);
+	}
 
+	@Test
+	public void testGH3671Case() {
+		// The test tends to succeed the first time around but then fails on a subsequent pass
+		for (int i = 0; i < 10; i++) {
+			// we need to re-parse the model in every parse for the failure to occur
+			Model m1 = getModel("GH-3671-case.ttl");
+			Model m2 = getModel("GH-3671-case.ttl");
+			isomorphic(m1, m2);
+		}
 	}
 
 	@Test
 	public void bsbm() {
-
 		isomorphic(bsbm, bsbm_2);
-
 	}
 
 	@Test
 	public void bsbmTree() {
-
 		isomorphic(bsbmTree, bsbmTree_2);
-
 	}
 
 	@Test
 	public void bsbmArrayList() {
-
 		boolean isomorphic = Models.isomorphic(bsbm_arraylist, bsbm_arraylist_2);
 		if (!isomorphic) {
 			throw new IllegalStateException("Not isomorphic");
@@ -164,23 +159,17 @@ public class IsomorphicTest {
 
 	@Test
 	public void manyProperties() {
-
 		isomorphic(manyProperties, manyProperties_2);
-
 	}
 
 	@Test
 	public void manyProperties2() {
-
 		isomorphic(manyProperties2, manyProperties2_2);
-
 	}
 
 	@Test
 	public void emptyNotIsomorphic() {
-
 		notIsomorphic(empty, bsbm);
-
 	}
 
 	@Test
