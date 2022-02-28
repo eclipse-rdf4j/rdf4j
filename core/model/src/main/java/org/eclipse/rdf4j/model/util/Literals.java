@@ -38,6 +38,18 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 public class Literals {
 
 	/**
+	 * matches language subtags of two letters preceded by at least one subtag that is not a singleton, and followed by
+	 * either end-of-tag or another subtags
+	 */
+	private static final Pattern TWO_LETTER_SUBTAGS_REGEX = Pattern.compile("(\\w\\w-)(\\w\\w)($|-)");
+
+	/**
+	 * matches language subtags of four letters preceded by at least one subtag that is not a singleton, and followed by
+	 * either end-of-tag or another subtags.
+	 */
+	private static final Pattern FOUR_LETTER_SUBTAGS_REGEX = Pattern.compile("(\\w\\w-)(\\w)(\\w\\w\\w)($|-)");
+
+	/**
 	 * Gets the label of the supplied literal. The fallback value is returned in case the supplied literal is
 	 * <var>null</var>.
 	 *
@@ -517,12 +529,12 @@ public class Literals {
 
 		// all subtags are case-insensitive
 		String normalizedTag = languageTag.toLowerCase();
+
 		StringBuilder sb = new StringBuilder();
 
 		// exception 1: two-letter subtags not preceeded by a singleton and followed by either the end of the tag or
 		// another subtag are fully uppercase
-		Pattern twoLetterSubtags = Pattern.compile("(\\w\\w-)(\\w\\w)($|-)");
-		Matcher matcher = twoLetterSubtags.matcher(normalizedTag);
+		Matcher matcher = TWO_LETTER_SUBTAGS_REGEX.matcher(normalizedTag);
 		while (matcher.find()) {
 			matcher.appendReplacement(sb, matcher.group(1) + matcher.group(2).toUpperCase() + matcher.group(3));
 		}
@@ -532,8 +544,7 @@ public class Literals {
 		sb = new StringBuilder();
 
 		// exception 2: four-letter subtags are title case
-		Pattern fourLetterSubtags = Pattern.compile("(\\w\\w-)(\\w)(\\w\\w\\w)($|-)");
-		matcher = fourLetterSubtags.matcher(normalizedTag);
+		matcher = FOUR_LETTER_SUBTAGS_REGEX.matcher(normalizedTag);
 		while (matcher.find()) {
 			matcher.appendReplacement(sb,
 					matcher.group(1) + matcher.group(2).toUpperCase() + matcher.group(3) + matcher.group(4));
@@ -544,7 +555,7 @@ public class Literals {
 	}
 
 	/**
-	 * Checks if the given string is a <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag language tag
+	 * Checks if the given string is a well-formed <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag
 	 * according to the rules defined in <a href="https://www.rfc-editor.org/rfc/rfc5646.html#section-2.1.1">RFC 5646,
 	 * section 2.1.1</a>.
 	 *
