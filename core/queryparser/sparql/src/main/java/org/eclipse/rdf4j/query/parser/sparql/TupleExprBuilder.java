@@ -591,12 +591,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					}
 				}
 
-				// add extension element reference to the projection element and
-				// to
-				// the extension
-				ExtensionElem extElem = new ExtensionElem(valueExpr, alias);
-				extension.addElement(extElem);
-				elem.setSourceExpression(extElem);
+				if (!(child instanceof ASTVar)) {
+					// source of the aliased projection is not a simple variable:
+					// add extension element reference to the projection element and
+					// to the extension
+					ExtensionElem extElem = new ExtensionElem(valueExpr, alias);
+					extension.addElement(extElem);
+					elem.setSourceExpression(extElem);
+				}
 			} else if (child instanceof ASTVar) {
 				Var projVar = (Var) child.jjtAccept(this, null);
 				ProjectionElem elem = new ProjectionElem(projVar.getName());
