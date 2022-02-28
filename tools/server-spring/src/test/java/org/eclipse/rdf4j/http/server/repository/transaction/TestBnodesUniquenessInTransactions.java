@@ -7,6 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.UUID;
+
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -24,15 +30,12 @@ import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.UUID;
-
 /**
- * Test for bnodes uniqueness which checks whether by default blank nodes are added with unique identifiers to transactions
- * or their identifiers are preserved by specifying a parameter for server instructions when parsing request data.
+ * Test for bnodes uniqueness which checks whether by default blank nodes are added with unique identifiers to
+ * transactions or their identifiers are preserved by specifying a parameter for server instructions when parsing
+ * request data.
+ *
+ * @author Denitsa Stoyanova
  */
 public class TestBnodesUniquenessInTransactions {
 
