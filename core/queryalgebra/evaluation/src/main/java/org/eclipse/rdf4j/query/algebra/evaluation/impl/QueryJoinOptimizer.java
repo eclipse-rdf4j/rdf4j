@@ -88,6 +88,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
 		}
 
+		private void optimizePriorityJoin(Set<String> origBoundVars, TupleExpr join) {
+
+			Set<String> saveBoundVars = boundVars;
+			try {
+				boundVars = new HashSet<>(origBoundVars);
+				join.visit(this);
+			} finally {
+				boundVars = saveBoundVars;
+			}
+		}
+
 		@Override
 		public void meet(Join node) {
 
@@ -173,6 +184,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 
 					if (priorityJoins != null) {
+						optimizePriorityJoin(origBoundVars, priorityJoins);
 						replacement = new Join(priorityJoins, replacement);
 					}
 

@@ -11,17 +11,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
-import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryRoot;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.*;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -145,6 +143,45 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		testOptimizer(expectedQuery, query);
 	}
 
+	@Test
+	public void testOptionalWithSubSelect() throws RDF4JException {
+		String query = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"select * where {",
+				"optional { ?b ex:z ?q . }",
+				"{",
+				"	select ?b ?a ?x where {",
+				"	   ex:b ?a ?x. ",
+				"      ex:b ex:a ?x. ",
+				"}",
+				"}",
+				"}"
+		);
+
+		// we expect the subselect to be optimized too.
+		// ex:b ex:a ?x.
+		// ex:b ?a ?x.
+
+		SPARQLParser parser = new SPARQLParser();
+		ParsedQuery q = parser.parseQuery(query, null);
+		QueryJoinOptimizer opt = new QueryJoinOptimizer();
+		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
+		opt.optimize(optRoot, null, null);
+
+		StatementFinder stmtFinder = new StatementFinder();
+		optRoot.visit(stmtFinder);
+		List<StatementPattern> stmts = stmtFinder.getStatements();
+
+		assertEquals(stmts.size(), 3);
+		assertEquals(stmts.get(0).getSubjectVar().getValue().stringValue(), "ex:b");
+		assertEquals(stmts.get(0).getPredicateVar().getValue().stringValue(), "ex:a");
+		assertEquals(stmts.get(0).getObjectVar().getValue(), null);
+		assertEquals(stmts.get(1).getSubjectVar().getValue().stringValue(), "ex:b");
+		assertEquals(stmts.get(1).getPredicateVar().getValue(), null);
+		assertEquals(stmts.get(1).getObjectVar().getValue(), null);
+
+	}
+
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
 		return new QueryJoinOptimizer();
@@ -187,6 +224,20 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		public Join getJoin() {
 			return join;
+		}
+	}
+
+	class StatementFinder extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private List<StatementPattern> statements = new ArrayList<>();
+
+		@Override
+		public void meet(StatementPattern st) {
+			this.statements.add(st);
+		}
+
+		public List<StatementPattern> getStatements() {
+			return statements;
 		}
 	}
 
