@@ -7,18 +7,22 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
@@ -27,27 +31,35 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
 import org.eclipse.rdf4j.query.parser.sparql.ast.TokenMgrError;
 import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * @author jeen
  */
 public class TupleExprBuilderTest {
 
-	/**
-	 * @throws java.lang.Exception
-	 */
-	@Before
-	public void setUp() throws Exception {
-	}
+	@Test
+	public void testSimpleAliasHandling() {
+		String query = "SELECT (?a as ?b) WHERE { ?a ?x ?z }";
 
-	/**
-	 * @throws java.lang.Exception
-	 */
-	@After
-	public void tearDown() throws Exception {
+		try {
+			TupleExprBuilder builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
+			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+			TupleExpr result = builder.visit(qc, null);
+
+			assertThat(result instanceof Projection).isTrue();
+
+			Projection p = (Projection) result;
+			assertThat(p.getArg()).isInstanceOf(StatementPattern.class);
+
+			ProjectionElem alias = p.getProjectionElemList().getElements().get(0);
+			assertThat(alias.getSourceName()).isEqualTo("a");
+			assertThat(alias.getTargetName()).isEqualTo("b");
+		} catch (Exception e) {
+			e.printStackTrace();
+			fail("should parse simple select query");
+		}
 	}
 
 	@Test
@@ -86,7 +98,8 @@ public class TupleExprBuilderTest {
 	 * Verifies that a missing close brace does not cause an endless loop. Timeout is set to avoid test itself endlessly
 	 * looping. See SES-2389.
 	 */
-	@Test(timeout = 1000)
+	@Test
+	@Timeout(10)
 	public void testMissingCloseBrace() {
 		String query = "INSERT DATA { <urn:a> <urn:b> <urn:c> .";
 		try {
