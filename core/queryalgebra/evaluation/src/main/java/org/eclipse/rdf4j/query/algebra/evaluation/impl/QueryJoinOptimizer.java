@@ -184,12 +184,18 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 
 					if (priorityJoins != null) {
-						optimizePriorityJoin(origBoundVars, priorityJoins);
 						replacement = new Join(priorityJoins, replacement);
 					}
 
 					// Replace old join hierarchy
 					node.replaceWith(replacement);
+
+					// we optimize after the replacement call above in case the optimize call below
+					// recurses back into this function and we need all the node's parent/child pointers
+					// set up correctly for replacement to work on subsequent calls
+					if (priorityJoins != null) {
+						optimizePriorityJoin(origBoundVars, priorityJoins);
+					}
 
 				} else {
 					// only subselect/priority joins involved in this query.
