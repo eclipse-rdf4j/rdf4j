@@ -13,8 +13,6 @@ import java.util.Date;
 import java.util.IllformedLocaleException;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -38,18 +36,6 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 public class Literals {
 
 	/**
-	 * matches language subtags of two letters preceded by at least one subtag that is not a singleton, and followed by
-	 * either end-of-tag or another subtags
-	 */
-	private static final Pattern TWO_LETTER_SUBTAGS_REGEX = Pattern.compile("(\\w\\w-)(\\w\\w)($|-)");
-
-	/**
-	 * matches language subtags of four letters preceded by at least one subtag that is not a singleton, and followed by
-	 * either end-of-tag or another subtags.
-	 */
-	private static final Pattern FOUR_LETTER_SUBTAGS_REGEX = Pattern.compile("(\\w\\w-)(\\w)(\\w\\w\\w)($|-)");
-
-	/**
 	 * Gets the label of the supplied literal. The fallback value is returned in case the supplied literal is
 	 * <var>null</var>.
 	 *
@@ -69,9 +55,8 @@ public class Literals {
 		return v instanceof Literal ? getLabel((Literal) v, fallback) : fallback;
 	}
 
-	public static String getLabel(Optional v, String fallback) {
-
-		return v != null ? getLabel((Value) v.orElseGet(null), fallback) : fallback;
+	public static String getLabel(Optional<Value> v, String fallback) {
+		return v != null ? getLabel(v.orElseGet(null), fallback) : fallback;
 	}
 
 	/**
@@ -516,7 +501,12 @@ public class Literals {
 
 	/**
 	 * Normalizes the given <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag according to the rules
-	 * defined in <a href="https://www.rfc-editor.org/rfc/rfc5646.html#section-2.1.1">RFC 5646, section 2.1.1</a>.
+	 * defined in <a href="https://www.rfc-editor.org/rfc/rfc5646.html#section-2.1.1">RFC 5646, section 2.1.1</a>:
+	 * <p>
+	 * <blockquote> All subtags, including extension and private use subtags, use lowercase letters with two exceptions:
+	 * two-letter and four-letter subtags that neither appear at the start of the tag nor occur after singletons. Such
+	 * two-letter subtags are all uppercase (as in the tags "en-CA-x-ca" or "sgn-BE-FR") and four- letter subtags are
+	 * titlecase (as in the tag "az-Latn-x-latn"). </blockquote>
 	 *
 	 * @param languageTag An unnormalized, valid, language tag
 	 * @return A normalized version of the given language tag
@@ -530,28 +520,24 @@ public class Literals {
 		// all subtags are case-insensitive
 		String normalizedTag = languageTag.toLowerCase();
 
-		StringBuilder sb = new StringBuilder();
+		String[] subtags = normalizedTag.split("-");
+		for (int i = 1; i < subtags.length; i++) {
+			String subtag = subtags[i];
 
-		// exception 1: two-letter subtags not preceeded by a singleton and followed by either the end of the tag or
-		// another subtag are fully uppercase
-		Matcher matcher = TWO_LETTER_SUBTAGS_REGEX.matcher(normalizedTag);
-		while (matcher.find()) {
-			matcher.appendReplacement(sb, matcher.group(1) + matcher.group(2).toUpperCase() + matcher.group(3));
+			if (subtag.length() == 2) {
+				// exception 1: two-letter subtags not at the starte and not preceded by a singleton are upper case
+				if (subtags[i - 1].length() > 1 && subtag.matches("\\w\\w")) {
+					subtags[i] = subtag.toUpperCase();
+				}
+			} else if (subtag.length() == 4) {
+				// exception 2: four-letter subtags not at the start and not preceded by a singleton are title case
+				if (subtags[i - 1].length() > 1 && subtag.matches("\\w\\w\\w\\w")) {
+					subtags[i] = subtag.substring(0, 1).toUpperCase() + subtag.substring(1);
+				}
+			}
 		}
-		matcher.appendTail(sb);
 
-		normalizedTag = sb.toString();
-		sb = new StringBuilder();
-
-		// exception 2: four-letter subtags are title case
-		matcher = FOUR_LETTER_SUBTAGS_REGEX.matcher(normalizedTag);
-		while (matcher.find()) {
-			matcher.appendReplacement(sb,
-					matcher.group(1) + matcher.group(2).toUpperCase() + matcher.group(3) + matcher.group(4));
-		}
-		matcher.appendTail(sb);
-
-		return sb.toString();
+		return String.join("-", subtags);
 	}
 
 	/**
