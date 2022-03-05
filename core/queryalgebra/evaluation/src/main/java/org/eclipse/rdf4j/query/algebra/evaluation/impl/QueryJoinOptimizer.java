@@ -88,6 +88,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
 		}
 
+		private void optimizePriorityJoin(Set<String> origBoundVars, TupleExpr join) {
+
+			Set<String> saveBoundVars = boundVars;
+			try {
+				boundVars = new HashSet<>(origBoundVars);
+				join.visit(this);
+			} finally {
+				boundVars = saveBoundVars;
+			}
+		}
+
 		@Override
 		public void meet(Join node) {
 
@@ -178,6 +189,13 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 					// Replace old join hierarchy
 					node.replaceWith(replacement);
+
+					// we optimize after the replacement call above in case the optimize call below
+					// recurses back into this function and we need all the node's parent/child pointers
+					// set up correctly for replacement to work on subsequent calls
+					if (priorityJoins != null) {
+						optimizePriorityJoin(origBoundVars, priorityJoins);
+					}
 
 				} else {
 					// only subselect/priority joins involved in this query.
