@@ -27,6 +27,7 @@ import javax.xml.datatype.Duration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -45,6 +46,65 @@ public class LiteralsTest {
 	private static final Model model = new LinkedHashModel();
 	private static final IRI foo = vf.createIRI("http://example.org/foo");
 	private static final IRI bar = vf.createIRI("http://example.org/bar");
+
+	private static final String[][] expectedTagNormalizations = {
+			{ "en", "en" },
+			{ "EN", "en" },
+			{ "AR-Latn", "ar-Latn" },
+			{ "AZ-latn-x-LATN", "az-Latn-x-latn" },
+			{ "Az-latn-X-Latn", "az-Latn-x-latn" },
+			{ "BER-LATN-x-Dialect", "ber-Latn-x-dialect" },
+			{ "BNT", "bnt" },
+			{ "Egy-Latn", "egy-Latn" },
+			{ "en-ca-x-ca", "en-CA-x-ca" },
+			{ "EN-ca-X-Ca", "en-CA-x-ca" },
+			{ "En-Ca-X-Ca", "en-CA-x-ca" },
+			{ "en-GB", "en-GB" },
+			{ "EN-UK", "en-UK" },
+			{ "EN-US", "en-US" },
+			{ "FA-LATN-X-MIDDLE", "fa-Latn-x-middle" },
+			{ "FA-X-middle", "fa-x-middle" },
+			{ "Grc-latn-x-liturgic", "grc-Latn-x-liturgic" },
+			{ "Grc-x-liturgic", "grc-x-liturgic" },
+			{ "He-Latn", "he-Latn" },
+			{ "Ja-Latn", "ja-Latn" },
+			{ "Ko-Latn", "ko-Latn" },
+			{ "La-x-liturgic", "la-x-liturgic" },
+			{ "La-x-medieval", "la-x-medieval" },
+			{ "NN", "nn" },
+			{ "QQQ-002", "qqq-002" },
+			{ "qqq-142", "qqq-142" },
+			{ "QQQ-ET", "qqq-ET" },
+			{ "ru-Latn-UA", "ru-Latn-UA" },
+			{ "ru-Latn-ua", "ru-Latn-UA" },
+			{ "RU-LATN-UA", "ru-Latn-UA" },
+			{ "SGN-BE-FR", "sgn-BE-FR" },
+			{ "sgn-be-fr", "sgn-BE-FR" },
+			{ "UND", "und" },
+			{ "X-BYZANTIN-LATN", "x-byzantin-Latn" },
+			{ "X-Frisian", "x-frisian" },
+			{ "X-KHASIAN", "x-khasian" },
+			{ "x-local", "x-local" },
+			{ "zh-Hant", "zh-Hant" },
+			{ "zh-Latn-pinyin", "zh-Latn-pinyin" },
+			{ "Zh-latn-PINYIN-X-NoTone", "zh-Latn-pinyin-x-notone" },
+			{ "zh-Latn-wadegile", "zh-Latn-wadegile" }
+	};
+
+	/**
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#normalizeLanguageTag(String)} .
+	 */
+	@Test
+	public void testNormaliseBCP47Tag() throws Exception {
+
+		for (String[] expectedNormalization : expectedTagNormalizations) {
+			assertThat(Literals.normalizeLanguageTag(expectedNormalization[0])).isEqualTo(expectedNormalization[1]);
+		}
+
+		// invalid
+		assertThatExceptionOfType(IllformedLocaleException.class)
+				.isThrownBy(() -> Literals.normalizeLanguageTag("ru-ua-latn"));
+	}
 
 	/**
 	 * Test method for
@@ -815,50 +875,6 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#normalizeLanguageTag(String)} .
-	 */
-	@Test
-	public void testNormaliseBCP47Tag() throws Exception {
-		// language
-		assertThat(Literals.normalizeLanguageTag("en")).isEqualTo("en");
-
-		// language-region
-		assertThat(Literals.normalizeLanguageTag("en-AU")).isEqualTo("en-AU");
-		assertThat(Literals.normalizeLanguageTag("en-au")).isEqualTo("en-AU");
-		assertThat(Literals.normalizeLanguageTag("EN-AU")).isEqualTo("en-AU");
-		assertThat(Literals.normalizeLanguageTag("EN-au")).isEqualTo("en-AU");
-		assertThat(Literals.normalizeLanguageTag("fr-FR")).isEqualTo("fr-FR");
-		assertThat(Literals.normalizeLanguageTag("fr-fr")).isEqualTo("fr-FR");
-		assertThat(Literals.normalizeLanguageTag("FR-FR")).isEqualTo("fr-FR");
-		assertThat(Literals.normalizeLanguageTag("Fr-fr")).isEqualTo("fr-FR");
-
-		// language-script-region
-		assertThat(Literals.normalizeLanguageTag("ru-latn-ua")).isEqualTo("ru-Latn-UA");
-		assertThat(Literals.normalizeLanguageTag("ru-LATN-ua")).isEqualTo("ru-Latn-UA");
-
-		// language-region-variant
-		assertThat(Literals.normalizeLanguageTag("ru-ua-latin")).isEqualTo("ru-UA-latin");
-		assertThat(Literals.normalizeLanguageTag("ru-ua-LATIN")).isEqualTo("ru-UA-latin");
-
-		// valid but unusual
-		assertThat(Literals.normalizeLanguageTag("x-byzantin-Latn")).isEqualTo("x-byzantin-Latn");
-		assertThat(Literals.normalizeLanguageTag("X-BYZANTIN-Latn")).isEqualTo("x-byzantin-Latn");
-		assertThat(Literals.normalizeLanguageTag("qqq-002")).isEqualTo("qqq-002");
-		assertThat(Literals.normalizeLanguageTag("QQQ-002")).isEqualTo("qqq-002");
-		assertThat(Literals.normalizeLanguageTag("qqq-ET")).isEqualTo("qqq-ET");
-		assertThat(Literals.normalizeLanguageTag("QQQ-ET")).isEqualTo("qqq-ET");
-		assertThat(Literals.normalizeLanguageTag("QQQ-et")).isEqualTo("qqq-ET");
-		assertThat(Literals.normalizeLanguageTag("grc-Latn-x-liturgic")).isEqualTo("grc-Latn-x-liturgic");
-		assertThat(Literals.normalizeLanguageTag("grc-latn-X-LITURGIC")).isEqualTo("grc-Latn-x-liturgic");
-		assertThat(Literals.normalizeLanguageTag("zh-Latn-pinyin-x-notone")).isEqualTo("zh-Latn-pinyin-x-notone");
-		assertThat(Literals.normalizeLanguageTag("zh-Latn-Pinyin-x-NOTONE")).isEqualTo("zh-Latn-pinyin-x-notone");
-
-		// invalid
-		assertThatExceptionOfType(IllformedLocaleException.class)
-				.isThrownBy(() -> Literals.normalizeLanguageTag("ru-ua-latn"));
-	}
-
-	/**
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getLabel(Optional, String)}} .
 	 */
 	@Test
@@ -867,7 +883,7 @@ public class LiteralsTest {
 		Literal lit = vf.createLiteral(1.0);
 		model.add(foo, bar, lit);
 
-		Optional result = Models.object(model);
+		Optional<Value> result = Models.object(model);
 		String label = Literals.getLabel(result, "fallback");
 		assertNotNull(label);
 		assertTrue(label.equals("1.0"));
@@ -882,8 +898,8 @@ public class LiteralsTest {
 		Literal lit = vf.createLiteral(1.0);
 		model.add(foo, bar, lit);
 
-		Optional result = Models.object(model);
-		String label = Literals.getLabel((Optional) null, "fallback");
+		Optional<Value> result = Models.object(model);
+		String label = Literals.getLabel((Optional<Value>) null, "fallback");
 		assertNotNull(label);
 		assertTrue(label.equals("fallback"));
 	}
