@@ -130,6 +130,71 @@ public class SPARQLProtocolSessionTest {
 	}
 
 	@Test
+	public void testConnectionPoolTimeoutRetry() throws Exception {
+		// Let 2 connections succeed, this is just so we can fill the connection pool with more than one connection
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
+				.inScenario("Pooled Connection Timeout")
+				.whenScenarioStateIs(Scenario.STARTED)
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list.xml"))
+				.willSetStateTo("Connection1 Ok"));
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
+				.inScenario("Pooled Connection Timeout")
+				.whenScenarioStateIs("Connection1 Ok")
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list.xml"))
+				.willSetStateTo("Pooled Connections Ok"));
+
+		// Next, simulate that both connections in the pool were idled out on the server and upon sending a request
+		// on them the server returns a 408 for both of them
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
+				.inScenario("Pooled Connection Timeout")
+				.whenScenarioStateIs("Pooled Connections Ok")
+				.willReturn(aResponse().withStatus(408)
+						.withHeader(HttpHeaders.CONNECTION, "close")
+						.withStatusMessage("Server closed inactive connection"))
+				.willSetStateTo("Connection1 Closed"));
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
+				.inScenario("Pooled Connection Timeout")
+				.whenScenarioStateIs("Connection1 Closed")
+				.willReturn(aResponse().withStatus(408)
+						.withHeader(HttpHeaders.CONNECTION, "close")
+						.withStatusMessage("Server closed inactive connection"))
+				.willSetStateTo("Pooled Connections Closed"));
+
+		// When both connections in the pool were cleaned up the next try goes through ok
+		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
+				.inScenario("Pooled Connection Timeout")
+				.whenScenarioStateIs("Pooled Connections Closed")
+				.willReturn(aResponse().withStatus(200)
+						.withHeader("Content-Type", TupleQueryResultFormat.SPARQL.getDefaultMIMEType())
+						.withBodyFile("repository-list.xml"))
+				.willSetStateTo("Connection reopened"));
+
+		// First fill the pool with 2 connections
+		ByteArrayOutputStream out1 = new ByteArrayOutputStream();
+		TupleQueryResultHandler handler1 = Mockito.spy(new SPARQLStarResultsJSONWriter(out1));
+		sparqlSession.sendTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o}", null, null, true, -1,
+				handler1);
+		ByteArrayOutputStream out2 = new ByteArrayOutputStream();
+		TupleQueryResultHandler handler2 = Mockito.spy(new SPARQLStarResultsJSONWriter(out2));
+		sparqlSession.sendTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o}", null, null, true, -1,
+				handler2);
+		assertThat(out1.toString()).startsWith("{");
+		assertThat(out2.toString()).startsWith("{");
+
+		// When trying another `sendTupleQuery` the 2 pooled connections fail with a 408. Both are cleaned up
+		// and finally a fresh connection is opened and goes through successfully
+		ByteArrayOutputStream out3 = new ByteArrayOutputStream();
+		TupleQueryResultHandler handler3 = Mockito.spy(new SPARQLStarResultsJSONWriter(out3));
+		sparqlSession.sendTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o}", null, null, true, -1,
+				handler3);
+		assertThat(out3.toString()).startsWith("{");
+	}
+
+	@Test
 	public void testTupleQuery_NoPassthrough() throws Exception {
 		stubFor(post(urlEqualTo("/rdf4j-server/repositories/test"))
 				.willReturn(aResponse().withStatus(200)
