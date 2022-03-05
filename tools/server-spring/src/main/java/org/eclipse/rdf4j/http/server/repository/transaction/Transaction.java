@@ -410,7 +410,6 @@ class Transaction implements AutoCloseable {
 		Future<RepositoryConnection> result = submit(() -> {
 			RepositoryConnection conn = rep.getConnection();
 			ParserConfig config = conn.getParserConfig();
-			config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
 			config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 			config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 
