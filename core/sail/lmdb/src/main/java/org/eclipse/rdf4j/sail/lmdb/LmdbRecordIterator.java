@@ -10,14 +10,17 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.locks.StampedLock;
 
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
@@ -42,6 +45,8 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final TxnRef txnRef;
 
+	private long txnRefVersion;
+
 	private final long txn;
 
 	private final int dbi;
@@ -57,6 +62,8 @@ class LmdbRecordIterator implements RecordIterator {
 	private ByteBuffer maxKeyBuf;
 
 	private int lastResult;
+
+	private final long[] quad = new long[4];
 
 	private boolean fetchNext = false;
 
@@ -88,48 +95,87 @@ class LmdbRecordIterator implements RecordIterator {
 			this.groupMatcher = null;
 		}
 		this.txnRef = txnRef;
+
+		long stamp = txnRef.lock().readLock();
+		this.txnRefVersion = txnRef.version();
 		this.txn = txnRef.create();
 		this.dbi = index.getDB(explicit);
-
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, dbi, pp));
-			cursor = pp.get(0);
-		}
-
-		if (minKeyBuf != null) {
-			// set cursor to min key
-			keyData.mv_data(minKeyBuf);
-			lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-		} else {
-			// set cursor to first item
-			lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+		try {
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+			}
+		} finally {
+			txnRef.lock().unlockRead(stamp);
 		}
 	}
 
 	@Override
-	public Record next() throws IOException {
-		if (fetchNext) {
-			lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-			fetchNext = false;
-		}
-		while (lastResult == 0) {
-			// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
-			if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
-				lastResult = MDB_NOTFOUND;
-			} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
-				// value doesn't match search key/mask, fetch next value
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-			} else {
-				// Matching value found
-				Record record = new Record(keyData.mv_data(), valueData.mv_data(), index::keyToQuad);
-				// fetch next value
-				fetchNext = true;
-				return record;
+	public long[] next() throws IOException {
+		StampedLock lock = txnRef.lock();
+		long stamp = lock.readLock();
+		try {
+			if (txnRefVersion != txnRef.version()) {
+				// cursor must be renewed
+				mdb_cursor_renew(txn, cursor);
+				if (fetchNext) {
+					// cursor must be positioned on last item, reuse minKeyBuf if available
+					if (minKeyBuf == null) {
+						minKeyBuf = pool.getKeyBuffer();
+					}
+					minKeyBuf.clear();
+					index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
+					minKeyBuf.flip();
+					keyData.mv_data(minKeyBuf);
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
+					if (lastResult != 0) {
+						// use MDB_SET_RANGE if key was deleted
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					}
+					if (lastResult != 0) {
+						close();
+						return null;
+					}
+				}
+				// update version of txn ref
+				this.txnRefVersion = txnRef.version();
 			}
+
+			if (fetchNext) {
+				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				fetchNext = false;
+			} else {
+				if (minKeyBuf != null) {
+					// set cursor to min key
+					keyData.mv_data(minKeyBuf);
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+				} else {
+					// set cursor to first item
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				}
+			}
+
+			while (lastResult == 0) {
+				// if (maxKey != null && TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) > 0) {
+				if (maxKey != null && mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
+					lastResult = MDB_NOTFOUND;
+				} else if (groupMatcher != null && !groupMatcher.matches(keyData.mv_data())) {
+					// value doesn't match search key/mask, fetch next value
+					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+				} else {
+					// Matching value found
+					index.keyToQuad(keyData.mv_data(), quad);
+					// fetch next value
+					fetchNext = true;
+					return quad;
+				}
+			}
+			close();
+			return null;
+		} finally {
+			lock.unlockRead(stamp);
 		}
-		close();
-		return null;
 	}
 
 	@Override

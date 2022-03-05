@@ -65,6 +65,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private int namespaceIDCacheSize = -1;
 
+	private boolean autoGrow = true;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -163,6 +165,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public boolean getAutoGrow() {
+		return autoGrow;
+	}
+
+	public LmdbStoreConfig setAutoGrow(boolean autoGrow) {
+		this.autoGrow = autoGrow;
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -193,7 +204,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (namespaceIDCacheSize >= 0) {
 			m.add(implNode, LmdbStoreSchema.NAMESPACE_ID_CACHE_SIZE, vf.createLiteral(namespaceIDCacheSize));
 		}
-
+		if (!autoGrow) {
+			m.add(implNode, LmdbStoreSchema.AUTO_GROW, vf.createLiteral(false));
+		}
 		return implNode;
 	}
 
@@ -278,6 +291,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 											+ " property, found " + lit);
 						}
 					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.AUTO_GROW, null)).ifPresent(lit -> {
+				try {
+					setAutoGrow(lit.booleanValue());
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException(
+							"Boolean value required for " + LmdbStoreSchema.AUTO_GROW + " property, found " + lit);
+				}
+			});
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

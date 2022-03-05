@@ -8,9 +8,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
-import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -32,8 +30,6 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 
 	private final ValueStore valueStore;
 
-	private final long[] quad = new long[4];
-
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -53,13 +49,10 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 	@Override
 	public Statement getNextElement() throws SailException {
 		try {
-			Record nextRecord = recordIt.next();
-
-			if (nextRecord == null) {
+			long[] quad = recordIt.next();
+			if (quad == null) {
 				return null;
 			}
-
-			nextRecord.toQuad(quad);
 
 			long subjID = quad[TripleStore.SUBJ_IDX];
 			Resource subj = (Resource) valueStore.getLazyValue(subjID);

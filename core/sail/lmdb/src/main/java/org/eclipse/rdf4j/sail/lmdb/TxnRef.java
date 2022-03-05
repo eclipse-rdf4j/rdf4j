@@ -13,18 +13,19 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
-import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_renew;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.StampedLock;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.lmdb.LMDB;
 
 /**
  * Reference for a LMDB transaction.
@@ -36,6 +37,9 @@ class TxnRef {
 	private final Txn[] pool;
 	private long env;
 	private volatile int poolIndex = -1;
+
+	private volatile long version = 1;
+	private final StampedLock lock = new StampedLock();
 
 	TxnRef(long txn) {
 		synchronized (state) {
@@ -72,7 +76,7 @@ class TxnRef {
 			if (newTxn == null) {
 				newTxn = new Txn(startReadTxn());
 			} else {
-				LMDB.mdb_txn_renew(newTxn.txn);
+				mdb_txn_renew(newTxn.txn);
 				newTxn.refCount = 0;
 			}
 		} else {
@@ -115,14 +119,14 @@ class TxnRef {
 				switch (mode) {
 				case RESET:
 					if (poolIndex < pool.length - 1) {
-						LMDB.mdb_txn_reset(txn);
+						mdb_txn_reset(txn);
 						pool[++poolIndex] = t;
 					} else {
-						LMDB.mdb_txn_abort(txn);
+						mdb_txn_abort(txn);
 					}
 					break;
 				case ABORT:
-					LMDB.mdb_txn_abort(txn);
+					mdb_txn_abort(txn);
 					break;
 				case NONE:
 					break;
@@ -150,6 +154,7 @@ class TxnRef {
 	}
 
 	<T> T doWith(Transaction<T> transaction) throws IOException {
+		long stamp = lock.readLock();
 		T ret;
 		try (MemoryStack stack = stackPush()) {
 			long txn = create();
@@ -158,13 +163,40 @@ class TxnRef {
 			} finally {
 				free(txn);
 			}
+		} finally {
+			lock.unlockRead(stamp);
 		}
 		return ret;
 	}
 
-	void invalidate() {
+	StampedLock lock() {
+		return lock;
+	}
+
+	long version() {
+		return version;
+	}
+
+	void activate() {
 		synchronized (state) {
-			state.values().forEach(s -> s.invalidate());
+			state.values().forEach(s -> s.setActive(true));
+			version++;
+		}
+	}
+
+	void deactivate() {
+		synchronized (state) {
+			state.values().forEach(s -> s.setActive(false));
+		}
+	}
+
+	/**
+	 * Resets the transactions for all registered threads to ensure they are renewed next time a new transaction is
+	 * requested.
+	 */
+	void reset() {
+		synchronized (state) {
+			state.values().forEach(s -> s.reset());
 		}
 	}
 
@@ -183,13 +215,38 @@ class TxnRef {
 			this.currentTxn = txn;
 		}
 
-		void invalidate() {
+		/**
+		 * Marks current transaction as stale as it points to "old" data.
+		 */
+		void reset() {
 			if (currentTxn != null) {
 				if (staleTxns == null) {
 					staleTxns = new ArrayList<>(5);
 				}
 				staleTxns.add(currentTxn);
 				currentTxn = null;
+			}
+		}
+
+		/**
+		 * Triggers active state of current and stale transactions.
+		 */
+		void setActive(boolean active) {
+			if (currentTxn != null) {
+				if (active) {
+					mdb_txn_renew(currentTxn.txn);
+				} else {
+					mdb_txn_reset(currentTxn.txn);
+				}
+			}
+			if (staleTxns != null) {
+				for (Txn staleTxn : staleTxns) {
+					if (active) {
+						mdb_txn_renew(staleTxn.txn);
+					} else {
+						mdb_txn_reset(staleTxn.txn);
+					}
+				}
 			}
 		}
 	}

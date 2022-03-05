@@ -46,6 +46,9 @@ public class LmdbStoreSchema {
 	/** <tt>http://rdf4j.org/config/sail/lmdb#namespaceIDCacheSize</tt> */
 	public final static IRI NAMESPACE_ID_CACHE_SIZE;
 
+	/** <tt>http://rdf4j.org/config/sail/lmdb#autoGrow</tt> */
+	public final static IRI AUTO_GROW;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, "tripleIndexes");
@@ -56,5 +59,6 @@ public class LmdbStoreSchema {
 		VALUE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueIDCacheSize");
 		NAMESPACE_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceCacheSize");
 		NAMESPACE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceIDCacheSize");
+		AUTO_GROW = factory.createIRI(NAMESPACE, "autoGrow");
 	}
 }
