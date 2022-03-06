@@ -251,11 +251,20 @@
 		<profile>
 			<id>doclint-java9-disable</id>
 			<activation>
-				<jdk>[9,)</jdk>
+				<jdk>[9,11)</jdk>
 			</activation>
 			<properties>
 				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
 				<additional.j.option>--no-module-directories</additional.j.option>
+			</properties>
+		</profile>
+		<profile>
+			<id>doclint-java12-disable</id>
+			<activation>
+				<jdk>[12,)</jdk>
+			</activation>
+			<properties>
+				<javadoc.opts>-Xdoclint:none -html5</javadoc.opts>
 			</properties>
 		</profile>
 		<profile>
