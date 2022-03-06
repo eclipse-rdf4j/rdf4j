@@ -1,6 +1,0 @@
-CONSTRUCT
-  *
-FROM 
-  {X} <http://example.org/propA> {Y}
-WHERE
-  isLiteral(Y)

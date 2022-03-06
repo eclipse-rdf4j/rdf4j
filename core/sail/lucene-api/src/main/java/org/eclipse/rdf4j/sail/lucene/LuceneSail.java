@@ -89,15 +89,8 @@ import org.slf4j.LoggerFactory;
  * </pre>
  *
  * <h2>Asking full-text queries</h2> Text queries are expressed using the virtual properties of the LuceneSail. An
- * example query looks like this (SERQL): <code>
- * SELECT Subject, Score, Snippet
- * FROM {Subject} <http://www.openrdf.org/contrib/lucenesail#matches> {}
- * <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> {<http://www.openrdf.org/contrib/lucenesail#LuceneQuery>};
- * <http://www.openrdf.org/contrib/lucenesail#query> {"my Lucene query"};
- * <http://www.openrdf.org/contrib/lucenesail#score> {Score};
- * <http://www.openrdf.org/contrib/lucenesail#snippet> {Snippet}</code>
- *
- * In SPARQL: <code>
+ * example query looks like this in SPARQL: <code>
+ * <pre>
  * SELECT ?subject ?score ?snippet ?resource WHERE {
  * ?subject <http://www.openrdf.org/contrib/lucenesail#matches> [
  *      a <http://www.openrdf.org/contrib/lucenesail#LuceneQuery> ;
@@ -107,6 +100,7 @@ import org.slf4j.LoggerFactory;
  *      <http://www.openrdf.org/contrib/lucenesail#resource> ?resource
  *   ]
  * }
+ * </pre>
  * </code> When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches relation is
  * mandatory</b>. When one of these misses, the query will not be executed as expected. The failure behavior can be
  * configured, setting the Sail property "incompletequeryfail" to true will throw a SailException when such patterns are
@@ -252,11 +246,11 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	/**
 	 * Set this key to configure the SearchIndex class implementation. Default is
-	 * org.eclipse.rdf4j.sail.lucene.LuceneIndex.
+	 * org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex.
 	 */
 	public static final String INDEX_CLASS_KEY = "index";
 
-	public static final String DEFAULT_INDEX_CLASS = "org.eclipse.rdf4j.sail.lucene.LuceneIndex";
+	public static final String DEFAULT_INDEX_CLASS = "org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex";
 
 	/**
 	 * Set this key as sail parameter to configure the Lucene analyzer class implementation to use for text analysis.
@@ -353,8 +347,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void initialize() throws SailException {
-		super.initialize();
+	public void init() throws SailException {
+		super.init();
 		if (parameters.containsKey(INDEXEDFIELDS)) {
 			String indexedfieldsString = parameters.getProperty(INDEXEDFIELDS);
 			Properties prop = new Properties();

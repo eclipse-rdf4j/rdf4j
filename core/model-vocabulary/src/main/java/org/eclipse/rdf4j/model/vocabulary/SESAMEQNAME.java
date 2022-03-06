@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.Namespace;
 public class SESAMEQNAME {
 
 	/**
-	 * The Sesame QName Schema namespace ( <tt>http://www.openrdf.org/schema/qname#</tt>).
+	 * The Sesame QName Schema namespace ( <var>http://www.openrdf.org/schema/qname#</var>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/schema/qname#";
 
@@ -32,7 +32,7 @@ public class SESAMEQNAME {
 	 */
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
-	/** <tt>http://www.openrdf.org/schema/qname#qname</tt> */
+	/** <var>http://www.openrdf.org/schema/qname#qname</var> */
 	public final static IRI QNAME;
 
 	static {

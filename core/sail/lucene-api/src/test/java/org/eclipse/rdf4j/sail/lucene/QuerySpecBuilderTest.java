@@ -26,8 +26,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.serql.SeRQLParser;
-import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -35,26 +34,25 @@ public class QuerySpecBuilderTest {
 
 	private QuerySpecBuilder interpreter;
 
-	private SeRQLParser parser;
+	private SPARQLParser parser;
 
 	@Before
 	public void setUp() throws Exception {
 		interpreter = new QuerySpecBuilder(true);
-		parser = new SeRQLParser();
+		parser = new SPARQLParser();
 	}
 
 	@Test
 	public void testQueryInterpretation() throws Exception {
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("SELECT Subject, Score, Snippet ");
-		buffer.append("FROM {Subject} <" + MATCHES + "> {} ");
-		buffer.append("<" + TYPE + "> {<" + LUCENE_QUERY + ">}; ");
-		buffer.append("<" + QUERY + "> {\"my Lucene query\"}; ");
-		buffer.append("<" + SCORE + "> {Score}; ");
-		buffer.append("<" + SNIPPET + "> {Snippet} ");
+		buffer.append("SELECT ?Subject ?Score ?Snippet ");
+		buffer.append("WHERE { ?Subject <" + MATCHES + "> [ ");
+		buffer.append("<" + TYPE + "> <" + LUCENE_QUERY + ">; ");
+		buffer.append("<" + QUERY + "> \"my Lucene query\"; ");
+		buffer.append("<" + SCORE + "> ?Score; ");
+		buffer.append("<" + SNIPPET + "> ?Snippet ]. } ");
 		ParsedQuery query = parser.parseQuery(buffer.toString(), null);
 		TupleExpr tupleExpr = query.getTupleExpr();
-		System.out.print(buffer.toString());
 		Collection<SearchQueryEvaluator> queries = process(interpreter, tupleExpr);
 		assertEquals(1, queries.size());
 
@@ -71,20 +69,20 @@ public class QuerySpecBuilderTest {
 	@Test
 	public void testMultipleQueriesInterpretation() throws Exception {
 		StringBuilder buffer = new StringBuilder();
-		buffer.append("SELECT sub1, score1, snippet1, sub2, score2, snippet2, x, p1, p2 ");
-		buffer.append("FROM {sub1} <" + MATCHES + "> {} ");
-		buffer.append("<" + TYPE + "> {<" + LUCENE_QUERY + ">}; ");
-		buffer.append("<" + QUERY + "> {\"my Lucene query\"}; ");
-		buffer.append("<" + SCORE + "> {score1}; ");
-		buffer.append("<" + SNIPPET + "> {snippet1}, ");
-		buffer.append("{sub2} <" + MATCHES + "> {} ");
-		buffer.append("<" + TYPE + "> {<" + LUCENE_QUERY + ">}; ");
-		buffer.append("<" + QUERY + "> {\"second lucene query\"}; ");
-		buffer.append("<" + SCORE + "> {score2}; ");
-		buffer.append("<" + SNIPPET + "> {snippet2}, ");
+		buffer.append("SELECT ?sub1 ?score1 ?snippet1 ?sub2 ?score2 ?snippet2 ?x ?p1 ?p2 ");
+		buffer.append("WHERE { ?sub1 <" + MATCHES + "> [ ");
+		buffer.append("<" + TYPE + "> <" + LUCENE_QUERY + ">; ");
+		buffer.append("<" + QUERY + "> \"my Lucene query\"; ");
+		buffer.append("<" + SCORE + "> ?score1; ");
+		buffer.append("<" + SNIPPET + "> ?snippet1 ]. ");
+		buffer.append(" ?sub2 <" + MATCHES + "> [ ");
+		buffer.append("<" + TYPE + "> <" + LUCENE_QUERY + ">; ");
+		buffer.append("<" + QUERY + "> \"second lucene query\"; ");
+		buffer.append("<" + SCORE + "> ?score2; ");
+		buffer.append("<" + SNIPPET + "> ?snippet2 ]. ");
 		// and connect them both via any X in between, just as salt to make the
 		// parser do something
-		buffer.append("{sub1} p1 {x}, {x} p2 {sub2} ");
+		buffer.append(" ?sub1 ?p1 ?x . ?x ?p2 ?sub2 .} ");
 		ParsedQuery query = parser.parseQuery(buffer.toString(), null);
 		TupleExpr tupleExpr = query.getTupleExpr();
 
@@ -137,21 +135,21 @@ public class QuerySpecBuilderTest {
 	@Test
 	public void testIncompleteFail() throws Exception {
 		// default works
-		String queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE
-				+ "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE
-				+ "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+		String queryString = "SELECT ?sub1 ?score1 ?snippet1 WHERE " + "{ ?sub1 <" + MATCHES + "> [ " + "<" + TYPE
+				+ "> <" + LUCENE_QUERY + ">; " + "<" + QUERY + "> \"my Lucene query\"; " + "<" + SCORE
+				+ "> ?score1; " + "<" + SNIPPET + "> ?snippet1].}";
 		checkQuery(queryString);
 
 		// minimal works
-		queryString = "SELECT sub1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; "
-				+ "<" + QUERY + "> {\"my Lucene query\"} ";
+		queryString = "SELECT ?sub1 WHERE " + "{ ?sub1 <" + MATCHES + "> [ " + "<" + TYPE + "> <" + LUCENE_QUERY + ">; "
+				+ "<" + QUERY + "> \"my Lucene query\" ]. } ";
 		checkQuery(queryString);
 
 		// matches missing
-		queryString = "SELECT sub1, score1, snippet1 FROM "
+		queryString = "SELECT ?sub1 ?score1 ?snippet1 WHERE "
 				// + "{sub1} <" + MATCHES + "> {} "
-				+ "<" + TYPE + "> {<" + LUCENE_QUERY + ">}; " + "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE
-				+ "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+				+ "<" + TYPE + "> <" + LUCENE_QUERY + ">; " + "<" + QUERY + "> \"my Lucene query\"; " + "<" + SCORE
+				+ "> ?score1; " + "<" + SNIPPET + "> ?snippet1 .";
 		try {
 			checkQuery(queryString);
 			fail("invalid query ignored");
@@ -160,10 +158,9 @@ public class QuerySpecBuilderTest {
 		}
 
 		// type missing
-		queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} "
-		// +"<" + TYPE + "> {<" + LUCENE_QUERY + ">}; "
-				+ "<" + QUERY + "> {\"my Lucene query\"}; " + "<" + SCORE + "> {score1}; " + "<" + SNIPPET
-				+ "> {snippet1}";
+		queryString = "SELECT ?sub1 ?score1 ?snippet1 WHERE " + "{ ?sub1 <" + MATCHES + "> [" + "<" + QUERY
+				+ "> \"my Lucene query\"; " + "<" + SCORE
+				+ "> ?score1; " + "<" + SNIPPET + "> ?snippet1].}";
 		try {
 			checkQuery(queryString);
 			// excellent
@@ -172,10 +169,9 @@ public class QuerySpecBuilderTest {
 		}
 
 		// query missing
-		queryString = "SELECT sub1, score1, snippet1 FROM " + "{sub1} <" + MATCHES + "> {} " + "<" + TYPE + "> {<"
-				+ LUCENE_QUERY + ">}; "
-				// +"<" + QUERY + "> {\"my Lucene query\"}; "
-				+ "<" + SCORE + "> {score1}; " + "<" + SNIPPET + "> {snippet1}";
+		queryString = "SELECT ?sub1 ?score1 ?snippet1 WHERE " + "{ ?sub1 <" + MATCHES + "> [ " + "<" + TYPE
+				+ "> <" + LUCENE_QUERY + ">; " + "<" + SCORE
+				+ "> ?score1; " + "<" + SNIPPET + "> ?snippet1].}";
 		try {
 			checkQuery(queryString);
 			fail("invalid missing query not detected");
@@ -197,8 +193,7 @@ public class QuerySpecBuilderTest {
 		assertEquals("expect one query", 1, queries.size());
 	}
 
-	private Collection<SearchQueryEvaluator> process(SearchQueryInterpreter interpreter, TupleExpr tupleExpr)
-			throws SailException {
+	private Collection<SearchQueryEvaluator> process(SearchQueryInterpreter interpreter, TupleExpr tupleExpr) {
 		List<SearchQueryEvaluator> queries = new ArrayList<>();
 		interpreter.process(tupleExpr, new QueryBindingSet(), queries);
 		return queries;

@@ -14,7 +14,8 @@ import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.util.Files;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -33,8 +34,6 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 
-import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
-
 /**
  * @author Håvard Ottestad
  */
@@ -47,10 +46,8 @@ import pl.allegro.tech.embeddedelasticsearch.EmbeddedElastic;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class AddBenchmark {
 
-	private static EmbeddedElastic embeddedElastic;
-
 	private static File installLocation = Files.newTemporaryFolder();
-
+	private static ElasticsearchClusterRunner runner;
 	private SailRepository elasticsearchStore;
 
 	@Setup(Level.Trial)
@@ -58,11 +55,10 @@ public class AddBenchmark {
 		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
 		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
 		// PATH
-		embeddedElastic = TestHelpers.startElasticsearch(installLocation,
-				"/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home");
+		runner = TestHelpers.startElasticsearch(installLocation);
 
 		elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", embeddedElastic.getTransportTcpPort(), "cluster1", "testindex",
+				new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER, "testindex",
 						false));
 
 		System.gc();
@@ -77,7 +73,7 @@ public class AddBenchmark {
 	public void afterClass() {
 
 		elasticsearchStore.shutDown();
-		TestHelpers.stopElasticsearch(embeddedElastic, installLocation);
+		TestHelpers.stopElasticsearch(runner);
 	}
 
 	@Benchmark

@@ -27,9 +27,9 @@ public class ExtensibleStatementImpl extends SimpleStatement implements Extensib
 	 * Instead, use a {@link ValueFactory ValueFactory} (obtained from your repository or by using
 	 * {@link SimpleValueFactory#getInstance()}) to create new Statement objects.
 	 *
-	 * @param subject   The statement's subject, must not be <tt>null</tt>.
-	 * @param predicate The statement's predicate, must not be <tt>null</tt>.
-	 * @param object    The statement's object, must not be <tt>null</tt>.
+	 * @param subject   The statement's subject, must not be <var>null</var>.
+	 * @param predicate The statement's predicate, must not be <var>null</var>.
+	 * @param object    The statement's object, must not be <var>null</var>.
 	 * @see SimpleValueFactory#createStatement(Resource, IRI, Value)
 	 */
 	public ExtensibleStatementImpl(Resource subject, IRI predicate, Value object, boolean inferred) {

@@ -13,9 +13,9 @@ import static org.mockito.Mockito.mock;
 import java.nio.file.Files;
 import java.util.Iterator;
 
-import org.eclipse.rdf4j.model.ModelTest;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.testsuite.model.ModelTest;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 

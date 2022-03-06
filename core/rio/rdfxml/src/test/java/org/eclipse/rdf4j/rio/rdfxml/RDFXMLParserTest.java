@@ -16,6 +16,7 @@ import static org.junit.Assert.fail;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.net.URL;
 import java.util.Collection;
 import java.util.Iterator;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
@@ -217,7 +219,7 @@ public class RDFXMLParserTest {
 				"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
 				"  <test:datapart xmlns:test=\"http://test.org/testing/\">0</test:datapart>\n" +
 				"  \"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral>)";
-		String s2 = "(http://mycorp.example.com/papers/NobelPaper1, http://purl.org/metadata/dublin_core#Creator, \"David Hume\")";
+		String s2 = "(http://mycorp.example.com/papers/NobelPaper1, http://purl.org/metadata/dublin_core#Creator, \"David Hume\"^^<http://www.w3.org/2001/XMLSchema#string>)";
 		expectedLiteral[0] = s1;
 		expectedLiteral[1] = s2;
 
@@ -226,5 +228,6 @@ public class RDFXMLParserTest {
 			assertEquals(s.toString(), expectedLiteral[ind]);
 			ind += 1;
 		}
+
 	}
 }

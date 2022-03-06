@@ -9,13 +9,14 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import static junit.framework.TestCase.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 
 import org.apache.commons.io.IOUtils;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -26,14 +27,16 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
+@Isolated
 public class SerializableTest {
 
 	@Test
 	public void testMaxCountSnapshot() throws IOException, InterruptedException {
 		for (int i = 0; i < 10; i++) {
-			SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+			SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 			Sail sail = repo.getSail();
 //			((ShaclSail) sail).setGlobalLogValidationExecution(true);
@@ -59,7 +62,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCountSerializable() throws IOException, InterruptedException {
 
-		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 		multithreadedMaxCountViolation(IsolationLevels.SERIALIZABLE, repo);
 
@@ -80,7 +83,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCount2Serializable() throws IOException, InterruptedException {
 
-		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 		multithreadedMaxCount2Violation(IsolationLevels.SERIALIZABLE, repo);
 
@@ -101,7 +104,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCount2Snapshot() throws IOException, InterruptedException {
 
-		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 		multithreadedMaxCount2Violation(IsolationLevels.SNAPSHOT, repo);
 
@@ -119,11 +122,11 @@ public class SerializableTest {
 
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void serializableParallelValidation() throws Throwable {
 
 		SailRepository repo = Utils
-				.getInitializedShaclRepository("test-cases/complex/targetShapeAndQualifiedShape/shacl.ttl", false);
+				.getInitializedShaclRepository("test-cases/complex/targetShapeAndQualifiedShape/shacl.ttl");
 
 		ShaclSail sail = (ShaclSail) repo.getSail();
 
@@ -139,11 +142,17 @@ public class SerializableTest {
 							.getResource("test-cases/complex/targetShapeAndQualifiedShape/invalid/case1/query1.rq"),
 					StandardCharsets.UTF_8)).execute();
 
-			connection.commit();
-		} catch (RepositoryException e) {
-			throw e.getCause();
+			assertThrows(ShaclSailValidationException.class, () -> {
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
+
+		} finally {
+			repo.shutDown();
 		}
-		repo.shutDown();
 
 	}
 

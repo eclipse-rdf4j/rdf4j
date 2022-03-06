@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import java.io.File;
+import java.nio.file.Files;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -43,7 +44,7 @@ public class StoreSerializationTest extends TestCase {
 	@Override
 	protected void setUp() throws Exception {
 		super.setUp();
-		dataDir = FileUtil.createTempDir("memorystore");
+		dataDir = Files.createTempDirectory("memorystore").toFile();
 	}
 
 	@Override
@@ -54,7 +55,7 @@ public class StoreSerializationTest extends TestCase {
 
 	public void testShortLiterals() throws Exception {
 		MemoryStore store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		ValueFactory factory = store.getValueFactory();
 		IRI foo = factory.createIRI("http://www.foo.example/foo");
@@ -75,7 +76,7 @@ public class StoreSerializationTest extends TestCase {
 		store.shutDown();
 
 		store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		con = store.getConnection();
 
@@ -90,7 +91,7 @@ public class StoreSerializationTest extends TestCase {
 
 	public void testSerialization() throws Exception {
 		MemoryStore store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		ValueFactory factory = store.getValueFactory();
 		IRI foo = factory.createIRI("http://www.foo.example/foo");
@@ -101,7 +102,8 @@ public class StoreSerializationTest extends TestCase {
 		con.addStatement(foo, RDF.TYPE, bar);
 		con.commit();
 
-		ParsedTupleQuery query = QueryParserUtil.parseTupleQuery(QueryLanguage.SERQL, "SELECT X, P, Y FROM {X} P {Y}",
+		ParsedTupleQuery query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?X ?P ?Y WHERE { ?X ?P ?Y }",
 				null);
 		TupleExpr tupleExpr = query.getTupleExpr();
 
@@ -119,7 +121,7 @@ public class StoreSerializationTest extends TestCase {
 		store.shutDown();
 
 		store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		factory = store.getValueFactory();
 		foo = factory.createIRI("http://www.foo.example/foo");
@@ -146,7 +148,7 @@ public class StoreSerializationTest extends TestCase {
 
 	public void testLongLiterals() throws Exception {
 		MemoryStore store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		ValueFactory factory = store.getValueFactory();
 		IRI foo = factory.createIRI("http://www.foo.example/foo");
@@ -167,7 +169,7 @@ public class StoreSerializationTest extends TestCase {
 		store.shutDown();
 
 		store = new MemoryStore(dataDir);
-		store.initialize();
+		store.init();
 
 		con = store.getConnection();
 

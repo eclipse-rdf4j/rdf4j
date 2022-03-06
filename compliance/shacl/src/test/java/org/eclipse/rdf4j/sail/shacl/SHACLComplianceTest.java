@@ -11,9 +11,9 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.shacl.manifest.AbstractSHACLTest;
-import org.eclipse.rdf4j.shacl.manifest.SHACLManifestTestSuiteFactory;
-import org.eclipse.rdf4j.shacl.manifest.SHACLManifestTestSuiteFactory.TestFactory;
+import org.eclipse.rdf4j.testsuite.shacl.manifest.AbstractSHACLTest;
+import org.eclipse.rdf4j.testsuite.shacl.manifest.SHACLManifestTestSuiteFactory;
+import org.eclipse.rdf4j.testsuite.shacl.manifest.SHACLManifestTestSuiteFactory.TestFactory;
 
 import junit.framework.TestSuite;
 
@@ -59,15 +59,9 @@ public class SHACLComplianceTest extends AbstractSHACLTest {
 		super(testURI, label, shapesGraph, dataGraph, failure, conforms);
 	}
 
-	protected NotifyingSail newDataSail() {
-		return new MemoryStore();
-	}
-
 	@Override
 	protected Sail newSail() {
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.setIgnoreNoShapesLoadedException(true);
-		return shaclSail;
+		return new ShaclSail(new MemoryStore());
 	}
 
 }

@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query;
 /**
  * An exception that can be thrown by an TupleQueryResultHandler when it encounters an unrecoverable error. If an
  * exception is associated with the error then this exception can be wrapped in a TupleHandlerException and can later be
- * retrieved from it when the TupleHandlerException is caught using the <tt>getCause()</tt>.
+ * retrieved from it when the TupleHandlerException is caught using the <var>getCause()</var>.
  */
 public class TupleQueryResultHandlerException extends QueryResultHandlerException {
 

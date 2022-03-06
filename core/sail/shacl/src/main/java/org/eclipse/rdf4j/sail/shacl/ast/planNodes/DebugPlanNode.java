@@ -12,7 +12,6 @@ import java.util.function.Consumer;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
 /**
  * Used for adding a custom log statement to tuples as they pass through. Should only be used for debugging.
@@ -46,7 +45,7 @@ public class DebugPlanNode implements PlanNode {
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
-		if (validationExecutionLogger == null && GlobalValidationExecutionLogging.loggingEnabled) {
+		if (validationExecutionLogger == null && validationExecutionLogger.isEnabled()) {
 			throw new IllegalStateException("Did not receive validationExecutionLogger before .iterator() was called!");
 		}
 
@@ -66,7 +65,7 @@ public class DebugPlanNode implements PlanNode {
 					debugPoint.accept(next);
 				}
 
-				if (message != null && GlobalValidationExecutionLogging.loggingEnabled) {
+				if (message != null && validationExecutionLogger.isEnabled()) {
 					validationExecutionLogger.log(depth(), message, next, DebugPlanNode.this, getId(), null);
 				}
 				return next;

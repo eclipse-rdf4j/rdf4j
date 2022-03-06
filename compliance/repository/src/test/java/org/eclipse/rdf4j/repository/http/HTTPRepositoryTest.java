@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryTest;
+import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;

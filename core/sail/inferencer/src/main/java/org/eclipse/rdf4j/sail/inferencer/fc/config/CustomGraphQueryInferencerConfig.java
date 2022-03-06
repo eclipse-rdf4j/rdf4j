@@ -15,7 +15,7 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -41,12 +41,11 @@ import org.eclipse.rdf4j.sail.config.SailImplConfig;
  */
 public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSailImplConfig {
 
-	public static final Pattern SPARQL_PATTERN, SERQL_PATTERN;
+	public static final Pattern SPARQL_PATTERN;
 
 	static {
 		int flags = Pattern.CASE_INSENSITIVE | Pattern.DOTALL;
 		SPARQL_PATTERN = Pattern.compile("^(.*construct\\s+)(\\{.*\\}\\s*)where.*$", flags);
-		SERQL_PATTERN = Pattern.compile("^\\s*construct(\\s+.*)from\\s+.*(\\s+using\\s+namespace.*)$", flags);
 	}
 
 	private QueryLanguage language;
@@ -168,11 +167,6 @@ public final class CustomGraphQueryInferencerConfig extends AbstractDelegatingSa
 			Matcher matcher = SPARQL_PATTERN.matcher(ruleQuery);
 			if (matcher.matches()) {
 				result = matcher.group(1) + "WHERE" + matcher.group(2);
-			}
-		} else if (QueryLanguage.SERQL == language) {
-			Matcher matcher = SERQL_PATTERN.matcher(ruleQuery);
-			if (matcher.matches()) {
-				result = "CONSTRUCT * FROM" + matcher.group(1) + matcher.group(2);
 			}
 		} else {
 			throw new IllegalStateException("language");

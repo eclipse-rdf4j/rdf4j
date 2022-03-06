@@ -1,4 +1,0 @@
-SELECT
-   X, P, O
-FROM
-  {S} P {O}

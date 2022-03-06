@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
@@ -50,9 +49,6 @@ import ch.qos.logback.classic.Logger;
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QualifiedValueShapeBenchmarkEmpty {
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	private List<List<Statement>> allStatements;
 
@@ -69,8 +65,6 @@ public class QualifiedValueShapeBenchmarkEmpty {
 	public void setUp() throws InterruptedException {
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName())).setLevel(WARN);
 		((Logger) LoggerFactory.getLogger(Shape.class.getName())).setLevel(WARN);
-
-		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 

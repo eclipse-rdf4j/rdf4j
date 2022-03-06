@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * The SPARQL built-in {@link Function} UCASE, as defined in
@@ -41,7 +41,7 @@ public class UpperCase implements Function {
 			Literal literal = (Literal) args[0];
 
 			// UpperCase function accepts only string literal
-			if (QueryEvaluationUtil.isStringLiteral(literal)) {
+			if (QueryEvaluationUtility.isStringLiteral(literal)) {
 				String lexicalValue = literal.getLabel().toUpperCase();
 				Optional<String> language = literal.getLanguage();
 

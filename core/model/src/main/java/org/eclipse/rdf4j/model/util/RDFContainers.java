@@ -17,8 +17,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -60,7 +59,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
  * </pre>
  *
  *
- * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>.
+ * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>
  */
 public class RDFContainers {
 
@@ -86,8 +85,7 @@ public class RDFContainers {
 	 * @return the supplied sink {@link Collection} of {@link Statement}s, with the new Statements forming the RDF
 	 *         Collection added.
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
-	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>
 	 */
 	public static <C extends Collection<Statement>> C toRDF(IRI containerType, Iterable<?> values, Resource container,
 			C sink,
@@ -122,8 +120,7 @@ public class RDFContainers {
 	 * @return the supplied sink {@link Collection} of {@link Statement}s, with the new Statements forming the RDF
 	 *         Collection added.
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
-	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>
 	 */
 	public static <C extends Collection<Statement>> C toRDF(IRI containerType, Iterable<?> values, Resource container,
 			C sink,
@@ -150,8 +147,7 @@ public class RDFContainers {
 	 * @return the supplied Java {@link Collection}, filled with the items from the RDF Containter (if any).
 	 * @throws ModelException if a problem occurs reading the RDF Containter, for example if the Collection is not
 	 *                        well-formed.
-	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>
 	 */
 	public static <C extends Collection<Value>> C toValues(IRI containerType, final Model m, Resource container,
 			C collection,
@@ -183,8 +179,7 @@ public class RDFContainers {
 	 * @param contexts      the context(s) in which to add the RDF Containter. This argument is an optional vararg and
 	 *                      can be left out.
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
-	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>
 	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
 	 */
 	public static void consumeContainer(IRI containerType, Iterable<?> values, Resource container,
@@ -214,8 +209,7 @@ public class RDFContainers {
 	 * @param contexts      the context(s) in which to add the RDF Container. This argument is an optional vararg and
 	 *                      can be left out.
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
-	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>
 	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
 	 *
 	 * @since 3.3.0
@@ -276,8 +270,7 @@ public class RDFContainers {
 	 *                      can be left out.
 	 * @throws ModelException if a problem occurs reading the RDF Container, for example if the Collection is not
 	 *                        well-formed.
-	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection
-	 *      vocabulary</a>.
+	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>
 	 */
 
 	public static void consumeValues(final Model m, Resource container, IRI containerType, Consumer<Value> consumer,
@@ -375,8 +368,9 @@ public class RDFContainers {
 			Resource container,
 			Consumer<Statement> collectionConsumer, Function<String, Supplier<E>> exceptionSupplier,
 			Resource... contexts) throws E {
-		OpenRDFUtil.verifyContextNotNull(contexts);
-		Objects.requireNonNull(container, "containter head may not be null");
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
+		Objects.requireNonNull(container, "container head may not be null");
 		Objects.requireNonNull(collectionConsumer, "collection consumer may not be null");
 
 		ValueFactory vf = SimpleValueFactory.getInstance();

@@ -98,10 +98,10 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 
 /**
- * Base class for {@link QueryModelVisitor}s. This class implements all <tt>meet(... node)</tt> methods from the visitor
- * interface, forwarding the call to a method for the node's supertype. This is done recursively until {@link #meetNode}
- * is reached. This allows subclasses to easily define default behaviour for visited nodes of a certain type. The
- * default implementation of {@link #meetNode} is to visit the node's children.
+ * Base class for {@link QueryModelVisitor}s. This class implements all <var>meet(... node)</var> methods from the
+ * visitor interface, forwarding the call to a method for the node's supertype. This is done recursively until
+ * {@link #meetNode} is reached. This allows subclasses to easily define default behaviour for visited nodes of a
+ * certain type. The default implementation of {@link #meetNode} is to visit the node's children.
  */
 public abstract class AbstractQueryModelVisitor<X extends Exception> implements QueryModelVisitor<X> {
 
@@ -326,8 +326,9 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	@Override
+	@Deprecated(forRemoval = true)
 	public void meet(Like node) throws X {
-		meetUnaryValueOperator(node);
+		// From SERQL should not be seen
 	}
 
 	@Override
@@ -522,8 +523,8 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	/**
-	 * Method called by all <tt>meet</tt> methods with a {@link BinaryTupleOperator} node as argument. Forwards the call
-	 * to {@link #meetNode} by default.
+	 * Method called by all <var>meet</var> methods with a {@link BinaryTupleOperator} node as argument. Forwards the
+	 * call to {@link #meetNode} by default.
 	 *
 	 * @param node The node that is being visited.
 	 */
@@ -532,8 +533,8 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	/**
-	 * Method called by all <tt>meet</tt> methods with a {@link BinaryValueOperator} node as argument. Forwards the call
-	 * to {@link #meetNode} by default.
+	 * Method called by all <var>meet</var> methods with a {@link BinaryValueOperator} node as argument. Forwards the
+	 * call to {@link #meetNode} by default.
 	 *
 	 * @param node The node that is being visited.
 	 */
@@ -542,8 +543,8 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	/**
-	 * Method called by all <tt>meet</tt> methods with a {@link CompareSubQueryValueOperator} node as argument. Forwards
-	 * the call to {@link #meetSubQueryValueOperator} by default.
+	 * Method called by all <var>meet</var> methods with a {@link CompareSubQueryValueOperator} node as argument.
+	 * Forwards the call to {@link #meetSubQueryValueOperator} by default.
 	 *
 	 * @param node The node that is being visited.
 	 */
@@ -552,8 +553,8 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	/**
-	 * Method called by all <tt>meet</tt> methods with a {@link org.eclipse.rdf4j.query.algebra.NAryValueOperator} node
-	 * as argument. Forwards the call to {@link #meetNode} by default.
+	 * Method called by all <var>meet</var> methods with a {@link org.eclipse.rdf4j.query.algebra.NAryValueOperator}
+	 * node as argument. Forwards the call to {@link #meetNode} by default.
 	 *
 	 * @param node The node that is being visited.
 	 */
@@ -562,9 +563,9 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	/**
-	 * Method called by all of the other <tt>meet</tt> methods that are not overridden in subclasses. This method can be
-	 * overridden in subclasses to define default behaviour when visiting nodes. The default behaviour of this method is
-	 * to visit the node's children.
+	 * Method called by all of the other <var>meet</var> methods that are not overridden in subclasses. This method can
+	 * be overridden in subclasses to define default behaviour when visiting nodes. The default behaviour of this method
+	 * is to visit the node's children.
 	 *
 	 * @param node The node that is being visited.
 	 */
@@ -573,7 +574,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	/**
-	 * Method called by all <tt>meet</tt> methods with a {@link SubQueryValueOperator} node as argument. Forwards the
+	 * Method called by all <var>meet</var> methods with a {@link SubQueryValueOperator} node as argument. Forwards the
 	 * call to {@link #meetNode} by default.
 	 *
 	 * @param node The node that is being visited.
@@ -583,8 +584,8 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	/**
-	 * Method called by all <tt>meet</tt> methods with a {@link UnaryTupleOperator} node as argument. Forwards the call
-	 * to {@link #meetNode} by default.
+	 * Method called by all <var>meet</var> methods with a {@link UnaryTupleOperator} node as argument. Forwards the
+	 * call to {@link #meetNode} by default.
 	 *
 	 * @param node The node that is being visited.
 	 */
@@ -593,8 +594,8 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	/**
-	 * Method called by all <tt>meet</tt> methods with a {@link UnaryValueOperator} node as argument. Forwards the call
-	 * to {@link #meetNode} by default.
+	 * Method called by all <var>meet</var> methods with a {@link UnaryValueOperator} node as argument. Forwards the
+	 * call to {@link #meetNode} by default.
 	 *
 	 * @param node The node that is being visited.
 	 */
@@ -603,7 +604,7 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 	}
 
 	/**
-	 * Method called by all <tt>meet</tt> methods with a {@link UpdateExpr} node as argument. Forwards the call to
+	 * Method called by all <var>meet</var> methods with a {@link UpdateExpr} node as argument. Forwards the call to
 	 * {@link #meetNode} by default.
 	 *
 	 * @param node The node that is being visited.

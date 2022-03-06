@@ -83,7 +83,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 			// if filter is set, apply it
 			if (filterExpr != null) {
 				FilteringIteration filteredRes = new FilteringIteration(filterExpr, resultHolder.get(),
-						SailTripleSource.this.strategy);
+						queryInfo.getStrategy());
 				if (!filteredRes.hasNext()) {
 					Iterations.closeCloseable(filteredRes);
 					resultHolder.set(new EmptyIteration<>());

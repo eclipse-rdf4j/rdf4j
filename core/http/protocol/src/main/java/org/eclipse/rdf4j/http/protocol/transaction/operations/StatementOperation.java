@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.protocol.transaction.operations;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -59,9 +61,9 @@ public abstract class StatementOperation extends ContextOperation {
 		if (other instanceof StatementOperation) {
 			StatementOperation o = (StatementOperation) other;
 
-			return ObjectUtil.nullEquals(getSubject(), o.getSubject())
-					&& ObjectUtil.nullEquals(getPredicate(), o.getPredicate())
-					&& ObjectUtil.nullEquals(getObject(), o.getObject()) && super.equals(other);
+			return Objects.equals(getSubject(), o.getSubject())
+					&& Objects.equals(getPredicate(), o.getPredicate())
+					&& Objects.equals(getObject(), o.getObject()) && super.equals(other);
 		}
 
 		return false;

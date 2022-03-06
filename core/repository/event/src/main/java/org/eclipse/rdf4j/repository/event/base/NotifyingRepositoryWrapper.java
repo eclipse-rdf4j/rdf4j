@@ -73,8 +73,8 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	/**
-	 * Registers a <tt>RepositoryListener</tt> that will receive notifications of operations that are performed on this
-	 * repository.
+	 * Registers a <var>RepositoryListener</var> that will receive notifications of operations that are performed on
+	 * this repository.
 	 */
 	@Override
 	public void addRepositoryListener(RepositoryListener listener) {
@@ -83,7 +83,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryListener</tt> from this repository.
+	 * Removes a registered <var>RepositoryListener</var> from this repository.
 	 */
 	@Override
 	public void removeRepositoryListener(RepositoryListener listener) {
@@ -92,7 +92,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	/**
-	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that are
+	 * Registers a <var>RepositoryConnectionListener</var> that will receive notifications of operations that are
 	 * performed on any< connections that are created by this repository.
 	 */
 	@Override
@@ -101,7 +101,7 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this repository.
+	 * Removes a registered <var>RepositoryConnectionListener</var> from this repository.
 	 */
 	@Override
 	public void removeRepositoryConnectionListener(RepositoryConnectionListener listener) {
@@ -127,12 +127,12 @@ public class NotifyingRepositoryWrapper extends RepositoryWrapper implements Not
 	}
 
 	@Override
-	public void initialize() throws RepositoryException {
-		super.initialize();
+	public void init() throws RepositoryException {
+		super.init();
 
 		if (activated) {
 			for (RepositoryListener listener : listeners) {
-				listener.initialize(this);
+				listener.init(this);
 			}
 		}
 	}

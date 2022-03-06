@@ -12,6 +12,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
+
 import org.apache.commons.codec.Charsets;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -72,7 +74,7 @@ public class ConfigControllerTest {
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
 		request.setContent(
 				("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
-						.getBytes(Charsets.UTF_8));
+						.getBytes(StandardCharsets.UTF_8));
 
 		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(true);
 

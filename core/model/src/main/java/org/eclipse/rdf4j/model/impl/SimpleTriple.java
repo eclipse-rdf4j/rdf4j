@@ -44,9 +44,9 @@ public class SimpleTriple extends AbstractTriple {
 	 * Note that creating SimpleStatement objects directly via this constructor is not the recommended approach.
 	 * Instead, use an instance of {@link org.eclipse.rdf4j.model.ValueFactory} to create new Triple objects.
 	 *
-	 * @param subject   The triple's subject, must not be <tt>null</tt>.
-	 * @param predicate The triple's predicate, must not be <tt>null</tt>.
-	 * @param object    The triple's object, must not be <tt>null</tt>.
+	 * @param subject   The triple's subject, must not be <var>null</var>.
+	 * @param predicate The triple's predicate, must not be <var>null</var>.
+	 * @param object    The triple's object, must not be <var>null</var>.
 	 *
 	 * @see SimpleValueFactory#createTriple(Resource, IRI, Value)
 	 */

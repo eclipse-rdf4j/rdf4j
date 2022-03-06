@@ -1,4 +1,4 @@
-/******************************************************************************* 
+/*******************************************************************************
  * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -7,10 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
-import org.eclipse.rdf4j.model.Value;
 
 import com.google.common.base.Objects;
 
@@ -32,12 +29,12 @@ public class MemTriple implements Triple, MemResource {
 	/**
 	 * The list of statements for which this MemTriple is the subject.
 	 */
-	transient private volatile MemStatementList subjectStatements = null;
+	transient private final MemStatementList subjectStatements = new MemStatementList();
 
 	/**
 	 * The list of statements for which this MemTriple is the object.
 	 */
-	transient private volatile MemStatementList objectStatements = null;
+	transient private final MemStatementList objectStatements = new MemStatementList();
 
 	public MemTriple(Object creator, MemResource subject, MemIRI predicate, MemValue object) {
 		this.creator = creator;
@@ -79,9 +76,6 @@ public class MemTriple implements Triple, MemResource {
 
 	@Override
 	public MemStatementList getObjectStatementList() {
-		if (objectStatements == null) {
-			return EMPTY_LIST;
-		}
 		return objectStatements;
 	}
 
@@ -92,9 +86,7 @@ public class MemTriple implements Triple, MemResource {
 
 	@Override
 	public void addObjectStatement(MemStatement st) {
-		if (objectStatements == null) {
-			objectStatements = new MemStatementList(4);
-		}
+
 		objectStatements.add(st);
 	}
 
@@ -102,28 +94,17 @@ public class MemTriple implements Triple, MemResource {
 	public void removeObjectStatement(MemStatement st) {
 		objectStatements.remove(st);
 
-		if (objectStatements.isEmpty()) {
-			objectStatements = null;
-		}
-
 	}
 
 	@Override
 	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) {
-		if (objectStatements != null) {
-			objectStatements.cleanSnapshots(currentSnapshot);
+		objectStatements.cleanSnapshots(currentSnapshot);
 
-			if (objectStatements.isEmpty()) {
-				objectStatements = null;
-			}
-		}
 	}
 
 	@Override
 	public MemStatementList getSubjectStatementList() {
-		if (subjectStatements == null) {
-			return EMPTY_LIST;
-		}
+
 		return subjectStatements;
 	}
 
@@ -134,9 +115,7 @@ public class MemTriple implements Triple, MemResource {
 
 	@Override
 	public void addSubjectStatement(MemStatement st) {
-		if (subjectStatements == null) {
-			subjectStatements = new MemStatementList(4);
-		}
+
 		subjectStatements.add(st);
 	}
 
@@ -144,20 +123,12 @@ public class MemTriple implements Triple, MemResource {
 	public void removeSubjectStatement(MemStatement st) {
 		subjectStatements.remove(st);
 
-		if (subjectStatements.isEmpty()) {
-			subjectStatements = null;
-		}
 	}
 
 	@Override
 	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) {
-		if (subjectStatements != null) {
-			subjectStatements.cleanSnapshots(currentSnapshot);
+		subjectStatements.cleanSnapshots(currentSnapshot);
 
-			if (subjectStatements.isEmpty()) {
-				subjectStatements = null;
-			}
-		}
 	}
 
 	@Override
@@ -186,17 +157,17 @@ public class MemTriple implements Triple, MemResource {
 	}
 
 	@Override
-	public Resource getSubject() {
+	public MemResource getSubject() {
 		return subject;
 	}
 
 	@Override
-	public IRI getPredicate() {
+	public MemIRI getPredicate() {
 		return predicate;
 	}
 
 	@Override
-	public Value getObject() {
+	public MemValue getObject() {
 		return object;
 	}
 

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.rio.turtle;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
+import org.eclipse.rdf4j.testsuite.rio.turtle.TurtleParserTestCase;
 
 import junit.framework.Test;
 

@@ -13,8 +13,7 @@ package org.eclipse.rdf4j.http.client;
  *
  * @author James Leigh
  */
-@SuppressWarnings("deprecation")
-public interface SessionManagerDependent extends SesameClientDependent {
+public interface SessionManagerDependent {
 
 	/**
 	 * {@link HttpClientSessionManager} that has been assigned or has been used by this object. The life cycle might not
@@ -23,7 +22,6 @@ public interface SessionManagerDependent extends SesameClientDependent {
 	 *
 	 * @return a {@link HttpClientSessionManager} instance or null
 	 */
-	@Override
 	HttpClientSessionManager getHttpClientSessionManager();
 
 	/**
@@ -33,7 +31,6 @@ public interface SessionManagerDependent extends SesameClientDependent {
 	 *
 	 * @param client
 	 */
-	@Override
 	void setHttpClientSessionManager(HttpClientSessionManager client);
 
 }

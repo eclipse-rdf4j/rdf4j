@@ -19,25 +19,25 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  */
 public class RepositoryConfigSchema {
 
-	/** The HTTPRepository schema namespace (<tt>http://www.openrdf.org/config/repository#</tt>). */
+	/** The HTTPRepository schema namespace (<var>http://www.openrdf.org/config/repository#</var>). */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository#";
 
-	/** <tt>http://www.openrdf.org/config/repository#RepositoryContext</tt> */
+	/** <var>http://www.openrdf.org/config/repository#RepositoryContext</var> */
 	public final static IRI REPOSITORY_CONTEXT;
 
-	/** <tt>http://www.openrdf.org/config/repository#Repository</tt> */
+	/** <var>http://www.openrdf.org/config/repository#Repository</var> */
 	public final static IRI REPOSITORY;
 
-	/** <tt>http://www.openrdf.org/config/repository#repositoryID</tt> */
+	/** <var>http://www.openrdf.org/config/repository#repositoryID</var> */
 	public final static IRI REPOSITORYID;
 
-	/** <tt>http://www.openrdf.org/config/repository#repositoryImpl</tt> */
+	/** <var>http://www.openrdf.org/config/repository#repositoryImpl</var> */
 	public final static IRI REPOSITORYIMPL;
 
-	/** <tt>http://www.openrdf.org/config/repository#repositoryType</tt> */
+	/** <var>http://www.openrdf.org/config/repository#repositoryType</var> */
 	public final static IRI REPOSITORYTYPE;
 
-	/** <tt>http://www.openrdf.org/config/repository#delegate</tt> */
+	/** <var>http://www.openrdf.org/config/repository#delegate</var> */
 	public final static IRI DELEGATE;
 
 	static {

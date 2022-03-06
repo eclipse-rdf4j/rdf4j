@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -32,6 +33,11 @@ public class NumericMemLiteral extends MemLiteral {
 	 *--------------*/
 
 	public NumericMemLiteral(Object creator, String label, Number number, IRI datatype) {
+		super(creator, label, datatype);
+		this.number = number;
+	}
+
+	public NumericMemLiteral(Object creator, String label, Number number, CoreDatatype datatype) {
 		super(creator, label, datatype);
 		this.number = number;
 	}

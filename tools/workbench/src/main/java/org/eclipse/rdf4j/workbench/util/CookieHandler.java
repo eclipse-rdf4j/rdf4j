@@ -11,6 +11,7 @@ import static java.lang.Integer.parseInt;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.http.Cookie;
@@ -52,7 +53,7 @@ public class CookieHandler {
 	private void addCookie(final WorkbenchRequest req, final HttpServletResponse resp, final String name)
 			throws UnsupportedEncodingException {
 		final String raw = req.getParameter(name);
-		final String value = URLEncoder.encode(raw, "UTF-8");
+		final String value = URLEncoder.encode(raw, StandardCharsets.UTF_8);
 		LOGGER.info("name: {}\nvalue: {}", name, value);
 		LOGGER.info("un-encoded value: {}\n--", raw);
 		final Cookie cookie = new Cookie(name, value);

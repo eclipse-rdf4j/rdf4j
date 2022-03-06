@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-geosparql-testsuite</artifactId>
-	<name>RDF4J GeoSPARQL compliance test suite</name>
+	<name>RDF4J: GeoSPARQL compliance test suite</name>
 	<description>Test suite for the GeoSPARQL query language</description>
 	<dependencies>
 		<dependency>

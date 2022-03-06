@@ -55,9 +55,9 @@ public class SimpleStatement extends AbstractStatement {
 	 * Instead, use a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your repository or by
 	 * using {@link org.eclipse.rdf4j.model.impl.SimpleValueFactory#getInstance()}) to create new Statement objects.
 	 *
-	 * @param subject   The statement's subject, must not be <tt>null</tt>.
-	 * @param predicate The statement's predicate, must not be <tt>null</tt>.
-	 * @param object    The statement's object, must not be <tt>null</tt>.
+	 * @param subject   The statement's subject, must not be <var>null</var>.
+	 * @param predicate The statement's predicate, must not be <var>null</var>.
+	 * @param object    The statement's object, must not be <var>null</var>.
 	 * @see org.eclipse.rdf4j.model.impl.SimpleValueFactory#createStatement(Resource, IRI, Value)
 	 */
 	protected SimpleStatement(Resource subject, IRI predicate, Value object) {
@@ -86,6 +86,18 @@ public class SimpleStatement extends AbstractStatement {
 	@Override
 	public Value getObject() {
 		return object;
+	}
+
+	public boolean exactSameSubject(Resource subject) {
+		return subject == this.subject;
+	}
+
+	public boolean exactSamePredicate(IRI predicate) {
+		return predicate == this.predicate;
+	}
+
+	public boolean exactSameObject(Value object) {
+		return object == this.object;
 	}
 
 	// Implements Statement.getContext()

@@ -16,10 +16,27 @@ import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.COALESCE
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.AlternativePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePredicatePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.NegatedPropertySet;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.OneOrMorePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePathOrInversePredicatePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.SequencePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrMorePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrOnePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
+import org.eclipse.rdf4j.sparqlbuilder.core.Assignable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfValue;
 
 /**
  * A class with static methods to create SPARQL expressions. Obviously there's some more flushing out TODO still
@@ -205,6 +222,10 @@ public class Expressions {
 	}
 
 	public static Expression<?> custom(Iri functionIri, Operand... operands) {
+		return new CustomFunction(functionIri).addOperand(operands);
+	}
+
+	public static Expression<?> custom(IRI functionIri, Operand... operands) {
 		return new CustomFunction(functionIri).addOperand(operands);
 	}
 
@@ -576,5 +597,37 @@ public class Expressions {
 
 	public static Aggregate sum(Operand operand) {
 		return new Aggregate(SparqlAggregate.SUM).addOperand(operand);
+	}
+
+	public static Bind bind(Assignable exp, Variable var) {
+		return new Bind(exp, var);
+	}
+
+	public static Expression<?> notIn(Variable var, RdfValue... options) {
+		return new NotIn(var, options);
+	}
+
+	public static Expression<?> in(Variable var, RdfValue... options) {
+		return new In(var, options);
+	}
+
+	public static Expression<?> strdt(Operand lexicalForm, Operand datatype) {
+		return function(SparqlFunction.STRDT, lexicalForm, datatype);
+	}
+
+	public static Expression<?> strlen(Operand operand) {
+		return function(SparqlFunction.STRLEN, operand);
+	}
+
+	public static Expression<?> isBlank(Variable var) {
+		return function(SparqlFunction.IS_BLANK, var);
+	}
+
+	public static Expression<?> datatype(Variable var) {
+		return function(SparqlFunction.DATATYPE, var);
+	}
+
+	public static Expression<?> iff(Operand testExp, Operand thenExp, Operand elseExp) {
+		return function(SparqlFunction.IF, testExp, thenExp, elseExp);
 	}
 }

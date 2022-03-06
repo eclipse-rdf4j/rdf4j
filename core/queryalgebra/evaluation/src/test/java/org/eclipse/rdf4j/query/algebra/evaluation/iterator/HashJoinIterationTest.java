@@ -13,7 +13,7 @@ import static org.junit.Assert.assertFalse;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -28,7 +28,7 @@ import org.junit.Test;
  */
 public class HashJoinIterationTest {
 
-	private final ValueFactory vf = ValueFactoryImpl.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
 

@@ -55,7 +55,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
-import org.eclipse.rdf4j.rio.RDFParser.DatatypeHandling;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -117,12 +116,11 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		remoteRepositories = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
 			HTTPRepository r = new HTTPRepository(getRepositoryUrl(i));
-			r.initialize();
+			r.init();
 			remoteRepositories.add(r);
 		}
 
 		localRepository = new SailRepository(new MemoryStore());
-		localRepository.initialize();
 	}
 
 	/**
@@ -556,7 +554,6 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFile).orElseThrow(Rio.unsupportedFormat(resultFile));
 
 		RDFParser parser = Rio.createParser(rdfFormat);
-		parser.setDatatypeHandling(DatatypeHandling.IGNORE);
 		parser.setPreserveBNodeIDs(true);
 		parser.setValueFactory(SimpleValueFactory.getInstance());
 

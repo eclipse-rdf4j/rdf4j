@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-solr-compliance</artifactId>
-	<name>RDF4J Solr Sail Tests</name>
+	<name>RDF4J: Solr Sail Tests</name>
 	<description>Tests for Solr Sail.</description>
 	<properties>
 		<!-- used to set up embedded solr server in integration tests -->
@@ -70,60 +70,22 @@
 					<groupId>org.apache.logging.log4j</groupId>
 					<artifactId>log4j-slf4j-impl</artifactId>
 				</exclusion>
+				<exclusion>
+					<groupId>jdk.tools</groupId>
+					<artifactId>jdk.tools</artifactId>
+				</exclusion>
 			</exclusions>
 		</dependency>
-		<dependency>
-			<groupId>com.google.guava</groupId>
-			<artifactId>guava</artifactId>
-			<!-- override managed dependency for backward compatibility with solr test rig -->
-			<version>18.0</version>
-			<!--$NO-MVN-MAN-VER$ -->
-			<scope>test</scope>
-		</dependency>
 	</dependencies>
-	<profiles>
-		<profile>
-			<id>jdk9</id>
-			<activation>
-				<jdk>[9,)</jdk>
-			</activation>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>org.apache.maven.plugins</groupId>
-						<artifactId>maven-failsafe-plugin</artifactId>
-						<configuration>
-							<forkCount>0</forkCount>
-						</configuration>
-					</plugin>
-				</plugins>
-			</build>
-			<dependencies>
-				<dependency>
-					<groupId>org.apache.solr</groupId>
-					<artifactId>solr-core</artifactId>
-					<version>${solr.version}</version>
-					<optional>true</optional>
-					<exclusions>
-						<exclusion>
-							<groupId>org.apache.logging.log4j</groupId>
-							<artifactId>log4j-core</artifactId>
-						</exclusion>
-						<exclusion>
-							<groupId>org.apache.logging.log4j</groupId>
-							<artifactId>log4j-slf4j-impl</artifactId>
-						</exclusion>
-						<exclusion>
-							<groupId>jdk.tools</groupId>
-							<artifactId>jdk.tools</artifactId>
-						</exclusion>
-					</exclusions>
-				</dependency>
-			</dependencies>
-		</profile>
-	</profiles>
 	<build>
 		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<configuration>
+					<forkCount>0</forkCount>
+				</configuration>
+			</plugin>
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>properties-maven-plugin</artifactId>

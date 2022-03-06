@@ -8,7 +8,7 @@
 	</parent>
 	<artifactId>rdf4j-http-workbench</artifactId>
 	<packaging>war</packaging>
-	<name>RDF4J Workbench</name>
+	<name>RDF4J: Workbench</name>
 	<description>Workbench to interact with RDF4J servers.</description>
 	<dependencies>
 		<dependency>

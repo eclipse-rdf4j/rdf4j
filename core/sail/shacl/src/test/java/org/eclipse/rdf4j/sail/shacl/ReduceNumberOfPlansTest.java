@@ -14,7 +14,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Håvard Ottestad
@@ -35,6 +35,8 @@ public class ReduceNumberOfPlansTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.init();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.ttl");
+
+		addDummyData(shaclSail);
 
 		try (ShaclSailConnection connection = (ShaclSailConnection) shaclSail.getConnection()) {
 			connection.begin();
@@ -81,6 +83,8 @@ public class ReduceNumberOfPlansTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.init();
 		Utils.loadShapeData(shaclSail, "reduceNumberOfPlansTest/shacl.ttl");
+
+		addDummyData(shaclSail);
 
 		try (ShaclSailConnection connection = (ShaclSailConnection) shaclSail.getConnection()) {
 
@@ -142,6 +146,14 @@ public class ReduceNumberOfPlansTest {
 			shaclSail.shutDown();
 		}
 
+	}
+
+	private void addDummyData(ShaclSail shaclSail) {
+		try (ShaclSailConnection connection = (ShaclSailConnection) shaclSail.getConnection()) {
+			connection.begin();
+			connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+			connection.commit();
+		}
 	}
 
 	private void refreshAddedRemovedStatements(ShaclSailConnection connection) {

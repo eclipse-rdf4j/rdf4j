@@ -22,9 +22,9 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.InferencingTest;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.testsuite.sail.InferencingTest;
 import org.junit.Test;
 
 public class MemInferencingTest extends InferencingTest {
@@ -41,7 +41,6 @@ public class MemInferencingTest extends InferencingTest {
 
 		SchemaCachingRDFSInferencer sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(datadir), true);
 		SailRepository repo = new SailRepository(sailStack);
-		repo.initialize();
 		ValueFactory vf = repo.getValueFactory();
 
 		IRI s1 = vf.createIRI("foo:s1");
@@ -60,7 +59,7 @@ public class MemInferencingTest extends InferencingTest {
 		// re-init
 //		sailStack = new SchemaCachingRDFSInferencer(new MemoryStore(datadir), true);
 //		repo = new SailRepository(sailStack);
-		repo.initialize();
+		repo.init();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
 			assertTrue(conn.hasStatement(s1, RDF.TYPE, c2, true));
@@ -154,7 +153,6 @@ public class MemInferencingTest extends InferencingTest {
 
 		SailRepository sailRepository1 = new SailRepository(SchemaCachingRDFSInferencer.fastInstantiateFrom(
 				(SchemaCachingRDFSInferencer) ((SailRepository) sailRepository).getSail(), new MemoryStore()));
-		sailRepository1.initialize();
 
 		try (RepositoryConnection connection = sailRepository1.getConnection()) {
 			connection.add(vf.createStatement(aInstance, RDF.TYPE, A));

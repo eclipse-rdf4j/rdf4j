@@ -11,10 +11,9 @@ package org.eclipse.rdf4j.common.platform.support;
 import java.io.File;
 
 import org.eclipse.rdf4j.common.platform.AbstractPlatform;
-import org.eclipse.rdf4j.common.platform.ProcessLauncher;
 
 /**
- * Platform implementation for all Windows' platforms.
+ * Platform implementation for MS-Windows
  */
 public class WindowsPlatform extends AbstractPlatform {
 
@@ -25,31 +24,11 @@ public class WindowsPlatform extends AbstractPlatform {
 	public static final String ADUNA_APPLICATION_DATA = "RDF4J";
 
 	/**
-	 * indication whether this is a windows9x platform: 0 means not initialized, -1 means false, 1 means true
-	 */
-	@Deprecated
-	private int isWin9x = 0;
-
-	/**
 	 * Returns the name of this windows platform.
 	 */
 	@Override
 	public String getName() {
-		if (isWin9x()) {
-			return "Windows 9x";
-		} else if (isWinNT()) {
-			return "Windows NT";
-		} else if (isWin2000()) {
-			return "Windows 2000";
-		} else if (isWinXP()) {
-			return "Windows XP";
-		} else if (isWin2003()) {
-			return "Windows 2003";
-		} else if (isWinVista()) {
-			return "Windows Vista";
-		} else {
-			return "Windows";
-		}
+		return "Windows";
 	}
 
 	@Override
@@ -72,7 +51,6 @@ public class WindowsPlatform extends AbstractPlatform {
 				}
 			}
 		}
-
 		return result;
 	}
 
@@ -98,98 +76,12 @@ public class WindowsPlatform extends AbstractPlatform {
 	}
 
 	/**
-	 * Warns when the platform is not a Windows 9x, NT or 2000 platform.
-	 *
-	 * @return true when not Win9x/NT/2000
-	 */
-	@Deprecated
-	public boolean warnsWhenOpeningExecutable() {
-		return !isWin9x() && !isWinNT() && !isWin2000();
-	}
-
-	/**
-	 * Check whether this is windows 9x, or windows NT and higher.
-	 *
-	 * @return true when Win9x or higher
-	 */
-	@Deprecated
-	public boolean isWin9x() {
-		if (isWin9x == 0) {
-			// let's see if this is windows 9x
-			try {
-				ProcessLauncher launcher = new ProcessLauncher(new String[] { "cmd", "/c", "echo" });
-				launcher.launch();
-				isWin9x = -1;
-			} catch (ProcessLauncher.CommandNotExistsException nosuchcommand) {
-				isWin9x = 1;
-			} catch (Exception e) {
-				logger.error("Unexpected exception while checking isWin9x", e);
-			}
-		}
-		return isWin9x == 1;
-	}
-
-	/**
-	 * Check whether this is an Windows NT environment.
-	 *
-	 * @return true when WinNT
-	 */
-	@Deprecated
-	public boolean isWinNT() {
-		return System.getProperty("os.name").toLowerCase().indexOf("nt") >= 0;
-	}
-
-	/**
-	 * Check whether this is an Windows 2000 environment.
-	 *
-	 * @return true when Win2000
-	 */
-	@Deprecated
-	public boolean isWin2000() {
-		return System.getProperty("os.name").indexOf("2000") >= 0;
-	}
-
-	/**
-	 * Check whether this is an Windows XP environment.
-	 *
-	 * @return true wen WinXP
-	 */
-	@Deprecated
-	public boolean isWinXP() {
-		return System.getProperty("os.name").toLowerCase().indexOf("xp") >= 0;
-	}
-
-	/**
-	 * Check whether this is an Windows 2003 environment.
-	 *
-	 * @return true when Win2003
-	 */
-	@Deprecated
-	public boolean isWin2003() {
-		return System.getProperty("os.name").indexOf("2003") >= 0;
-	}
-
-	/**
-	 * Check whether this is an Windows Vista environment.
-	 *
-	 * @return true when Vista
-	 */
-	@Deprecated
-	public boolean isWinVista() {
-		return System.getProperty("os.name").indexOf("Vista") >= 0;
-	}
-
-	/**
-	 * Returns appropriate command shell for the current windows shell.
+	 * Returns the command shell for MS-Windows
 	 *
 	 * @return name of the command shell
 	 */
 	public String getCommandShell() {
-		if (isWin9x()) {
-			return "command.com";
-		} else {
-			return "cmd";
-		}
+		return "cmd";
 	}
 
 	@Override

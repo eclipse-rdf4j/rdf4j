@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-lucene-testsuite</artifactId>
-	<name>RDF4J Lucene Sail Tests</name>
+	<name>RDF4J: Lucene Sail Tests</name>
 	<description>Generic tests for Lucene Sail implementations.</description>
 	<dependencies>
 		<dependency>
@@ -18,11 +18,6 @@
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-queryresultio-text</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-queryparser-serql</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>

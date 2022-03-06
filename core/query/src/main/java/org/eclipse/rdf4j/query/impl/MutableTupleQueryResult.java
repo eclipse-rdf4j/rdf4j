@@ -41,13 +41,13 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	/**
 	 * The index of the next element that will be returned by a call to {@link #next()}.
 	 */
-	private volatile int currentIndex = 0;
+	private int currentIndex = 0;
 
 	/**
 	 * The index of the last element that was returned by a call to {@link #next()} or {@link #previous()}. Equal to -1
 	 * if there is no such element.
 	 */
-	private volatile int lastReturned = -1;
+	private int lastReturned = -1;
 
 	/*--------------*
 	 * Constructors *
@@ -159,8 +159,8 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	 * Inserts the specified binding set into the list. The binding set is inserted immediately before the next element
 	 * that would be returned by {@link #next()}, if any, and after the next element that would be returned by
 	 * {@link #previous}, if any. (If the table contains no binding sets, the new element becomes the sole element on
-	 * the table.) The new element is inserted before the implicit cursor: a subsequent call to <tt>next()</tt> would be
-	 * unaffected, and a subsequent call to <tt>previous()</tt> would return the new binding set.
+	 * the table.) The new element is inserted before the implicit cursor: a subsequent call to <var>next()</var> would
+	 * be unaffected, and a subsequent call to <var>previous()</var> would return the new binding set.
 	 *
 	 * @param bindingSet The binding set to insert.
 	 */

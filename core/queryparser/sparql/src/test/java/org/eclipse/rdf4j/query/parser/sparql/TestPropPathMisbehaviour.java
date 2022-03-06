@@ -14,7 +14,9 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -53,8 +55,11 @@ public class TestPropPathMisbehaviour {
 		ParsedQuery q = parser.parseQuery(query1, "http://base.org/");
 
 		assertNotNull(q);
-		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
-		Projection proj = (Projection) q.getTupleExpr();
+		TupleExpr tupleExpr = q.getTupleExpr();
+		assertTrue("expect queryroot", tupleExpr instanceof QueryRoot);
+		tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		assertTrue("expect projection", tupleExpr instanceof Projection);
+		Projection proj = (Projection) tupleExpr;
 
 		assertTrue("expect join", proj.getArg() instanceof Join);
 		assertTrue("expect left arg to be ALP", ((Join) proj.getArg()).getLeftArg() instanceof ArbitraryLengthPath);
@@ -78,8 +83,11 @@ public class TestPropPathMisbehaviour {
 		ParsedQuery q = parser.parseQuery(query1, "http://base.org/");
 
 		assertNotNull(q);
-		assertTrue("expect projection", q.getTupleExpr() instanceof Projection);
-		Projection proj = (Projection) q.getTupleExpr();
+		TupleExpr tupleExpr = q.getTupleExpr();
+		assertTrue("expect queryroot", tupleExpr instanceof QueryRoot);
+		tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		assertTrue("expect projection", tupleExpr instanceof Projection);
+		Projection proj = (Projection) tupleExpr;
 
 		assertTrue("expect join", proj.getArg() instanceof Join);
 		assertTrue("expect left arg to be ALP", ((Join) proj.getArg()).getLeftArg() instanceof ArbitraryLengthPath);

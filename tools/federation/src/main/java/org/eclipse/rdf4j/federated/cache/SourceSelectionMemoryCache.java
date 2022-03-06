@@ -119,10 +119,9 @@ public class SourceSelectionMemoryCache implements SourceSelectionCache {
 
 		/**
 		 * The {@link StatementSourceAssurance} for the given {@link Endpoint},
-		 * {@link StatementSourceAssurance#POSSIBLY_HAS_STATEMENTS if unknown.
+		 * {@link StatementSourceAssurance#POSSIBLY_HAS_STATEMENTS if unknown}.
 		 *
 		 * @param e
-		 * @return
 		 */
 		public StatementSourceAssurance getAssurance(Endpoint e) {
 			return endpointToInformation.getOrDefault(e.getId(), StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS);

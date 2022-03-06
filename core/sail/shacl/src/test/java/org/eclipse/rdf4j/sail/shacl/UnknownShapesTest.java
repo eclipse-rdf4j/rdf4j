@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -38,7 +38,7 @@ public class UnknownShapesTest {
 		MyAppender newAppender = new MyAppender();
 		root.addAppender(newAppender);
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("unknownProperties.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("unknownProperties.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -62,7 +62,7 @@ public class UnknownShapesTest {
 
 	}
 
-	@Ignore
+	@Disabled
 	@Test
 	public void testComplexPath() throws IOException, InterruptedException {
 		ch.qos.logback.classic.Logger root = (ch.qos.logback.classic.Logger) LoggerFactory
@@ -71,7 +71,7 @@ public class UnknownShapesTest {
 		MyAppender newAppender = new MyAppender();
 		root.addAppender(newAppender);
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("complexPath.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("complexPath.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();

@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query;
 
 import java.io.InputStream;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -23,7 +24,7 @@ import java.util.stream.Stream;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
@@ -63,7 +64,7 @@ public class QueryResults extends Iterations {
 	 * Get a {@link Model} containing all elements obtained from the specified query result.
 	 *
 	 * @param iteration the source iteration to get the statements from. This can be a {@link GraphQueryResult}, a
-	 *                  {@link RepositoryResult&lt;Statement&gt;}, or any other instance of {@link CloseableIteration
+	 *                  {@link RepositoryResult &lt;Statement&gt;}, or any other instance of {@link CloseableIteration
 	 *                  &lt;Statement&gt;}
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
@@ -76,8 +77,8 @@ public class QueryResults extends Iterations {
 	 * Get a {@link Model} containing all elements obtained from the specified query result.
 	 *
 	 * @param iteration    the source iteration to get the statements from. This can be a {@link GraphQueryResult}, a
-	 *                     {@link RepositoryResult&lt;Statement&gt;}, or any other instance of {@link CloseableIteration
-	 *                     &lt;Statement&gt;}
+	 *                     {@link RepositoryResult &lt;Statement&gt;}, or any other instance of
+	 *                     {@link CloseableIteration &lt;Statement&gt;}
 	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
 	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
 	 */
@@ -214,9 +215,10 @@ public class QueryResults extends Iterations {
 	 * @param format  The {@link RDFFormat} of the RDF document.
 	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
 	 */
-	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format)
+	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format,
+			WeakReference<?> callerReference)
 			throws UnsupportedRDFormatException {
-		return parseGraphBackground(in, baseURI, Rio.createParser(format));
+		return parseGraphBackground(in, baseURI, Rio.createParser(format), callerReference);
 	}
 
 	/**
@@ -230,9 +232,11 @@ public class QueryResults extends Iterations {
 	 * @param parser  The {@link RDFParser}.
 	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
 	 */
-	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser) {
+	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser,
+			WeakReference<?> callerReference) {
 		RDFFormat format = parser.getRDFFormat();
-		BackgroundGraphResult result = new BackgroundGraphResult(new QueueCursor<>(new LinkedBlockingQueue<>(1)),
+		BackgroundGraphResult result = new BackgroundGraphResult(
+				new QueueCursor<>(new LinkedBlockingQueue<>(1), callerReference),
 				parser, in, format.getCharset(), baseURI);
 		boolean allGood = false;
 		try {

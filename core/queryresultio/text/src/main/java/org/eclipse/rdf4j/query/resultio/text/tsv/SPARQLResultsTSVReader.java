@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.Reader;
 
 import com.opencsv.CSVReader;
+import com.opencsv.exceptions.CsvValidationException;
 
 /**
  * This reader respects the TSV semantics of RDF4J and does absolutely no processing except for splitting the line on
@@ -24,6 +25,15 @@ public class SPARQLResultsTSVReader extends CSVReader {
 	@Override
 	public String[] readNext() throws IOException {
 		String line = getNextLine();
-		return line == null ? null : validateResult(line.split("\t", -1));
+		if (line == null) {
+			return null;
+		}
+		String[] fields = line.split("\t", -1);
+		try {
+			validateResult(fields, linesRead);
+		} catch (CsvValidationException ex) {
+			throw new IOException(ex);
+		}
+		return fields;
 	}
 }

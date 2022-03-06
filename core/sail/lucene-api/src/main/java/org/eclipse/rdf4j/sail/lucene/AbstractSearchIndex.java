@@ -420,16 +420,6 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		}
 	}
 
-	/**
-	 * To be removed, prefer {@link #evaluate(SearchQueryEvaluator)}.
-	 */
-	@Override
-	@Deprecated
-	public Collection<BindingSet> evaluate(QuerySpec query) throws SailException {
-		Iterable<? extends DocumentScore> result = evaluateQuery(query);
-		return generateBindingSets(query, result);
-	}
-
 	@Override
 	public final Collection<BindingSet> evaluate(SearchQueryEvaluator evaluator) throws SailException {
 		if (evaluator instanceof QuerySpec) {
@@ -824,12 +814,6 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 	protected abstract void updateDocument(SearchDocument doc) throws IOException;
 
 	protected abstract void deleteDocument(SearchDocument doc) throws IOException;
-
-	/**
-	 * To be removed.
-	 */
-	@Deprecated
-	protected abstract SearchQuery parseQuery(String q, IRI property) throws MalformedQueryException;
 
 	protected abstract Iterable<? extends DocumentScore> query(Resource subject, String q, IRI property,
 			boolean highlight) throws MalformedQueryException, IOException;

@@ -59,7 +59,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 	 *---------*/
 
 	/**
-	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that are
+	 * Registers a <var>RepositoryConnectionInterceptor</var> that will receive notifications of operations that are
 	 * performed on this connection.
 	 */
 	@Override
@@ -69,7 +69,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 	}
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this connection.
+	 * Removes a registered <var>RepositoryConnectionInterceptor</var> from this connection.
 	 */
 	@Override
 	public void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {

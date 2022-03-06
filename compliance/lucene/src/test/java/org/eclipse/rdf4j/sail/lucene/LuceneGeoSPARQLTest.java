@@ -14,6 +14,7 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailGeoSPARQLTest;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 

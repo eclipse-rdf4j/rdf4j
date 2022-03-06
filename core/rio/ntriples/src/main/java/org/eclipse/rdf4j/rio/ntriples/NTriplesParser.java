@@ -61,7 +61,7 @@ public class NTriplesParser extends AbstractRDFParser {
 	}
 
 	/**
-	 * Creates a new NTriplesParser that will use the supplied <tt>ValueFactory</tt> to create RDF model objects.
+	 * Creates a new NTriplesParser that will use the supplied <var>ValueFactory</var> to create RDF model objects.
 	 *
 	 * @param valueFactory A ValueFactory.
 	 */

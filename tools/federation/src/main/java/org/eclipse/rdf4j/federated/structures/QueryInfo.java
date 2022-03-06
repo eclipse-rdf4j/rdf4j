@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -56,14 +57,11 @@ public class QueryInfo {
 
 	private final FederationContext federationContext;
 
+	private final FederationEvalStrategy strategy;
+
 	protected boolean done = false;
 
 	protected Set<ParallelTask<?>> scheduledSubtasks = ConcurrentHashMap.newKeySet();
-
-	public QueryInfo(String query, QueryType queryType, boolean incluedInferred,
-			FederationContext federationContext, Dataset dataset) {
-		this(query, null, queryType, 0, incluedInferred, federationContext, dataset);
-	}
 
 	/**
 	 *
@@ -76,7 +74,7 @@ public class QueryInfo {
 	 * @param dataset           the {@link Dataset}
 	 */
 	public QueryInfo(String query, String baseURI, QueryType queryType, int maxExecutionTime, boolean includeInferred,
-			FederationContext federationContext, Dataset dataset) {
+			FederationContext federationContext, FederationEvalStrategy strategy, Dataset dataset) {
 		super();
 		this.queryID = federationContext.getQueryManager().getNextQueryId();
 
@@ -92,12 +90,15 @@ public class QueryInfo {
 		this.maxExecutionTimeMs = _maxExecutionTime * 1000;
 		this.includeInferred = includeInferred;
 		this.start = System.currentTimeMillis();
+
+		this.strategy = strategy;
 	}
 
-	public QueryInfo(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			FederationContext federationContext, Dataset dataset) {
-		this(QueryStringUtil.toString(subj, pred, obj), QueryType.GET_STATEMENTS, includeInferred,
-				federationContext, dataset);
+	public QueryInfo(Resource subj, IRI pred, Value obj, int maxExecutionTime, boolean includeInferred,
+			FederationContext federationContext, FederationEvalStrategy strategy, Dataset dataset) {
+		this(QueryStringUtil.toString(subj, pred, obj), null, QueryType.GET_STATEMENTS, maxExecutionTime,
+				includeInferred,
+				federationContext, strategy, dataset);
 	}
 
 	public BigInteger getQueryID() {
@@ -125,6 +126,14 @@ public class QueryInfo {
 	 */
 	public String getBaseURI() {
 		return baseURI;
+	}
+
+	/**
+	 * 
+	 * @return the {@link FederationEvalStrategy} active in the current query context
+	 */
+	public FederationEvalStrategy getStrategy() {
+		return this.strategy;
 	}
 
 	/**

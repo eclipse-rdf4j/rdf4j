@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;

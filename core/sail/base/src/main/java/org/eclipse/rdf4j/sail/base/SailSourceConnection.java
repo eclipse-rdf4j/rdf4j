@@ -13,9 +13,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -42,8 +43,8 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.UpdateContext;
+import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSailConnection;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
-import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionBase;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +54,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author James Leigh
  */
-public abstract class SailSourceConnection extends NotifyingSailConnectionBase
+public abstract class SailSourceConnection extends AbstractNotifyingSailConnection
 		implements InferencerConnection, FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
@@ -244,8 +245,8 @@ public abstract class SailSourceConnection extends NotifyingSailConnectionBase
 			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
-
-			iteration = strategy.evaluate(tupleExpr, EmptyBindingSet.getInstance());
+			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
+			iteration = qes.evaluate(EmptyBindingSet.getInstance());
 			iteration = interlock(iteration, rdfDataset, branch);
 			allGood = true;
 			return iteration;

@@ -39,7 +39,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
 
-	private volatile CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private final CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
 
 	private List<BindingSet> scanList;
 
@@ -47,7 +47,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 
 	private Map<BindingSet, List<BindingSet>> hashTable;
 
-	private Set<String> joinAttributes;
+	private final Set<String> joinAttributes;
 
 	private BindingSet currentScanElem;
 

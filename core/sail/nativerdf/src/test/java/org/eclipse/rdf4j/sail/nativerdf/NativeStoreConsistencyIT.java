@@ -133,23 +133,27 @@ public class NativeStoreConsistencyIT {
 		// Step 6: computing the differences of the contents of the indices
 		logger.info("Computing differences of sets...");
 
-		Collection<? extends Statement> differenceA = RepositoryUtil.difference(spocStatements, psocStatements);
-		Collection<? extends Statement> differenceB = RepositoryUtil.difference(psocStatements, spocStatements);
+		if (!spocStatements.equals(psocStatements)) {
+			Model differenceA = new LinkedHashModel(spocStatements);
+			differenceA.removeAll(psocStatements);
+			Model differenceB = new LinkedHashModel(psocStatements);
+			differenceB.removeAll(spocStatements);
 
-		logger.info("Difference SPOC MINUS PSOC: " + differenceA.size());
-		logger.info("Difference PSOC MINUS SPOC: " + differenceB.size());
+			logger.info("Difference SPOC MINUS PSOC: " + differenceA.size());
+			logger.info("Difference PSOC MINUS SPOC: " + differenceB.size());
 
-		logger.info("Different statements in SPOC MINUS PSOC (Mind the contexts):");
-		for (Statement st : differenceA) {
-			logger.error("  * " + st);
+			logger.info("Different statements in SPOC MINUS PSOC (Mind the contexts):");
+			for (Statement st : differenceA) {
+				logger.error("  * " + st);
+			}
+
+			logger.info("Different statements in PSOC MINUS SPOC (Mind the contexts):");
+			for (Statement st : differenceB) {
+				logger.error("  * " + st);
+			}
+
+			assertEquals(0, differenceA.size());
+			assertEquals(0, differenceB.size());
 		}
-
-		logger.info("Different statements in PSOC MINUS SPOC (Mind the contexts):");
-		for (Statement st : differenceB) {
-			logger.error("  * " + st);
-		}
-
-		assertEquals(0, differenceA.size());
-		assertEquals(0, differenceB.size());
 	}
 }

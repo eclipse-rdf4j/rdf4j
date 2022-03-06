@@ -64,7 +64,7 @@ public abstract class AbstractFederatedServiceResolver implements FederatedServi
 	 *
 	 * @param serviceUrl locator for the federation service
 	 * @return the {@link FederatedService}, created fresh if necessary
-	 * @throws RepositoryException
+	 * @throws QueryEvaluationException
 	 */
 	@Override
 	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {

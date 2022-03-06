@@ -12,6 +12,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.junit.Test;
 
@@ -177,6 +178,9 @@ public class XMLDatatypeUtilTest {
 	private void testValidation(String[] values, IRI datatype, boolean validValues) {
 		for (String value : values) {
 			boolean result = XMLDatatypeUtil.isValidValue(value, datatype);
+			boolean resultCoreDatatype = XMLDatatypeUtil.isValidValue(value, CoreDatatype.from(datatype));
+			assertEquals(result, resultCoreDatatype);
+
 			if (validValues) {
 				if (!result) {
 					fail("value " + value + " should have validated for type " + datatype);

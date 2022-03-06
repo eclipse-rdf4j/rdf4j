@@ -1,4 +1,0 @@
-CONSTRUCT
-  {S} rdfs:subClassOf {<foo:Document>}
-FROM
-  {S} sesame:directSubClassOf {<foo:Document>}

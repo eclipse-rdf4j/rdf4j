@@ -43,7 +43,7 @@ public class SailRepositoryFactory implements RepositoryFactory {
 	 *---------*/
 
 	/**
-	 * Returns the repository's type: <tt>openrdf:SailRepository</tt>.
+	 * Returns the repository's type: <var>openrdf:SailRepository</var>.
 	 */
 	@Override
 	public String getRepositoryType() {

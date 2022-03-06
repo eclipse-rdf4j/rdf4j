@@ -22,9 +22,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.lucene.LuceneIndex;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
 import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
+import org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 /**
@@ -64,7 +64,6 @@ public class LuceneSailExample {
 
 		// create a Repository to access the sails
 		SailRepository repository = new SailRepository(lucenesail);
-		repository.initialize();
 
 		try ( // add some test data, the FOAF ont
 				SailRepositoryConnection connection = repository.getConnection()) {

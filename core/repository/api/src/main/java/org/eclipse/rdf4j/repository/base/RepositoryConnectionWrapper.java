@@ -13,8 +13,8 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;

@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.InsertData;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -175,6 +176,11 @@ public class SPARQLParser implements QueryParser {
 				// handle query operation
 
 				TupleExpr tupleExpr = buildQueryModel(qc);
+
+				// Ensure we always return a rooted query.
+				if (!(tupleExpr instanceof QueryRoot)) {
+					tupleExpr = new QueryRoot(tupleExpr);
+				}
 
 				ParsedQuery query;
 

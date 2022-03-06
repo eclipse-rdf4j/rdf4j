@@ -13,7 +13,6 @@ import java.util.Objects;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,7 +71,7 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 			public ValidationTuple next() throws SailException {
 				calculateNext();
 				ValidationTuple tuple = next;
-				if (GlobalValidationExecutionLogging.loggingEnabled) {
+				if (validationExecutionLogger.isEnabled()) {
 					validationExecutionLogger.log(depth(),
 							parent.getClass().getSimpleName() + ":UnBuffered" + name + ".next()", tuple, parent,
 							getId(), null);

@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin.function;
 
-import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.AFN;
@@ -23,8 +23,8 @@ public class Localname extends UnaryFunction {
 
 	@Override
 	protected Value evaluate(ValueFactory valueFactory, Value arg) throws ValueExprEvaluationException {
-		if (arg instanceof URI) {
-			URI uri = (URI) arg;
+		if (arg instanceof IRI) {
+			IRI uri = (IRI) arg;
 			return valueFactory.createLiteral(uri.getLocalName());
 		} else {
 			throw new ValueExprEvaluationException("Not a URI");

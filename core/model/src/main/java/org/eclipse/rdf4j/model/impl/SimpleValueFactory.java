@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.AbstractValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
@@ -31,13 +33,8 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * Default implementation of the {@link ValueFactory} interface.
  *
  * @author Arjohn Kampman
- * 
- * @implNote the implementation duplicates code from {@link AbstractValueFactory} - this is done to avoid deprecation
- *           warnings in end-user calling code - see https://github.com/eclipse/rdf4j/issues/2655. We can not
- *           remove/replace the abstract superclass without breaking binary compatibility so this will be handled in a
- *           followup, as part of a major release. See https://github.com/eclipse/rdf4j/issues/2663.
+ *
  */
-@SuppressWarnings("deprecation")
 public class SimpleValueFactory extends AbstractValueFactory {
 
 	/* Constants */
@@ -67,14 +64,14 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	/**
 	 * @category variables
-	 * 
+	 *
 	 *           The ID for the next bnode that is created.
 	 */
 	private int nextBNodeID;
 
 	/**
 	 * @category variables
-	 * 
+	 *
 	 *           The prefix for any new bnode IDs.
 	 */
 	private String bnodePrefix;
@@ -114,7 +111,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	@Override
 	public Literal createLiteral(String value) {
-		return new SimpleLiteral(value, XSD.Datatype.STRING);
+		return new SimpleLiteral(value, CoreDatatype.XSD.STRING);
 	}
 
 	@Override
@@ -148,7 +145,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	}
 
 	/**
-	 * Generates a new bnode prefix and resets <tt>nextBNodeID</tt> to <tt>1</tt> .
+	 * Generates a new bnode prefix and resets <var>nextBNodeID</var> to <var>1</var> .
 	 */
 	protected void initBNodeParams() {
 		// BNode prefix is based on currentTimeMillis(). Combined with a
@@ -176,7 +173,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(byte value) {
-		return createIntegerLiteral(value, XSD.Datatype.BYTE);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.BYTE);
 	}
 
 	/**
@@ -184,7 +181,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(short value) {
-		return createIntegerLiteral(value, XSD.Datatype.SHORT);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.SHORT);
 	}
 
 	/**
@@ -192,7 +189,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(int value) {
-		return createIntegerLiteral(value, XSD.Datatype.INT);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.INT);
 	}
 
 	/**
@@ -200,7 +197,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(long value) {
-		return createIntegerLiteral(value, XSD.Datatype.LONG);
+		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.LONG);
 	}
 
 	/**
@@ -219,7 +216,7 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(float value) {
-		return createFPLiteral(value, XSD.Datatype.FLOAT);
+		return createFPLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.FLOAT);
 	}
 
 	/**
@@ -227,17 +224,17 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 */
 	@Override
 	public Literal createLiteral(double value) {
-		return createFPLiteral(value, XSD.Datatype.DOUBLE);
+		return createFPLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.DOUBLE);
 	}
 
 	@Override
 	public Literal createLiteral(BigInteger bigInteger) {
-		return createIntegerLiteral(bigInteger, XSD.INTEGER);
+		return createIntegerLiteral(bigInteger, org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER);
 	}
 
 	@Override
 	public Literal createLiteral(BigDecimal bigDecimal) {
-		return createNumericLiteral(bigDecimal, XSD.DECIMAL);
+		return createNumericLiteral(bigDecimal, org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL);
 	}
 
 	/**
@@ -264,7 +261,18 @@ public class SimpleValueFactory extends AbstractValueFactory {
 		return new NumericLiteral(number, datatype);
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected Literal createNumericLiteral(Number number, XSD.Datatype datatype) {
+		if (number instanceof BigDecimal) {
+			return new DecimalLiteral((BigDecimal) number, datatype);
+		}
+		if (number instanceof BigInteger) {
+			return new IntegerLiteral((BigInteger) number, datatype);
+		}
+		return new NumericLiteral(number, datatype);
+	}
+
+	protected Literal createNumericLiteral(Number number, CoreDatatype datatype) {
 		if (number instanceof BigDecimal) {
 			return new DecimalLiteral((BigDecimal) number, datatype);
 		}
@@ -280,11 +288,11 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 *
 	 * @see XMLGregorianCalendar#toXMLFormat()
 	 * @see XMLGregorianCalendar#getXMLSchemaType()
-	 * @see XMLDatatypeUtil#qnameToURI(javax.xml.namespace.QName)
+	 * @see XMLDatatypeUtil#qnameToCoreDatatype(javax.xml.namespace.QName)
 	 */
 	@Override
 	public Literal createLiteral(XMLGregorianCalendar calendar) {
-		return createLiteral(calendar.toXMLFormat(), XMLDatatypeUtil.qnameToURI(calendar.getXMLSchemaType()));
+		return createLiteral(calendar.toXMLFormat(), XMLDatatypeUtil.qnameToCoreDatatype(calendar.getXMLSchemaType()));
 	}
 
 	/**

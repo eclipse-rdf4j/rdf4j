@@ -455,9 +455,9 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 * Gets all statements with a specific subject, predicate and/or object from the repository. The result is
 	 * optionally restricted to the specified set of named contexts.
 	 *
-	 * @param subj A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred A URI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj  A Value specifying the object, or <tt>null</tt> for a wildcard.
+	 * @param subj A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj  A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @return The statements matching the specified pattern. The result object is a {@link RepositoryResult} object, a
 	 *         lazy Iterator-like object containing {@link Statement}s and optionally throwing a
 	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
@@ -508,9 +508,9 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 * Checks whether the repository contains statements with a specific subject, predicate and/or object, optionally in
 	 * the specified contexts.
 	 *
-	 * @param subj A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred A URI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj  A Value specifying the object, or <tt>null</tt> for a wildcard.
+	 * @param subj A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj  A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @return true If a matching statement is in the repository in the specified context, false otherwise.
 	 * @see #getReadContexts()
 	 * @see #isIncludeInferred()

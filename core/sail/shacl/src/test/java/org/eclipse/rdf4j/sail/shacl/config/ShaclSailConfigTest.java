@@ -12,18 +12,18 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_N
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.DASH_DATA_SHAPES;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.ECLIPSE_RDF4J_SHACL_EXTENSIONS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
-import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.IGNORE_NO_SHAPES_LOADED_EXCEPTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_VIOLATIONS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
-import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_RESULTS_LIMIT_TOTAL;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Model;
@@ -32,25 +32,16 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
-import org.junit.AfterClass;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class ShaclSailConfigTest {
-
-	@AfterClass
-	public static void afterClass() {
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	@Test
 	public void defaultsCorrectlySet() {
 		ShaclSailConfig shaclSailConfig = new ShaclSailConfig();
 		assertThat(shaclSailConfig.isParallelValidation()).isTrue();
-		assertThat(shaclSailConfig.isUndefinedTargetValidatesAllSubjects()).isFalse();
 		assertThat(shaclSailConfig.isLogValidationPlans()).isFalse();
 		assertThat(shaclSailConfig.isLogValidationViolations()).isFalse();
-		assertThat(shaclSailConfig.isIgnoreNoShapesLoadedException()).isFalse();
 		assertThat(shaclSailConfig.isValidationEnabled()).isTrue();
 		assertThat(shaclSailConfig.isCacheSelectNodes()).isTrue();
 		assertThat(shaclSailConfig.isGlobalLogValidationExecution()).isFalse();
@@ -59,8 +50,9 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isSerializableValidation()).isTrue();
 		assertThat(shaclSailConfig.isEclipseRdf4jShaclExtensions()).isFalse();
 		assertThat(shaclSailConfig.isDashDataShapes()).isFalse();
-		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(-1);
-		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(-1);
+		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(1000000);
+		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(1000);
+		assertThat(shaclSailConfig.getTransactionalValidationLimit()).isEqualTo(500000);
 
 	}
 
@@ -72,10 +64,8 @@ public class ShaclSailConfigTest {
 		ModelBuilder mb = new ModelBuilder().subject(implNode);
 
 		mb.add(PARALLEL_VALIDATION, true);
-		mb.add(UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS, true);
 		mb.add(LOG_VALIDATION_PLANS, true);
 		mb.add(LOG_VALIDATION_VIOLATIONS, true);
-		mb.add(IGNORE_NO_SHAPES_LOADED_EXCEPTION, true);
 		mb.add(VALIDATION_ENABLED, true);
 		mb.add(CACHE_SELECT_NODES, true);
 		mb.add(GLOBAL_LOG_VALIDATION_EXECUTION, true);
@@ -87,14 +77,13 @@ public class ShaclSailConfigTest {
 
 		mb.add(VALIDATION_RESULTS_LIMIT_TOTAL, 100);
 		mb.add(VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, 3);
+		mb.add(TRANSACTIONAL_VALIDATION_LIMIT, 9);
 
 		shaclSailConfig.parse(mb.build(), implNode);
 
 		assertThat(shaclSailConfig.isParallelValidation()).isTrue();
-		assertThat(shaclSailConfig.isUndefinedTargetValidatesAllSubjects()).isTrue();
 		assertThat(shaclSailConfig.isLogValidationPlans()).isTrue();
 		assertThat(shaclSailConfig.isLogValidationViolations()).isTrue();
-		assertThat(shaclSailConfig.isIgnoreNoShapesLoadedException()).isTrue();
 		assertThat(shaclSailConfig.isValidationEnabled()).isTrue();
 		assertThat(shaclSailConfig.isCacheSelectNodes()).isTrue();
 		assertThat(shaclSailConfig.isGlobalLogValidationExecution()).isTrue();
@@ -105,6 +94,7 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isDashDataShapes()).isTrue();
 		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(100);
 		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(3);
+		assertThat(shaclSailConfig.getTransactionalValidationLimit()).isEqualTo(9);
 
 	}
 
@@ -122,7 +112,7 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.isCacheSelectNodes()).isTrue();
 	}
 
-	@Test(expected = SailConfigException.class)
+	@Test
 	public void parseInvalidModelGivesCorrectException() {
 		ShaclSailConfig shaclSailConfig = new ShaclSailConfig();
 		BNode implNode = SimpleValueFactory.getInstance().createBNode();
@@ -130,8 +120,9 @@ public class ShaclSailConfigTest {
 
 		mb.add(PARALLEL_VALIDATION, "I'm not a boolean");
 
-		shaclSailConfig.parse(mb.build(), implNode);
-
+		assertThrows(SailConfigException.class, () -> {
+			shaclSailConfig.parse(mb.build(), implNode);
+		});
 	}
 
 	@Test
@@ -141,10 +132,8 @@ public class ShaclSailConfigTest {
 		Model m = new TreeModel();
 		Resource node = shaclSailConfig.export(m);
 		assertTrue(m.contains(node, PARALLEL_VALIDATION, null));
-		assertTrue(m.contains(node, UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS, null));
 		assertTrue(m.contains(node, LOG_VALIDATION_PLANS, null));
 		assertTrue(m.contains(node, LOG_VALIDATION_VIOLATIONS, null));
-		assertTrue(m.contains(node, IGNORE_NO_SHAPES_LOADED_EXCEPTION, null));
 		assertTrue(m.contains(node, VALIDATION_ENABLED, null));
 		assertTrue(m.contains(node, CACHE_SELECT_NODES, null));
 		assertTrue(m.contains(node, GLOBAL_LOG_VALIDATION_EXECUTION, null));
@@ -155,6 +144,7 @@ public class ShaclSailConfigTest {
 		assertTrue(m.contains(node, DASH_DATA_SHAPES, null));
 		assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_TOTAL, null));
 		assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, null));
+		assertTrue(m.contains(node, TRANSACTIONAL_VALIDATION_LIMIT, null));
 
 	}
 

@@ -13,13 +13,13 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iterator.ConvertingIterator;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
-import org.eclipse.rdf4j.util.iterators.ConvertingIterator;
 
 /**
  * An implementation of the {@link BindingSet} interface that is used to evaluate query object models. This

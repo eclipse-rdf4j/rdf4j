@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.UUID;
 
@@ -52,7 +53,7 @@ public class TestBnodesUniquenessInTransactions {
 
 	@BeforeEach
 	public void setUp() throws IOException {
-		dataDir = FileUtil.createTempDir(repositoryID);
+		dataDir = Files.createTempDirectory(repositoryID).toFile();
 
 		repository = new SailRepository(new NativeStore(dataDir));
 		repository.init();

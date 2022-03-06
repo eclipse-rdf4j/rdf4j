@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class ValidationReportTest {
 
@@ -36,7 +36,7 @@ public class ValidationReportTest {
 
 	@Test
 	public void simpleFirstTest() throws IOException {
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
@@ -97,7 +97,7 @@ public class ValidationReportTest {
 
 	@Test
 	public void withoutPathTest() throws IOException {
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("shaclValidateTarget.ttl", false);
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("shaclValidateTarget.ttl");
 
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
@@ -151,7 +151,7 @@ public class ValidationReportTest {
 	@Test
 	public void nestedLogicalOrSupport() throws IOException {
 
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/or/datatype/shacl.ttl", false);
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/or/datatype/shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
@@ -214,7 +214,7 @@ public class ValidationReportTest {
 	@Test
 	public void testHasValueIn() throws IOException {
 
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/hasValueIn/simple/shacl.ttl", false);
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/hasValueIn/simple/shacl.ttl");
 
 		ShaclSail sail = (ShaclSail) shaclSail.getSail();
 		sail.setDashDataShapes(true);
@@ -273,7 +273,7 @@ public class ValidationReportTest {
 	@Test
 	public void testHasValue() throws IOException {
 
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/hasValue/simple/shacl.ttl", false);
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/hasValue/simple/shacl.ttl");
 
 		ShaclSail sail = (ShaclSail) shaclSail.getSail();
 		sail.setDashDataShapes(true);

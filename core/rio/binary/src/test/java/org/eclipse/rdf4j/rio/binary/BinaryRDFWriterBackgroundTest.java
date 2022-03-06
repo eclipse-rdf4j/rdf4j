@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.rio.binary;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.ref.WeakReference;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -16,6 +17,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFWriterTest;
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
 
 /**
  * @author Arjohn Kampman
@@ -30,12 +32,18 @@ public class BinaryRDFWriterBackgroundTest extends RDFWriterTest {
 	protected Model parse(InputStream reader, String baseURI)
 			throws RDFParseException, RDFHandlerException, IOException {
 		return QueryResults
-				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
+				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat(),
+						new WeakReference<>(this)));
 	}
 
 	@Override
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
-		return new RioSetting[] {};
+		return new RioSetting[] {
+				BinaryRDFWriterSettings.VERSION,
+				BinaryRDFWriterSettings.BUFFER_SIZE,
+				BinaryRDFWriterSettings.CHARSET,
+				BinaryRDFWriterSettings.RECYCLE_IDS
+		};
 	}
 
 }

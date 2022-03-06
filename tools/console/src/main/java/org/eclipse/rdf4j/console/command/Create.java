@@ -16,6 +16,7 @@ import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -30,7 +31,6 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
-import org.eclipse.rdf4j.console.LockRemover;
 import org.eclipse.rdf4j.console.Util;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -174,7 +174,7 @@ public class Create extends ConsoleCommand {
 			if (templateStream != null) {
 				String template;
 				try {
-					template = IOUtil.readString(new InputStreamReader(templateStream, "UTF-8"));
+					template = IOUtil.readString(new InputStreamReader(templateStream, StandardCharsets.UTF_8));
 				} finally {
 					templateStream.close();
 				}
@@ -214,12 +214,8 @@ public class Create extends ConsoleCommand {
 							this.state.getManager().addRepositoryConfig(repConfig);
 							writeInfo("Repository created");
 						} catch (RepositoryReadOnlyException e) {
-							if (LockRemover.tryToRemoveLock(this.state.getManager().getSystemRepository(), consoleIO)) {
-								this.state.getManager().addRepositoryConfig(repConfig);
-								writeInfo("Repository created");
-							} else {
-								writeError("Failed to create repository", e);
-							}
+							this.state.getManager().addRepositoryConfig(repConfig);
+							writeInfo("Repository created");
 						}
 					} else {
 						writeln("Create aborted");

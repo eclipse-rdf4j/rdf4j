@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -56,7 +55,7 @@ public class TupleExprBuilderTest {
 		String query = "ASK WHERE { ?foo ?bar ?baz . } ORDER BY ?foo LIMIT 1";
 
 		try {
-			TupleExprBuilder builder = new TupleExprBuilder(ValueFactoryImpl.getInstance());
+			TupleExprBuilder builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
 			TupleExpr result = builder.visit(qc, null);
 			assertTrue(result instanceof Order);

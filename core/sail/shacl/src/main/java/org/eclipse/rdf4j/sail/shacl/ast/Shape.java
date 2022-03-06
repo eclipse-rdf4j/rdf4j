@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -369,7 +370,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		if (validationApproach == ValidationApproach.SPARQL) {
-			if (connectionsGroup.isExperimentalSparqlValidation()
+			if (connectionsGroup.isSparqlValidation()
 					&& Shape.this.getOptimalBulkValidationApproach() == ValidationApproach.SPARQL) {
 				logger.debug("Use validation approach {} for shape {}", validationApproach, this);
 				return Shape.this.generateSparqlValidationQuery(connectionsGroup, logValidationPlans, false, false,
@@ -424,8 +425,6 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	/**
 	 * For rsx:targetShape
-	 *
-	 * @return
 	 */
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,
@@ -558,15 +557,18 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		Model statements = toModel(new DynamicModel(new LinkedHashModelFactory()));
 		statements.setNamespace(SHACL.NS);
 		statements.setNamespace(XSD.NS);
+		statements.setNamespace(RSX.NS);
+		statements.setNamespace(RDFS.NS);
+		statements.setNamespace(RDF.NS);
 		WriterConfig writerConfig = new WriterConfig();
 		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
 		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
 
 		StringWriter stringWriter = new StringWriter();
 		Rio.write(statements, stringWriter, RDFFormat.TURTLE, writerConfig);
+
 		return stringWriter.toString()
-				.replace("@prefix sh: <http://www.w3.org/ns/shacl#> .", "")
-				.replace("@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .", "")
+				.replaceAll("(?m)^(@prefix)(.*)(\\.)$", "") // remove all lines that are prefix declarations
 				.trim();
 	}
 

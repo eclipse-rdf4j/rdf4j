@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.shacl.config;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
-import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.IGNORE_NO_SHAPES_LOADED_EXCEPTION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_VIOLATIONS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.NAMESPACE;
@@ -18,7 +17,6 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALID
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
-import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -39,10 +37,8 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 	public static final boolean PARALLEL_VALIDATION_DEFAULT = true;
-	public static final boolean UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT = false;
 	public static final boolean LOG_VALIDATION_PLANS_DEFAULT = false;
 	public static final boolean LOG_VALIDATION_VIOLATIONS_DEFAULT = false;
-	public static final boolean IGNORE_NO_SHAPES_LOADED_EXCEPTION_DEFAULT = false;
 	public static final boolean VALIDATION_ENABLED_DEFAULT = true;
 	public static final boolean CACHE_SELECT_NODES_DEFAULT = true;
 	public static final boolean GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT = false;
@@ -51,14 +47,13 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	public static final boolean SERIALIZABLE_VALIDATION_DEFAULT = true;
 	public static final boolean ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT = false;
 	public static final boolean DASH_DATA_SHAPES_DEFAULT = false;
-	public final static long VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT = -1;
-	public final static long VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT = -1;
+	public final static long VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT = 1_000_000;
+	public final static long VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT = 1_000;
+	public final static long TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT = 500_000;
 
 	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;
-	private boolean undefinedTargetValidatesAllSubjects = UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS_DEFAULT;
 	private boolean logValidationPlans = LOG_VALIDATION_PLANS_DEFAULT;
 	private boolean logValidationViolations = LOG_VALIDATION_VIOLATIONS_DEFAULT;
-	private boolean ignoreNoShapesLoadedException = IGNORE_NO_SHAPES_LOADED_EXCEPTION_DEFAULT;
 	private boolean validationEnabled = VALIDATION_ENABLED_DEFAULT;
 	private boolean cacheSelectNodes = CACHE_SELECT_NODES_DEFAULT;
 	private boolean globalLogValidationExecution = GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT;
@@ -69,6 +64,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	private boolean dashDataShapes = DASH_DATA_SHAPES_DEFAULT;
 	private long validationResultsLimitTotal = VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT;
 	private long validationResultsLimitPerConstraint = VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT;
+	private long transactionalValidationLimit = TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT;
 
 	public ShaclSailConfig() {
 		super(ShaclSailFactory.SAIL_TYPE);
@@ -76,16 +72,6 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 	public ShaclSailConfig(SailImplConfig delegate) {
 		super(ShaclSailFactory.SAIL_TYPE, delegate);
-	}
-
-	@Deprecated
-	public boolean isUndefinedTargetValidatesAllSubjects() {
-		return undefinedTargetValidatesAllSubjects;
-	}
-
-	@Deprecated
-	public void setUndefinedTargetValidatesAllSubjects(boolean undefinedTargetValidatesAllSubjects) {
-		this.undefinedTargetValidatesAllSubjects = undefinedTargetValidatesAllSubjects;
 	}
 
 	public boolean isLogValidationPlans() {
@@ -110,16 +96,6 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 	public void setGlobalLogValidationExecution(boolean globalLogValidationExecution) {
 		this.globalLogValidationExecution = globalLogValidationExecution;
-	}
-
-	@Deprecated
-	public boolean isIgnoreNoShapesLoadedException() {
-		return ignoreNoShapesLoadedException;
-	}
-
-	@Deprecated
-	public void setIgnoreNoShapesLoadedException(boolean ignoreNoShapesLoadedException) {
-		this.ignoreNoShapesLoadedException = ignoreNoShapesLoadedException;
 	}
 
 	public boolean isValidationEnabled() {
@@ -206,17 +182,22 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;
 	}
 
+	public long getTransactionalValidationLimit() {
+		return transactionalValidationLimit;
+	}
+
+	public void setTransactionalValidationLimit(long transactionalValidationLimit) {
+		this.transactionalValidationLimit = transactionalValidationLimit;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
 
 		m.setNamespace("sail-shacl", NAMESPACE);
 		m.add(implNode, PARALLEL_VALIDATION, BooleanLiteral.valueOf(isParallelValidation()));
-		m.add(implNode, UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS,
-				BooleanLiteral.valueOf(isUndefinedTargetValidatesAllSubjects()));
 		m.add(implNode, LOG_VALIDATION_PLANS, BooleanLiteral.valueOf(isLogValidationPlans()));
 		m.add(implNode, LOG_VALIDATION_VIOLATIONS, BooleanLiteral.valueOf(isLogValidationViolations()));
-		m.add(implNode, IGNORE_NO_SHAPES_LOADED_EXCEPTION, BooleanLiteral.valueOf(isIgnoreNoShapesLoadedException()));
 		m.add(implNode, VALIDATION_ENABLED, BooleanLiteral.valueOf(isValidationEnabled()));
 		m.add(implNode, CACHE_SELECT_NODES, BooleanLiteral.valueOf(isCacheSelectNodes()));
 		m.add(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, BooleanLiteral.valueOf(isGlobalLogValidationExecution()));
@@ -231,6 +212,9 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 				literal(getValidationResultsLimitTotal()));
 		m.add(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT,
 				literal(getValidationResultsLimitPerConstraint()));
+
+		m.add(implNode, ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT,
+				literal(getTransactionalValidationLimit()));
 		return implNode;
 	}
 
@@ -242,17 +226,11 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 			Models.objectLiteral(m.getStatements(implNode, PARALLEL_VALIDATION, null))
 					.ifPresent(l -> setParallelValidation(l.booleanValue()));
 
-			Models.objectLiteral(m.getStatements(implNode, UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS, null))
-					.ifPresent(l -> setUndefinedTargetValidatesAllSubjects(l.booleanValue()));
-
 			Models.objectLiteral(m.getStatements(implNode, LOG_VALIDATION_PLANS, null))
 					.ifPresent(l -> setLogValidationPlans(l.booleanValue()));
 
 			Models.objectLiteral(m.getStatements(implNode, LOG_VALIDATION_VIOLATIONS, null))
 					.ifPresent(l -> setLogValidationViolations(l.booleanValue()));
-
-			Models.objectLiteral(m.getStatements(implNode, IGNORE_NO_SHAPES_LOADED_EXCEPTION, null))
-					.ifPresent(l -> setIgnoreNoShapesLoadedException(l.booleanValue()));
 
 			Models.objectLiteral(m.getStatements(implNode, VALIDATION_ENABLED, null))
 					.ifPresent(l -> setValidationEnabled(l.booleanValue()));
@@ -284,6 +262,10 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 			Models.objectLiteral(
 					m.getStatements(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, null))
 					.ifPresent(l -> setValidationResultsLimitPerConstraint(l.longValue()));
+
+			Models.objectLiteral(
+					m.getStatements(implNode, ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT, null))
+					.ifPresent(l -> setTransactionalValidationLimit(l.longValue()));
 
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);

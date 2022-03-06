@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
@@ -55,17 +54,13 @@ public class ValidationTupleBenchmark {
 	private static final String NS2 = "http://example.com/jiu98u89/fjewifoweifjwe/jfiewjifjewofiwe/";
 	private static final String NS3 = "http://example.com/fkewjfowejiofiew/556r6fuig7t87/jfiewjifjewofiwe/";
 
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
-
 	@Setup(Level.Trial)
 	public void setUp() throws InterruptedException {
 		Thread.sleep(100);
 		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
 				.setLevel(ch.qos.logback.classic.Level.ERROR);
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
-		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
+
 	}
 
 	@Benchmark

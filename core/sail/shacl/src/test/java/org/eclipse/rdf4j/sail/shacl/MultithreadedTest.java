@@ -21,8 +21,8 @@ import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Properties;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -36,21 +36,21 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
+import org.slf4j.LoggerFactory;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+
+@Isolated
 public abstract class MultithreadedTest {
 	SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	@BeforeAll
 	public static void beforeAll() {
-		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
-	}
 
-	@AfterAll
-	public static void afterClass() {
-		GlobalValidationExecutionLogging.loggingEnabled = false;
 	}
 
 	@Test
@@ -211,7 +211,7 @@ public abstract class MultithreadedTest {
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 
-		Random r = new Random();
+		Random r = new Random(52465534);
 
 		ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 
@@ -361,6 +361,9 @@ public abstract class MultithreadedTest {
 	@Test
 	public void testLotsOfValidationFailuresSerializable() throws IOException {
 		System.out.println("testLotsOfValidationFailuresSerializable");
+
+		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName())).setLevel(Level.ERROR);
+
 		ShaclSail sail = new ShaclSail(getBaseSail());
 
 		sail.setParallelValidation(true);

@@ -36,11 +36,6 @@
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-util</artifactId>
-			<version>${project.version}</version>
-		</dependency>
-		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
 		</dependency>
@@ -69,12 +64,6 @@
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-repository-manager</artifactId>
-			<version>${project.version}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-queryparser-serql</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>

@@ -8,7 +8,7 @@
 	</parent>
 	<artifactId>rdf4j-sparql-compliance</artifactId>
 	<packaging>war</packaging>
-	<name>RDF4J SPARQL query parser compliance tests</name>
+	<name>RDF4J: SPARQL query parser compliance tests</name>
 	<description>Tests for the SPARQL query language implementation</description>
 	<properties>
 		<testserver.webapp.dir>${project.build.directory}/rdf4j-server</testserver.webapp.dir>
@@ -111,13 +111,72 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-util</artifactId>
+			<artifactId>rdf4j-sail-lmdb</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-sail-federation</artifactId>
-			<version>${project.version}</version>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-linux</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-macos-arm64</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-macos</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-lmdb</artifactId>
+			<classifier>natives-windows</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-linux</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-macos</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-macos-arm64</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl</artifactId>
+			<classifier>natives-windows</classifier>
+			<version>${lwjgl.version}</version>
+			<scope>runtime</scope>
+			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

@@ -55,7 +55,7 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 	}
 
 	/**
-	 * @see https://github.com/eclipse/rdf4j/issues/1404
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/1404">GH-1404</a>
 	 */
 	@Test
 	public void testNormalizeUnionWithTwoSingletons() {

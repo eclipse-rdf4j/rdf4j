@@ -111,7 +111,7 @@ public class DataFile implements Closeable {
 	/**
 	 * Stores the specified data and returns the byte-offset at which it has been stored.
 	 *
-	 * @param data The data to store, must not be <tt>null</tt>.
+	 * @param data The data to store, must not be <var>null</var>.
 	 * @return The byte-offset in the file at which the data was stored.
 	 */
 	public long storeData(byte[] data) throws IOException {

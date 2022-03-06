@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.AbstractValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -40,12 +40,11 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
  *
  * @author Arjohn Kampman
  *
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
 @InternalUseOnly
-@Deprecated
-public class ValueStore extends AbstractValueFactory {
+public class ValueStore extends SimpleValueFactory {
 
 	/*-----------*
 	 * Constants *
@@ -174,7 +173,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * Gets the value for the specified ID.
 	 *
 	 * @param id A value ID.
-	 * @return The value for the ID, or <tt>null</tt> no such value could be found.
+	 * @return The value for the ID, or <var>null</var> no such value could be found.
 	 * @exception IOException If an I/O error occurred.
 	 */
 	public NativeValue getValue(int id) throws IOException {
@@ -256,7 +255,7 @@ public class ValueStore extends AbstractValueFactory {
 					// Store id in cache
 					NativeValue nv = getNativeValue(value);
 					nv.setInternalID(id, revision);
-					valueIDCache.put(nv, new Integer(id));
+					valueIDCache.put(nv, Integer.valueOf(id));
 				}
 			}
 

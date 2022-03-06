@@ -12,6 +12,8 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -33,7 +35,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	private SparqlTupleExprRenderer mRenderer = new SparqlTupleExprRenderer();
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public QueryLanguage getLanguage() {
@@ -41,13 +43,17 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public String render(final ParsedQuery theQuery) throws Exception {
 		mRenderer.reset();
 
-		StringBuffer aBody = new StringBuffer(mRenderer.render(theQuery.getTupleExpr()));
+		TupleExpr tupleExpr = theQuery.getTupleExpr();
+		if (tupleExpr instanceof QueryRoot) {
+			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		}
+		StringBuffer aBody = new StringBuffer(mRenderer.render(tupleExpr));
 
 		boolean aFirst = true;
 
@@ -95,25 +101,6 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 						}
 
 						aQuery.append("?" + aElem.getSourceName());
-
-						// SPARQL does not support this, its an artifact of copy and
-						// paste from the serql stuff
-						// aQuery.append(mRenderer.getExtensions().containsKey(aElem.getSourceName())
-						// ?
-						// mRenderer.renderValueExpr(mRenderer.getExtensions().get(aElem.getSourceName()))
-						// : "?"+aElem.getSourceName());
-						//
-						// if (!aElem.getSourceName().equals(aElem.getTargetName()) ||
-						// (mRenderer.getExtensions().containsKey(aElem.getTargetName())
-						// &&
-						// !mRenderer.getExtensions().containsKey(aElem.getSourceName())))
-						// {
-						// aQuery.append(" as
-						// ").append(mRenderer.getExtensions().containsKey(aElem.getTargetName())
-						// ?
-						// mRenderer.renderValueExpr(mRenderer.getExtensions().get(aElem.getTargetName()))
-						// : aElem.getTargetName());
-						// }
 					}
 				}
 			}
