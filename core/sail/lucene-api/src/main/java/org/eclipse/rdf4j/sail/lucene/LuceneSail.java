@@ -142,6 +142,22 @@ import org.slf4j.LoggerFactory;
  * http\://xmlns.com/foaf/0.1/name=http\://www.w3.org/2000/01/rdf-schema#label
  * </pre>
  *
+ * <h2 name="indexedtypelangsyntax">Defining the indexed Types/Languages</h2> The properties {@link #INDEXEDTYPES} and
+ * {@link #INDEXEDLANG} are to configure which fields to index by their language or type. {@link #INDEXEDTYPES} Syntax:
+ *
+ * <pre>
+ * # only index object of rdf:type ex:mytype1, rdf:type ex:mytype2 or ex:mytypedef ex:mytype3
+ * http\://www.w3.org/1999/02/22-rdf-syntax-ns#type=http://example.org/mytype1 http://example.org/mytype2
+ * http\://example.org/mytypedef=http://example.org/mytype3
+ * </pre>
+ *
+ * {@link #INDEXEDLANG} Syntax:
+ *
+ * <pre>
+ * # syntax to index only French(fr) and English(en) literals
+ * fr en
+ * </pre>
+ *
  * <h2>Datatypes</h2> Datatypes are ignored in the LuceneSail.
  */
 public class LuceneSail extends NotifyingSailWrapper {
@@ -213,6 +229,21 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 */
 	public static final String INDEXEDFIELDS = "indexedfields";
 
+	/**
+	 * Set the parameter "indexedtypes=..." to configure a selection of field type to index. Only the fields with the
+	 * specific type will be indexed. Syntax of indexedtypes - see <a href="#indexedtypelangsyntax">above</a>
+	 */
+	public static final String INDEXEDTYPES = "indexedtypes";
+
+	/**
+	 * Set the parameter "indexedlang=..." to configure a selection of field language to index. Only the fields with the
+	 * specific language will be indexed. Syntax of indexedlang - see <a href="#indexedtypelangsyntax">above</a>
+	 */
+	public static final String INDEXEDLANG = "indexedlang";
+	/**
+	 * See {@link org.eclipse.rdf4j.sail.lucene.TypeBacktraceMode}
+	 */
+	public static final String INDEX_TYPE_BACKTRACE_MODE = "indexBacktraceMode";
 	/**
 	 * Set the key "lucenedir=&lt;path&gt;" as sail parameter to configure the Lucene Directory on the filesystem where
 	 * to store the lucene index.
@@ -287,6 +318,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	private volatile boolean incompleteQueryFails = true;
 
 	private volatile TupleFunctionEvaluationMode evaluationMode = TupleFunctionEvaluationMode.TRIPLE_SOURCE;
+
+	private volatile TypeBacktraceMode indexBacktraceMode = TypeBacktraceMode.DEFAULT_TYPE_BACKTRACE_MODE;
 
 	private TupleFunctionRegistry tupleFunctionRegistry = TupleFunctionRegistry.getInstance();
 
@@ -470,6 +503,22 @@ public class LuceneSail extends NotifyingSailWrapper {
 		Objects.requireNonNull(mode);
 		this.setParameter(EVALUATION_MODE_KEY, mode.name());
 		this.evaluationMode = mode;
+	}
+
+	/**
+	 * See {@link #INDEX_TYPE_BACKTRACE_MODE} parameter.
+	 */
+	public TypeBacktraceMode getIndexBacktraceMode() {
+		return indexBacktraceMode;
+	}
+
+	/**
+	 * See {@link #INDEX_TYPE_BACKTRACE_MODE} parameter.
+	 */
+	public void setIndexBacktraceMode(TypeBacktraceMode mode) {
+		Objects.requireNonNull(mode);
+		this.setParameter(INDEX_TYPE_BACKTRACE_MODE, mode.name());
+		this.indexBacktraceMode = mode;
 	}
 
 	public TupleFunctionRegistry getTupleFunctionRegistry() {
