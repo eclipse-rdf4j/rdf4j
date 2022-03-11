@@ -571,6 +571,15 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
+		// uses multiple named graphs
+		if (testCase.testCasePath.startsWith("test-cases/minCount/simple/valid/case6")) {
+			return;
+		}
+
+		if (testCase.testCasePath.startsWith("test-cases/minCount/simple/invalid/case4")) {
+			return;
+		}
+
 		printTestCase(testCase);
 
 		org.apache.jena.rdf.model.Model shacl = JenaUtil
