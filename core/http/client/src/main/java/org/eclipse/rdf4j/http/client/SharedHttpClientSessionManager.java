@@ -114,8 +114,19 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 				return false;
 			}
 
-			// only try this once
-			if (executionCount > 1) {
+			// when `keepAlive` is disabled every connection is fresh (with the default `useSystemProperties` http
+			// client configuration we use), a 408 in that case is an unexpected issue we don't handle here
+			String keepAlive = System.getProperty("http.keepAlive", "true");
+			if (!"true".equalsIgnoreCase(keepAlive)) {
+				return false;
+			}
+
+			// worst case, the connection pool is filled to the max and all of them idled out on the server already
+			// we then need to clean up the pool and finally retry with a fresh connection. Hence, we need at most
+			// pooledConnections+1 retries.
+			// the pool size setting used here is taken from `HttpClientBuilder` when `useSystemProperties()` is used
+			int pooledConnections = Integer.parseInt(System.getProperty("http.maxConnections", "5"));
+			if (executionCount > (pooledConnections + 1)) {
 				return false;
 			}
 
@@ -124,7 +135,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 			synchronized (this) {
 				try {
-					logger.warn("Cleaning up closed connection");
+					logger.info("Cleaning up closed connection");
 					conn.close();
 					return true;
 				} catch (IOException e) {
@@ -136,7 +147,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 		@Override
 		public long getRetryInterval() {
-			return 1000; // doesn't really matter that much, we anyways only try once. But default to 1 second.
+			return 1000;
 		}
 	}
 
