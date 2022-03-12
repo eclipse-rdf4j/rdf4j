@@ -125,6 +125,29 @@ public class JSONLDWriterTest extends RDFWriterTest {
 		}
 	}
 
+	/**
+	 * Test if the JSON-LD writer honors the "native RDF type" setting.
+	 */
+	@Test
+	public void testNativeRDFTypes() {
+		IRI subject = vf.createIRI(exNs, "uri1");
+		IRI predicate = vf.createIRI(exNs, "uri2");
+		Literal object = vf.createLiteral(true);
+		Statement stmt = vf.createStatement(subject, predicate, object);
+
+		StringWriter w = new StringWriter();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(w);
+		rdfWriter.getWriterConfig().set(JSONLDSettings.JSONLD_MODE, JSONLDMode.COMPACT);
+		rdfWriter.getWriterConfig().set(JSONLDSettings.COMPACT_ARRAYS, true);
+		rdfWriter.getWriterConfig().set(JSONLDSettings.USE_NATIVE_TYPES, true);
+
+		rdfWriter.startRDF();
+		rdfWriter.handleStatement(stmt);
+		rdfWriter.endRDF();
+
+		assertTrue("Does contain @type", !w.toString().contains("@type"));
+	}
+
 	@Override
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
 		return new RioSetting[] {

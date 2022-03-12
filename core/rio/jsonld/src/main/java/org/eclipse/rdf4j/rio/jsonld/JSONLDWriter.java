@@ -120,10 +120,6 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 		checkWritingStarted();
 		final JSONLDInternalRDFParser serialiser = new JSONLDInternalRDFParser();
 		try {
-			Object output = JsonLdProcessor.fromRDF(model, serialiser);
-
-			final JSONLDMode mode = getWriterConfig().get(JSONLDSettings.JSONLD_MODE);
-
 			final JsonLdOptions opts = new JsonLdOptions();
 			// opts.addBlankNodeIDs =
 			// getWriterConfig().get(BasicParserSettings.PRESERVE_BNODE_IDS);
@@ -133,6 +129,10 @@ public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter, CharSi
 			opts.setUseRdfType(writerConfig.get(JSONLDSettings.USE_RDF_TYPE));
 			opts.setUseNativeTypes(writerConfig.get(JSONLDSettings.USE_NATIVE_TYPES));
 			// opts.optimize = getWriterConfig().get(JSONLDSettings.OPTIMIZE);
+
+			Object output = JsonLdProcessor.fromRDF(model, opts, serialiser);
+
+			final JSONLDMode mode = getWriterConfig().get(JSONLDSettings.JSONLD_MODE);
 
 			if (writerConfig.get(JSONLDSettings.HIERARCHICAL_VIEW)) {
 				output = JSONLDHierarchicalProcessor.fromJsonLdObject(output);
