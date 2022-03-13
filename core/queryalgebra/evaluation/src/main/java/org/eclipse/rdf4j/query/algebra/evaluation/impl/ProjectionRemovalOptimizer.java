@@ -54,7 +54,7 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Var node) throws RuntimeException {
-			if (!node.isAnonymous() && node.getName() != null) {
+			if (node.getName() != null) {
 				if (vars == null) {
 					vars = new HashSet<>();
 				}
