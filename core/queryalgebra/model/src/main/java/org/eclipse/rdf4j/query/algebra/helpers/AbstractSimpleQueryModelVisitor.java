@@ -534,8 +534,8 @@ public abstract class AbstractSimpleQueryModelVisitor<X extends Exception> imple
 		}
 	}
 
-	public void meetUnsupported(QueryModelNode node) {
-
+	public void meetUnsupported(QueryModelNode node) throws X {
+		node.visitChildren(this);
 	}
 
 	/**

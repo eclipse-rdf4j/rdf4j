@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -112,9 +111,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private IsolationLevel transactionIsolationLevel;
 
-	private volatile boolean statementsAdded;
+	protected volatile boolean statementsAdded;
 
-	private volatile boolean statementsRemoved;
+	protected volatile boolean statementsRemoved;
 
 	/*--------------*
 	 * Constructors *
@@ -713,12 +712,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
-	@Override
-	public boolean pendingRemovals() {
+	private boolean pendingRemovals() {
 		return statementsRemoved;
 	}
 
-	protected boolean pendingAdds() {
+	private boolean pendingAdds() {
 		return statementsAdded;
 	}
 

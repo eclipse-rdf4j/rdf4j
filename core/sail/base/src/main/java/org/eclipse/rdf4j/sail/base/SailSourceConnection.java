@@ -682,13 +682,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 			boolean modified = false;
 			if (contexts.length == 0) {
-				if (!hasStatement(explicitOnlyDataset, subj, pred, obj, NULL_CTX)) {
+				if (!hasStatement(explicitOnlyDataset, subj, pred, obj)) {
 					// only add inferred statements that aren't already explicit
-					if (!hasStatement(inferredOnlyDataset, subj, pred, obj, NULL_CTX)) {
+					if (!hasStatement(inferredOnlyDataset, subj, pred, obj)) {
 						// only report inferred statements that don't already
 						// exist
 						addStatementInternal(subj, pred, obj, contexts);
 						notifyStatementAdded(vf.createStatement(subj, pred, obj));
+						statementsAdded = true;
 						modified = true;
 					}
 					inferredOnlySink.approve(vf.createStatement(subj, pred, obj));
@@ -703,6 +704,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 							// already exist
 							addStatementInternal(subj, pred, obj, ctx);
 							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
+							statementsAdded = true;
 							modified = true;
 						}
 						inferredOnlySink.approve(vf.createStatement(subj, pred, obj, ctx));
@@ -744,7 +746,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);
 			}
 			removeStatementsInternal(subj, pred, obj, contexts);
-			return remove(subj, pred, obj, inferredOnlyDataset, inferredOnlySink, contexts);
+			boolean removed = remove(subj, pred, obj, inferredOnlyDataset, inferredOnlySink, contexts);
+			if (removed) {
+				statementsRemoved = true;
+			}
+			return removed;
 		}
 	}
 
@@ -805,6 +811,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				remove(null, null, null, inferredOnlyDataset, inferredOnlySink, contexts);
 			}
 			inferredOnlySink.clear(contexts);
+			statementsRemoved = true;
 		}
 	}
 

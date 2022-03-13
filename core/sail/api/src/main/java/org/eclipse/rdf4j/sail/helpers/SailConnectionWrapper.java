@@ -203,11 +203,6 @@ public class SailConnectionWrapper implements SailConnection, FederatedServiceRe
 	}
 
 	@Override
-	public boolean pendingRemovals() {
-		return false;
-	}
-
-	@Override
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		return wrappedCon.explain(level, tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);

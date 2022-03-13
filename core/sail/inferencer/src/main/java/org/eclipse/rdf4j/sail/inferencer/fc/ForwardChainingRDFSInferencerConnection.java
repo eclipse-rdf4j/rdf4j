@@ -46,17 +46,17 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	/**
 	 * Flags indicating which rules should be evaluated.
 	 */
-	private boolean[] checkRule = new boolean[RDFSRules.RULECOUNT];
+	private final boolean[] checkRule = new boolean[RDFSRules.RULECOUNT];
 
 	/**
 	 * Flags indicating which rules should be evaluated next iteration.
 	 */
-	private boolean[] checkRuleNextIter = new boolean[RDFSRules.RULECOUNT];
+	private final boolean[] checkRuleNextIter = new boolean[RDFSRules.RULECOUNT];
 
 	/**
 	 * The number of inferred statements per rule.
 	 */
-	private int[] ruleCount = new int[RDFSRules.RULECOUNT];
+	private final int[] ruleCount = new int[RDFSRules.RULECOUNT];
 
 	/*--------------*
 	 * Constructors *
@@ -232,78 +232,52 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	protected int applyRuleInternal(int rule) throws SailException {
-		int result = 0;
-
 		switch (rule) {
 		case RDFSRules.Rdf1:
-			result = applyRuleRdf1();
-			break;
+			return applyRuleRdf1();
 		case RDFSRules.Rdfs2_1:
-			result = applyRuleRdfs2_1();
-			break;
+			return applyRuleRdfs2_1();
 		case RDFSRules.Rdfs2_2:
-			result = applyRuleRdfs2_2();
-			break;
+			return applyRuleRdfs2_2();
 		case RDFSRules.Rdfs3_1:
-			result = applyRuleRdfs3_1();
-			break;
+			return applyRuleRdfs3_1();
 		case RDFSRules.Rdfs3_2:
-			result = applyRuleRdfs3_2();
-			break;
+			return applyRuleRdfs3_2();
 		case RDFSRules.Rdfs4a:
-			result = applyRuleRdfs4a();
-			break;
+			return applyRuleRdfs4a();
 		case RDFSRules.Rdfs4b:
-			result = applyRuleRdfs4b();
-			break;
+			return applyRuleRdfs4b();
 		case RDFSRules.Rdfs5_1:
-			result = applyRuleRdfs5_1();
-			break;
+			return applyRuleRdfs5_1();
 		case RDFSRules.Rdfs5_2:
-			result = applyRuleRdfs5_2();
-			break;
+			return applyRuleRdfs5_2();
 		case RDFSRules.Rdfs6:
-			result = applyRuleRdfs6();
-			break;
+			return applyRuleRdfs6();
 		case RDFSRules.Rdfs7_1:
-			result = applyRuleRdfs7_1();
-			break;
+			return applyRuleRdfs7_1();
 		case RDFSRules.Rdfs7_2:
-			result = applyRuleRdfs7_2();
-			break;
+			return applyRuleRdfs7_2();
 		case RDFSRules.Rdfs8:
-			result = applyRuleRdfs8();
-			break;
+			return applyRuleRdfs8();
 		case RDFSRules.Rdfs9_1:
-			result = applyRuleRdfs9_1();
-			break;
+			return applyRuleRdfs9_1();
 		case RDFSRules.Rdfs9_2:
-			result = applyRuleRdfs9_2();
-			break;
+			return applyRuleRdfs9_2();
 		case RDFSRules.Rdfs10:
-			result = applyRuleRdfs10();
-			break;
+			return applyRuleRdfs10();
 		case RDFSRules.Rdfs11_1:
-			result = applyRuleRdfs11_1();
-			break;
+			return applyRuleRdfs11_1();
 		case RDFSRules.Rdfs11_2:
-			result = applyRuleRdfs11_2();
-			break;
+			return applyRuleRdfs11_2();
 		case RDFSRules.Rdfs12:
-			result = applyRuleRdfs12();
-			break;
+			return applyRuleRdfs12();
 		case RDFSRules.Rdfs13:
-			result = applyRuleRdfs13();
-			break;
+			return applyRuleRdfs13();
 		case RDFSRules.RX1:
-			result = applyRuleX1();
-			break;
+			return applyRuleX1();
 		default:
 			throw new AssertionError("Unexpected rule: " + rule);
 		}
-		// ThreadLog.trace("Rule " + RDFSRules.RULENAMES[rule] + " inferred " +
-		// result + " new triples.");
-		return result;
 	}
 
 	// xxx aaa yyy --> aaa rdf:type rdf:Property
@@ -333,21 +307,21 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource xxx = nt.getSubject();
 			IRI aaa = nt.getPredicate();
 
-			CloseableIteration<? extends Statement, SailException> t1Iter;
-			t1Iter = getWrappedConnection().getStatements(aaa, RDFS.DOMAIN, null, true);
+			try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+					.getStatements(aaa, RDFS.DOMAIN, null, true)) {
 
-			while (t1Iter.hasNext()) {
-				Statement t1 = t1Iter.next();
+				while (t1Iter.hasNext()) {
+					Statement t1 = t1Iter.next();
 
-				Value zzz = t1.getObject();
-				if (zzz instanceof Resource) {
-					boolean added = addInferredStatement(xxx, RDF.TYPE, zzz);
-					if (added) {
-						nofInferred++;
+					Value zzz = t1.getObject();
+					if (zzz.isResource()) {
+						boolean added = addInferredStatement(xxx, RDF.TYPE, zzz);
+						if (added) {
+							nofInferred++;
+						}
 					}
 				}
 			}
-			t1Iter.close();
 		}
 
 		return nofInferred;
@@ -363,20 +337,20 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource aaa = nt.getSubject();
 			Value zzz = nt.getObject();
 
-			if (aaa instanceof IRI && zzz instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(null, (IRI) aaa, null, true);
+			if (aaa.isIRI() && zzz.isResource()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements(null, (IRI) aaa, null, true)) {
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-					Resource xxx = t1.getSubject();
-					boolean added = addInferredStatement(xxx, RDF.TYPE, zzz);
-					if (added) {
-						nofInferred++;
+						Resource xxx = t1.getSubject();
+						boolean added = addInferredStatement(xxx, RDF.TYPE, zzz);
+						if (added) {
+							nofInferred++;
+						}
 					}
 				}
-				t1Iter.close();
 			}
 		}
 
@@ -393,22 +367,22 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			IRI aaa = nt.getPredicate();
 			Value uuu = nt.getObject();
 
-			if (uuu instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(aaa, RDFS.RANGE, null, true);
+			if (uuu.isResource()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements(aaa, RDFS.RANGE, null, true)) {
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-					Value zzz = t1.getObject();
-					if (zzz instanceof Resource) {
-						boolean added = addInferredStatement((Resource) uuu, RDF.TYPE, zzz);
-						if (added) {
-							nofInferred++;
+						Value zzz = t1.getObject();
+						if (zzz.isResource()) {
+							boolean added = addInferredStatement((Resource) uuu, RDF.TYPE, zzz);
+							if (added) {
+								nofInferred++;
+							}
 						}
 					}
 				}
-				t1Iter.close();
 			}
 		}
 		return nofInferred;
@@ -424,22 +398,22 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource aaa = nt.getSubject();
 			Value zzz = nt.getObject();
 
-			if (aaa instanceof IRI && zzz instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(null, (IRI) aaa, null, true);
+			if (aaa.isIRI() && zzz.isResource()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements(null, (IRI) aaa, null, true)) {
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-					Value uuu = t1.getObject();
-					if (uuu instanceof Resource) {
-						boolean added = addInferredStatement((Resource) uuu, RDF.TYPE, zzz);
-						if (added) {
-							nofInferred++;
+						Value uuu = t1.getObject();
+						if (uuu.isResource()) {
+							boolean added = addInferredStatement((Resource) uuu, RDF.TYPE, zzz);
+							if (added) {
+								nofInferred++;
+							}
 						}
 					}
 				}
-				t1Iter.close();
 			}
 		}
 
@@ -471,7 +445,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 
 		for (Statement st : iter) {
 			Value uuu = st.getObject();
-			if (uuu instanceof Resource) {
+			if (uuu.isResource()) {
 				boolean added = addInferredStatement((Resource) uuu, RDF.TYPE, RDFS.RESOURCE);
 				if (added) {
 					nofInferred++;
@@ -493,22 +467,22 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource aaa = nt.getSubject();
 			Value bbb = nt.getObject();
 
-			if (bbb instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements((Resource) bbb, RDFS.SUBPROPERTYOF, null, true);
+			if (bbb.isResource()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements((Resource) bbb, RDFS.SUBPROPERTYOF, null, true)) {
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-					Value ccc = t1.getObject();
-					if (ccc instanceof Resource) {
-						boolean added = addInferredStatement(aaa, RDFS.SUBPROPERTYOF, ccc);
-						if (added) {
-							nofInferred++;
+						Value ccc = t1.getObject();
+						if (ccc.isResource()) {
+							boolean added = addInferredStatement(aaa, RDFS.SUBPROPERTYOF, ccc);
+							if (added) {
+								nofInferred++;
+							}
 						}
 					}
 				}
-				t1Iter.close();
 
 			}
 		}
@@ -527,20 +501,20 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource bbb = nt.getSubject();
 			Value ccc = nt.getObject();
 
-			if (ccc instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(null, RDFS.SUBPROPERTYOF, bbb, true);
+			if (ccc.isResource()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements(null, RDFS.SUBPROPERTYOF, bbb, true)) {
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-					Resource aaa = t1.getSubject();
-					boolean added = addInferredStatement(aaa, RDFS.SUBPROPERTYOF, ccc);
-					if (added) {
-						nofInferred++;
+						Resource aaa = t1.getSubject();
+						boolean added = addInferredStatement(aaa, RDFS.SUBPROPERTYOF, ccc);
+						if (added) {
+							nofInferred++;
+						}
 					}
 				}
-				t1Iter.close();
 			}
 		}
 
@@ -575,21 +549,21 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			IRI aaa = nt.getPredicate();
 			Value yyy = nt.getObject();
 
-			CloseableIteration<? extends Statement, SailException> t1Iter;
-			t1Iter = getWrappedConnection().getStatements(aaa, RDFS.SUBPROPERTYOF, null, true);
+			try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+					.getStatements(aaa, RDFS.SUBPROPERTYOF, null, true)) {
 
-			while (t1Iter.hasNext()) {
-				Statement t1 = t1Iter.next();
+				while (t1Iter.hasNext()) {
+					Statement t1 = t1Iter.next();
 
-				Value bbb = t1.getObject();
-				if (bbb instanceof IRI) {
-					boolean added = addInferredStatement(xxx, (IRI) bbb, yyy);
-					if (added) {
-						nofInferred++;
+					Value bbb = t1.getObject();
+					if (bbb.isIRI()) {
+						boolean added = addInferredStatement(xxx, (IRI) bbb, yyy);
+						if (added) {
+							nofInferred++;
+						}
 					}
 				}
 			}
-			t1Iter.close();
 		}
 
 		return nofInferred;
@@ -605,22 +579,22 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource aaa = nt.getSubject();
 			Value bbb = nt.getObject();
 
-			if (aaa instanceof IRI && bbb instanceof IRI) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(null, (IRI) aaa, null, true);
+			if (aaa.isIRI() && bbb.isIRI()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements(null, (IRI) aaa, null, true)) {
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-					Resource xxx = t1.getSubject();
-					Value yyy = t1.getObject();
+						Resource xxx = t1.getSubject();
+						Value yyy = t1.getObject();
 
-					boolean added = addInferredStatement(xxx, (IRI) bbb, yyy);
-					if (added) {
-						nofInferred++;
+						boolean added = addInferredStatement(xxx, (IRI) bbb, yyy);
+						if (added) {
+							nofInferred++;
+						}
 					}
 				}
-				t1Iter.close();
 			}
 		}
 
@@ -655,21 +629,21 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource xxx = nt.getSubject();
 			Value yyy = nt.getObject();
 
-			if (yyy instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(null, RDF.TYPE, xxx, true);
+			if (yyy.isResource()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements(null, RDF.TYPE, xxx, true)) {
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-					Resource aaa = t1.getSubject();
+						Resource aaa = t1.getSubject();
 
-					boolean added = addInferredStatement(aaa, RDF.TYPE, yyy);
-					if (added) {
-						nofInferred++;
+						boolean added = addInferredStatement(aaa, RDF.TYPE, yyy);
+						if (added) {
+							nofInferred++;
+						}
 					}
 				}
-				t1Iter.close();
 			}
 		}
 
@@ -686,23 +660,22 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource aaa = nt.getSubject();
 			Value xxx = nt.getObject();
 
-			if (xxx instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements((Resource) xxx, RDFS.SUBCLASSOF, null, true);
+			if (xxx.isResource()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements((Resource) xxx, RDFS.SUBCLASSOF, null, true)) {
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+						Value yyy = t1.getObject();
 
-					Value yyy = t1.getObject();
-
-					if (yyy instanceof Resource) {
-						boolean added = addInferredStatement(aaa, RDF.TYPE, yyy);
-						if (added) {
-							nofInferred++;
+						if (yyy.isResource()) {
+							boolean added = addInferredStatement(aaa, RDF.TYPE, yyy);
+							if (added) {
+								nofInferred++;
+							}
 						}
 					}
 				}
-				t1Iter.close();
 			}
 		}
 
@@ -738,23 +711,23 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource xxx = nt.getSubject();
 			Value yyy = nt.getObject();
 
-			if (yyy instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements((Resource) yyy, RDFS.SUBCLASSOF, null, true);
+			if (yyy.isResource()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements((Resource) yyy, RDFS.SUBCLASSOF, null, true)) {
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-					Value zzz = t1.getObject();
+						Value zzz = t1.getObject();
 
-					if (zzz instanceof Resource) {
-						boolean added = addInferredStatement(xxx, RDFS.SUBCLASSOF, zzz);
-						if (added) {
-							nofInferred++;
+						if (zzz.isResource()) {
+							boolean added = addInferredStatement(xxx, RDFS.SUBCLASSOF, zzz);
+							if (added) {
+								nofInferred++;
+							}
 						}
 					}
 				}
-				t1Iter.close();
 			}
 		}
 
@@ -772,21 +745,21 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 			Resource yyy = nt.getSubject();
 			Value zzz = nt.getObject();
 
-			if (zzz instanceof Resource) {
-				CloseableIteration<? extends Statement, SailException> t1Iter;
-				t1Iter = getWrappedConnection().getStatements(null, RDFS.SUBCLASSOF, yyy, true);
+			if (zzz.isResource()) {
+				try (CloseableIteration<? extends Statement, SailException> t1Iter = getWrappedConnection()
+						.getStatements(null, RDFS.SUBCLASSOF, yyy, true)) {
 
-				while (t1Iter.hasNext()) {
-					Statement t1 = t1Iter.next();
+					while (t1Iter.hasNext()) {
+						Statement t1 = t1Iter.next();
 
-					Resource xxx = t1.getSubject();
+						Resource xxx = t1.getSubject();
 
-					boolean added = addInferredStatement(xxx, RDFS.SUBCLASSOF, zzz);
-					if (added) {
-						nofInferred++;
+						boolean added = addInferredStatement(xxx, RDFS.SUBCLASSOF, zzz);
+						if (added) {
+							nofInferred++;
+						}
 					}
 				}
-				t1Iter.close();
 			}
 		}
 
@@ -871,10 +844,6 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 		}
 
 		// No leading zeros
-		if (str.charAt(0) == '0') {
-			return false;
-		}
-
-		return true;
+		return str.charAt(0) != '0';
 	}
 }
