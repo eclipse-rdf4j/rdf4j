@@ -11,9 +11,11 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -60,6 +62,26 @@ abstract class SearchQueryEvaluatorTest {
 		@Override
 		public boolean isGeoField(String propertyName) {
 			return (wktFields != null) && wktFields.contains(propertyName);
+		}
+
+		@Override
+		public boolean isTypeStatement(Statement statement) {
+			return false;
+		}
+
+		@Override
+		public boolean isTypeFilteringEnabled() {
+			return false;
+		}
+
+		@Override
+		public boolean isIndexedTypeStatement(Statement statement) {
+			return false;
+		}
+
+		@Override
+		public Map<IRI, Set<IRI>> getIndexedTypeMapping() {
+			return null;
 		}
 
 		@Override

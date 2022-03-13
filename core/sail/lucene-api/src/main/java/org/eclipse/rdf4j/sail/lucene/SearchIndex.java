@@ -10,8 +10,11 @@ package org.eclipse.rdf4j.sail.lucene;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -48,6 +51,36 @@ public interface SearchIndex {
 	 * @return boolean
 	 */
 	boolean isGeoField(String propertyName);
+
+	/**
+	 * Returns true if the given statement is a type statement, see {@link LuceneSail#INDEXEDTYPES} to use. This method
+	 * should return false if {@link #isTypeFilteringEnabled()} returns false.
+	 * 
+	 * @param statement statement
+	 * @return boolean
+	 */
+	boolean isTypeStatement(Statement statement);
+
+	/**
+	 * is the {@link LuceneSail#INDEXEDTYPES} parameter set for this index.
+	 * 
+	 * @return boolean
+	 */
+	boolean isTypeFilteringEnabled();
+
+	/**
+	 * Returns true if the given statement is a type statement of the right type, see {@link LuceneSail#INDEXEDTYPES} to
+	 * use. This method should return false if {@link #isTypeFilteringEnabled()} returns false.
+	 * 
+	 * @param statement statement
+	 * @return boolean
+	 */
+	boolean isIndexedTypeStatement(Statement statement);
+
+	/**
+	 * @return the accepted types for a particular predicate map (predicate -> [objects])
+	 */
+	Map<IRI, Set<IRI>> getIndexedTypeMapping();
 
 	/**
 	 * Begins a transaction.
