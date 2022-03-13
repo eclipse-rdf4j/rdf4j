@@ -217,6 +217,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 
 		if (!(tupleExpr instanceof QueryRoot)) {
+			assert !cloneTupleExpression;
 			// Add a dummy root node to the tuple expressions to allow the
 			// optimizers to modify the actual root node
 			tupleExpr = new QueryRoot(tupleExpr);
