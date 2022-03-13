@@ -186,7 +186,7 @@ public class TargetChainRetriever implements PlanNode {
 								&& !currentStatementMatcher.subjectIsWildcard()) {
 							Resource subject = next.getSubject();
 							if (valueFactory instanceof MemValueFactory) {
-								subject = ((MemValueFactory) valueFactory).getMemResource(subject);
+								subject = ((MemValueFactory) valueFactory).getOrCreateMemResource(subject);
 							}
 							bindings.addBinding(currentStatementMatcher.getSubjectName(), subject);
 						}
@@ -195,7 +195,7 @@ public class TargetChainRetriever implements PlanNode {
 								&& !currentStatementMatcher.predicateIsWildcard()) {
 							IRI predicate = next.getPredicate();
 							if (valueFactory instanceof MemValueFactory) {
-								predicate = ((MemValueFactory) valueFactory).getMemURI(predicate);
+								predicate = ((MemValueFactory) valueFactory).getOrCreateMemURI(predicate);
 							}
 							bindings.addBinding(currentStatementMatcher.getPredicateName(), predicate);
 						}
@@ -205,7 +205,7 @@ public class TargetChainRetriever implements PlanNode {
 
 							Value object = next.getObject();
 							if (valueFactory instanceof MemValueFactory) {
-								object = ((MemValueFactory) valueFactory).getMemValue(object);
+								object = ((MemValueFactory) valueFactory).getOrCreateMemValue(object);
 							}
 
 							bindings.addBinding(currentStatementMatcher.getObjectName(), object);
