@@ -66,12 +66,6 @@ public class LangSpecTest {
 		}
 
 		@Override
-		@SuppressWarnings("deprecated")
-		protected SearchQuery parseQuery(String q, IRI property) {
-			throw new RuntimeException("not implemented");
-		}
-
-		@Override
 		protected Iterable<? extends DocumentScore> query(Resource subject, String q, IRI property, boolean highlight) {
 			throw new RuntimeException("not implemented");
 		}
@@ -90,16 +84,6 @@ public class LangSpecTest {
 
 		@Override
 		protected BulkUpdater newBulkUpdate() {
-			throw new RuntimeException("not implemented");
-		}
-
-		@Override
-		public void beginReading() {
-			throw new RuntimeException("not implemented");
-		}
-
-		@Override
-		public void endReading() {
 			throw new RuntimeException("not implemented");
 		}
 

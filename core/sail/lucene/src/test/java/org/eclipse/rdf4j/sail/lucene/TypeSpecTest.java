@@ -86,7 +86,7 @@ public class TypeSpecTest {
 		sail.setBaseSail(memoryStore);
 		repository = new SailRepository(sail);
 		repository.setDataDir(dataDir);
-		repository.initialize();
+		repository.init();
 	}
 
 	private void add(Statement... statements) {
