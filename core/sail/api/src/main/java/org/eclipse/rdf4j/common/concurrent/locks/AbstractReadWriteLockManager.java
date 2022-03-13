@@ -374,7 +374,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 
 	}
 
-	void spinWaitAtReadLock() throws InterruptedException {
+	void spinWaitAtReadLock() {
 		Thread.onSpinWait();
 
 		writeLockMonitoring.runCleanup();
