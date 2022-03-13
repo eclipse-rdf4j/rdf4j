@@ -48,8 +48,6 @@ public class Copy extends AbstractQueryModelNode implements UpdateExpr {
 			setSourceGraph((ValueConstant) replacement);
 		} else if (destinationGraph == current) {
 			setDestinationGraph((ValueConstant) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

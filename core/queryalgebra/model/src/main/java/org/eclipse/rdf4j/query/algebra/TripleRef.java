@@ -145,8 +145,6 @@ public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 			setObjectVar((org.eclipse.rdf4j.query.algebra.Var) replacement);
 		} else if (exprVar == current) {
 			setExprVar((org.eclipse.rdf4j.query.algebra.Var) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

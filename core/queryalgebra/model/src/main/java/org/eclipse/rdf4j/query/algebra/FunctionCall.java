@@ -103,10 +103,7 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-		if (replaceNodeInList(args, current, replacement)) {
-			return;
-		}
-		super.replaceChildNode(current, replacement);
+		replaceNodeInList(args, current, replacement);
 	}
 
 	@Override

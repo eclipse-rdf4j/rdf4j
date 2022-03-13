@@ -129,9 +129,7 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 		ArrayList<ProjectionElem> currentElementsList = new ArrayList<>(elementsList);
 		if (replaceNodeInList(currentElementsList, current, replacement)) {
 			setElements(currentElementsList);
-			return;
 		}
-		super.replaceChildNode(current, replacement);
 	}
 
 	@Override

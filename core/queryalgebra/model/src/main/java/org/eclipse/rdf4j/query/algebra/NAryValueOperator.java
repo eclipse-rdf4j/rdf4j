@@ -82,10 +82,6 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 				replaced = true;
 			}
 		}
-
-		if (!replaced) {
-			super.replaceChildNode(current, replacement);
-		}
 	}
 
 	@Override

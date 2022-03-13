@@ -206,8 +206,6 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 			setObjectVar((Var) replacement);
 		} else if (contextVar == current) {
 			setContextVar((Var) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

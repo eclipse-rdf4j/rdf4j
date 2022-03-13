@@ -45,8 +45,6 @@ public class Clear extends AbstractQueryModelNode implements UpdateExpr {
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (graph == current) {
 			setGraph((ValueConstant) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

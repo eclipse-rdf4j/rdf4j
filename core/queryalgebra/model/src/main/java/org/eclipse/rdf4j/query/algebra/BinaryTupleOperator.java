@@ -110,8 +110,6 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 			setLeftArg((TupleExpr) replacement);
 		} else if (rightArg == current) {
 			setRightArg((TupleExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

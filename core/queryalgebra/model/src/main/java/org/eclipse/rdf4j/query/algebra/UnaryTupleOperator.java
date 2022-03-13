@@ -83,8 +83,6 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (arg == current) {
 			setArg((TupleExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

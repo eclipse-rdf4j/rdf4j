@@ -43,8 +43,6 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 			setSource((ValueConstant) current);
 		} else if (graph == current) {
 			setGraph((ValueConstant) current);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

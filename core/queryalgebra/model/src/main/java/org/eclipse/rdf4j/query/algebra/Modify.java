@@ -52,8 +52,6 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 			setDeleteExpr((TupleExpr) replacement);
 		} else if (insertExpr == current) {
 			setInsertExpr((TupleExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 
