@@ -106,7 +106,7 @@ public class ParallelQueryBenchmark {
 
 	@Benchmark
 	public void mixedWorkload(Blackhole blackhole) throws InterruptedException {
-		ExecutorService executorService = Executors.newCachedThreadPool();
+		ExecutorService executorService = Executors.newFixedThreadPool(8);
 		CountDownLatch startSignal = new CountDownLatch(1);
 
 		getMixedWorkload(blackhole, startSignal, null)

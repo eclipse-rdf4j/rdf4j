@@ -22,8 +22,6 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.collect.MapMaker;
-
 /**
  * An object registry that uses weak references to keep track of the stored objects. The registry can be used to
  * retrieve stored objects using another, equivalent object. As such, it can be used to prevent the use of duplicates in
@@ -43,7 +41,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	 */
 	private final Map<V, WeakReference<V>>[] objectMap;
 	private final AdderBasedReadWriteLock[] locks;
-	private final ConcurrentMap<K, V> cache;
 
 	/*--------------*
 	 * Constructors *
@@ -52,7 +49,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	/**
 	 * Constructs a new, empty object registry.
 	 */
-	public WeakObjectRegistry(int cacheSize) {
+	public WeakObjectRegistry() {
 		super();
 		int concurrency = Runtime.getRuntime().availableProcessors() * 2;
 
@@ -65,13 +62,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 		for (int index = 0; index < locks.length; index++) {
 			locks[index] = new AdderBasedReadWriteLock();
 		}
-
-		if (cacheSize > 0) {
-
-			cache = new MapMaker().concurrencyLevel(concurrency).weakKeys().weakValues().makeMap();
-		} else {
-			cache = null;
-		}
 	}
 
 	/**
@@ -81,7 +71,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	 * @throws NullPointerException If the specified collection is null.
 	 */
 	public WeakObjectRegistry(int cacheSize, Collection<? extends V> c) {
-		this(cacheSize);
+		this();
 		addAll(c);
 	}
 
@@ -100,11 +90,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 			return null;
 		}
 
-		V cached = cache != null ? cache.get(key) : null;
-		if (cached != null) {
-			return cached;
-		}
-
 		int index = getIndex(key);
 		boolean readLock = locks[index].readLock();
 		try {
@@ -113,13 +98,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 			WeakReference<V> weakRef = weakReferenceMap.get(key);
 			if (weakRef != null) {
 				V v = weakRef.get();
-				if (cache != null && v != null) {
-					if (key instanceof MemValue) {
-						cache.put(key, v);
-					} else {
-						assert true;
-					}
-				}
 				return v; // may be null
 			} else {
 				return null;
@@ -257,10 +235,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	}
 
 	public V getOrAdd(K key, Supplier<V> supplier) {
-		V cached = cache != null ? cache.get(key) : null;
-		if (cached != null) {
-			return cached;
-		}
 
 		int index = getIndex(key);
 		Map<V, WeakReference<V>> weakReferenceMap = objectMap[index];
@@ -305,9 +279,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 
 	@Override
 	public boolean remove(Object object) {
-		if (cache != null) {
-			cache.clear();
-		}
 
 		int index = getIndex(object);
 		long writeLock = locks[index].writeLock();
@@ -323,9 +294,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 
 	@Override
 	public void clear() {
-		if (cache != null) {
-			cache.clear();
-		}
 
 		for (int index = 0; index < objectMap.length; index++) {
 			long writeLock = locks[index].writeLock();

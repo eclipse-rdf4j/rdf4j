@@ -26,10 +26,6 @@ import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.query.algebra.Str;
-
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 
 /**
  * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
@@ -48,31 +44,31 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * Registry containing the set of MemURI objects as used by a MemoryStore. This registry enables the reuse of
 	 * objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<IRI, MemIRI> iriRegistry = new WeakObjectRegistry<>(0);
+	private final WeakObjectRegistry<IRI, MemIRI> iriRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemTriple objects as used by a MemoryStore. This registry enables the reuse of
 	 * objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<Triple, MemTriple> tripleRegistry = new WeakObjectRegistry<>(0);
+	private final WeakObjectRegistry<Triple, MemTriple> tripleRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemBNode objects as used by a MemoryStore. This registry enables the reuse of
 	 * objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<BNode, MemBNode> bnodeRegistry = new WeakObjectRegistry<>(0);
+	private final WeakObjectRegistry<BNode, MemBNode> bnodeRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemLiteral objects as used by a MemoryStore. This registry enables the reuse of
 	 * objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<Literal, MemLiteral> literalRegistry = new WeakObjectRegistry<>(0);
+	private final WeakObjectRegistry<Literal, MemLiteral> literalRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of namespce strings as used by MemURI objects in a MemoryStore. This registry enables
 	 * the reuse of objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<String, String> namespaceRegistry = new WeakObjectRegistry<>(0);
+	private final WeakObjectRegistry<String, String> namespaceRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * A cache of the most common IRIs to improve lookup performance when users use our vocabularies (eg.

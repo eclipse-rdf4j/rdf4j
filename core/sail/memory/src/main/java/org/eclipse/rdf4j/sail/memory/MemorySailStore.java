@@ -729,25 +729,50 @@ class MemorySailStore implements SailStore {
 		private boolean statementAlreadyExists(boolean explicit, MemResource memSubj, MemIRI memPred, MemValue memObj,
 				MemResource memContext) {
 
-			try (CloseableIteration<MemStatement, SailException> stIter = createStatementIterator(memSubj, memPred,
-					memObj, memContext)) {
-				if (stIter.hasNext()) {
-					// statement is already present, update its transaction
-					// status if appropriate
-					MemStatement st = stIter.next();
+			MemStatementList statementList = getSmallestMemStatementList(memSubj, memPred, memObj, memContext);
 
-					if (!st.isExplicit() && explicit) {
-						// Implicit statement is now added explicitly
-						st.setTillSnapshot(nextSnapshot);
-					} else if (!st.isInSnapshot(nextSnapshot)) {
-						st.setSinceSnapshot(nextSnapshot);
-					} else {
-						// statement already exists
-						return true;
-					}
+			MemStatement memStatement = statementList.getExact(memSubj, memPred, memObj, memContext);
+			if (memStatement != null) {
+				if (!memStatement.isExplicit() && explicit) {
+					// Implicit statement is now added explicitly
+					memStatement.setTillSnapshot(nextSnapshot);
+				} else if (!memStatement.isInSnapshot(nextSnapshot)) {
+					memStatement.setSinceSnapshot(nextSnapshot);
+				} else {
+					// statement already exists
+					return true;
 				}
 			}
+
 			return false;
+		}
+
+		private MemStatementList getSmallestMemStatementList(MemResource memSubj, MemIRI memPred, MemValue memObj,
+				MemResource memContext) {
+			MemStatementList statementList = memSubj.getSubjectStatementList();
+			if (statementList.size() <= 1) {
+				return statementList;
+			}
+
+			if (memPred.getPredicateStatementCount() < statementList.size()) {
+				statementList = memPred.getPredicateStatementList();
+				if (statementList.size() <= 1) {
+					return statementList;
+				}
+			}
+
+			if (memObj.getObjectStatementCount() < statementList.size()) {
+				statementList = memObj.getObjectStatementList();
+				if (statementList.size() <= 1) {
+					return statementList;
+				}
+			}
+
+			if (memContext != null && memContext.getContextStatementCount() < statementList.size()) {
+				statementList = memContext.getContextStatementList();
+			}
+
+			return statementList;
 		}
 
 		@Override

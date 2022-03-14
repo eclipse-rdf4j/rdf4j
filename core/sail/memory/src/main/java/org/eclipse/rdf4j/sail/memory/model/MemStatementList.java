@@ -129,8 +129,9 @@ public class MemStatementList {
 
 		// remove all deprecated statements from the end of the list
 		for (; i >= 0; i--) {
-			if (Thread.currentThread().isInterrupted())
+			if (Thread.currentThread().isInterrupted()) {
 				return;
+			}
 			if (statements[i].getTillSnapshot() <= currentSnapshot) {
 				--size;
 				statements[i] = null;
@@ -142,8 +143,9 @@ public class MemStatementList {
 
 		// remove all deprecated statements that are not at the end of the list
 		for (; i >= 0; i--) {
-			if (Thread.currentThread().isInterrupted())
+			if (Thread.currentThread().isInterrupted()) {
 				return;
+			}
 
 			if (statements[i].getTillSnapshot() <= currentSnapshot) {
 				// replace statement with last statement in the list
@@ -161,5 +163,26 @@ public class MemStatementList {
 		}
 		statements = newArray;
 
+	}
+
+	public MemStatement getExact(MemResource memSubj, MemIRI memPred, MemValue memObj, MemResource memContext) {
+
+		// these variables are volatile, so we store them locally to avoid having to do a lot of volatile reads
+		MemStatement[] statements = this.statements;
+		int size = this.size;
+
+		for (int i = 0; i < size; i++) {
+			MemStatement memStatement = statements[i];
+			if (memStatement == null) {
+				break;
+			}
+
+			// match predicate first, because the invoking method usually ends up with the subject list
+			if (memStatement.exactSamePredicate(memPred) && memStatement.exactSameSubject(memSubj)
+					&& memStatement.exactSameObject(memObj) && memStatement.exactSameContext(memContext)) {
+				return memStatement;
+			}
+		}
+		return null;
 	}
 }
