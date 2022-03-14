@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -487,9 +488,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			// Compensate for variables that are bound earlier in the evaluation
 			List<Var> unboundVars = getUnboundVars(vars);
-			List<Var> constantVars = getConstantVars(vars);
+			int constantVars = countConstantVars(vars);
 
-			int nonConstantVarCount = vars.size() - constantVars.size();
+			int nonConstantVarCount = vars.size() - constantVars;
 
 			if (nonConstantVarCount > 0) {
 				double exp = (double) unboundVars.size() / nonConstantVarCount;
@@ -529,7 +530,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return cost;
 		}
 
-		protected List<Var> getConstantVars(Iterable<Var> vars) {
+		protected List<Var> getConstantVars(List<Var> vars) {
 			List<Var> constantVars = new ArrayList<>();
 
 			for (Var var : vars) {
@@ -541,16 +542,25 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return constantVars;
 		}
 
-		protected List<Var> getUnboundVars(Iterable<Var> vars) {
-			List<Var> unboundVars = new ArrayList<>();
+		protected int countConstantVars(List<Var> vars) {
+			int size = 0;
 
 			for (Var var : vars) {
-				if (!var.hasValue() && !this.boundVars.contains(var.getName())) {
-					unboundVars.add(var);
+				if (var.hasValue()) {
+					size++;
 				}
 			}
 
-			return unboundVars;
+			return size;
+		}
+
+		protected List<Var> getUnboundVars(List<Var> vars) {
+
+			return vars.stream()
+					.filter(var -> !var.hasValue())
+					.filter(var -> var.getName() != null)
+					.filter(var -> !boundVars.contains(var.getName()))
+					.collect(Collectors.toList());
 		}
 
 		protected int getForeignVarFreq(List<Var> ownUnboundVars, Map<Var, Integer> varFreqMap) {

@@ -79,12 +79,12 @@ public final class Var implements ValueExpr, QueryModelNode {
 	}
 
 	@Override
-	public final <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+	public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 		visitor.meet(this);
 	}
 
 	@Override
-	public final <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
 
 	}
 

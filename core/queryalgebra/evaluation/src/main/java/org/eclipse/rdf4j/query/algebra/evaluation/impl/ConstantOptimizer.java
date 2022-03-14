@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -99,12 +100,19 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 	protected class ConstantVisitor extends VarNameCollector {
 
-		final List<ProjectionElemList> projElemLists = new ArrayList<>();
+		List<ProjectionElemList> projElemLists = Collections.emptyList();
 
 		@Override
 		public void meet(ProjectionElemList projElems) {
 			super.meet(projElems);
-			projElemLists.add(projElems);
+			if (projElemLists.isEmpty()) {
+				projElemLists = Collections.singletonList(projElems);
+			} else {
+				if (projElemLists.size() == 1) {
+					projElemLists = new ArrayList<>(projElemLists);
+				}
+				projElemLists.add(projElems);
+			}
 		}
 
 		@Override

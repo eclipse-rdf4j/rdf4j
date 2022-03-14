@@ -728,6 +728,7 @@ class MemorySailStore implements SailStore {
 
 		private boolean statementAlreadyExists(boolean explicit, MemResource memSubj, MemIRI memPred, MemValue memObj,
 				MemResource memContext) {
+
 			try (CloseableIteration<MemStatement, SailException> stIter = createStatementIterator(memSubj, memPred,
 					memObj, memContext)) {
 				if (stIter.hasNext()) {
