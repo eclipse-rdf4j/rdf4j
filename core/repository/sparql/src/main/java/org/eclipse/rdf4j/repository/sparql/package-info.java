@@ -11,4 +11,5 @@
  * make client-server communication more scalable, and transaction-safe.
  * </p>
  */
+@org.osgi.annotation.bundle.Export
 package org.eclipse.rdf4j.repository.sparql;

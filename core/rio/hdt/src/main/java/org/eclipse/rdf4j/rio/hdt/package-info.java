@@ -35,4 +35,5 @@
  * The <code>format</code> varies slightly: depending on the section, it can either be a string or a URI.
  *
  */
+@org.osgi.annotation.bundle.Export
 package org.eclipse.rdf4j.rio.hdt;

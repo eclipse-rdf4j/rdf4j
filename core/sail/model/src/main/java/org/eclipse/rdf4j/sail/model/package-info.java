@@ -1,4 +1,5 @@
 @InternalUseOnly
+@org.osgi.annotation.bundle.Export
 /**
  *
  * @apiNote This package is for internal use only: its existence, signature or behavior may change without warning from

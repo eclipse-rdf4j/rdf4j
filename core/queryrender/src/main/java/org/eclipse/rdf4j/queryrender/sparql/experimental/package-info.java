@@ -13,4 +13,5 @@
  *          from one release to the next.
  */
 @org.eclipse.rdf4j.common.annotation.Experimental
+@org.osgi.annotation.bundle.Export
 package org.eclipse.rdf4j.queryrender.sparql.experimental;

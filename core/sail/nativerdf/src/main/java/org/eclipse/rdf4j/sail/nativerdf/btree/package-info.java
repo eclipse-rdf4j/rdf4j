@@ -1,4 +1,5 @@
 @InternalUseOnly
+@org.osgi.annotation.bundle.Export
 /**
  * B-Tree on disk implementation.
  *

@@ -10,4 +10,5 @@
  * modifying, and executing SPARQL queries. This functionality was contributed to RDF4J by Michael Grove of
  * <a href="http://www.clarkparsia.com/">Clark & Parsia, LLC</a>.
  */
+@org.osgi.annotation.bundle.Export
 package org.eclipse.rdf4j.queryrender;
