@@ -731,7 +731,8 @@ class MemorySailStore implements SailStore {
 
 			MemStatementList statementList = getSmallestMemStatementList(memSubj, memPred, memObj, memContext);
 
-			MemStatement memStatement = statementList.getExact(memSubj, memPred, memObj, memContext);
+			MemStatement memStatement = statementList.getExact(memSubj, memPred, memObj, memContext,
+					Integer.MAX_VALUE - 1);
 			if (memStatement != null) {
 				if (!memStatement.isExplicit() && explicit) {
 					// Implicit statement is now added explicitly

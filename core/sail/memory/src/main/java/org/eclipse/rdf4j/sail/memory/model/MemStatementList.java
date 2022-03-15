@@ -165,7 +165,8 @@ public class MemStatementList {
 
 	}
 
-	public MemStatement getExact(MemResource memSubj, MemIRI memPred, MemValue memObj, MemResource memContext) {
+	public MemStatement getExact(MemResource memSubj, MemIRI memPred, MemValue memObj, MemResource memContext,
+			int snapshot) {
 
 		// these variables are volatile, so we store them locally to avoid having to do a lot of volatile reads
 		MemStatement[] statements = this.statements;
@@ -179,7 +180,8 @@ public class MemStatementList {
 
 			// match predicate first, because the invoking method usually ends up with the subject list
 			if (memStatement.exactSamePredicate(memPred) && memStatement.exactSameSubject(memSubj)
-					&& memStatement.exactSameObject(memObj) && memStatement.exactSameContext(memContext)) {
+					&& memStatement.exactSameObject(memObj) && memStatement.exactSameContext(memContext)
+					&& memStatement.isInSnapshot(snapshot)) {
 				return memStatement;
 			}
 		}
