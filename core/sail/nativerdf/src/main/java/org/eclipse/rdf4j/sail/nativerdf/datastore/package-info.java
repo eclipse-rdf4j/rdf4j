@@ -1,4 +1,5 @@
 @InternalUseOnly
+@org.osgi.annotation.bundle.Export
 /**
  * File and data storage functionality.
  *

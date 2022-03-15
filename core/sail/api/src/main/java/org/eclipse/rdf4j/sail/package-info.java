@@ -4,4 +4,5 @@
  * The main interface is {@link org.eclipse.rdf4j.sail.Sail}, which defines methods for initialization, querying and
  * starting transactions.
  */
+@org.osgi.annotation.bundle.Export
 package org.eclipse.rdf4j.sail;

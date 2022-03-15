@@ -731,36 +731,29 @@
 					</configuration>
 				</plugin>
 				<plugin>
-					<groupId>org.apache.maven.plugins</groupId>
-					<artifactId>maven-jar-plugin</artifactId>
-					<version>3.2.0</version>
-					<configuration>
-						<archive>
-							<manifestEntries>
-								<Implementation-Title>${project.name}</Implementation-Title>
-								<Implementation-Vendor-Id>${project.groupId}</Implementation-Vendor-Id>
-								<Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
-								<Implementation-Version>${project.version}</Implementation-Version>
-								<Implementation-Build-Date>${maven.build.timestamp}</Implementation-Build-Date>
-							</manifestEntries>
-						</archive>
-					</configuration>
-				</plugin>
-				<plugin>
-					<groupId>org.apache.felix</groupId>
-					<artifactId>maven-bundle-plugin</artifactId>
-					<version>5.1.1</version>
+					<groupId>biz.aQute.bnd</groupId>
+					<artifactId>bnd-maven-plugin</artifactId>
+					<version>6.2.0</version>
 					<extensions>true</extensions>
 					<configuration>
-						<instructions>
-							<Implementation-Title>${project.name}</Implementation-Title>
-							<Implementation-Vendor-Id>${project.groupId}</Implementation-Vendor-Id>
-							<Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
-							<Implementation-Version>${project.version}</Implementation-Version>
-							<Implementation-Build-Date>${maven.build.timestamp}</Implementation-Build-Date>
-							<Bundle-Version>${project.version}</Bundle-Version>
-						</instructions>
+						<bnd><![CDATA[
+						Implementation-Title: ${project.name}
+						Implementation-Vendor-Id:${project.groupId}
+						Implementation-Vendor: ${project.organization.name}
+						Implementation-Version: ${project.version}
+						Implementation-Build-Date: ${maven.build.timestamp}
+						Bundle-SymbolicName:	${groupId}.${artifactId}
+						-fixupmessages: Classes found in the wrong directory: ...;is:=ignore
+						]]></bnd>
 					</configuration>
+					<executions>
+						<execution>
+							<id>jar</id>
+							<goals>
+								<goal>jar</goal>
+							</goals>
+						</execution>
+					</executions>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
@@ -968,6 +961,10 @@
 		</pluginManagement>
 		<plugins>
 			<plugin>
+				<groupId>biz.aQute.bnd</groupId>
+				<artifactId>bnd-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>animal-sniffer-maven-plugin</artifactId>
 				<version>1.20</version>
@@ -1010,6 +1007,15 @@
 			</extension>
 		</extensions>
 	</build>
+	<dependencies>
+		<!-- Build-time OSGi-Annotations - generate Manifest -->
+		<dependency>
+			<groupId>org.osgi</groupId>
+			<artifactId>osgi.annotation</artifactId>
+			<version>8.1.0</version>
+			<scope>provided</scope>
+		</dependency>
+	</dependencies>
 	<scm>
 		<connection>scm:git:git://github.com:eclipse/rdf4j.git</connection>
 		<developerConnection>scm:git:git@github.com:eclipse/rdf4j.git</developerConnection>

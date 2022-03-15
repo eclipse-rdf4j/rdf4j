@@ -7,4 +7,5 @@
  * @see <a href="https://www.w3.org/TR/sparql11-update/">SPARQL 1.1 Update</a>
  * @see <a href="https://www.w3.org/TR/sparql11-federated-query/">SPARQL 1.1 Federated Query</a>
  */
+@org.osgi.annotation.bundle.Export
 package org.eclipse.rdf4j.query.parser.sparql;

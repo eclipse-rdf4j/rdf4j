@@ -1,3 +1,4 @@
+@org.osgi.annotation.bundle.Export
 @InternalUseOnly
 /**
  * Implementations of {@link Iteration} relevant to query evaluation.

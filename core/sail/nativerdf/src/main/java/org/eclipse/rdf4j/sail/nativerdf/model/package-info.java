@@ -1,4 +1,5 @@
 @InternalUseOnly
+@org.osgi.annotation.bundle.Export
 /**
  * Native implementations of the RDF Model interfaces.
  *

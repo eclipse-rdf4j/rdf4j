@@ -5,4 +5,5 @@
  * not be used to communicate with non-RDF4J SPARQL endpoints. For such endpoints, use
  * {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository} instead.
  */
+@org.osgi.annotation.bundle.Export
 package org.eclipse.rdf4j.repository.http;

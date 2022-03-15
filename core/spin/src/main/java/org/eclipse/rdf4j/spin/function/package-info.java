@@ -8,4 +8,5 @@
 /**
  * Core functions required for SPIN.
  */
+@org.osgi.annotation.bundle.Export
 package org.eclipse.rdf4j.spin.function;
