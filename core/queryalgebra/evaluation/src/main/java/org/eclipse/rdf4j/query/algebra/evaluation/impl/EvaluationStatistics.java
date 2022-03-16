@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Collection;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
@@ -35,6 +36,10 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * @author James Leigh
  */
 public class EvaluationStatistics {
+
+	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
 	private CardinalityCalculator calculator;
 
@@ -107,7 +112,7 @@ public class EvaluationStatistics {
 
 		@Override
 		public void meet(ArbitraryLengthPath node) {
-			final Var pathVar = new Var("_anon_" + UUID.randomUUID().toString().replace("-", "_"));
+			final Var pathVar = new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
 			pathVar.setAnonymous(true);
 			// cardinality of ALP is determined based on the cost of a
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that

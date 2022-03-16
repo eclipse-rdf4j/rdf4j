@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
 
@@ -43,6 +44,10 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * @author Arjohn Kampman
  */
 public abstract class AbstractRDFParser implements RDFParser {
+
+	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
 	private final MessageDigest md5;
 
@@ -92,14 +97,12 @@ public abstract class AbstractRDFParser implements RDFParser {
 	/**
 	 * Mapping from namespace prefixes to namespace names.
 	 */
-	private Map<String, String> namespaceTable;
+	private final Map<String, String> namespaceTable;
 
 	/**
 	 * A collection of configuration options for this parser.
 	 */
 	private ParserConfig parserConfig;
-
-	static int counter = 0;
 
 	/*--------------*
 	 * Constructors *
@@ -358,7 +361,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Creates a new {@link BNode} or Skolem {@link IRI} object.
-	 * 
+	 *
 	 * @return blank node or skolem IRI
 	 */
 	protected Resource createNode() throws RDFParseException {
@@ -380,7 +383,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 	/**
 	 * Creates a {@link BNode} or Skolem {@link IRI} object for the specified identifier.
-	 * 
+	 *
 	 * @param nodeID node identifier
 	 * @return blank node or skolem IRI
 	 */
@@ -713,13 +716,13 @@ public abstract class AbstractRDFParser implements RDFParser {
 		RDFParserHelper.reportFatalError(message, e, lineNo, columnNo, getParseErrorListener());
 	}
 
-	private final String createUniqueBNodePrefix() {
-		return UUID.randomUUID().toString().replace("-", "") + "-";
+	private String createUniqueBNodePrefix() {
+		return uniqueIdPrefix + uniqueIdSuffix.incrementAndGet() + "-";
 	}
 
 	/**
 	 * Parse skolem origin, if set
-	 * 
+	 *
 	 * @return skolem origin or null
 	 */
 	private ParsedIRI getCachedSkolemOrigin() {
