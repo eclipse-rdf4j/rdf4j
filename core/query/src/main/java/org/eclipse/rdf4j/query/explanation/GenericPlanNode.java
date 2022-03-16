@@ -38,7 +38,7 @@ public class GenericPlanNode {
 
 	private final static String newLine = System.getProperty("line.separator");
 
-	private final String id = uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
+	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 
 	// The name of the node, eg. "Join" or "Join (HashJoinIteration)".
 	private String type;
