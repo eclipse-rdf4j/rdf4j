@@ -10,8 +10,10 @@ package org.eclipse.rdf4j.sail.lucene;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -94,7 +96,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 	/**
 	 * the buffer that collects operations
 	 */
-	final private LuceneSailBuffer buffer = new LuceneSailBuffer();
+	final private LuceneSailBuffer buffer;
 
 	/**
 	 * The listener that listens to the underlying connection. It is disabled during clearContext operations.
@@ -103,7 +105,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 
 		@Override
 		public void statementAdded(Statement statement) {
-			// we only consider statements that contain literals
+			// we only consider statements that contain literals or type declaration
 			if (statement.getObject() instanceof Literal) {
 				statement = sail.mapStatement(statement);
 				if (statement == null) {
@@ -115,12 +117,14 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 				if (luceneIndex.accept(literal)) {
 					buffer.add(statement);
 				}
+			} else if (luceneIndex.isTypeStatement(statement)) {
+				buffer.addTypeStatement(statement, luceneIndex.isIndexedTypeStatement(statement));
 			}
 		}
 
 		@Override
 		public void statementRemoved(Statement statement) {
-			// we only consider statements that contain literals
+			// we only consider statements that contain literals or type declaration
 			if (statement.getObject() instanceof Literal) {
 				statement = sail.mapStatement(statement);
 				if (statement == null) {
@@ -132,6 +136,8 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 				if (luceneIndex.accept(literal)) {
 					buffer.remove(statement);
 				}
+			} else if (luceneIndex.isTypeStatement(statement)) {
+				buffer.removeTypeStatement(statement);
 			}
 		}
 	};
@@ -145,6 +151,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		super(wrappedConnection);
 		this.luceneIndex = luceneIndex;
 		this.sail = sail;
+		this.buffer = new LuceneSailBuffer(luceneIndex.isTypeFilteringEnabled());
 
 		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.SERVICE) {
 			FederatedServiceResolver resolver = sail.getFederatedServiceResolver();
@@ -220,7 +227,7 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 				if (op instanceof LuceneSailBuffer.AddRemoveOperation) {
 					AddRemoveOperation addremove = (AddRemoveOperation) op;
 					// add/remove in one call
-					addRemoveStatements(addremove.getAdded(), addremove.getRemoved());
+					addRemoveStatements(addremove);
 				} else if (op instanceof LuceneSailBuffer.ClearContextOperation) {
 					// clear context
 					clearContexts(((ClearContextOperation) op).getContexts());
@@ -242,17 +249,131 @@ public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
 		}
 	}
 
-	private void addRemoveStatements(Set<Statement> toAdd, Set<Statement> toRemove) throws IOException {
-		logger.debug("indexing {}/removing {} statements...", toAdd.size(), toRemove.size());
+	private void addRemoveStatements(AddRemoveOperation op) throws IOException, SailException {
 		luceneIndex.begin();
 		try {
+			completeAddRemoveOperationWithType(op);
+
+			Set<Statement> toAdd = op.getAdded();
+			Set<Statement> toRemove = op.getRemoved();
+
+			logger.debug("indexing {}/removing {} statements...", toAdd.size(), toRemove.size());
+
 			luceneIndex.addRemoveStatements(toAdd, toRemove);
 			luceneIndex.commit();
-		} catch (IOException e) {
+		} catch (IOException | SailException e) {
 			logger.error("Rolling back", e);
 			luceneIndex.rollback();
 			throw e;
 		}
+	}
+
+	private void completeAddRemoveOperationWithType(AddRemoveOperation op) throws SailException {
+		// check if required
+		if (!luceneIndex.isTypeFilteringEnabled()) {
+			return;
+		}
+
+		TypeBacktraceMode backtraceMode = sail.getIndexBacktraceMode();
+
+		Set<Statement> toAdd = op.getAdded();
+		Set<Statement> toRemove = op.getRemoved();
+
+		Map<Resource, Boolean> typeAdd = op.getTypeAdded();
+		Set<Resource> typeRemove = op.getTypeRemoved();
+
+		Map<Resource, Boolean> typeValue = new HashMap<>(typeAdd);
+
+		Map<IRI, Set<IRI>> mapping = luceneIndex.getIndexedTypeMapping();
+
+		// check for all the add candidates the type of the subject
+		for (Iterator<Statement> it = toAdd.iterator(); it.hasNext();) {
+			Statement stmt = it.next();
+
+			// check previously mapped value
+			Boolean addValue = typeValue.get(stmt.getSubject());
+
+			if (addValue == null) {
+				// search for it inside the update statement
+				addValue = typeAdd.get(stmt.getSubject());
+
+				if (addValue != null) {
+					// store it for future use
+					typeValue.put(stmt.getSubject(), addValue);
+				} else {
+					// not inside the update statement, searching with the connection
+					for (IRI predicate : mapping.keySet()) {
+						Set<IRI> objects = mapping.get(predicate);
+						try (CloseableIteration<? extends Statement, SailException> statements = getStatements(
+								stmt.getSubject(),
+								predicate,
+								null,
+								false,
+								stmt.getContext()
+						)) {
+							if (statements.hasNext()) {
+								Value object = statements.next().getObject();
+								addValue = object.isIRI() && objects.contains((IRI) object);
+
+								typeValue.put(stmt.getSubject(), addValue);
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			// if the value is null, the type triple isn't in the sail, so we can't index it
+			if (addValue == null || !addValue) {
+				it.remove();
+			}
+		}
+
+		// backtrace previous insert of property and add them to the index
+		if (backtraceMode.shouldBackTraceInsert()) {
+			for (Map.Entry<Resource, Boolean> e : typeAdd.entrySet()) {
+				if (e.getValue()) {
+					Resource subject = e.getKey();
+					try (CloseableIteration<? extends Statement, SailException> statements = getStatements(
+							subject, null, null, false
+					)) {
+						while (statements.hasNext()) {
+							Statement statement = statements.next();
+							statement = sail.mapStatement(statement);
+
+							if (statement == null) {
+								continue;
+							}
+
+							// add this statement to the Lucene index
+							toAdd.add(statement);
+						}
+					}
+				}
+			}
+		}
+
+		// backtrace previous insert of property and delete them from the index
+		if (backtraceMode.shouldBackTraceDelete()) {
+			for (Resource subject : typeRemove) {
+				try (CloseableIteration<? extends Statement, SailException> statements = getStatements(
+						subject, null, null, false
+				)) {
+					while (statements.hasNext()) {
+						Statement statement = statements.next();
+						statement = sail.mapStatement(statement);
+
+						if (statement == null) {
+							continue;
+						}
+
+						// add this statement to the Lucene index
+						toRemove.add(statement);
+					}
+				}
+			}
+		}
+
 	}
 
 	private void clearContexts(Resource... contexts) throws IOException {

@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -30,8 +32,13 @@ public class GenericPlanNode {
 
 	public static final String UNKNOWN = "UNKNOWN";
 
-	private final String UUID = "UUID_" + java.util.UUID.randomUUID().toString().replace("-", "");
+	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
+
 	private final static String newLine = System.getProperty("line.separator");
+
+	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 
 	// The name of the node, eg. "Join" or "Join (HashJoinIteration)".
 	private String type;
@@ -427,7 +434,7 @@ public class GenericPlanNode {
 
 		if (newScope != null && newScope) {
 			sb.append("subgraph cluster_")
-					.append(getUUID())
+					.append(getID())
 					.append(" {")
 					.append(newLine)
 					.append("   color=grey")
@@ -439,7 +446,7 @@ public class GenericPlanNode {
 		String selfTimeColor = getProportionalRedColor(maxSelfTime, getSelfTimeActual());
 
 		sb
-				.append(getUUID())
+				.append(getID())
 				.append(" [label=")
 				.append("<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" >");
 
@@ -473,9 +480,9 @@ public class GenericPlanNode {
 			}
 
 			sb.append("   ")
-					.append(getUUID())
+					.append(getID())
 					.append(" -> ")
-					.append(p.getUUID())
+					.append(p.getID())
 					.append(" [label=\"")
 					.append(linkLabel)
 					.append("\"]")
@@ -510,7 +517,7 @@ public class GenericPlanNode {
 	}
 
 	@JsonIgnore
-	public String getUUID() {
-		return UUID;
+	public String getID() {
+		return id;
 	}
 }

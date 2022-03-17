@@ -8,7 +8,10 @@
 package org.eclipse.rdf4j.sail.lucene;
 
 import java.io.IOException;
+import java.io.Reader;
+import java.io.StringReader;
 import java.text.ParseException;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,6 +33,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -62,6 +66,10 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 
 	protected Set<String> wktFields = Collections.singleton(SearchFields.getPropertyField(GEO.AS_WKT));
 
+	private Set<String> indexedLangs;
+
+	private Map<IRI, Set<IRI>> indexedTypeMapping;
+
 	@Override
 	public void initialize(Properties parameters) throws Exception {
 		String maxDocParam = parameters.getProperty(LuceneSail.MAX_DOCUMENTS_KEY);
@@ -70,6 +78,45 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 		String wktFieldParam = parameters.getProperty(LuceneSail.WKT_FIELDS);
 		if (wktFieldParam != null) {
 			wktFields = Sets.newHashSet(wktFieldParam.split("\\s+"));
+		}
+
+		if (parameters.containsKey(LuceneSail.INDEXEDLANG)) {
+			String indexedlangString = parameters.getProperty(LuceneSail.INDEXEDLANG);
+
+			indexedLangs = new HashSet<>();
+			indexedLangs.addAll(Arrays.asList(indexedlangString.toLowerCase().split("\\s+")));
+		}
+
+		if (parameters.containsKey(LuceneSail.INDEXEDTYPES)) {
+			String indexedtypesString = parameters.getProperty(LuceneSail.INDEXEDTYPES);
+			Properties prop = new Properties();
+			try {
+				try (Reader reader = new StringReader(indexedtypesString)) {
+					prop.load(reader);
+				}
+			} catch (IOException e) {
+				throw new SailException("Could read " + LuceneSail.INDEXEDTYPES + ": " + indexedtypesString, e);
+			}
+
+			indexedTypeMapping = new HashMap<>();
+			for (Object key : prop.keySet()) {
+				String keyStr = key.toString();
+				Set<IRI> objects = new HashSet<>();
+				for (String obj : prop.getProperty(keyStr).split("\\s+")) {
+					objects.add(vf.createIRI(obj));
+				}
+
+				IRI keyIRI;
+
+				// special case to use the rdf:type "a"
+				if (keyStr.equals("a")) {
+					keyIRI = RDF.TYPE;
+				} else {
+					keyIRI = vf.createIRI(keyStr);
+				}
+
+				indexedTypeMapping.put(keyIRI, objects);
+			}
 		}
 	}
 
@@ -94,12 +141,46 @@ public abstract class AbstractSearchIndex implements SearchIndex {
 			return false;
 		}
 
+		// we reject literals that aren't in the list of the indexed lang
+		if (indexedLangs != null
+				&& (!literal.getLanguage().isPresent()
+						|| !indexedLangs.contains(literal.getLanguage().get().toLowerCase()
+						))) {
+			return false;
+		}
+
 		return true;
 	}
 
 	@Override
 	public boolean isGeoField(String fieldName) {
 		return (wktFields != null) && wktFields.contains(fieldName);
+	}
+
+	@Override
+	public boolean isTypeStatement(Statement statement) {
+		return isTypeFilteringEnabled()
+				&& statement.getObject().isIRI()
+				&& indexedTypeMapping.get(statement.getPredicate()) != null;
+	}
+
+	@Override
+	public boolean isTypeFilteringEnabled() {
+		return indexedTypeMapping != null;
+	}
+
+	@Override
+	public boolean isIndexedTypeStatement(Statement statement) {
+		if (!isTypeFilteringEnabled() || !statement.getObject().isIRI()) {
+			return false;
+		}
+		Set<IRI> objects = indexedTypeMapping.get(statement.getPredicate());
+		return objects != null && objects.contains((IRI) statement.getObject());
+	}
+
+	@Override
+	public Map<IRI, Set<IRI>> getIndexedTypeMapping() {
+		return indexedTypeMapping;
 	}
 
 	/**

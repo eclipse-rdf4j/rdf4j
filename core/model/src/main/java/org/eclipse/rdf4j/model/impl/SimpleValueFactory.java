@@ -11,6 +11,8 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
@@ -41,14 +43,9 @@ public class SimpleValueFactory extends AbstractValueFactory {
 
 	private static final SimpleValueFactory sharedInstance = new SimpleValueFactory();
 
-	/**
-	 * "universal" ID for bnode prefixes to prevent blank node clashes (unique per classloaded instance of this class)
-	 */
-	private static long lastBNodePrefixUID = 0;
-
-	private static synchronized long getNextBNodePrefixUid() {
-		return lastBNodePrefixUID = Math.max(System.currentTimeMillis(), lastBNodePrefixUID + 1);
-	}
+	// static UUID as prefix together with a thread safe incrementing long ensures unique blank nodes.
+	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
 	private static final DatatypeFactory datatypeFactory;
 
@@ -63,20 +60,6 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	/* variables */
 
 	/**
-	 * @category variables
-	 *
-	 *           The ID for the next bnode that is created.
-	 */
-	private int nextBNodeID;
-
-	/**
-	 * @category variables
-	 *
-	 *           The prefix for any new bnode IDs.
-	 */
-	private String bnodePrefix;
-
-	/**
 	 * Provide a single shared instance of a SimpleValueFactory.
 	 *
 	 * @return a singleton instance of SimpleValueFactory.
@@ -89,7 +72,6 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	 * Hidden constructor to enforce singleton pattern.
 	 */
 	protected SimpleValueFactory() {
-		initBNodeParams();
 	}
 
 	/* Public methods */
@@ -144,28 +126,9 @@ public class SimpleValueFactory extends AbstractValueFactory {
 		return new SimpleTriple(subject, predicate, object);
 	}
 
-	/**
-	 * Generates a new bnode prefix and resets <var>nextBNodeID</var> to <var>1</var> .
-	 */
-	protected void initBNodeParams() {
-		// BNode prefix is based on currentTimeMillis(). Combined with a
-		// sequential number per session, this gives a unique identifier.
-		bnodePrefix = "node" + Long.toString(getNextBNodePrefixUid(), 32) + "x";
-		nextBNodeID = 1;
-	}
-
 	@Override
-	public synchronized BNode createBNode() {
-		int id = nextBNodeID++;
-
-		BNode result = createBNode(bnodePrefix + id);
-
-		if (id == Integer.MAX_VALUE) {
-			// Start with a new bnode prefix
-			initBNodeParams();
-		}
-
-		return result;
+	public BNode createBNode() {
+		return createBNode(uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
 	}
 
 	/**

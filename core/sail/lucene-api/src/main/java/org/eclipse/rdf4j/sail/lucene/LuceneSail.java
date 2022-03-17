@@ -89,8 +89,15 @@ import org.slf4j.LoggerFactory;
  * </pre>
  *
  * <h2>Asking full-text queries</h2> Text queries are expressed using the virtual properties of the LuceneSail. An
- * example query looks like this in SPARQL: <code>
- * <pre>
+ * example query looks like this (SERQL): <code>
+ * SELECT Subject, Score, Snippet
+ * FROM {Subject} <http://www.openrdf.org/contrib/lucenesail#matches> {}
+ * <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> {<http://www.openrdf.org/contrib/lucenesail#LuceneQuery>};
+ * <http://www.openrdf.org/contrib/lucenesail#query> {"my Lucene query"};
+ * <http://www.openrdf.org/contrib/lucenesail#score> {Score};
+ * <http://www.openrdf.org/contrib/lucenesail#snippet> {Snippet}</code>
+ *
+ * In SPARQL: <code>
  * SELECT ?subject ?score ?snippet ?resource WHERE {
  * ?subject <http://www.openrdf.org/contrib/lucenesail#matches> [
  *      a <http://www.openrdf.org/contrib/lucenesail#LuceneQuery> ;
@@ -100,7 +107,6 @@ import org.slf4j.LoggerFactory;
  *      <http://www.openrdf.org/contrib/lucenesail#resource> ?resource
  *   ]
  * }
- * </pre>
  * </code> When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches relation is
  * mandatory</b>. When one of these misses, the query will not be executed as expected. The failure behavior can be
  * configured, setting the Sail property "incompletequeryfail" to true will throw a SailException when such patterns are
@@ -140,6 +146,37 @@ import org.slf4j.LoggerFactory;
  * index.2=http://www.w3.org/2000/01/rdf-schema#comment
  * # project http://xmlns.com/foaf/0.1/name to rdfs:label
  * http\://xmlns.com/foaf/0.1/name=http\://www.w3.org/2000/01/rdf-schema#label
+ * </pre>
+ *
+ * <h2 name="indexidsyntax">Set and select Lucene sail by id</h2> The property {@link #INDEX_ID} is to configure the id
+ * of the index and filter every request without the search:indexid predicate, the request would be:
+ *
+ * <pre>
+ * ?subj search:matches [
+ * 	      search:indexid my:lucene_index_id;
+ * 	      search:query "search terms...";
+ * 	      search:property my:property;
+ * 	      search:score ?score;
+ * 	      search:snippet ?snippet ] .
+ * </pre>
+ *
+ * If a LuceneSail is using another LuceneSail as a base sail, the evaluation mode should be set to
+ * {@link TupleFunctionEvaluationMode#NATIVE}.
+ *
+ * <h2 name="indexedtypelangsyntax">Defining the indexed Types/Languages</h2> The properties {@link #INDEXEDTYPES} and
+ * {@link #INDEXEDLANG} are to configure which fields to index by their language or type. {@link #INDEXEDTYPES} Syntax:
+ *
+ * <pre>
+ * # only index object of rdf:type ex:mytype1, rdf:type ex:mytype2 or ex:mytypedef ex:mytype3
+ * http\://www.w3.org/1999/02/22-rdf-syntax-ns#type=http://example.org/mytype1 http://example.org/mytype2
+ * http\://example.org/mytypedef=http://example.org/mytype3
+ * </pre>
+ *
+ * {@link #INDEXEDLANG} Syntax:
+ *
+ * <pre>
+ * # syntax to index only French(fr) and English(en) literals
+ * fr en
  * </pre>
  *
  * <h2>Datatypes</h2> Datatypes are ignored in the LuceneSail.
@@ -214,6 +251,21 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String INDEXEDFIELDS = "indexedfields";
 
 	/**
+	 * Set the parameter "indexedtypes=..." to configure a selection of field type to index. Only the fields with the
+	 * specific type will be indexed. Syntax of indexedtypes - see <a href="#indexedtypelangsyntax">above</a>
+	 */
+	public static final String INDEXEDTYPES = "indexedtypes";
+
+	/**
+	 * Set the parameter "indexedlang=..." to configure a selection of field language to index. Only the fields with the
+	 * specific language will be indexed. Syntax of indexedlang - see <a href="#indexedtypelangsyntax">above</a>
+	 */
+	public static final String INDEXEDLANG = "indexedlang";
+	/**
+	 * See {@link org.eclipse.rdf4j.sail.lucene.TypeBacktraceMode}
+	 */
+	public static final String INDEX_TYPE_BACKTRACE_MODE = "indexBacktraceMode";
+	/**
 	 * Set the key "lucenedir=&lt;path&gt;" as sail parameter to configure the Lucene Directory on the filesystem where
 	 * to store the lucene index.
 	 */
@@ -246,9 +298,15 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	/**
 	 * Set this key to configure the SearchIndex class implementation. Default is
-	 * org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex.
+	 * org.eclipse.rdf4j.sail.lucene.LuceneIndex.
 	 */
 	public static final String INDEX_CLASS_KEY = "index";
+
+	/**
+	 * Set this key to configure the filtering of queries, if this parameter is set, the match object should contain the
+	 * search:indexid parameter, see the syntax <a href="#indexidsyntax">above</a>
+	 */
+	public static final String INDEX_ID = "indexid";
 
 	public static final String DEFAULT_INDEX_CLASS = "org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex";
 
@@ -288,6 +346,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 
 	private volatile TupleFunctionEvaluationMode evaluationMode = TupleFunctionEvaluationMode.TRIPLE_SOURCE;
 
+	private volatile TypeBacktraceMode indexBacktraceMode = TypeBacktraceMode.DEFAULT_TYPE_BACKTRACE_MODE;
+
 	private TupleFunctionRegistry tupleFunctionRegistry = TupleFunctionRegistry.getInstance();
 
 	private FederatedServiceResolver serviceResolver = new SPARQLServiceResolver();
@@ -295,6 +355,8 @@ public class LuceneSail extends NotifyingSailWrapper {
 	private Set<IRI> indexedFields;
 
 	private Map<IRI, IRI> indexedFieldsMapping;
+
+	private IRI indexId = null;
 
 	private IndexableStatementFilter filter = null;
 
@@ -370,6 +432,10 @@ public class LuceneSail extends NotifyingSailWrapper {
 					indexedFieldsMapping.put(vf.createIRI(keyStr), vf.createIRI(prop.getProperty(keyStr)));
 				}
 			}
+		}
+
+		if (parameters.containsKey(INDEX_ID)) {
+			indexId = getValueFactory().createIRI(parameters.getProperty(INDEX_ID));
 		}
 
 		try {
@@ -470,6 +536,22 @@ public class LuceneSail extends NotifyingSailWrapper {
 		Objects.requireNonNull(mode);
 		this.setParameter(EVALUATION_MODE_KEY, mode.name());
 		this.evaluationMode = mode;
+	}
+
+	/**
+	 * See {@link #INDEX_TYPE_BACKTRACE_MODE} parameter.
+	 */
+	public TypeBacktraceMode getIndexBacktraceMode() {
+		return indexBacktraceMode;
+	}
+
+	/**
+	 * See {@link #INDEX_TYPE_BACKTRACE_MODE} parameter.
+	 */
+	public void setIndexBacktraceMode(TypeBacktraceMode mode) {
+		Objects.requireNonNull(mode);
+		this.setParameter(INDEX_TYPE_BACKTRACE_MODE, mode.name());
+		this.indexBacktraceMode = mode;
 	}
 
 	public TupleFunctionRegistry getTupleFunctionRegistry() {
@@ -607,7 +689,7 @@ public class LuceneSail extends NotifyingSailWrapper {
 	}
 
 	protected Collection<SearchQueryInterpreter> getSearchQueryInterpreters() {
-		return Arrays.<SearchQueryInterpreter>asList(new QuerySpecBuilder(incompleteQueryFails),
+		return Arrays.<SearchQueryInterpreter>asList(new QuerySpecBuilder(incompleteQueryFails, indexId),
 				new DistanceQuerySpecBuilder(luceneIndex), new GeoRelationQuerySpecBuilder(luceneIndex));
 	}
 }

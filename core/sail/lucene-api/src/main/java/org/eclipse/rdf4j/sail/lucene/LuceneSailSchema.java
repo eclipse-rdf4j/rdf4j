@@ -30,6 +30,8 @@ public class LuceneSailSchema {
 
 	public static final IRI MATCHES;
 
+	public static final IRI INDEXID;
+
 	/**
 	 * "Magic property" (TupleFunction) IRI.
 	 */
@@ -54,6 +56,8 @@ public class LuceneSailSchema {
 		PROPERTY = factory.createIRI(NAMESPACE + "property");
 		SNIPPET = factory.createIRI(NAMESPACE + "snippet");
 		MATCHES = factory.createIRI(NAMESPACE + "matches");
+
+		INDEXID = factory.createIRI(NAMESPACE + "indexid");
 
 		SEARCH = factory.createIRI(NAMESPACE + "search");
 		ALL_MATCHES = factory.createIRI(NAMESPACE + "allMatches");

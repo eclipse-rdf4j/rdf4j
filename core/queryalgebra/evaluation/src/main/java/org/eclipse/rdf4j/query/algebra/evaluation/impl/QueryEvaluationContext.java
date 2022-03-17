@@ -30,11 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  */
 public interface QueryEvaluationContext {
 
-	class Minimal implements QueryEvaluationContext {
-
-		private Literal now;
-		private final Dataset dataset;
-
+	public class Minimal implements QueryEvaluationContext {
 		public Minimal(Literal now, Dataset dataset) {
 			super();
 			this.now = now;
@@ -45,15 +41,15 @@ public interface QueryEvaluationContext {
 			this.dataset = dataset;
 		}
 
+		private Literal now;
+		private final Dataset dataset;
+
 		@Override
 		public Literal getNow() {
-
+			// creating a new date is expensive because it uses the XMLGregorianCalendar implementation which is very
+			// complex
 			if (now == null) {
-				synchronized (this) {
-					if (now == null) {
-						now = SimpleValueFactory.getInstance().createLiteral(new Date());
-					}
-				}
+				now = SimpleValueFactory.getInstance().createLiteral(new Date());
 			}
 
 			return now;

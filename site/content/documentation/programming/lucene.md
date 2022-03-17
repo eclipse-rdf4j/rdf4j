@@ -40,6 +40,67 @@ lucenesail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true");
 lucenesail.setBaseSail(baseSail);
 ```
 
+### Language filtering
+
+You can add a filter to only index literals with particular languages, for example:
+
+```java
+// this sail will now will only index French literals
+lucenesail.setParameter(LuceneSail.INDEXEDLANG, "fr");
+```
+
+To use multiple languages, split them with spaces, for example:
+
+```java
+// this sail will now only index French and English literals
+lucenesail.setParameter(LuceneSail.INDEXEDLANG, "fr en");
+```
+
+### Type filtering
+
+You can add a filter to only index literals of subject with particular type, for example with the subject/literals
+
+```turle
+@prefix my: <http://example.org/> .
+
+my:subject1 my:oftype my:type1 ;
+            my:prop   "text"   .
+
+my:subject2 my:oftype my:type2 ;
+            my:prop   "text"   .
+```
+
+To only index the literals of the subjects with the type ``my:type1``, you can use the type filter parameter:
+
+```java
+// this sail will now only index literals of subjects ?s with the triple (?s ex:oftype ex:type1).
+lucenesail.setParameter(LuceneSail.INDEXEDTYPES, "http\\://example.org/oftype=http\\://example.org/type1");
+```
+
+You can specify multiple types for the same type predicate by splitting them with spaces, you can specify multiple type predicates by splitting them with new lines, example:
+
+```java
+// this sail will now only index literals of subjects ?s with the triple:
+// (?s ex:oftype1 ex:type11), (?s ex:oftype1 ex:type12), (?s ex:oftype2 ex:type21) 
+// or (?s ex:oftype2 ex:type22).
+lucenesail.setParameter(LuceneSail.INDEXEDTYPES, 
+		"http\\://example.org/oftype1=http\\://example.org/type11 http\\://example.org/type12\n"
+		"http\\://example.org/oftype2=http\\://example.org/type21 http\\://example.org/type22"
+);
+```
+
+You can use the special predicate ``a`` instead of ``rdf:type``.
+
+You can also reduce the usage of the base sail to set the type of backtracking:
+
+- ``TypeBacktraceMode.COMPLETE``: (**default**) will check every triples with ?s and try to add or remove them in the Lucene Index.
+- ``TypeBacktraceMode.PARTIAL``: won't check previous triples in the store, assume that the user would add new elements to the index after and with the add of a type triple and would remove elements to the index with the remove of type.
+
+```java
+// the sail won't search for the type a triple if the type isn't in the UPDATE request
+lucenesail.setIndexBacktraceMode(TypeBacktraceMode.PARTIAL);
+```
+
 ## Full text search
 
 Search is case-insensitive, wildcards and other modifiers can be used to broaden the search. For example, search all literals containing words starting with "alic" (e.g. persons named "Alice"):

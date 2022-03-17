@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
@@ -233,8 +235,9 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 @InternalUseOnly
 public class TupleExprBuilder extends AbstractASTVisitor {
 
-	private static final String UNIQUE_SEED = UUID.randomUUID().toString().replace("-", "_");
-	private int varCounter = 0;
+	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
 	/*-----------*
 	 * Variables *
@@ -313,7 +316,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// the
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
-		final Var var = new Var("_anon_" + UNIQUE_SEED + varCounter++);
+		final Var var = new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
 		var.setAnonymous(true);
 		return var;
 	}
@@ -983,7 +986,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (resource instanceof Var) {
 				projectionElements.addElement(new ProjectionElem(((Var) resource).getName()));
 			} else {
-				String alias = "_describe_" + UNIQUE_SEED + varCounter++;
+				String alias = "_describe_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));
