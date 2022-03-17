@@ -126,14 +126,6 @@ public class SimpleValueFactory extends AbstractValueFactory {
 		return new SimpleTriple(subject, predicate, object);
 	}
 
-	/**
-	 * Generates a new bnode prefix and resets <var>nextBNodeID</var> to <var>1</var> .
-	 */
-	@Deprecated(since = "4.0.0", forRemoval = true)
-	protected void initBNodeParams() {
-
-	}
-
 	@Override
 	public BNode createBNode() {
 		return createBNode(uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
