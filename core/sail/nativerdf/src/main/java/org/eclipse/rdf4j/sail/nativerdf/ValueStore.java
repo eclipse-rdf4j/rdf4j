@@ -337,8 +337,6 @@ public class ValueStore extends SimpleValueFactory {
 				namespaceCache.clear();
 				namespaceIDCache.clear();
 
-				initBNodeParams();
-
 				setNewRevision();
 			} finally {
 				writeLock.release();

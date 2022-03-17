@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
@@ -224,7 +226,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
  * A SPARQL AST visitor implementation that creates a query algebra representation of the query.
- * 
+ *
  * @author Arjohn Kampman
  *
  * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
@@ -232,6 +234,10 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  */
 @InternalUseOnly
 public class TupleExprBuilder extends AbstractASTVisitor {
+
+	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
 	/*-----------*
 	 * Variables *
@@ -310,7 +316,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// the
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
-		final Var var = new Var("_anon_" + UUID.randomUUID().toString().replace("-", "_"));
+		final Var var = new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
 		var.setAnonymous(true);
 		return var;
 	}
@@ -976,7 +982,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (resource instanceof Var) {
 				projectionElements.addElement(new ProjectionElem(((Var) resource).getName()));
 			} else {
-				String alias = "_describe_" + UUID.randomUUID().toString().replace("-", "_");
+				String alias = "_describe_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));
@@ -2619,7 +2625,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * Internal class for keeping track of contextual information relevant for path sequence processing: current scope,
 	 * context, start and end variable of the path expression. Passed through to visitor methods via the
 	 * <code>data</code> input parameter.
-	 * 
+	 *
 	 * @author Jeen Broekstra
 	 */
 	private static class PathSequenceContext {
@@ -2631,7 +2637,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		/**
 		 * Create a new {@link PathSequenceContext} that is a copy of the supplied <code>pathSequenceContext</code>.
-		 * 
+		 *
 		 * @param pathSequenceContext the {@link PathSequenceContext} to copy.
 		 */
 		public PathSequenceContext(PathSequenceContext pathSequenceContext) {
