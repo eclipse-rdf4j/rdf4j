@@ -38,24 +38,25 @@ public class BufferedSplitter implements PlanNodeProvider {
 		parent = planNode;
 	}
 
-	private synchronized void init() {
+	private void init() {
 		if (tuplesBuffer == null) {
-			tuplesBuffer = new ArrayList<>();
-			try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
-				while (iterator.hasNext()) {
-					ValidationTuple next = iterator.next();
-					tuplesBuffer.add(next);
+			synchronized (this) {
+				if (tuplesBuffer == null) {
+					tuplesBuffer = new ArrayList<>();
+					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
+						while (iterator.hasNext()) {
+							ValidationTuple next = iterator.next();
+							tuplesBuffer.add(next);
+						}
+					}
 				}
 			}
 		}
-
 	}
 
 	@Override
 	public PlanNode getPlanNode() {
-
 		return new BufferedSplitterPlaneNode(this);
-
 	}
 
 	@Override
