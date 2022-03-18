@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -420,6 +421,11 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
+		public void observe(Resource subj, IRI pred, Value obj, Resource context) throws SailException {
+			// serializable is not supported at this level
+		}
+
+		@Override
 		public void clear(Resource... contexts) throws SailException {
 			removeStatements(null, null, null, explicit, contexts);
 		}
@@ -436,6 +442,42 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
+		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+			sinkStoreAccessLock.lock();
+			try {
+				startTriplestoreTransaction();
+
+				for (Statement statement : approved) {
+					Resource subj = statement.getSubject();
+					IRI pred = statement.getPredicate();
+					Value obj = statement.getObject();
+					Resource context = statement.getContext();
+
+					int subjID = valueStore.storeValue(subj);
+					int predID = valueStore.storeValue(pred);
+					int objID = valueStore.storeValue(obj);
+
+					int contextID = context == null ? 0 : valueStore.storeValue(context);
+
+					boolean wasNew = tripleStore.storeTriple(subjID, predID, objID, contextID, explicit);
+					if (wasNew && context != null) {
+						contextStore.increment(context);
+					}
+
+				}
+
+			} catch (IOException e) {
+				throw new SailException(e);
+			} catch (RuntimeException e) {
+				logger.error("Encountered an unexpected problem while trying to add a statement", e);
+				throw e;
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+
+		}
+
+		@Override
 		public void deprecate(Statement statement) throws SailException {
 			removeStatements(statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit,
 					statement.getContext());
@@ -446,7 +488,7 @@ class NativeSailStore implements SailStore {
 		 *
 		 * @throws SailException if a transaction could not be started.
 		 */
-		private synchronized void startTriplestoreTransaction() throws SailException {
+		private void startTriplestoreTransaction() throws SailException {
 
 			if (storeTxnStarted.compareAndSet(false, true)) {
 				try {

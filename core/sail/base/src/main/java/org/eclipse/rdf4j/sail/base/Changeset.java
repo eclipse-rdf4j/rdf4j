@@ -73,14 +73,14 @@ abstract class Changeset implements SailSink, ModelFactory {
 	 *
 	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
 	 */
-	private Model approved;
+	private volatile Model approved;
 
 	/**
 	 * Explicit statements that have been removed as part of a transaction, but have not yet been committed.
 	 *
 	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
 	 */
-	private Model deprecated;
+	private volatile Model deprecated;
 
 	/**
 	 * Set of contexts of the {@link #approved} statements.
@@ -90,7 +90,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	/**
 	 * Set of contexts that were passed to {@link #clear(Resource...)}.
 	 */
-	private Set<Resource> deprecatedContexts;
+	private volatile Set<Resource> deprecatedContexts;
 
 	/**
 	 * Additional namespaces added.
@@ -110,11 +110,42 @@ abstract class Changeset implements SailSink, ModelFactory {
 	/**
 	 * If all statements were removed, other than {@link #approved}.
 	 */
-	private boolean statementCleared;
+	private volatile boolean statementCleared;
+
+	private boolean closed;
 
 	@Override
 	public void close() throws SailException {
-		// no-op
+		closed = true;
+		refbacks = null;
+		prepend = null;
+		observed = null;
+		approved = null;
+		deprecated = null;
+		approvedContexts = null;
+		deprecatedContexts = null;
+		addedNamespaces = null;
+		removedPrefixes = null;
+	}
+
+	public static Changeset simpleClone(Changeset from) {
+		assert !from.closed;
+
+		Changeset changeset = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return from.createEmptyModel();
+			}
+		};
+
+		changeset.setChangeset(from);
+
+		return changeset;
 	}
 
 	@Override
@@ -142,13 +173,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		if (approved == null) {
+			return false;
+		}
+
 		boolean readLock = readWriteLock.readLock();
 		try {
-
-			if (approved == null) {
-				return false;
-			}
-
 			return approved.contains(subj, pred, obj, contexts);
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -156,12 +186,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		if (deprecated == null) {
+			return false;
+		}
+
 		boolean readLock = readWriteLock.readLock();
 		try {
-			if (deprecated == null) {
-				return false;
-			}
-
 			return deprecated.contains(subj, pred, obj, contexts);
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -299,18 +329,40 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	@Override
+	public void observe(Resource subj, IRI pred, Value obj, Resource context)
+			throws SailConflictException {
+
+		long writeLock = readWriteLock.writeLock();
+		try {
+			if (observed == null) {
+				observed = new HashSet<>();
+			}
+
+			observed.add(new SimpleStatementPattern(subj, pred, obj, context, false));
+
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
+		}
+
+	}
+
+	@Override
 	public void clear(Resource... contexts) {
 		long writeLock = readWriteLock.writeLock();
 		try {
 			if (contexts != null && contexts.length == 0) {
+				statementCleared = true;
+
 				if (approved != null) {
 					approved.clear();
 				}
 				if (approvedContexts != null) {
 					approvedContexts.clear();
 				}
-				statementCleared = true;
 			} else {
+				if (deprecatedContexts == null) {
+					deprecatedContexts = new HashSet<>();
+				}
 				if (approved != null) {
 					approved.remove(null, null, null, contexts);
 				}
@@ -318,9 +370,6 @@ abstract class Changeset implements SailSink, ModelFactory {
 					for (Resource resource : contexts) {
 						approvedContexts.remove(resource);
 					}
-				}
-				if (deprecatedContexts == null) {
-					deprecatedContexts = new HashSet<>();
 				}
 				if (contexts != null) {
 					deprecatedContexts.addAll(Arrays.asList(contexts));
@@ -485,10 +534,13 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public Set<Resource> getDeprecatedContexts() {
+		if (deprecatedContexts == null) {
+			return null;
+		}
+
 		boolean readLock = readWriteLock.readLock();
 		try {
 			return cloneSet(deprecatedContexts);
-
 		} finally {
 			readWriteLock.unlockReader(readLock);
 		}
@@ -496,14 +548,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public boolean isStatementCleared() {
-		boolean readLock = readWriteLock.readLock();
-		try {
-			return statementCleared;
-
-		} finally {
-			readWriteLock.unlockReader(readLock);
-		}
-
+		return statementCleared;
 	}
 
 	public Map<String, String> getAddedNamespaces() {
@@ -533,14 +578,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public boolean hasDeprecated() {
-		boolean readLock = readWriteLock.readLock();
-		try {
-			return deprecated != null && !deprecated.isEmpty();
-
-		} finally {
-			readWriteLock.unlockReader(readLock);
-		}
-
+		return deprecated != null && !deprecated.isEmpty();
 	}
 
 	boolean isChanged() {
@@ -551,11 +589,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	List<Statement> getDeprecatedStatements() {
+		if (deprecated == null) {
+			return Collections.emptyList();
+		}
+
 		boolean readLock = readWriteLock.readLock();
 		try {
-			if (deprecated == null) {
-				return Collections.emptyList();
-			}
 			return new ArrayList<>(deprecated);
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -564,13 +603,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	List<Statement> getApprovedStatements() {
+		if (approved == null) {
+			return Collections.emptyList();
+		}
 
 		boolean readLock = readWriteLock.readLock();
 		try {
-
-			if (approved == null) {
-				return Collections.emptyList();
-			}
 			return new ArrayList<>(approved);
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -579,12 +617,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	boolean hasDeprecated(Statement statement) {
+		if (deprecated == null) {
+			return false;
+		}
 
 		boolean readLock = readWriteLock.readLock();
 		try {
-			if (deprecated == null) {
-				return false;
-			}
 			return deprecated.contains(statement);
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -593,23 +631,17 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	boolean hasApproved() {
-		boolean readLock = readWriteLock.readLock();
-		try {
-			return approved != null && !approved.isEmpty();
-		} finally {
-			readWriteLock.unlockReader(readLock);
-		}
-
+		return approved != null && !approved.isEmpty();
 	}
 
 	Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
 			Resource[] contexts) {
+		if (approved == null) {
+			return Collections.emptyList();
+		}
+
 		boolean readLock = readWriteLock.readLock();
 		try {
-
-			if (approved == null) {
-				return Collections.emptyList();
-			}
 
 			Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
 
@@ -630,13 +662,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	Iterable<Triple> getApprovedTriples(Resource subj, IRI pred, Value obj) {
+		if (approved == null) {
+			return Collections.emptyList();
+		}
+
 		boolean readLock = readWriteLock.readLock();
 		try {
-
-			if (approved == null) {
-				return Collections.emptyList();
-			}
-
 			// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
 			// for functionally complete first.
 			Stream<Triple> approvedSubjectTriples = approved.parallelStream()
@@ -688,6 +719,79 @@ abstract class Changeset implements SailSink, ModelFactory {
 			return null;
 		}
 		return new HashSet<>(set);
+	}
+
+	void sinkApproved(SailSink sink) {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			if (approved != null) {
+				sink.approveAll(approved, approvedContexts);
+			}
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+	}
+
+	void sinkDeprecated(SailSink sink) {
+		boolean readLock = readWriteLock.readLock();
+		try {
+			if (deprecated != null) {
+				sink.deprecateAll(deprecated);
+			}
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+	}
+
+	@Override
+	public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+		long writeLock = readWriteLock.writeLock();
+		try {
+
+			if (deprecated != null) {
+				deprecated.removeAll(approved);
+			}
+			if (this.approved == null) {
+				this.approved = createEmptyModel();
+			}
+			this.approved.addAll(approved);
+
+			if (approvedContexts != null) {
+				if (this.approvedContexts == null) {
+					this.approvedContexts = new HashSet<>();
+				}
+				this.approvedContexts.addAll(approvedContexts);
+			}
+
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
+		}
+	}
+
+	@Override
+	public void deprecateAll(Set<Statement> deprecated) {
+		long writeLock = readWriteLock.writeLock();
+		try {
+
+			if (approved != null) {
+				approved.removeAll(deprecated);
+			}
+			if (this.deprecated == null) {
+				this.deprecated = createEmptyModel();
+			}
+			this.deprecated.addAll(deprecated);
+
+			for (Statement statement : deprecated) {
+				Resource ctx = statement.getContext();
+				if (approvedContexts != null && approvedContexts.contains(ctx)
+						&& !approved.contains(null, null, null, ctx)) {
+					approvedContexts.remove(ctx);
+				}
+			}
+
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
+		}
 	}
 
 	public static class SimpleStatementPattern {
@@ -744,7 +848,15 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(subject, predicate, object, context, allContexts);
+			int result = 1;
+
+			result = 31 * result + (subject == null ? 0 : subject.hashCode());
+			result = 31 * result + (predicate == null ? 0 : ((Object) predicate).hashCode());
+			result = 31 * result + (object == null ? 0 : object.hashCode());
+			result = 31 * result + (context == null ? 0 : context.hashCode());
+			result = 31 * result + ((Object) allContexts).hashCode();
+
+			return result;
 		}
 	}
 

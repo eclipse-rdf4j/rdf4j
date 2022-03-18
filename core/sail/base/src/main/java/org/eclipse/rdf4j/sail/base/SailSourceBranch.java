@@ -176,13 +176,21 @@ class SailSourceBranch implements SailSource {
 			@Override
 			public void close() throws SailException {
 				try {
-					super.close();
+					semaphore.lock();
+					// This ChangeSet should have been removed from `pending` already, unless we are rolling back a
+					// transaction in which case we need to remove it when closing the ChangeSet.
+					pending.remove(this);
 				} finally {
-					if (prepared) {
-						closeChangeset(this);
-						prepared = false;
+					semaphore.unlock();
+					try {
+						super.close();
+					} finally {
+						if (prepared) {
+							closeChangeset(this);
+							prepared = false;
+						}
+						autoFlush();
 					}
-					autoFlush();
 				}
 			}
 
@@ -301,7 +309,7 @@ class SailSourceBranch implements SailSource {
 			pending.remove(change);
 			if (isChanged(change)) {
 				Changeset merged;
-				changes.add(change);
+				changes.add(Changeset.simpleClone(change));
 				compressChanges();
 				merged = changes.getLast();
 				for (Changeset c : pending) {
@@ -484,18 +492,9 @@ class SailSourceBranch implements SailSource {
 		if (deprecatedContexts != null && !deprecatedContexts.isEmpty()) {
 			sink.clear(deprecatedContexts.toArray(new Resource[0]));
 		}
-		List<Statement> deprecated = change.getDeprecatedStatements();
-		if (deprecated != null) {
-			for (Statement st : deprecated) {
-				sink.deprecate(st);
-			}
-		}
-		List<Statement> approved = change.getApprovedStatements();
-		if (approved != null) {
-			for (Statement st : approved) {
-				sink.approve(st);
-			}
-		}
+
+		change.sinkDeprecated(sink);
+		change.sinkApproved(sink);
 	}
 
 }

@@ -83,6 +83,11 @@ public class SnapshotSailStoreTest {
 		}
 
 		@Override
+		public void observe(Resource subj, IRI pred, Value obj, Resource context) throws SailException {
+
+		}
+
+		@Override
 		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 
 		}
@@ -156,7 +161,7 @@ public class SnapshotSailStoreTest {
 				return SimpleValueFactory.getInstance();
 			}
 		};
-	};
+	}
 
 	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory) {
 		BackingSailSource dummySource = new BackingSailSource() {
@@ -220,6 +225,6 @@ public class SnapshotSailStoreTest {
 			@Override
 			public void close() throws SailException {
 			}
-		}, () -> new LinkedHashModel());
+		}, LinkedHashModel::new);
 	}
 }

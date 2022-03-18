@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -200,7 +201,25 @@ public class LinkedHashModel extends AbstractModel {
 
 	@Override
 	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		return matchPattern(subj, pred, obj, contexts).hasNext();
+		Set<ModelStatement> set = choose(subj, pred, obj, contexts);
+		for (ModelStatement statement : set) {
+			if ((subj == null || subj.equals(statement.getSubject())) &&
+					(pred == null || pred.equals(statement.getPredicate())) &&
+					(obj == null || obj.equals(statement.getObject()))) {
+				if (contexts.length == 0) {
+					return true;
+				} else {
+					for (Resource context : contexts) {
+						if (Objects.equals(context, statement.getContext())) {
+							return true;
+						}
+					}
+					return false;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	@Override
@@ -290,9 +309,9 @@ public class LinkedHashModel extends AbstractModel {
 
 	private class ModelIterator implements Iterator<ModelStatement> {
 
-		private Iterator<ModelStatement> iter;
+		private final Iterator<ModelStatement> iter;
 
-		private Set<ModelStatement> owner;
+		private final Set<ModelStatement> owner;
 
 		private ModelStatement last;
 
@@ -347,7 +366,7 @@ public class LinkedHashModel extends AbstractModel {
 
 		Set<ModelStatement> contexts = new LinkedHashSet<>();
 
-		private V value;
+		private final V value;
 
 		public ModelNode(V value) {
 			this.value = value;
@@ -461,11 +480,19 @@ public class LinkedHashModel extends AbstractModel {
 		}
 	}
 
-	private ModelIterator matchPattern(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	private Iterator<ModelStatement> matchPattern(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (subj == null && pred == null && obj == null && contexts.length == 0) {
+			return new ModelIterator(statements.iterator(), statements);
+		}
+
 		Set<ModelStatement> set = choose(subj, pred, obj, contexts);
+
+		if (set.isEmpty()) {
+			return Collections.emptyIterator();
+		}
+
 		Iterator<ModelStatement> it = set.iterator();
-		Iterator<ModelStatement> iter;
-		iter = new PatternIterator<>(it, subj, pred, obj, contexts);
+		Iterator<ModelStatement> iter = new PatternIterator<>(it, subj, pred, obj, contexts);
 		return new ModelIterator(iter, set);
 	}
 
@@ -547,6 +574,87 @@ public class LinkedHashModel extends AbstractModel {
 				minSize = set.size();
 			}
 		}
+		return minSet;
+	}
+
+	private Set<ModelStatement> smallest(Set<ModelStatement> set1, Set<ModelStatement> set2, Set<ModelStatement> set3,
+			Set<ModelStatement> set4) {
+		Set<ModelStatement> minSet = set1;
+
+		if (minSet != null && minSet.size() == 0) {
+			return minSet;
+		}
+
+		if (minSet == null) {
+			minSet = set2;
+		} else if (set2 != null && minSet.size() > set2.size()) {
+			minSet = set2;
+			if (minSet.size() == 0) {
+				return minSet;
+			}
+		}
+		if (minSet == null) {
+			minSet = set3;
+		} else if (set3 != null && minSet.size() > set3.size()) {
+			minSet = set3;
+			if (minSet.size() == 0) {
+				return minSet;
+			}
+		}
+		if (minSet == null) {
+			minSet = set4;
+		} else if (set4 != null && minSet.size() > set4.size()) {
+			minSet = set4;
+			if (minSet.size() == 0) {
+				return minSet;
+			}
+		}
+
+		return minSet;
+	}
+
+	private Set<ModelStatement> smallest(Set<ModelStatement> set1, Set<ModelStatement> set2, Set<ModelStatement> set3,
+			Set<ModelStatement> set4, Set<ModelStatement> set5) {
+		Set<ModelStatement> minSet = set1;
+
+		if (minSet != null && minSet.size() == 0) {
+			return minSet;
+		}
+
+		if (minSet == null) {
+			minSet = set2;
+		} else if (set2 != null && minSet.size() > set2.size()) {
+			minSet = set2;
+			if (minSet.size() == 0) {
+				return minSet;
+			}
+		}
+		if (minSet == null) {
+			minSet = set3;
+		} else if (set3 != null && minSet.size() > set3.size()) {
+			minSet = set3;
+			if (minSet.size() == 0) {
+				return minSet;
+			}
+		}
+		if (minSet == null) {
+			minSet = set4;
+		} else if (set4 != null && minSet.size() > set4.size()) {
+			minSet = set4;
+			if (minSet.size() == 0) {
+				return minSet;
+			}
+		}
+
+		if (minSet == null) {
+			minSet = set5;
+		} else if (set5 != null && minSet.size() > set5.size()) {
+			minSet = set5;
+			if (minSet.size() == 0) {
+				return minSet;
+			}
+		}
+
 		return minSet;
 	}
 

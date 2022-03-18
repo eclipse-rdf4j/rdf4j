@@ -189,6 +189,31 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		}
 	}
 
+	@Override
+	public boolean isEmpty() {
+		return getDelegate().isEmpty();
+	}
+
+	@Override
+	public boolean contains(Object o) {
+		return getDelegate().contains(o);
+	}
+
+	@Override
+	public boolean remove(Object o) {
+		return getDelegate().remove(o);
+	}
+
+	@Override
+	public boolean addAll(Collection<? extends Statement> c) {
+		return getDelegate().addAll(c);
+	}
+
+	@Override
+	public boolean removeAll(Collection<?> c) {
+		return getDelegate().removeAll(c);
+	}
+
 	protected abstract SailStore createSailStore(File dataDir) throws IOException, SailException;
 
 	synchronized Model getDelegate() {

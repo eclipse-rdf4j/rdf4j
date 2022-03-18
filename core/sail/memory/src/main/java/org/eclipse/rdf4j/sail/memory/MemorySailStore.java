@@ -626,6 +626,17 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
+		public synchronized void observe(Resource subj, IRI pred, Value obj, Resource context)
+				throws SailException {
+			if (observations == null) {
+				observations = new HashSet<>();
+			}
+
+			observations.add(new StatementPattern(new Var("s", subj), new Var("p", pred), new Var("o", obj),
+					new Var("g", context)));
+		}
+
+		@Override
 		public synchronized void clear(Resource... contexts) throws SailException {
 			acquireExclusiveTransactionLock();
 			invalidateCache();
@@ -652,6 +663,17 @@ class MemorySailStore implements SailStore {
 			invalidateCache();
 			addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
 					statement.getContext(), explicit);
+		}
+
+		@Override
+		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+			acquireExclusiveTransactionLock();
+			invalidateCache();
+			for (Statement statement : approved) {
+				addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+						statement.getContext(), explicit);
+			}
+
 		}
 
 		@Override

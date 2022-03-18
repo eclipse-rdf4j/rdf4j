@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -90,6 +92,21 @@ public interface SailSink extends SailClosable {
 	void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
 
 	/**
+	 * Called to indicate matching statements have been observed and must not change their state until after this
+	 * {@link SailSink} is committed, iff this was opened in an isolation level compatible with
+	 * {@link IsolationLevels#SERIALIZABLE}.
+	 *
+	 * @param subj    A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred    A IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj     A Value specifying the object, or <var>null</var> for a wildcard.
+	 * @param context The context of the observed statements.
+	 * @throws SailException If the triple source failed to observe these statements.
+	 */
+	default void observe(Resource subj, IRI pred, Value obj, Resource context) throws SailException {
+		observe(subj, pred, obj, new Resource[] { context });
+	}
+
+	/**
 	 * Adds a statement to the store.
 	 *
 	 * @param subj The subject of the statement to add.
@@ -128,6 +145,18 @@ public interface SailSink extends SailClosable {
 
 	default boolean supportsDeprecateByQuery() {
 		return false;
+	}
+
+	default void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+		for (Statement statement : approved) {
+			approve(statement);
+		}
+	}
+
+	default void deprecateAll(Set<Statement> deprecated) {
+		for (Statement statement : deprecated) {
+			deprecate(statement);
+		}
 	}
 
 }

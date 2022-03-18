@@ -499,6 +499,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public void observe(Resource subj, IRI pred, Value obj, Resource context) throws SailException {
+			// serializable is not supported at this level
+		}
+
+		@Override
 		public void clear(Resource... contexts) throws SailException {
 			removeStatements(null, null, null, explicit, contexts);
 		}

@@ -97,4 +97,8 @@ public class EmptyModel extends AbstractModel {
 		// remove nothing
 	}
 
+	@Override
+	public boolean isEmpty() {
+		return true;
+	}
 }
