@@ -12,6 +12,11 @@ import java.io.Reader;
 
 public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
 
+	public UnicodeEscapeStream(Reader dstream, int tabSize, int bufferSize) {
+		super(dstream, 1, 1, bufferSize);
+		setTabSize(tabSize);
+	}
+
 	public UnicodeEscapeStream(Reader dstream, int tabSize) {
 		super(dstream);
 		setTabSize(tabSize);

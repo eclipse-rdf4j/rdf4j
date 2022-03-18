@@ -42,13 +42,14 @@ public class BufferedSplitter implements PlanNodeProvider {
 		if (tuplesBuffer == null) {
 			synchronized (this) {
 				if (tuplesBuffer == null) {
-					tuplesBuffer = new ArrayList<>();
+					List<ValidationTuple> tempBuffer = new ArrayList<>();
 					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
 						while (iterator.hasNext()) {
 							ValidationTuple next = iterator.next();
-							tuplesBuffer.add(next);
+							tempBuffer.add(next);
 						}
 					}
+					tuplesBuffer = tempBuffer;
 				}
 			}
 		}
@@ -89,7 +90,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 		@Override
 		public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
-			return new CloseableIteration<ValidationTuple, SailException>() {
+			return new CloseableIteration<>() {
 
 				Iterator<ValidationTuple> iterator;
 

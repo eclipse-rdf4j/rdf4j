@@ -764,7 +764,11 @@ public class ParsedIRI implements Cloneable, Serializable {
 	}
 
 	private void parse() throws URISyntaxException {
-		pos = 0;
+		if (iri.isEmpty()) {
+			path = "";
+			return;
+		}
+
 		scheme = parseScheme();
 		if ("jar".equalsIgnoreCase(scheme)) {
 			scheme = scheme + ':' + parseScheme();

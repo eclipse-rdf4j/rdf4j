@@ -327,7 +327,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 					while (lock.isWriteLocked()) {
 						Thread.onSpinWait();
 					}
-					Thread.onSpinWait();
 				}
 			}
 		}

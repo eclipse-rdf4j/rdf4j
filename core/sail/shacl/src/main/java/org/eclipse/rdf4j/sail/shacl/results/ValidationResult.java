@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 @Deprecated
 public class ValidationResult {
 
-	private final Resource id = bnode(UUID.randomUUID() + "");
+	private final Resource id = bnode();
 	private final Optional<Value> value;
 	private final Shape shape;
 

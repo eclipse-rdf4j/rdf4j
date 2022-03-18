@@ -86,7 +86,7 @@ public class RDFParserHelper {
 	 * @throws RDFParseException If there was an error during the process that could not be recovered from, based on
 	 *                           settings in the given parser config.
 	 */
-	public static final Literal createLiteral(String label, String lang, IRI datatype, ParserConfig parserConfig,
+	public static Literal createLiteral(String label, String lang, IRI datatype, ParserConfig parserConfig,
 			ParseErrorListener errListener, ValueFactory valueFactory, long lineNo, long columnNo)
 			throws RDFParseException {
 		if (label == null) {

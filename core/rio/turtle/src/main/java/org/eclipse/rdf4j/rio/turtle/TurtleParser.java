@@ -204,12 +204,12 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	protected void parseDirective(String directive) throws IOException, RDFParseException, RDFHandlerException {
-		if (directive.length() >= 7 && directive.substring(0, 7).equals("@prefix")) {
+		if (directive.length() >= 7 && directive.startsWith("@prefix")) {
 			if (directive.length() > 7) {
 				unread(directive.substring(7));
 			}
 			parsePrefixID();
-		} else if (directive.length() >= 5 && directive.substring(0, 5).equals("@base")) {
+		} else if (directive.length() >= 5 && directive.startsWith("@base")) {
 			if (directive.length() > 5) {
 				unread(directive.substring(5));
 			}
@@ -674,7 +674,7 @@ public class TurtleParser extends AbstractRDFParser {
 		int c1 = readCodePoint();
 
 		// First character should be '"' or "'"
-		verifyCharacterOrFail(c1, "\"\'");
+		verifyCharacterOrFail(c1, "\"'");
 
 		// Check for long-string, which starts and ends with three double quotes
 		int c2 = readCodePoint();
@@ -958,14 +958,14 @@ public class TurtleParser extends AbstractRDFParser {
 					BasicParserSettings.VERIFY_RELATIVE_URIS);
 		}
 
-		String namespace = null;
+		String namespace;
 
 		if (c == ':') {
 			// qname using default namespace
 			namespace = getNamespace("");
 		} else {
 			// c is the first letter of the prefix
-			StringBuilder prefix = new StringBuilder(8);
+			StringBuilder prefix = new StringBuilder();
 			appendCodepoint(prefix, c);
 
 			int previousChar = c;
@@ -983,16 +983,16 @@ public class TurtleParser extends AbstractRDFParser {
 				previousChar = prefix.codePointAt(prefix.codePointCount(0, prefix.length()) - 1);
 			}
 
-			if (c != ':') {
+			if (c != ':' && (prefix.length() == 4 || prefix.length() == 5)) {
 				// prefix may actually be a boolean value
 				String value = prefix.toString();
 
 				if (value.equals("true")) {
 					unread(c);
-					return createLiteral("true", null, XSD.BOOLEAN, getLineNumber(), -1);
+					return valueFactory.createLiteral(true);
 				} else if (value.equals("false")) {
 					unread(c);
-					return createLiteral("false", null, XSD.BOOLEAN, getLineNumber(), -1);
+					return valueFactory.createLiteral(false);
 				}
 			}
 
@@ -1002,7 +1002,31 @@ public class TurtleParser extends AbstractRDFParser {
 		}
 
 		// c == ':', read optional local name
-		StringBuilder localName = new StringBuilder(16);
+		StringBuilder localName = readOptionalLocalName();
+
+		checkLocalName(localName);
+
+		if (localName.length() > 0) {
+			return createURI(namespace, localName.toString());
+		} else {
+			return createURI(namespace);
+		}
+	}
+
+	private void checkLocalName(StringBuilder localName) {
+		for (int i = 0; i < localName.length(); i++) {
+			if (localName.charAt(i) == '%') {
+				if (i > localName.length() - 3 || !ASCIIUtil.isHex(localName.charAt(i + 1))
+						|| !ASCIIUtil.isHex(localName.charAt(i + 2))) {
+					reportFatalError("Found incomplete percent-encoded sequence: " + localName);
+				}
+			}
+		}
+	}
+
+	private StringBuilder readOptionalLocalName() throws IOException {
+		int c;
+		StringBuilder localName = new StringBuilder();
 		c = readCodePoint();
 		if (TurtleUtil.isNameStartChar(c)) {
 			if (c == '\\') {
@@ -1037,24 +1061,7 @@ public class TurtleParser extends AbstractRDFParser {
 			// Unread last character
 			unread(c);
 		}
-
-		String localNameString = localName.toString();
-
-		for (int i = 0; i < localNameString.length(); i++) {
-			if (localNameString.charAt(i) == '%') {
-				if (i > localNameString.length() - 3 || !ASCIIUtil.isHex(localNameString.charAt(i + 1))
-						|| !ASCIIUtil.isHex(localNameString.charAt(i + 2))) {
-					reportFatalError("Found incomplete percent-encoded sequence: " + localNameString);
-				}
-			}
-		}
-
-		// if (c == '.') {
-		// reportFatalError("Blank node identifier must not end in a '.'");
-		// }
-
-		// Note: namespace has already been resolved
-		return createURI(namespace + localNameString);
+		return localName;
 	}
 
 	private char readLocalEscapedChar() throws RDFParseException, IOException {

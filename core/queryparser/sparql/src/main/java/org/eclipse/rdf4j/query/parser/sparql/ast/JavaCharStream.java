@@ -438,7 +438,7 @@ public class JavaCharStream {
 
 	/** Constructor. */
 	public JavaCharStream(java.io.InputStream dstream, int startline, int startcolumn, int buffersize) {
-		this(new java.io.InputStreamReader(dstream), startline, startcolumn, 4096);
+		this(new java.io.InputStreamReader(dstream), startline, startcolumn, buffersize);
 	}
 
 	/** Constructor. */

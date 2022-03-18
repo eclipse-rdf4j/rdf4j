@@ -12,9 +12,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -44,6 +46,16 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * @author Arjohn Kampman
  */
 public abstract class AbstractRDFParser implements RDFParser {
+
+	private static final Map<String, String> defaultNamespaces;
+
+	static {
+		Map<String, String> namespaces = new HashMap<>();
+		for (Namespace namespace : BasicParserSettings.NAMESPACES.getDefaultValue()) {
+			namespaces.put(namespace.getPrefix(), namespace.getName());
+		}
+		defaultNamespaces = Collections.unmodifiableMap(namespaces);
+	}
 
 	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
@@ -97,7 +109,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	/**
 	 * Mapping from namespace prefixes to namespace names.
 	 */
-	private final Map<String, String> namespaceTable;
+	private Map<String, String> namespaceTable;
 
 	/**
 	 * A collection of configuration options for this parser.
@@ -127,7 +139,6 @@ public abstract class AbstractRDFParser implements RDFParser {
 			throw new RuntimeException(e);
 		}
 
-		namespaceTable = new HashMap<>(16);
 		nextBNodePrefix = createUniqueBNodePrefix();
 		setValueFactory(valueFactory);
 		setParserConfig(new ParserConfig());
@@ -177,7 +188,8 @@ public abstract class AbstractRDFParser implements RDFParser {
 	@Override
 	public RDFParser setParserConfig(ParserConfig config) {
 		this.parserConfig = config;
-		initializeNamespaceTableFromConfiguration();
+
+//		initializeNamespaceTableFromConfiguration();
 		return this;
 	}
 
@@ -257,6 +269,9 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * Associates the specified prefix to the specified namespace.
 	 */
 	protected void setNamespace(String prefix, String namespace) {
+		if (namespaceTable == null) {
+			initializeNamespaceTableFromConfiguration();
+		}
 		namespaceTable.put(prefix, namespace);
 	}
 
@@ -266,9 +281,18 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * @throws RDFParseException if no namespace is associated with this prefix
 	 */
 	protected String getNamespace(String prefix) throws RDFParseException {
+		if (namespaceTable == null) {
+			initializeNamespaceTableFromConfiguration();
+		}
+
 		if (namespaceTable.containsKey(prefix)) {
 			return namespaceTable.get(prefix);
 		}
+
+		if (defaultNamespaces.containsKey(prefix)) {
+			return defaultNamespaces.get(prefix);
+		}
+
 		String msg = "Namespace prefix '" + prefix + "' used but not defined";
 
 		if ("".equals(prefix)) {
@@ -286,20 +310,25 @@ public abstract class AbstractRDFParser implements RDFParser {
 	protected void clear() {
 		baseURI = null;
 		nextBNodePrefix = createUniqueBNodePrefix();
-		namespaceTable.clear();
+		namespaceTable = null;
 		// Don't use the setter setValueFactory() as it will update originalValueFactory too
 		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_RDF_STAR)) {
 			valueFactory = new RDFStarDecodingValueFactory(originalValueFactory);
 		} else {
 			valueFactory = originalValueFactory;
 		}
-
-		initializeNamespaceTableFromConfiguration();
 	}
 
 	protected void initializeNamespaceTableFromConfiguration() {
-		for (Namespace aNS : getParserConfig().get(BasicParserSettings.NAMESPACES)) {
-			namespaceTable.put(aNS.getPrefix(), aNS.getName());
+		if (namespaceTable == null) {
+			namespaceTable = new HashMap<>();
+		}
+
+		Set<Namespace> namespaces = getParserConfig().get(BasicParserSettings.NAMESPACES);
+		if (namespaces != BasicParserSettings.NAMESPACES.getDefaultValue()) {
+			for (Namespace aNS : namespaces) {
+				namespaceTable.put(aNS.getPrefix(), aNS.getName());
+			}
 		}
 	}
 
@@ -353,6 +382,23 @@ public abstract class AbstractRDFParser implements RDFParser {
 		}
 		try {
 			return valueFactory.createIRI(uri);
+		} catch (Exception e) {
+			reportFatalError(e);
+			return null; // required by compiler
+		}
+	}
+
+	protected IRI createURI(String namespace, String localName) throws RDFParseException {
+		if (getParserConfig().get(BasicParserSettings.VERIFY_URI_SYNTAX)) {
+			try {
+				new ParsedIRI(namespace + localName);
+			} catch (URISyntaxException e) {
+				reportError(e.getMessage(), BasicParserSettings.VERIFY_URI_SYNTAX);
+				return null;
+			}
+		}
+		try {
+			return valueFactory.createIRI(namespace, localName);
 		} catch (Exception e) {
 			reportFatalError(e);
 			return null; // required by compiler

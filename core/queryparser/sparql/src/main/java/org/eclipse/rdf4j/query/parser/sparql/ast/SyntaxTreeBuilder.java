@@ -30,7 +30,8 @@ public class SyntaxTreeBuilder
 	 */
 	public static ASTQueryContainer parseQuery(String query)
 			throws TokenMgrError, ParseException {
-		SyntaxTreeBuilder stb = new SyntaxTreeBuilder(new UnicodeEscapeStream(new StringReader(query), 1));
+		SyntaxTreeBuilder stb = new SyntaxTreeBuilder(
+				new UnicodeEscapeStream(new StringReader(query), 1, query.length() + 1));
 
 		// Set size of tab to 1 to force tokenmanager to report correct column
 		// index for substring splitting of service graph pattern.

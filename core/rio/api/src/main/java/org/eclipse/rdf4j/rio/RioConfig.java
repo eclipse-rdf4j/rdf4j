@@ -8,9 +8,9 @@
 package org.eclipse.rdf4j.rio;
 
 import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import org.eclipse.rdf4j.rio.helpers.RioConfigurationException;
 import org.slf4j.Logger;
@@ -41,13 +41,13 @@ public class RioConfig implements Serializable {
 	/**
 	 * A map containing mappings from settings to their values.
 	 */
-	protected final ConcurrentMap<RioSetting<Object>, Object> settings = new ConcurrentHashMap<>();
+	protected final Map<RioSetting<Object>, Object> settings = new HashMap<>();
 
 	/**
 	 * A map containing mappings from settings to system properties that have been discovered since the last call to
 	 * {@link #useDefaults()}.
 	 */
-	protected final ConcurrentMap<RioSetting<Object>, Object> systemPropertyCache = new ConcurrentHashMap<>();
+	protected final Map<RioSetting<Object>, Object> systemPropertyCache = new HashMap<>();
 
 	protected final Logger log = LoggerFactory.getLogger(this.getClass());
 
@@ -65,7 +65,7 @@ public class RioConfig implements Serializable {
 	 * @return The value for the parser setting, or the default value if it is not set.
 	 */
 	@SuppressWarnings("unchecked")
-	public <T extends Object> T get(RioSetting<T> setting) {
+	public <T> T get(RioSetting<T> setting) {
 		Object result = settings.get(setting);
 
 		if (result == null) {
@@ -101,21 +101,12 @@ public class RioConfig implements Serializable {
 	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	@SuppressWarnings("unchecked")
-	public <T extends Object> RioConfig set(RioSetting<T> setting, T value) {
+	public <T> RioConfig set(RioSetting<T> setting, T value) {
 
 		if (value == null) {
 			settings.remove(setting);
 		} else {
-			Object putIfAbsent = settings.putIfAbsent((RioSetting<Object>) setting, value);
-
-			if (putIfAbsent != null) {
-				// override the previous setting anyway, putIfAbsent just gives us
-				// information about whether it was previously set or not
-				settings.put((RioSetting<Object>) setting, value);
-
-				// this.log.trace("Overriding previous setting for {}",
-				// setting.getKey());
-			}
+			settings.put((RioSetting<Object>) setting, value);
 		}
 
 		return this;
@@ -129,7 +120,7 @@ public class RioConfig implements Serializable {
 	 * @param setting The setting to check for.
 	 * @return True if the setting has been explicitly set, or false otherwise.
 	 */
-	public <T extends Object> boolean isSet(RioSetting<T> setting) {
+	public <T> boolean isSet(RioSetting<T> setting) {
 		return settings.containsKey(setting) || systemPropertyCache.containsKey(setting)
 				|| hasSystemPropertyOverride(setting);
 	}
