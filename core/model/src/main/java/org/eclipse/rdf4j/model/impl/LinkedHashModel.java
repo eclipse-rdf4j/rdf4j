@@ -214,7 +214,6 @@ public class LinkedHashModel extends AbstractModel {
 							return true;
 						}
 					}
-					return false;
 				}
 			}
 		}
