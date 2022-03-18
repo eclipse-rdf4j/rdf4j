@@ -56,16 +56,12 @@ public abstract class MultithreadedTest {
 
 	@AfterAll
 	public static void afterAll() {
-		Properties.setLockTrackingEnabled(false);
-		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+
 	}
 
 	@Test
 	public void testDataAndShapes() {
 		System.out.println("testDataAndShapes");
-
-		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
-		Properties.setLockTrackingEnabled(true);
 
 		for (int r = 0; r < 1; r++) {
 

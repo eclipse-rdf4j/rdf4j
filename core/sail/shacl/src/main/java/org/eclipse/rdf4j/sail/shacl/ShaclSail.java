@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -181,7 +182,8 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	// lockManager used for read/write locks used to synchronize changes to the shapes (and caching of shapes) and used
 	// to synchronize validation so that SNAPSHOT isolation is sufficient to achieve SERIALIZABLE isolation wrt.
 	// validation
-	final private ReadPrefReadWriteLockManager lockManager = new ReadPrefReadWriteLockManager();
+	final private ReadPrefReadWriteLockManager lockManager = new ReadPrefReadWriteLockManager("ShaclSail lockManager",
+			LockDiagnostics.releaseAbandoned);
 
 	// This is used to keep track of the current connection, if the opening and closing of connections is done serially.
 	// If it is done in parallel, then this will catch that and the multipleConcurrentConnections == true.

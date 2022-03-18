@@ -130,7 +130,8 @@ class MemorySailStore implements SailStore {
 					LockDiagnostics.releaseAbandoned, LockDiagnostics.detectStalledOrDeadlock,
 					LockDiagnostics.stackTrace);
 		} else {
-			statementListLockManager = new ReadPrefReadWriteLockManager("MemorySailStore statementListLockManager");
+			statementListLockManager = new ReadPrefReadWriteLockManager("MemorySailStore statementListLockManager",
+					LockDiagnostics.releaseAbandoned);
 		}
 
 	}
