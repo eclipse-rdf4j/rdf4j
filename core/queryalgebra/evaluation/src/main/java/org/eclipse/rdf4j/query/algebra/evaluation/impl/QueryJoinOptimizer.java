@@ -556,11 +556,22 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		protected List<Var> getUnboundVars(List<Var> vars) {
 
-			return vars.stream()
-					.filter(var -> !var.hasValue())
-					.filter(var -> var.getName() != null)
-					.filter(var -> !boundVars.contains(var.getName()))
-					.collect(Collectors.toList());
+			List<Var> ret = null;
+
+			for (Var var : vars) {
+				if (!var.hasValue() && var.getName() != null && !boundVars.contains(var.getName())) {
+					if (ret == null) {
+						ret = Collections.singletonList(var);
+					} else {
+						if (ret.size() == 1) {
+							ret = new ArrayList<>(ret);
+						}
+						ret.add(var);
+					}
+				}
+			}
+
+			return ret != null ? ret : Collections.emptyList();
 		}
 
 		protected int getForeignVarFreq(List<Var> ownUnboundVars, Map<Var, Integer> varFreqMap) {

@@ -45,8 +45,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 	protected long upperLimit = -1; // if set to a positive number, this upper limit is applied to any subquery
 
 	public FedXStatementPattern(StatementPattern node, QueryInfo queryInfo) {
-		super(node.getSubjectVar(), node.getPredicateVar(), node.getObjectVar(), node.getContextVar());
-		setScope(node.getScope());
+		super(node.getScope(), node.getSubjectVar(), node.getPredicateVar(), node.getObjectVar(), node.getContextVar());
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
 		initFreeVars();

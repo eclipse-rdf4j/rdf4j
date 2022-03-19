@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -483,21 +484,34 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			if (isParallelValidation()) {
 
-				validationResultIterators = callableStream
+				List<Future<ValidationResultIterator>> futures = callableStream
 						.map(this.sail::submitRunnableToExecutorService)
 						// Creating a list is needed to actually make things run multi-threaded, without this the
 						// laziness of java streams will make this run serially
-						.collect(Collectors.toList())
-						.stream()
-						.map(f -> {
-							try {
-								return f.get();
-							} catch (InterruptedException | ExecutionException e) {
-								throw new RuntimeException(e);
-							}
-						})
 						.collect(Collectors.toList());
+				try {
+					validationResultIterators = futures
+							.stream()
+							.map(f -> {
+								try {
+									return f.get();
+								} catch (InterruptedException | ExecutionException e) {
+									throw new SailException(e);
+								}
+							})
+							.collect(Collectors.toList());
+				} catch (Throwable t) {
+					for (Future<ValidationResultIterator> future : futures) {
+						future.cancel(true);
+					}
+					try {
+						Thread.sleep(100);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
 
+					throw t;
+				}
 			} else {
 				validationResultIterators = callableStream.map(c -> {
 					try {

@@ -17,7 +17,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
@@ -31,14 +30,12 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 	private boolean truncated = false;
 
 	private Iterator<ValidationResult> next = Collections.emptyIterator();
-	private CloseableIteration<? extends ValidationTuple, SailException> tupleIterator;
+	private Iterator<ValidationTuple> tupleIterator;
 
 	public ValidationResultIterator(CloseableIteration<? extends ValidationTuple, SailException> tupleIterator,
-			long limit) {
+			long limit) throws InterruptedException {
 		this.limit = limit;
-		this.tupleIterator = tupleIterator;
-		getTuples();
-
+		this.tupleIterator = toList(tupleIterator).iterator();
 	}
 
 	private void calculateNext() {
@@ -97,6 +94,22 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 		}
 	}
 
+	private List<ValidationTuple> toList(CloseableIteration<? extends ValidationTuple, SailException> tupleIterator)
+			throws InterruptedException {
+		try (tupleIterator) {
+			List<ValidationTuple> actualList = new ArrayList<>();
+			long localCounter = 0;
+			while (tupleIterator.hasNext() && (limit < 0 || localCounter++ < limit + 1)) {
+				if (Thread.currentThread().isInterrupted()) {
+					throw new InterruptedException();
+				}
+				actualList.add(tupleIterator.next());
+			}
+
+			return Collections.unmodifiableList(actualList);
+		}
+	}
+
 	public List<ValidationTuple> getTuples() {
 		List<ValidationTuple> actualList = new ArrayList<>();
 		long localCounter = 0;
@@ -104,7 +117,8 @@ public class ValidationResultIterator implements Iterator<ValidationResult> {
 			actualList.add(tupleIterator.next());
 		}
 
-		tupleIterator = new CloseableIteratorIteration<>(actualList.iterator());
+		this.tupleIterator = actualList.iterator();
+
 		return Collections.unmodifiableList(actualList);
 	}
 

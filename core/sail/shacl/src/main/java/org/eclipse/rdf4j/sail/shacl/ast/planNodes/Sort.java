@@ -35,8 +35,6 @@ public class Sort implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
-
 			List<ValidationTuple> sortedTuples;
 
 			Iterator<ValidationTuple> sortedTuplesIterator;
@@ -50,16 +48,8 @@ public class Sort implements PlanNode {
 				}
 				closed = true;
 
-				assert sortedTuples == null
-						|| !iterator.hasNext() : "All tuples from parent iterator where not retrieved when sorting!";
-
-				try {
-					iterator.close();
-				} finally {
-					sortedTuplesIterator = Collections.emptyIterator();
-					sortedTuples = null;
-				}
-
+				sortedTuplesIterator = Collections.emptyIterator();
+				sortedTuples = null;
 			}
 
 			@Override
@@ -74,25 +64,30 @@ public class Sort implements PlanNode {
 				}
 
 				if (sortedTuples == null) {
-					sortedTuples = new ArrayList<>();
-					boolean alreadySorted = true;
-					ValidationTuple prev = null;
-					while (iterator.hasNext()) {
-						ValidationTuple next = iterator.next();
-						sortedTuples.add(next);
+					boolean alreadySorted;
+					try (CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator()) {
+						sortedTuples = new ArrayList<>(1);
+						alreadySorted = true;
+						ValidationTuple prev = null;
+						while (iterator.hasNext()) {
+							ValidationTuple next = iterator.next();
+							sortedTuples.add(next);
 
-						// quick break out if sortedTuples is guaranteed to be of size 1 since we don't need to sort it
-						// then
-						if (sortedTuples.size() == 1 && !iterator.hasNext()) {
-							sortedTuplesIterator = sortedTuples.iterator();
-							return;
+							// quick break out if sortedTuples is guaranteed to be of size 1 since we don't need to sort
+							// it then
+							if (sortedTuples.size() == 1 && !iterator.hasNext()) {
+								sortedTuplesIterator = sortedTuples.iterator();
+								return;
+							}
+
+							if (prev != null
+									&& prev.compareActiveTarget(next) > 0) {
+								alreadySorted = false;
+							}
+							prev = next;
 						}
 
-						if (prev != null
-								&& prev.compareActiveTarget(next) > 0) {
-							alreadySorted = false;
-						}
-						prev = next;
+						assert !iterator.hasNext() : "Iterator: " + iterator;
 					}
 
 					if (!alreadySorted && sortedTuples.size() > 1) {
@@ -108,7 +103,6 @@ public class Sort implements PlanNode {
 
 				}
 
-				assert !iterator.hasNext() : "Iterator: " + iterator.toString();
 			}
 
 			@Override

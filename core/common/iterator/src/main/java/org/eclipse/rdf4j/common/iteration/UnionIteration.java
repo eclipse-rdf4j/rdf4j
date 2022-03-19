@@ -90,15 +90,18 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 			super.handleClose();
 		} finally {
 			try {
-				List<Throwable> collectedExceptions = new ArrayList<>();
+				List<Throwable> collectedExceptions = null;
 				while (argIter.hasNext()) {
 					try {
 						Iterations.closeCloseable(argIter.next());
 					} catch (Throwable e) {
+						if (collectedExceptions == null) {
+							collectedExceptions = new ArrayList<>();
+						}
 						collectedExceptions.add(e);
 					}
 				}
-				if (!collectedExceptions.isEmpty()) {
+				if (collectedExceptions != null && !collectedExceptions.isEmpty()) {
 					throw new UndeclaredThrowableException(collectedExceptions.get(0));
 				}
 			} finally {

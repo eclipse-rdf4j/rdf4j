@@ -160,7 +160,21 @@ public class UnionNode implements PlanNode {
 
 			@Override
 			public void localClose() throws SailException {
-				iterators.forEach(CloseableIteration::close);
+				Throwable thrown = null;
+				for (CloseableIteration<? extends ValidationTuple, SailException> iterator : iterators) {
+					try {
+						iterator.close();
+					} catch (Throwable t) {
+						if (thrown != null) {
+							thrown.addSuppressed(t);
+						} else
+							thrown = t;
+					}
+				}
+
+				if (thrown != null) {
+					throw new SailException(thrown);
+				}
 			}
 
 			@Override

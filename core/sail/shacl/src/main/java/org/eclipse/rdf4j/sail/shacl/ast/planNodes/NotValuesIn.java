@@ -78,7 +78,6 @@ public class NotValuesIn implements PlanNode {
 
 			@Override
 			public void localClose() throws SailException {
-
 				parentIterator.close();
 			}
 

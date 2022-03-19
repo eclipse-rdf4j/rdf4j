@@ -94,11 +94,18 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	 * from the specified context scope.
 	 */
 	public StatementPattern(Scope scope, Var subjVar, Var predVar, Var objVar, Var conVar) {
-		setScope(scope);
-		setSubjectVar(subjVar);
-		setPredicateVar(predVar);
-		setObjectVar(objVar);
-		setContextVar(conVar);
+		Objects.requireNonNull(subjVar).setParentNode(this);
+		Objects.requireNonNull(predVar).setParentNode(this);
+		Objects.requireNonNull(objVar).setParentNode(this);
+
+		this.scope = Objects.requireNonNull(scope);
+		subjectVar = subjVar;
+		predicateVar = predVar;
+		objectVar = objVar;
+		if (conVar != null) {
+			conVar.setParentNode(this);
+		}
+		contextVar = conVar;
 	}
 
 	/*---------*

@@ -925,26 +925,47 @@ class MemorySailStore implements SailStore {
 				Resource... contexts) throws SailException {
 			CloseableIteration<? extends Statement, SailException> stIter1 = null;
 			boolean allGood = false;
-			Lock stLock = openStatementsReadLock();
+
+			Lock readLock = null;
+			boolean simpleReadLock = false;
 			try {
-				stIter1 = createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
-				CloseableIteration<? extends Statement, SailException> stIter2 = LockingIteration.getInstance(stLock,
-						stIter1);
-				allGood = true;
-				return stIter2;
-			} finally {
-				if (!allGood) {
-					try {
-						if (stIter1 != null) {
-							stIter1.close();
-						}
-					} finally {
-						if (stLock != null) {
-							stLock.release();
+				simpleReadLock = statementListLockManager.lockReadLock();
+
+				try {
+					stIter1 = createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
+
+					if (stIter1 instanceof EmptyIteration) {
+						stIter1.close();
+						allGood = true;
+						return EMPTY_ITERATION;
+					}
+
+					readLock = openStatementsReadLock();
+
+					CloseableIteration<? extends Statement, SailException> stIter2 = new LockingIteration<>(readLock,
+							stIter1);
+					allGood = true;
+					return stIter2;
+				} finally {
+					if (!allGood) {
+						try {
+							if (stIter1 != null) {
+								stIter1.close();
+							}
+						} finally {
+							if (readLock != null) {
+								readLock.release();
+							}
 						}
 					}
 				}
+
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
+			} finally {
+				statementListLockManager.unlockReadLock(simpleReadLock);
 			}
+
 		}
 
 		@Override
