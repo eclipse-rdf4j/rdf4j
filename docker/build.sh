@@ -36,7 +36,7 @@ cd "$CURRENT"
 echo "Building docker image"
 docker-compose build
 
-docker tag docker_rdf4j:latest eclipse/rdf4j-workbench:${MVN_VERSION}
+docker tag docker_rdf4j:latest eclipse/rdf4j-workbench:"${MVN_VERSION}"
 
 echo "
 Docker image tagged as:

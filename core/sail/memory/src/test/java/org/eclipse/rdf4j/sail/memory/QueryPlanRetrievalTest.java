@@ -29,8 +29,8 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 public class QueryPlanRetrievalTest {
 
@@ -178,7 +178,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	@Ignore
+	@Disabled
 	public void testTupleQueryTimed() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
@@ -557,7 +557,7 @@ public class QueryPlanRetrievalTest {
 
 	}
 
-	@Ignore // slow test used for debugging
+	@Disabled // slow test used for debugging
 	@Test
 	public void bigDataset() throws IOException {
 		SailRepository repository = new SailRepository(new MemoryStore());

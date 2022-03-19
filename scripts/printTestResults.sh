@@ -1,10 +1,10 @@
 #!/bin/bash
 
-REPORT_DIRS=`find . -name "surefire-reports" -type d`
+REPORT_DIRS=$(find . -name "surefire-reports" -type d)
 for d in $REPORT_DIRS;
 do
   MODULE=${d/\/target\/surefire-reports/}
-  REPORTS=`find $d -type f -name "*.txt"`
+  REPORTS=$(find "$d" -type f -name "*.txt")
   FAILURES=false
   for report in $REPORTS;
   do
@@ -20,7 +20,7 @@ do
     for report in $REPORTS;
     do
      if egrep -q "FAILURE!|ERROR!" "$report"; then
-        cat $report
+        cat "$report"
       fi
     done
     echo ""
