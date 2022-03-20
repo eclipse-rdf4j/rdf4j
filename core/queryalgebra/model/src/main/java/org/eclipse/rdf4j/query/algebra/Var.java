@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.model.Value;
 /**
  * A variable that can contain a Value.
  */
-public final class Var implements ValueExpr, QueryModelNode {
+public class Var implements ValueExpr, QueryModelNode {
 
 	/*-----------*
 	 * Variables *
