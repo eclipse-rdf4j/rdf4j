@@ -65,9 +65,9 @@ public class TupleExprs {
 				}
 			}
 
-			n = queue != null ? queue.removeFirst() : null;
+			n = queue != null ? queue.poll() : null;
 
-		} while (queue != null && !queue.isEmpty());
+		} while (n != null);
 
 		return false;
 	}
