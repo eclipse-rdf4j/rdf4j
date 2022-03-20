@@ -122,8 +122,12 @@ public class MemValueFactory extends AbstractValueFactory {
 	public MemValue getMemValue(Value value) {
 		if (value == null) {
 			return null;
-		} else if (value.isResource()) {
-			return getMemResource((Resource) value);
+		} else if (value.isIRI()) {
+			return getMemURI((IRI) value);
+		} else if (value.isBNode()) {
+			return getMemBNode((BNode) value);
+		} else if (value.isTriple()) {
+			return getMemTriple((Triple) value);
 		} else if (value.isLiteral()) {
 			return getMemLiteral((Literal) value);
 		} else {

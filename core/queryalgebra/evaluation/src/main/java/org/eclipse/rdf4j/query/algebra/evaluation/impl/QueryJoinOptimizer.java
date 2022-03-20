@@ -14,7 +14,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -575,18 +574,20 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected int getForeignVarFreq(List<Var> ownUnboundVars, Map<Var, Integer> varFreqMap) {
-			int result = 0;
+			if (ownUnboundVars.isEmpty())
+				return 0;
+			if (ownUnboundVars.size() == 1) {
+				return varFreqMap.get(ownUnboundVars.get(0)) - 1;
+			} else {
+				int result = -ownUnboundVars.size();
+				for (Var var : new HashSet<>(ownUnboundVars)) {
+					result += varFreqMap.get(var);
+				}
+				return result;
 
-			Map<Var, Integer> ownFreqMap = getVarFreqMap(ownUnboundVars, new HashMap<>());
-
-			for (Map.Entry<Var, Integer> entry : ownFreqMap.entrySet()) {
-				Var var = entry.getKey();
-				int ownFreq = entry.getValue();
-				result += varFreqMap.get(var) - ownFreq;
 			}
-
-			return result;
 		}
+
 	}
 
 }

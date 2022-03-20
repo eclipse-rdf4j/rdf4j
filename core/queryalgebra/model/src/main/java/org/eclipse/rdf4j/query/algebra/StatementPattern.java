@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.AbstractSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -203,22 +205,60 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	}
 
 	private Set<String> getBindingsInternal() {
-		Set<String> bindingNames = new HashSet<>();
+		return new SmallStringSet(subjectVar, predicateVar, objectVar, contextVar);
+	}
 
-		if (subjectVar != null) {
-			bindingNames.add(subjectVar.getName());
-		}
-		if (predicateVar != null) {
-			bindingNames.add(predicateVar.getName());
-		}
-		if (objectVar != null) {
-			bindingNames.add(objectVar.getName());
-		}
-		if (contextVar != null) {
-			bindingNames.add(contextVar.getName());
+	private static class SmallStringSet extends AbstractSet<String> {
+
+		String[] values;
+
+		public SmallStringSet(Var var1, Var var2, Var var3, Var var4) {
+			String[] values = new String[4];
+
+			int i = 0;
+			if (var1 != null) {
+				values[i++] = var1.getName();
+			}
+			i = add(var2, values, i);
+			i = add(var3, values, i);
+			i = add(var4, values, i);
+
+			if (i == 4) {
+				this.values = values;
+			} else {
+				this.values = Arrays.copyOfRange(values, 0, i);
+			}
+
 		}
 
-		return Collections.unmodifiableSet(bindingNames);
+		private int add(Var var, String[] names, int i) {
+			if (var == null) {
+				return i;
+			}
+
+			String name = var.getName();
+			boolean unique = true;
+			for (int j = 0; j < i; j++) {
+				if (names[j].equals(name)) {
+					unique = false;
+					break;
+				}
+			}
+			if (unique) {
+				names[i++] = name;
+			}
+			return i;
+		}
+
+		@Override
+		public Iterator<String> iterator() {
+			return Arrays.asList(values).iterator();
+		}
+
+		@Override
+		public int size() {
+			return values.length;
+		}
 	}
 
 	public List<Var> getVarList() {
@@ -231,8 +271,24 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 	}
 
 	private List<Var> getVarListInternal() {
-		int size = getSize();
-		return Collections.unmodifiableList(getVars(new ArrayList<>(size)));
+
+		Var[] vars = new Var[getSize()];
+		int i = 0;
+
+		if (subjectVar != null) {
+			vars[i++] = subjectVar;
+		}
+		if (predicateVar != null) {
+			vars[i++] = predicateVar;
+		}
+		if (objectVar != null) {
+			vars[i++] = objectVar;
+		}
+		if (contextVar != null) {
+			vars[i++] = contextVar;
+		}
+
+		return Arrays.asList(vars);
 	}
 
 	private int getSize() {

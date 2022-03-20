@@ -144,17 +144,17 @@ public final class Var implements ValueExpr, QueryModelNode {
 //		return false;
 //	}
 
-	@Override
-	public int hashCode() {
-		int result = name.hashCode();
-		if (value != null) {
-			result ^= value.hashCode();
-		}
-		if (anonymous) {
-			result = ~result;
-		}
-		return result;
-	}
+//	@Override
+//	public int hashCode() {
+//		int result = name.hashCode();
+//		if (value != null) {
+//			result ^= value.hashCode();
+//		}
+//		if (anonymous) {
+//			result = ~result;
+//		}
+//		return result;
+//	}
 
 	@Override
 	public boolean equals(Object o) {
@@ -167,20 +167,22 @@ public final class Var implements ValueExpr, QueryModelNode {
 		Var var = (Var) o;
 		return anonymous == var.anonymous && Objects.equals(name, var.name) && Objects.equals(value, var.value);
 	}
+
 //
-//	int hashCode = 0;
+	int hashCode = 0;
+
 //
-//	@Override
-//	public int hashCode() {
-//		if(hashCode == 0) {
-//			int result = 1;
-//			result = 31 * result + (name == null ? 0 : name.hashCode());
-//			result = 31 * result + (value == null ? 0 : value.hashCode());
-//			result = 31 * result + Boolean.hashCode(anonymous);
-//			hashCode = result;
-//		}
-//		return hashCode;
-//	}
+	@Override
+	public int hashCode() {
+		if (hashCode == 0) {
+			int result = 1;
+			result = 31 * result + (name == null ? 0 : name.hashCode());
+			result = 31 * result + (value == null ? 0 : value.hashCode());
+			result = 31 * result + Boolean.hashCode(anonymous);
+			hashCode = result;
+		}
+		return hashCode;
+	}
 
 	@Override
 	public Var clone() {
