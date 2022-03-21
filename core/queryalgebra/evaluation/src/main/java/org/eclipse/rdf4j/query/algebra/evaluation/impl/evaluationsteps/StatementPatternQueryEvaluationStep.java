@@ -104,9 +104,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return (b) -> null;
 		} else if (var.hasValue()) {
 			Value value = var.getValue();
-			return (b) -> {
-				return value;
-			};
+			return (b) -> value;
 		} else {
 			return context.getValue(var.getName());
 		}
@@ -290,7 +288,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		if (graphs == null || graphs.isEmpty()) {
 			// store default behaviour
-			return (contextValue) -> contextsGivenContextVal(contextValue);
+			return StatementPatternQueryEvaluationStep::contextsGivenContextVal;
 		} else {
 			Resource[] filled = fillContextsFromDatasSetGraphs(graphs);
 			// if contextVar is null contextValue must always be null;
@@ -317,7 +315,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private static Resource[] contextsGivenContextVal(final Value contextValue) {
 		if (contextValue != null) {
 			if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
-				return new Resource[] { (Resource) null };
+				return new Resource[] { null };
 			} else {
 				return new Resource[] { (Resource) contextValue };
 			}

@@ -11,7 +11,9 @@ package org.eclipse.rdf4j.sail.shacl;
 import static org.eclipse.rdf4j.model.util.Statements.statement;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -94,14 +96,15 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
 			if (inferredTypes.size() > 1) {
 
-				CloseableIteration<Statement, SailException>[] statementsMatchingInferredTypes = inferredTypes.stream()
+				List<? extends CloseableIteration<? extends Statement, SailException>> statementsMatchingInferredTypes = inferredTypes
+						.stream()
 						.map(r -> super.getStatements(subj, pred, r, false, contexts))
-						.toArray(CloseableIteration[]::new);
+						.collect(Collectors.toList());
 
 				return new LookAheadIteration<>() {
 
-					final UnionIteration<Statement, SailException> unionIteration = new UnionIteration<>(
-							statementsMatchingInferredTypes);
+					final CloseableIteration<Statement, SailException> unionIteration = UnionIteration
+							.getInstance(statementsMatchingInferredTypes);
 
 					final HashSet<Statement> dedupe = new HashSet<>();
 

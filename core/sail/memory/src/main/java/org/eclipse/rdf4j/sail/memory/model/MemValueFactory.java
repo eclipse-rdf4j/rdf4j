@@ -158,7 +158,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	public MemIRI getMemURI(IRI uri) {
 		if (uri == null) {
 			return null;
-		} else if (isOwnMemValue(uri)) {
+		} else if (isOwnMemIRI(uri)) {
 			return (MemIRI) uri;
 		} else {
 			MemIRI memIRI = vocabulariesCache.get(uri);
@@ -182,7 +182,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	public MemBNode getMemBNode(BNode bnode) {
 		if (bnode == null) {
 			return null;
-		} else if (isOwnMemValue(bnode)) {
+		} else if (isOwnMemBnode(bnode)) {
 			return (MemBNode) bnode;
 		} else {
 
@@ -204,7 +204,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	public MemLiteral getMemLiteral(Literal literal) {
 		if (literal == null) {
 			return null;
-		} else if (isOwnMemValue(literal)) {
+		} else if (isOwnMemLiteral(literal)) {
 			return (MemLiteral) literal;
 		} else {
 
@@ -223,7 +223,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	private MemTriple getMemTriple(Triple triple) {
 		if (triple == null) {
 			return null;
-		} else if (isOwnMemValue(triple)) {
+		} else if (isOwnMemTriple(triple)) {
 			return (MemTriple) triple;
 		} else {
 			MemTriple memTriple = null; // tripleCache.getIfPresent(triple);
@@ -242,8 +242,21 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * Checks whether the supplied value is an instance of <var>MemValue</var> and whether it has been created by this
 	 * MemValueFactory.
 	 */
-	private boolean isOwnMemValue(Value value) {
-		return value instanceof MemValue && ((MemValue) value).getCreator() == this;
+
+	private boolean isOwnMemBnode(BNode value) {
+		return value instanceof MemBNode && ((MemBNode) value).getCreator() == this;
+	}
+
+	private boolean isOwnMemLiteral(Literal value) {
+		return value instanceof MemLiteral && ((MemLiteral) value).getCreator() == this;
+	}
+
+	private boolean isOwnMemTriple(Triple value) {
+		return value instanceof MemTriple && ((MemTriple) value).getCreator() == this;
+	}
+
+	private boolean isOwnMemIRI(IRI value) {
+		return value instanceof MemIRI && ((MemIRI) value).getCreator() == this;
 	}
 
 	/**
@@ -349,7 +362,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
 	public MemIRI getOrCreateMemURI(IRI uri) {
-		if (isOwnMemValue(uri)) {
+		if (isOwnMemIRI(uri)) {
 			return (MemIRI) uri;
 		}
 
@@ -377,7 +390,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
 	public MemBNode getOrCreateMemBNode(BNode bnode) {
-		if (isOwnMemValue(bnode)) {
+		if (isOwnMemBnode(bnode)) {
 			return (MemBNode) bnode;
 		}
 
@@ -394,7 +407,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
 	public MemLiteral getOrCreateMemLiteral(Literal literal) {
-		if (isOwnMemValue(literal)) {
+		if (isOwnMemLiteral(literal)) {
 			return (MemLiteral) literal;
 		}
 

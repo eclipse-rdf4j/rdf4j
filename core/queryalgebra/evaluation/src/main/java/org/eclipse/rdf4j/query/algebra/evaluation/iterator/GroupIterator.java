@@ -860,7 +860,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 
 			Value v = evaluate(s);
-			if (v instanceof Literal) {
+			if (v != null && v.isLiteral()) {
 				if (distinctValue.test(v)) {
 					Literal nextLiteral = (Literal) v;
 					if (nextLiteral.getDatatype() != null
@@ -869,7 +869,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 					} else {
 						typeError = new ValueExprEvaluationException("not a number: " + v);
 					}
-				} else if (v != null) {
+				} else {
 					typeError = new ValueExprEvaluationException("not a number: " + v);
 				}
 			}
@@ -893,7 +893,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 			Value v = evaluate(s);
 			if (distinctValue.test(v)) {
-				if (v instanceof Literal) {
+				if (v != null && v.isLiteral()) {
 					Literal nextLiteral = (Literal) v;
 					// check if the literal is numeric.
 					if (nextLiteral.getDatatype() != null

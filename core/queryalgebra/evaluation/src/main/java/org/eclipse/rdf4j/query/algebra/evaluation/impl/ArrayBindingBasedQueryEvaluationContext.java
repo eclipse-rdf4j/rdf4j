@@ -24,8 +24,10 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
@@ -136,7 +138,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	public static String[] findAllVariablesUsedInQuery(QueryRoot node) {
-		Set<String> varNames = new HashSet<>();
+		Set<String> varNames = new LinkedHashSet<>();
 		AbstractSimpleQueryModelVisitor<QueryEvaluationException> queryModelVisitorBase = new AbstractSimpleQueryModelVisitor<>(
 				true) {
 
@@ -148,9 +150,19 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 			@Override
 			public void meet(ProjectionElem node) throws QueryEvaluationException {
+				super.meet(node);
 				varNames.add(node.getSourceName());
 				varNames.add(node.getTargetName());
-				super.meet(node);
+			}
+
+			@Override
+			protected void meetUnaryTupleOperator(UnaryTupleOperator node) throws QueryEvaluationException {
+				if (node instanceof Projection) {
+					node.getArg().visit(this);
+					((Projection) node).getProjectionElemList().visit(this);
+				} else {
+					node.visitChildren(this);
+				}
 			}
 
 			@Override

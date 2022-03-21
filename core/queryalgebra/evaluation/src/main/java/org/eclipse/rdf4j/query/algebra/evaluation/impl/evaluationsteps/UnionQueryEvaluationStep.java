@@ -26,6 +26,6 @@ public class UnionQueryEvaluationStep implements QueryEvaluationStep {
 	@SuppressWarnings("unchecked")
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		return new UnionIteration<>(leftQes.evaluate(bindings), rightQes.evaluate(bindings));
+		return UnionIteration.getInstance(leftQes.evaluate(bindings), rightQes.evaluate(bindings));
 	}
 }

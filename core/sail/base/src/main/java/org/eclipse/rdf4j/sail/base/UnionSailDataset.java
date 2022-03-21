@@ -7,7 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
@@ -29,91 +30,66 @@ class UnionSailDataset implements SailDataset {
 	/**
 	 * Set of {@link SailDataset}s to combine.
 	 */
-	private final SailDataset[] datasets;
+	private final SailDataset dataset1;
+	private final SailDataset dataset2;
 
 	/**
-	 * Creates a new {@link SailDataset} that includes all the given {@link SailDataset}s.
-	 *
-	 * @param datasets
+	 * Creates a new {@link SailDataset} that unions two other sail datasets.
 	 */
-	public UnionSailDataset(SailDataset... datasets) {
-		this.datasets = datasets;
+	public UnionSailDataset(SailDataset dataset1, SailDataset dataset2) {
+		this.dataset1 = dataset1;
+		this.dataset2 = dataset2;
 	}
 
 	@Override
 	public String toString() {
-		return Arrays.asList(datasets).toString();
+		return List.of(dataset1, dataset2).toString();
 	}
 
 	@Override
 	public void close() throws SailException {
-		for (SailDataset dataset : datasets) {
-			dataset.close();
+		try {
+			dataset1.close();
+		} finally {
+			dataset2.close();
 		}
 	}
 
 	@Override
 	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
-		CloseableIteration<? extends Namespace, SailException>[] result = new CloseableIteration[datasets.length];
-		for (int i = 0; i < datasets.length; i++) {
-			result[i] = datasets[i].getNamespaces();
-		}
-		return union(result);
+		return UnionIteration.getInstance(dataset1.getNamespaces(), dataset2.getNamespaces());
 	}
 
 	@Override
 	public String getNamespace(String prefix) throws SailException {
-		for (int i = 0; i < datasets.length; i++) {
-			String result = datasets[i].getNamespace(prefix);
-			if (result != null) {
-				return result;
-			}
+		String namespace = dataset1.getNamespace(prefix);
+		if (namespace == null) {
+			namespace = dataset2.getNamespace(prefix);
 		}
-		return null;
+		return namespace;
 	}
 
 	@Override
 	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
-		CloseableIteration<? extends Resource, SailException>[] result = new CloseableIteration[datasets.length];
-		for (int i = 0; i < datasets.length; i++) {
-			result[i] = datasets[i].getContextIDs();
-		}
-		return union(result);
+		return UnionIteration.getInstance(dataset1.getContextIDs(), dataset2.getContextIDs());
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
-		CloseableIteration<? extends Statement, SailException>[] result = new CloseableIteration[datasets.length];
-		for (int i = 0; i < datasets.length; i++) {
-			result[i] = datasets[i].getStatements(subj, pred, obj, contexts);
-		}
-		return union(result);
+		return UnionIteration.getInstance(dataset1.getStatements(subj, pred, obj, contexts),
+				dataset2.getStatements(subj, pred, obj, contexts));
 	}
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-
-		for (SailDataset dataset : datasets) {
-			if (dataset.hasStatement(subj, pred, obj, contexts))
-				return true;
-		}
-		return false;
+		return dataset1.hasStatement(subj, pred, obj, contexts) || dataset2.hasStatement(subj, pred, obj, contexts);
 	}
 
 	@Override
 	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
-		CloseableIteration<? extends Triple, SailException>[] result = new CloseableIteration[datasets.length];
-		for (int i = 0; i < datasets.length; i++) {
-			result[i] = datasets[i].getTriples(subj, pred, obj);
-		}
-		return union(result);
-	}
-
-	private <T> CloseableIteration<? extends T, SailException> union(
-			CloseableIteration<? extends T, SailException>[] items) {
-		return new UnionIteration<>(items);
+		return UnionIteration.getInstance(dataset1.getTriples(subj, pred, obj), dataset2.getTriples(subj, pred, obj));
 	}
 
 }

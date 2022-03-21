@@ -176,7 +176,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			String varname = currentMode == Mode.OUTGOING_LINKS ? VARNAME_OBJECT : VARNAME_SUBJECT;
 
 			Value v = bs.getValue(varname);
-			if (v instanceof BNode) {
+			if (v != null && v.isBNode()) {
 				if (!processedNodes.contains(v)) { // duplicate/cycle detection
 					nodeQueue.add((BNode) v);
 				}

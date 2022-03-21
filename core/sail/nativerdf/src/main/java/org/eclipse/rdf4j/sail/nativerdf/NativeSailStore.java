@@ -267,7 +267,7 @@ class NativeSailStore implements SailStore {
 		if (perContextIterList.size() == 1) {
 			return perContextIterList.get(0);
 		} else {
-			return new UnionIteration<>(perContextIterList);
+			return UnionIteration.getInstance(perContextIterList);
 		}
 	}
 

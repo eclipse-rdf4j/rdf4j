@@ -15,7 +15,7 @@ public class UnionIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<String, Exception> createTestIteration() {
-		return new UnionIteration<>(createStringList1Iteration(), createStringList2Iteration());
+		return UnionIteration.getInstance(createStringList1Iteration(), createStringList2Iteration());
 	}
 
 	@Override

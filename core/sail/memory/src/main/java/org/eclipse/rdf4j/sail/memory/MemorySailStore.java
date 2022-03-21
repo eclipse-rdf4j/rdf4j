@@ -294,35 +294,52 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
-		MemStatementList smallestList = statementList;
+		MemStatementList smallestList = getSmallestStatementList(subj, pred, obj);
 
-		if (subj != null) {
-			MemStatementList l = subj.getSubjectStatementList();
-			if (l.size() < smallestList.size()) {
-				smallestList = l;
-			}
-		}
-
-		if (pred != null) {
-			MemStatementList l = pred.getPredicateStatementList();
-			if (l.size() < smallestList.size()) {
-				smallestList = l;
-			}
-		}
-
-		if (obj != null) {
-			MemStatementList l = obj.getObjectStatementList();
-			if (l.size() < smallestList.size()) {
-				smallestList = l;
-			}
-		}
-
-		if (smallestList.isEmpty()) {
+		if (smallestList == null) {
+			smallestList = statementList;
+		} else if (smallestList.isEmpty()) {
 			return EMPTY_ITERATION;
 		}
 
 		return MemStatementIterator.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot, memContexts,
 				iteratorCache);
+	}
+
+	private MemStatementList getSmallestStatementList(MemResource subj, MemIRI pred, MemValue obj) {
+		MemStatementList smallestList = null;
+
+		if (subj != null) {
+			smallestList = subj.getSubjectStatementList();
+			if (smallestList.isEmpty()) {
+				return smallestList;
+			}
+		}
+
+		if (pred != null) {
+			MemStatementList l = pred.getPredicateStatementList();
+			if (smallestList == null) {
+				smallestList = l;
+				if (smallestList.isEmpty()) {
+					return smallestList;
+				}
+			} else if (l.size() < smallestList.size()) {
+				smallestList = l;
+				if (smallestList.isEmpty()) {
+					return smallestList;
+				}
+			}
+		}
+
+		if (obj != null) {
+			MemStatementList l = obj.getObjectStatementList();
+			if (smallestList == null) {
+				smallestList = l;
+			} else if (l.size() < smallestList.size()) {
+				smallestList = l;
+			}
+		}
+		return smallestList;
 	}
 
 	/**
@@ -923,43 +940,38 @@ class MemorySailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
-			CloseableIteration<? extends Statement, SailException> stIter1 = null;
-			boolean allGood = false;
 
-			Lock readLock = null;
 			boolean simpleReadLock = false;
 			try {
 				simpleReadLock = statementListLockManager.lockReadLock();
 
+				CloseableIteration<? extends Statement, SailException> iteration = null;
+				Lock readLock = null;
 				try {
-					stIter1 = createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
+					iteration = createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
 
-					if (stIter1 instanceof EmptyIteration) {
-						stIter1.close();
-						allGood = true;
-						return EMPTY_ITERATION;
+					if (iteration == EMPTY_ITERATION) {
+						return iteration;
 					}
 
 					readLock = openStatementsReadLock();
 
-					CloseableIteration<? extends Statement, SailException> stIter2 = new LockingIteration<>(readLock,
-							stIter1);
-					allGood = true;
-					return stIter2;
-				} finally {
-					if (!allGood) {
-						try {
-							if (stIter1 != null) {
-								stIter1.close();
-							}
-						} finally {
-							if (readLock != null) {
-								readLock.release();
-							}
+					return new LockingIteration<>(readLock, iteration);
+				} catch (Throwable t) {
+					try {
+						if (iteration != null) {
+							iteration.close();
+						}
+					} finally {
+						if (readLock != null) {
+							readLock.release();
 						}
 					}
+					if (t instanceof SailException) {
+						throw ((SailException) t);
+					}
+					throw new SailException(t);
 				}
-
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);
 			} finally {

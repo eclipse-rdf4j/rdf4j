@@ -146,16 +146,14 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 			MemStatement statement = statementList.getIfExists(statementIndex++);
 			if (statement == null) {
 				exhausted = true;
-				break;
-			}
 
-			// First check if we match the specified SPO, then check the context, then finally check the
-			// explicit/inferred and snapshot.
-			// Checking explicit/inferred and snapshot requires reading a volatile field, which is fairly slow and the
-			// reason we check this last.
-
-			if ((statement.matchesSPO(subject, predicate, object)) && matchesContext(statement)
+			} else if ((statement.matchesSPO(subject, predicate, object)) && matchesContext(statement)
 					&& matchesExplicitAndSnapshot(statement)) {
+				// First check if we match the specified SPO, then check the context, then finally check the
+				// explicit/inferred and snapshot.
+				// Checking explicit/inferred and snapshot requires reading a volatile field, which is fairly slow and
+				// the
+				// reason we check this last.
 				matchingStatements++;
 				return statement;
 			}

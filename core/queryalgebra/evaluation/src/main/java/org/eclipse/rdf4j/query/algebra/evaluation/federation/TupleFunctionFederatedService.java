@@ -186,7 +186,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 			resultIters
 					.add(TupleFunctionEvaluationStrategy.evaluate(func, funcCall.getResultVars(), bs, vf, argValues));
 		}
-		return (resultIters.size() > 1) ? new DistinctIteration<>(new UnionIteration<>(resultIters))
+		return (resultIters.size() > 1) ? new DistinctIteration<>(UnionIteration.getInstance(resultIters))
 				: resultIters.get(0);
 	}
 
