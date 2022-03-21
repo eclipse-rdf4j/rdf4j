@@ -25,7 +25,7 @@ public final class ExtensionQueryEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-		CloseableIteration<BindingSet, QueryEvaluationException> result;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> result;
 		try {
 			result = arg.evaluate(bs);
 		} catch (ValueExprEvaluationException e) {

@@ -112,6 +112,16 @@ public class ListBindingSet extends AbstractBindingSet {
 		return size;
 	}
 
+	@Override
+	public boolean isEmpty() {
+		for (Value value : values) {
+			if (value != null) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/*------------------------------------*
 	 * Inner class ListBindingSetIterator *
 	 *------------------------------------*/

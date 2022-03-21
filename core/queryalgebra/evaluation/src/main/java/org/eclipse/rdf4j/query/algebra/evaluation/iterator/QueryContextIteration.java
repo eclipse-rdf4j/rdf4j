@@ -72,14 +72,15 @@ public class QueryContextIteration extends AbstractCloseableIteration<BindingSet
 	@Override
 	public void handleClose() throws QueryEvaluationException {
 		try {
-			super.handleClose();
-		} finally {
 			queryContext.begin();
+		} finally {
 			try {
 				iter.close();
 			} finally {
 				queryContext.end();
 			}
 		}
+
 	}
+
 }

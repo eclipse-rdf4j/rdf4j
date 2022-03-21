@@ -59,7 +59,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	public boolean bRDFStarData;
 
 	// the triples over which the evaluations is carried
-	private ArrayList<Triple> triples = new ArrayList<>();
+	private final ArrayList<Triple> triples = new ArrayList<>();
 
 	ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -80,24 +80,27 @@ public class EvaluationStrategyWithRDFStarTest {
 		public CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj,
 				IRI pred, Value obj)
 				throws QueryEvaluationException {
-			return new AbstractCloseableIteration<Triple, QueryEvaluationException>() {
-				Iterator<Triple> iter = triples.iterator();
+			return new AbstractCloseableIteration<>() {
+
+				final Iterator<Triple> iter = triples.iterator();
 
 				@Override
-				public boolean hasNext()
-						throws QueryEvaluationException {
+				public boolean hasNext() throws QueryEvaluationException {
 					return iter.hasNext();
 				}
 
 				@Override
-				public Triple next()
-						throws QueryEvaluationException {
+				public Triple next() throws QueryEvaluationException {
 					return iter.next();
 				}
 
 				@Override
-				public void remove()
-						throws QueryEvaluationException {
+				public void remove() throws QueryEvaluationException {
+				}
+
+				@Override
+				protected void handleClose() throws QueryEvaluationException {
+					// no-op
 				}
 			};
 		}
@@ -154,8 +157,6 @@ public class EvaluationStrategyWithRDFStarTest {
 		}
 
 	}
-
-	;
 
 	@Before
 	public void setUp() throws Exception {
@@ -226,9 +227,9 @@ public class EvaluationStrategyWithRDFStarTest {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy.evaluate(tripleRefNode,
 				new EmptyBindingSet())) {
 			ArrayList<BindingSet> expected = new ArrayList<>();
-			triples.forEach(t -> {
+			for (Triple t : triples) {
 				expected.add(fromTriple(t));
-			});
+			}
 			ArrayList<BindingSet> received = new ArrayList<>();
 			while (iter.hasNext()) {
 				received.add(iter.next());

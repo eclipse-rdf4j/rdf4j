@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.model.Statement;
@@ -24,7 +25,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */
-public class IteratingGraphQueryResult extends IterationWrapper<Statement, QueryEvaluationException>
+public class IteratingGraphQueryResult extends
+		CloseableIterationWrapper<Statement, QueryEvaluationException, CloseableIteration<? extends Statement, ? extends QueryEvaluationException>>
 		implements GraphQueryResult {
 
 	/*-----------*

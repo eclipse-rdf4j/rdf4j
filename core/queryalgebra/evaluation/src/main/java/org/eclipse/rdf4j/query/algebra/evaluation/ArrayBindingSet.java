@@ -92,7 +92,6 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public ArrayBindingSet(ArrayBindingSet toCopy, String... names) {
-
 		if (names == toCopy.bindingNames) {
 			this.bindingNames = names;
 		} else {
@@ -163,23 +162,33 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public Function<ArrayBindingSet, Value> getDirectGetValue(String variableName) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(variableName)) {
-				final int idx = i;
-				return (a) -> {
-					return a.values[idx];
-				};
-			}
+		int index = getIndex(variableName);
+		if (index >= 0) {
+			return bindings -> bindings.values[index];
 		}
 		return null;
 	}
 
-	public Function<ArrayBindingSet, Boolean> getDirectHasBinding(String bindingName) {
+	private int getIndex(String variableName) {
+		// first check with reference equality, since this is faster
 		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(bindingName)) {
-				final int idx = i;
-				return (a) -> a.whichBindingsHaveBeenSet.get(idx);
+			if (bindingNames[i] == variableName) {
+				return i;
 			}
+		}
+
+		for (int i = 0; i < this.bindingNames.length; i++) {
+			if (bindingNames[i].equals(variableName)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	public Function<ArrayBindingSet, Boolean> getDirectHasBinding(String bindingName) {
+		int index = getIndex(bindingName);
+		if (index >= 0) {
+			return bindings -> bindings.values[index] != null || bindings.whichBindingsHaveBeenSet.get(index);
 		}
 		return null;
 	}
@@ -359,6 +368,12 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean isEmpty() {
+		for (int i = 0; i < values.length; i++) {
+			if (values[i] != null) {
+				return false;
+			}
+		}
+
 		for (int i = 0; i < values.length; i++) {
 			if (whichBindingsHaveBeenSet.get(i)) {
 				return false;

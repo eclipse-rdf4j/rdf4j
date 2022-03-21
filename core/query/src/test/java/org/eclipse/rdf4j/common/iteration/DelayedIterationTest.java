@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.common.iteration;
 public class DelayedIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<? extends String, Exception> createTestIteration() {
 		return new DelayedIteration<String, Exception>() {
 
 			@Override

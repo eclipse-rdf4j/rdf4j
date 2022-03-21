@@ -280,10 +280,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 				if (startVarFixed && endVarFixed) {
 
-					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + "_" + this.hashCode());
-					Var endReplacement = createAnonVar("END_" + JOINVAR_PREFIX + this.hashCode());
-					startReplacement.setAnonymous(false);
-					endReplacement.setAnonymous(false);
+					Var startReplacement = new Var(JOINVAR_PREFIX + currentLength + "_" + this.hashCode());
+					Var endReplacement = new Var("END_" + JOINVAR_PREFIX + this.hashCode());
 
 					Value v = currentVp.getEndValue();
 					startReplacement.setValue(v);
@@ -424,8 +422,6 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	}
 
 	public Var createAnonVar(String varName) {
-		Var var = new Var(varName);
-		var.setAnonymous(true);
-		return var;
+		return new Var(varName, true);
 	}
 }

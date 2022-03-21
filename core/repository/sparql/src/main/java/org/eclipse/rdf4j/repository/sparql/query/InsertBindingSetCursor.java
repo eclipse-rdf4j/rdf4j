@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.repository.sparql.query;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -18,9 +19,10 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  *
  * @author James Leigh
  */
-public class InsertBindingSetCursor extends IterationWrapper<BindingSet, QueryEvaluationException> {
+public class InsertBindingSetCursor extends
+		CloseableIterationWrapper<BindingSet, QueryEvaluationException, CloseableIteration<BindingSet, QueryEvaluationException>> {
 
-	private BindingSet bindings;
+	private final BindingSet bindings;
 
 	public InsertBindingSetCursor(CloseableIteration<BindingSet, QueryEvaluationException> delegate,
 			BindingSet bindings) {

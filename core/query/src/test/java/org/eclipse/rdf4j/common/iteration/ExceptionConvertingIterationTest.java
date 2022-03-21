@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.common.iteration;
 public class ExceptionConvertingIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<? extends String, Exception> createTestIteration() {
 		return new ExceptionConvertingIteration<String, Exception>(createStringList1Iteration()) {
 
 			@Override

@@ -38,7 +38,12 @@ public class Var implements ValueExpr, QueryModelNode {
 	}
 
 	public Var(String name) {
-		setName(name);
+		this.name = name;
+	}
+
+	public Var(String name, boolean anonymous) {
+		this.name = name;
+		this.anonymous = anonymous;
 	}
 
 	public Var(String name, Value value) {

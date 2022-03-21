@@ -32,7 +32,7 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		final Iterator<BindingSet> assignments = node.getBindingSets().iterator();
+		final Iterator<? extends BindingSet> assignments = node.getBindingSets().iterator();
 		if (bindings.size() == 0) {
 			// we can just return the assignments directly without checking existing bindings
 			return new CloseableIteratorIteration<>(assignments);
@@ -41,7 +41,7 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 		// we need to verify that new binding assignments do not overwrite existing bindings
 		CloseableIteration<BindingSet, QueryEvaluationException> result;
 
-		result = new LookAheadIteration<BindingSet, QueryEvaluationException>() {
+		result = new LookAheadIteration<>() {
 
 			@Override
 			protected BindingSet getNextElement() throws QueryEvaluationException {

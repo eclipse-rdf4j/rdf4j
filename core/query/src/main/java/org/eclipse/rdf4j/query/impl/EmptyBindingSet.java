@@ -78,6 +78,11 @@ public class EmptyBindingSet implements BindingSet {
 	}
 
 	@Override
+	public boolean isEmpty() {
+		return true;
+	}
+
+	@Override
 	public String toString() {
 		return "[]";
 	}

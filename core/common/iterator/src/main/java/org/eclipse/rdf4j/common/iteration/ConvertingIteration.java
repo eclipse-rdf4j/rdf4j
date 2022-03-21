@@ -102,10 +102,6 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 */
 	@Override
 	protected void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			Iterations.closeCloseable(iter);
-		}
+		Iterations.closeCloseable(iter);
 	}
 }

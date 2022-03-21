@@ -10,8 +10,8 @@ package org.eclipse.rdf4j.common.iteration;
 public class IteratorIterationTest extends IterationTest {
 
 	@Override
-	protected Iteration<String, Exception> createTestIteration() {
-		return new IteratorIteration<>(stringList1.iterator());
+	protected CloseableIteration<String, Exception> createTestIteration() {
+		return new CloseableIteratorIteration<>(stringList1.iterator());
 	}
 
 	@Override

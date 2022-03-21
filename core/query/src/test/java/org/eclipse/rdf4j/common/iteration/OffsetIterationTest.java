@@ -21,7 +21,7 @@ public class OffsetIterationTest extends CloseableIterationTest {
 	}
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<? extends String, Exception> createTestIteration() {
 		return createOffsetIteration(5);
 	}
 

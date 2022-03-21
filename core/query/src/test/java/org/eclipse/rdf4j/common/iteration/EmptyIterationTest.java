@@ -14,7 +14,7 @@ public class EmptyIterationTest extends CloseableIterationTest {
 	}
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<? extends String, Exception> createTestIteration() {
 		return createEmptyIteration();
 	}
 

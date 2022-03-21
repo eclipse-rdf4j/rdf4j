@@ -54,4 +54,8 @@ public class CollectionIteration<E, X extends Exception> extends AbstractCloseab
 		throw new UnsupportedOperationException("Remove not supported on CollectionIteration");
 	}
 
+	@Override
+	protected void handleClose() throws X {
+		// no-op
+	}
 }

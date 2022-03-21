@@ -15,6 +15,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -1967,7 +1968,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * This class wraps an iterator and increments the "resultSizeActual" of the query model node that the iterator
 	 * represents. This means we can track the number of tuples that have been retrieved from this node.
 	 */
-	private static class ResultSizeCountingIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
+	private static class ResultSizeCountingIterator extends
+			CloseableIterationWrapper<BindingSet, QueryEvaluationException, CloseableIteration<BindingSet, QueryEvaluationException>> {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
 		QueryModelNode queryModelNode;
@@ -1995,7 +1997,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * This class wraps an iterator and tracks the time used to execute next() and hasNext()
 	 */
-	private static class TimedIterator extends IterationWrapper<BindingSet, QueryEvaluationException> {
+	private static class TimedIterator extends
+			CloseableIterationWrapper<BindingSet, QueryEvaluationException, CloseableIteration<BindingSet, QueryEvaluationException>> {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
 		QueryModelNode queryModelNode;

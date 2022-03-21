@@ -72,6 +72,11 @@ class ValueMappingBindingSet extends AbstractBindingSet {
 		return delegate.size();
 	}
 
+	@Override
+	public boolean isEmpty() {
+		return delegate.isEmpty();
+	}
+
 	private Binding mapBinding(Binding binding) {
 		return new Binding() {
 			@Override

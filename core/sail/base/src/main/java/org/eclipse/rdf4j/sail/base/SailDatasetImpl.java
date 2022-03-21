@@ -97,7 +97,7 @@ class SailDatasetImpl implements SailDataset {
 			namespaces = derivedFrom.getNamespaces();
 		}
 		Iterator<Map.Entry<String, String>> added = null;
-		Set<String> removed = null;
+		Set<String> removed;
 		synchronized (this) {
 			Map<String, String> addedNamespaces = changes.getAddedNamespaces();
 			if (addedNamespaces != null) {
@@ -110,7 +110,7 @@ class SailDatasetImpl implements SailDataset {
 		}
 		final Iterator<Map.Entry<String, String>> addedIter = added;
 		final Set<String> removedSet = removed;
-		return new AbstractCloseableIteration<Namespace, SailException>() {
+		return new AbstractCloseableIteration<>() {
 
 			volatile Namespace next;
 
@@ -162,11 +162,7 @@ class SailDatasetImpl implements SailDataset {
 
 			@Override
 			public void handleClose() throws SailException {
-				try {
-					super.handleClose();
-				} finally {
-					namespaces.close();
-				}
+				namespaces.close();
 			}
 		};
 	}
@@ -192,7 +188,8 @@ class SailDatasetImpl implements SailDataset {
 		}
 		final Iterator<Resource> addedIter = added;
 		final Set<Resource> removedSet = removed;
-		return new AbstractCloseableIteration<Resource, SailException>() {
+
+		return new AbstractCloseableIteration<>() {
 
 			volatile Resource next;
 
@@ -243,11 +240,7 @@ class SailDatasetImpl implements SailDataset {
 
 			@Override
 			public void handleClose() throws SailException {
-				try {
-					super.handleClose();
-				} finally {
-					contextIDs.close();
-				}
+				contextIDs.close();
 			}
 		};
 	}
@@ -290,7 +283,6 @@ class SailDatasetImpl implements SailDataset {
 		}
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {

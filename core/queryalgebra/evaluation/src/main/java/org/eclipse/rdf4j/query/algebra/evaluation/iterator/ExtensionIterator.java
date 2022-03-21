@@ -37,7 +37,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy, context);
 	}
 
-	public ExtensionIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public ExtensionIterator(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
 			Consumer<MutableBindingSet> setter, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		this.setter = setter;

@@ -12,7 +12,7 @@ import java.util.Collections;
 public class FilterIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<? extends String, Exception> createTestIteration() {
 		return new FilterIteration<String, Exception>(createStringList1Iteration()) {
 
 			@Override

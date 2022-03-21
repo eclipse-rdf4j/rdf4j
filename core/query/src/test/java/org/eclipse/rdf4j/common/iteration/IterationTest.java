@@ -28,13 +28,13 @@ public abstract class IterationTest {
 		return new CloseableIteratorIteration<>(stringList2.iterator());
 	}
 
-	protected abstract Iteration<String, Exception> createTestIteration() throws Exception;
+	protected abstract CloseableIteration<? extends String, Exception> createTestIteration() throws Exception;
 
 	protected abstract int getTestIterationSize();
 
 	@Test
 	public void testFullIteration() throws Exception {
-		Iteration<String, Exception> iter = createTestIteration();
+		CloseableIteration<? extends String, Exception> iter = createTestIteration();
 		int count = 0;
 
 		while (iter.hasNext()) {

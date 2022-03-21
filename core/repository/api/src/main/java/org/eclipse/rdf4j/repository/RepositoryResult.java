@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
  * A RepositoryResult needs to be {@link #close() closed} after use to free up any resources (open connections, read
  * locks, etc.) it has on the underlying repository.
  *
- * @see RepositoryConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI,
+ * @see RepositoryConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI,
  *      org.eclipse.rdf4j.model.Value, boolean, org.eclipse.rdf4j.model.Resource[])
  * @see RepositoryConnection#getNamespaces()
  * @see RepositoryConnection#getContextIDs()
@@ -41,7 +41,7 @@ import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
  */
 public class RepositoryResult<T> extends AbstractCloseableIteration<T, RepositoryException> implements Iterable<T> {
 
-	private volatile Iteration<? extends T, RepositoryException> wrappedIter;
+	private Iteration<? extends T, RepositoryException> wrappedIter;
 
 	public RepositoryResult(CloseableIteration<? extends T, RepositoryException> iter) {
 		assert iter != null;
@@ -65,11 +65,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 
 	@Override
 	protected void handleClose() throws RepositoryException {
-		try {
-			super.handleClose();
-		} finally {
-			Iterations.closeCloseable(wrappedIter);
-		}
+		Iterations.closeCloseable(wrappedIter);
 	}
 
 	/**
@@ -87,44 +83,6 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 		}
 
 		wrappedIter = new DistinctIteration<T, RepositoryException>(wrappedIter);
-	}
-
-	/**
-	 * Returns a {@link List} containing all objects of this RepositoryResult in order of iteration. The
-	 * RepositoryResult is fully consumed and automatically closed by this operation.
-	 * <P>
-	 * Note: use this method with caution! It pulls the entire RepositoryResult in memory and as such is potentially
-	 * very memory-intensive.
-	 *
-	 * @return a List containing all objects of this RepositoryResult.
-	 * @throws RepositoryException if a problem occurred during retrieval of the results.
-	 * @see #addTo(Collection)
-	 * @deprecated Use {@link Iterations#asList(Iteration)} instead.
-	 */
-	@Deprecated
-	public List<T> asList() throws RepositoryException {
-		return addTo(new ArrayList<>());
-	}
-
-	/**
-	 * Adds all objects of this RepositoryResult to the supplied collection. The RepositoryResult is fully consumed and
-	 * automatically closed by this operation.
-	 *
-	 * @return A reference to the collection that was supplied.
-	 * @throws RepositoryException if a problem occurred during retrieval of the results.
-	 * @deprecated Use {@link Iterations#addAll(Iteration, Collection)} instead.
-	 */
-	@Deprecated
-	public <C extends Collection<T>> C addTo(C collection) throws RepositoryException {
-		try {
-			while (hasNext()) {
-				collection.add(next());
-			}
-
-			return collection;
-		} finally {
-			close();
-		}
 	}
 
 	@Override

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.helpers;
 import java.lang.ref.Cleaner;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
 /**
@@ -18,7 +19,8 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
  *
  * @author Jeen Broekstra
  */
-class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
+class SailBaseIteration<T, E extends Exception>
+		extends CloseableIterationWrapper<T, E, CloseableIteration<? extends T, ? extends E>> {
 
 	private final AbstractSailConnection connection;
 
@@ -39,17 +41,7 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 			throw new IllegalStateException("Iteration in use after connection has been closed!");
 		}
 
-		if (isClosed()) {
-			return false;
-		}
-
-		if (super.hasNext()) {
-			return true;
-		}
-
-		// auto-close when exhausted
-		close();
-		return false;
+		return super.hasNext();
 	}
 
 	@Override

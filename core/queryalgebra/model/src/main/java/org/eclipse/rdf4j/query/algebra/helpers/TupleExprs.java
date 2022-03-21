@@ -177,10 +177,9 @@ public class TupleExprs {
 	 */
 	public static Var createConstVar(Value value) {
 		String varName = getConstVarName(value);
-		Var var = new Var(varName);
+		Var var = new Var(varName, value);
 		var.setConstant(true);
 		var.setAnonymous(true);
-		var.setValue(value);
 		return var;
 	}
 

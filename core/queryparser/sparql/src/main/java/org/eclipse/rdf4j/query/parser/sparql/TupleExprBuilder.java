@@ -237,7 +237,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
-	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
+	private long uniqueIdSuffix = 0;
 
 	/*-----------*
 	 * Variables *
@@ -307,18 +307,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	/**
-	 * Creates an anonymous Var with a unique, randomly generated, variable name.
+	 * Creates an anonymous Var with a unique (to this query), randomly generated, variable name.
 	 *
 	 * @return an anonymous Var with a unique, randomly generated, variable name
 	 */
 	protected Var createAnonVar() {
-		// dashes ('-') in the generated UUID are replaced with underscores so
-		// the
-		// varname
-		// remains compatible with the SPARQL grammar. See SES-2310.
-		final Var var = new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
-		var.setAnonymous(true);
-		return var;
+		return new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix++, true);
 	}
 
 	private FunctionCall createFunctionCall(String uri, SimpleNode node, int minArgs, int maxArgs)
@@ -986,7 +980,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (resource instanceof Var) {
 				projectionElements.addElement(new ProjectionElem(((Var) resource).getName()));
 			} else {
-				String alias = "_describe_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
+				String alias = "_describe_" + uniqueIdPrefix + uniqueIdSuffix++;
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));
@@ -2299,9 +2293,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Var visit(ASTVar node, Object data) throws VisitorException {
-		Var var = new Var(node.getName());
-		var.setAnonymous(node.isAnonymous());
-		return var;
+		return new Var(node.getName(), node.isAnonymous());
 	}
 
 	@Override

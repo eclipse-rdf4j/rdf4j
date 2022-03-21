@@ -151,4 +151,9 @@ public class SPARQLQueryBindingSet extends AbstractBindingSet {
 			return super.equals(other);
 		}
 	}
+
+	@Override
+	public boolean isEmpty() {
+		return bindings.isEmpty();
+	}
 }

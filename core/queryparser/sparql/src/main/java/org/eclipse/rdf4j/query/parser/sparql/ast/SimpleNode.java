@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class SimpleNode implements Node {
@@ -124,6 +125,18 @@ public class SimpleNode implements Node {
 	}
 
 	public <T extends Node> List<T> jjtGetChildren(Class<T> type) {
+		if (children.size() == 0) {
+			return Collections.emptyList();
+		}
+		if (children.size() == 1) {
+			Node node = children.get(0);
+			if (type.isInstance(node)) {
+				return Collections.singletonList(((T) node));
+			} else {
+				return Collections.emptyList();
+			}
+		}
+
 		List<T> result = new ArrayList<>(children.size());
 
 		for (Node n : children) {
@@ -169,7 +182,7 @@ public class SimpleNode implements Node {
 	}
 
 	public String toString(String prefix) {
-		return prefix + toString();
+		return prefix + this;
 	}
 
 	/**

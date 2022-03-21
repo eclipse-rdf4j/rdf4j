@@ -20,12 +20,12 @@ import org.junit.Test;
 public abstract class CloseableIterationTest extends IterationTest {
 
 	@Override
-	protected abstract CloseableIteration<String, Exception> createTestIteration() throws Exception;
+	protected abstract CloseableIteration<? extends String, Exception> createTestIteration() throws Exception;
 
 	@Test
 	public void testClosedIteration() throws Exception {
 		for (int n = 0; n < getTestIterationSize(); n++) {
-			CloseableIteration<String, Exception> iter = createTestIteration();
+			CloseableIteration<? extends String, Exception> iter = createTestIteration();
 
 			// Close after n iterations
 			for (int i = 0; i < n; i++) {

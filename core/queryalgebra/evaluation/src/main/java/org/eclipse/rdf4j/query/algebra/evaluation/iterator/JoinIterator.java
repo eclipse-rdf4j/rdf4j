@@ -45,8 +45,8 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 * Constructors *
 	 *--------------*/
 
-	public JoinIterator(EvaluationStrategy strategy, QueryEvaluationStep leftPrepared,
-			QueryEvaluationStep rightPrepared, Join join, BindingSet bindings) throws QueryEvaluationException {
+	public JoinIterator(QueryEvaluationStep leftPrepared, QueryEvaluationStep rightPrepared, BindingSet bindings)
+			throws QueryEvaluationException {
 		leftIter = leftPrepared.evaluate(bindings);
 
 		// Initialize with empty iteration so that var is never null

@@ -106,6 +106,11 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 	}
 
 	@Override
+	public boolean isEmpty() {
+		return bindings.isEmpty();
+	}
+
+	@Override
 	public void setBinding(String name, Value value) {
 		bindings.put(name, new SimpleBinding(name, value));
 	}

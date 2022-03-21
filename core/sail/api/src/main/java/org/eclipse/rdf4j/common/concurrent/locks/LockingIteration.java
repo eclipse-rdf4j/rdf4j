@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.common.concurrent.locks;
 
 import java.util.Objects;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -18,7 +17,10 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 /**
  * An Iteration that holds on to a lock until the Iteration is closed. Upon closing, the underlying Iteration is closed
  * before the lock is released. This iterator closes itself as soon as all elements have been read.
+ * 
+ * @deprecated use {@link LockedIteration} instead
  */
+@Deprecated(since = "4.0.0", forRemoval = true)
 public class LockingIteration<E, X extends Exception> extends IterationWrapper<E, X> {
 
 	/**
@@ -40,15 +42,6 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 		} else {
 			this.lock = Objects.requireNonNull(lock);
 		}
-	}
-
-	public static <T, R extends Exception> CloseableIteration<T, R> getInstance(Lock lock,
-			CloseableIteration<T, R> iter) {
-		if (iter instanceof EmptyIteration) {
-			lock.release();
-			return iter;
-		} else
-			return new LockingIteration<>(lock, iter);
 	}
 
 	@Override

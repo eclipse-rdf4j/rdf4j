@@ -85,10 +85,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 		}
 		try {
 			return iter.next();
-		} catch (NoSuchElementException e) {
-			close();
-			throw e;
-		} catch (IllegalStateException e) {
+		} catch (NoSuchElementException | IllegalStateException e) {
 			throw e;
 		} catch (Exception e) {
 			throw convert(e);
@@ -123,13 +120,9 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	@Override
 	protected void handleClose() throws X {
 		try {
-			super.handleClose();
-		} finally {
-			try {
-				Iterations.closeCloseable(iter);
-			} catch (Exception e) {
-				throw convert(e);
-			}
+			Iterations.closeCloseable(iter);
+		} catch (Exception e) {
+			throw convert(e);
 		}
 	}
 }

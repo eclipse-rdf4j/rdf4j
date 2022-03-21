@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -21,7 +22,8 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 /**
  * An iterating implementation of the {@link TupleQueryResult} interface.
  */
-public class IteratingTupleQueryResult extends IterationWrapper<BindingSet, QueryEvaluationException>
+public class IteratingTupleQueryResult extends
+		CloseableIterationWrapper<BindingSet, QueryEvaluationException, CloseableIteration<? extends BindingSet, QueryEvaluationException>>
 		implements TupleQueryResult {
 
 	/*-----------*

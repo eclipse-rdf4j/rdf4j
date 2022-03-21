@@ -160,13 +160,10 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	}
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = precompile.evaluate(bindings);
-		return iter;
+		return precompile.evaluate(bindings);
 	}
 
 	public Var createAnonVar(String varName) {
-		Var var = new Var(varName);
-		var.setAnonymous(true);
-		return var;
+		return new Var(varName, true);
 	}
 }

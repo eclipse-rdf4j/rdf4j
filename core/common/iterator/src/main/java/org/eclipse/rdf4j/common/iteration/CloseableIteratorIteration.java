@@ -71,4 +71,9 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 
 		iter.remove();
 	}
+
+	@Override
+	protected void handleClose() throws X {
+		// no-op
+	}
 }

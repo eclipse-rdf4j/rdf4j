@@ -14,7 +14,7 @@ import org.junit.Test;
 public class UnionIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<? extends String, Exception> createTestIteration() {
 		return UnionIteration.getInstance(createStringList1Iteration(), createStringList2Iteration());
 	}
 

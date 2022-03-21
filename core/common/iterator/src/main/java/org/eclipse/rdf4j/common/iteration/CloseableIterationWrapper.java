@@ -1,32 +1,28 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ ******************************************************************************/
 
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
 import java.util.Objects;
 
-/**
- * Abstract superclass for Iterations that wrap other Iterations. The abstract class <var>IterationWrapper</var> itself
- * provides default methods that forward method calls to the wrapped Iteration. Subclasses of
- * <var>IterationWrapper</var> should override some of these methods and may also provide additional methods and fields.
- */
-public class IterationWrapper<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public class CloseableIterationWrapper<E, X extends Exception, T extends CloseableIteration<? extends E, ? extends X>>
+		extends AbstractCloseableIteration<E, X> {
 
-	private final Iteration<? extends E, ? extends X> wrappedIter;
+	private final T wrappedIter;
 
 	/**
 	 * Creates a new IterationWrapper that operates on the supplied Iteration.
 	 *
-	 * @param iter The wrapped Iteration for this <var>IterationWrapper</var>, must not be <var>null</var>.
+	 * @param iteration The wrapped Iteration for this <var>IterationWrapper</var>, must not be <var>null</var>.
 	 */
-	protected IterationWrapper(Iteration<? extends E, ? extends X> iter) {
-		wrappedIter = Objects.requireNonNull(iter);
+	protected CloseableIterationWrapper(T iteration) {
+		wrappedIter = Objects.requireNonNull(iteration);
 	}
 
 	/*---------*
@@ -56,7 +52,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	/**
 	 * Returns the next element from the wrapped Iteration.
 	 *
-	 * @throws java.util.NoSuchElementException If all elements have been returned or it has been closed.
+	 * @throws NoSuchElementException If all elements have been returned or it has been closed.
 	 */
 	@Override
 	public E next() throws X {
@@ -103,6 +99,6 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 */
 	@Override
 	protected void handleClose() throws X {
-		Iterations.closeCloseable(wrappedIter);
+		wrappedIter.close();
 	}
 }

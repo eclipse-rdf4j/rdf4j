@@ -16,7 +16,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
-import org.eclipse.rdf4j.common.concurrent.locks.LockingIteration;
+import org.eclipse.rdf4j.common.concurrent.locks.LockedIteration;
 import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
@@ -201,6 +201,9 @@ class MemorySailStore implements SailStore {
 			Boolean explicit, int snapshot, Resource... contexts) {
 		// Perform look-ups for value-equivalents of the specified values
 
+		if (statements.isEmpty())
+			return EMPTY_ITERATION;
+
 		MemResource memSubj = valueFactory.getMemResource(subj);
 		if (subj != null && memSubj == null) {
 			// non-existent subject
@@ -239,6 +242,9 @@ class MemorySailStore implements SailStore {
 
 				memContexts = new MemResource[] { memContext };
 				smallestList = memContext.getContextStatementList();
+				if (smallestList.isEmpty())
+					return EMPTY_ITERATION;
+
 			}
 
 		} else {
@@ -266,6 +272,9 @@ class MemorySailStore implements SailStore {
 
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(MemResource subj, MemIRI pred,
 			MemValue obj, MemResource... contexts) {
+
+		if (statements.isEmpty())
+			return EMPTY_ITERATION;
 
 		MemResource[] memContexts;
 		MemStatementList smallestList;
@@ -956,7 +965,7 @@ class MemorySailStore implements SailStore {
 
 					readLock = openStatementsReadLock();
 
-					return new LockingIteration<>(readLock, iteration);
+					return new LockedIteration<>(iteration, readLock);
 				} catch (Throwable t) {
 					try {
 						if (iteration != null) {
@@ -1007,8 +1016,9 @@ class MemorySailStore implements SailStore {
 			Lock stLock = openStatementsReadLock();
 			try {
 				stIter1 = createTripleIterator(subj, pred, obj, getCurrentSnapshot());
-				CloseableIteration<? extends Triple, SailException> stIter2 = LockingIteration.getInstance(stLock,
-						stIter1);
+				CloseableIteration<? extends Triple, SailException> stIter2 = LockedIteration.getInstance(stIter1,
+						stLock
+				);
 				allGood = true;
 				return stIter2;
 			} finally {

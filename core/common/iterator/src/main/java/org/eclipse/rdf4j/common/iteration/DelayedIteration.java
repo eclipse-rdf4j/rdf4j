@@ -100,12 +100,8 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 */
 	@Override
 	protected void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			if (iter != null) {
-				Iterations.closeCloseable(iter);
-			}
+		if (iter != null) {
+			Iterations.closeCloseable(iter);
 		}
 	}
 }

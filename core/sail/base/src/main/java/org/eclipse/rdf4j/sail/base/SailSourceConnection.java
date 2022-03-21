@@ -247,7 +247,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
 			iteration = qes.evaluate(EmptyBindingSet.getInstance());
-			iteration = interlock(iteration, rdfDataset, branch);
+			iteration = SailClosableIteration.getInstance(iteration, rdfDataset, branch);
 			allGood = true;
 			return iteration;
 		} catch (QueryEvaluationException e) {
@@ -387,7 +387,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
 		SailSource branch = branch(IncludeInferred.explicitOnly);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
-		return SailClosingIteration.makeClosable(snapshot.getContextIDs(), snapshot, branch);
+		return SailClosableIteration.getInstance(snapshot.getContextIDs(), snapshot, branch);
 	}
 
 	@Override
@@ -395,7 +395,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
-		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
+		return SailClosableIteration.getInstance(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
 	}
 
 	@Override
@@ -419,7 +419,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
 		SailSource branch = branch(IncludeInferred.explicitOnly);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
-		return SailClosingIteration.makeClosable(snapshot.getNamespaces(), snapshot, branch);
+		return SailClosableIteration.getInstance(snapshot.getNamespaces(), snapshot, branch);
 	}
 
 	@Override
@@ -944,16 +944,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			// create a new branch for read operation
 			return store.getExplicitSailSource().fork();
 		}
-	}
-
-	private <T, X extends Exception> CloseableIteration<T, QueryEvaluationException> interlock(
-			CloseableIteration<T, QueryEvaluationException> iter, SailClosable... closes) {
-		return new SailClosingIteration<>(iter, closes) {
-			@Override
-			protected void handleSailException(SailException e) throws QueryEvaluationException {
-				throw new QueryEvaluationException(e);
-			}
-		};
 	}
 
 	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)

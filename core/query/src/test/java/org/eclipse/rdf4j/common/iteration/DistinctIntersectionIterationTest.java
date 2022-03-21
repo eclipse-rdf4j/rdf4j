@@ -13,7 +13,7 @@ import java.util.Set;
 public class DistinctIntersectionIterationTest extends CloseableIterationTest {
 
 	@Override
-	protected CloseableIteration<String, Exception> createTestIteration() {
+	protected CloseableIteration<? extends String, Exception> createTestIteration() {
 		return new IntersectIteration<>(createStringList1Iteration(), createStringList2Iteration(), true);
 	}
 

@@ -253,6 +253,10 @@ public class QueryResultsTest {
 			return null;
 		}
 
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			// no-ip
+		}
 	}
 
 	@Test

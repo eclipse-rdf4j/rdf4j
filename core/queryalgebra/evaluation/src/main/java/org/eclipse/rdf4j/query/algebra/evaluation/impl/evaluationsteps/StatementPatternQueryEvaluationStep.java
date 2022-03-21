@@ -15,8 +15,8 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.iteration.PredicateFilterIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -65,18 +65,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		if (dataset != null) {
 			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
 				graphs = dataset.getDefaultGraphs();
-				if (graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty()) {
-					emptyGraph = true;
-				} else {
-					emptyGraph = false;
-				}
+				emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
 			} else {
 				graphs = dataset.getNamedGraphs();
-				if (graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty()) {
-					emptyGraph = true;
-				} else {
-					emptyGraph = false;
-				}
+				emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
 			}
 		} else {
 			emptyGraph = false;
@@ -97,6 +89,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		getSubjectVar = makeGetVarValue(subjVar, context);
 		getPredicateVar = makeGetVarValue(predVar, context);
 		getObjectVar = makeGetVarValue(objVar, context);
+
 	}
 
 	private static Function<BindingSet, Value> makeGetVarValue(Var var, QueryEvaluationContext context) {
@@ -124,8 +117,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private static BiConsumer<Value, MutableBindingSet> makeSetVariable(Var var, QueryEvaluationContext context) {
 		if (var == null) {
 			return null;
-		} else
+		} else {
 			return context.addBinding(var.getName());
+		}
 	}
 
 	private static Predicate<BindingSet> makeIsVariableNotSet(Var var, QueryEvaluationContext context) {
@@ -140,12 +134,19 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
 			return new EmptyIteration<>();
+		} else if (bindings.isEmpty()) {
+			return getIteration();
+
 		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
 			// https://www.w3.org/TR/sparql11-query/#assignment
 			return new EmptyIteration<>();
+		} else {
+			return getIteration(bindings);
 		}
+	}
 
+	private CloseableIteration<BindingSet, QueryEvaluationException> getIteration(BindingSet bindings) {
 		final Value contextValue = getContextVar.apply(bindings);
 
 		Resource[] contexts = contextSup.apply(contextValue);
@@ -153,44 +154,69 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return new EmptyIteration<>();
 		}
 
-		final Value subjValue = getSubjectVar.apply(bindings);
-		final Value predValue = getPredicateVar.apply(bindings);
 		// Check that the subject is a Resource and the predicate can be an IRI
 		// if not we can't return any value.
 		Resource subjResouce;
 		IRI predIri;
 		try {
-			subjResouce = (Resource) subjValue;
-			predIri = (IRI) predValue;
+			subjResouce = (Resource) getSubjectVar.apply(bindings);
+			predIri = (IRI) getPredicateVar.apply(bindings);
 		} catch (ClassCastException e) {
 			// Invalid value type for subject, predicate and/or context
 			return new EmptyIteration<>();
 		}
 
-		return evaluateTheNormalCase(bindings, contexts, subjValue, predValue, subjResouce, predIri);
+		Value object = getObjectVar.apply(bindings);
+
+		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
+		try {
+			iteration = tripleSource.getStatements(subjResouce, predIri, object, contexts);
+			iteration = handleFilter(contexts, subjResouce, predIri, object, iteration);
+
+			// Return an iterator that converts the statements to var bindings
+			return new ConvertStatmentToBindingSetIterator(iteration, converter, bindings, context);
+		} catch (Throwable t) {
+			if (iteration != null) {
+				iteration.close();
+			}
+			throw new QueryEvaluationException(t);
+		}
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> evaluateTheNormalCase(BindingSet bindings,
-			Resource[] contexts, final Value subjValue, final Value predValue, Resource subjResouce, IRI predIri) {
-		final Value objValue = getObjectVar.apply(bindings);
+	private CloseableIteration<BindingSet, QueryEvaluationException> getIteration() {
+		Resource[] contexts = contextSup.apply(null);
+		if (contexts == null) {
+			return new EmptyIteration<>();
+		}
+		Resource subject = (Resource) statementPattern.getSubjectVar().getValue();
+		IRI predicate = (IRI) statementPattern.getPredicateVar().getValue();
+		Value object = statementPattern.getObjectVar().getValue();
 
-		CloseableIteration<? extends Statement, QueryEvaluationException> stIter1 = tripleSource
-				.getStatements(subjResouce, predIri, objValue, contexts);
-		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subjValue, predValue, objValue,
+		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
+		try {
+			iteration = tripleSource.getStatements(subject, predicate, object, contexts);
+			iteration = handleFilter(contexts, subject, predicate, object, iteration);
+
+			// Return an iterator that converts the statements to var bindings
+			return new ConvertStatmentToBindingSetIterator(iteration, converter, context);
+		} catch (Throwable t) {
+			if (iteration != null) {
+				iteration.close();
+			}
+			throw new QueryEvaluationException(t);
+		}
+	}
+
+	private CloseableIteration<? extends Statement, QueryEvaluationException> handleFilter(Resource[] contexts,
+			Resource subject, IRI predicate, Value object,
+			CloseableIteration<? extends Statement, QueryEvaluationException> iteration) {
+		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subject, predicate, object,
 				contexts);
 		if (filter != null) {
-			// Only if there is filter code to execute do we make this filter iteration.
-			stIter1 = new FilterIteration<Statement, QueryEvaluationException>(stIter1) {
-
-				@Override
-				protected boolean accept(Statement object) throws QueryEvaluationException {
-					return filter.test(object);
-				}
-			};
+			return new PredicateFilterIteration<>(iteration, filter);
+		} else {
+			return iteration;
 		}
-
-		// Return an iterator that converts the statements to var bindings
-		return new ConvertStatmentToBindingSetIterator(stIter1, converter, bindings, context);
 	}
 
 	/**
@@ -275,8 +301,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	/**
 	 *
-	 * @param statementPattern
-	 * @param contextValue
 	 * @return the contexts that are valid for this statement pattern or null
 	 */
 	protected static Function<Value, Resource[]> extractContextsFromDatasets(final Var contextVar, boolean emptyGraph,
@@ -356,21 +380,28 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		private ConvertStatmentToBindingSetIterator(
 				Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
+				BiConsumer<MutableBindingSet, Statement> action, QueryEvaluationContext context) {
+			super(iter);
+			convertingFunction = (st) -> {
+				MutableBindingSet made = context.createBindingSet();
+				action.accept(made, st);
+				return made;
+			};
+
+		}
+
+		private ConvertStatmentToBindingSetIterator(
+				Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
 			super(iter);
-			if (bindings.isEmpty()) {
-				convertingFunction = (st) -> {
-					MutableBindingSet made = context.createBindingSet();
-					action.accept(made, st);
-					return made;
-				};
-			} else {
-				convertingFunction = (st) -> {
-					MutableBindingSet made = context.createBindingSet(bindings);
-					action.accept(made, st);
-					return made;
-				};
-			}
+			assert !bindings.isEmpty();
+
+			convertingFunction = (st) -> {
+				MutableBindingSet made = context.createBindingSet(bindings);
+				action.accept(made, st);
+				return made;
+			};
+
 		}
 
 		@Override
@@ -454,8 +485,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 */
 	private static BiConsumer<MutableBindingSet, Statement> andThen(BiConsumer<MutableBindingSet, Statement> co,
 			BiConsumer<MutableBindingSet, Statement> and) {
-		if (co == null)
+		if (co == null) {
 			return and;
+		}
 		return co.andThen(and);
 	}
 }

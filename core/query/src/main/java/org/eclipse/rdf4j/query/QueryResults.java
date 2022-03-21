@@ -586,11 +586,7 @@ public class QueryResults extends Iterations {
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
-				super.handleClose();
-			} finally {
-				filter.close();
-			}
+			filter.close();
 		}
 
 		@Override
@@ -654,11 +650,7 @@ public class QueryResults extends Iterations {
 
 		@Override
 		public void handleClose() throws QueryEvaluationException {
-			try {
-				super.handleClose();
-			} finally {
-				filter.close();
-			}
+			filter.close();
 		}
 
 		@Override

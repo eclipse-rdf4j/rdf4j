@@ -155,4 +155,9 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 			return super.equals(other);
 		}
 	}
+
+	@Override
+	public boolean isEmpty() {
+		return bindings.isEmpty();
+	}
 }

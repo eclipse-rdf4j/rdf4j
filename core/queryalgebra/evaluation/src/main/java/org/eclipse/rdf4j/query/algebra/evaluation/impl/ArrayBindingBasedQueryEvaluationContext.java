@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -33,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
 	private final QueryEvaluationContext context;
@@ -132,9 +132,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	public ArrayBindingSet createBindingSet(BindingSet bindings) {
 		if (bindings instanceof ArrayBindingSet) {
 			return new ArrayBindingSet(((ArrayBindingSet) bindings), allVariables);
+		} else if (bindings == EmptyBindingSet.getInstance()) {
+			return createBindingSet();
+		} else {
+			return new ArrayBindingSet(bindings, allVariablesSet, allVariables);
 		}
-
-		return new ArrayBindingSet(bindings, allVariablesSet, allVariables);
 	}
 
 	public static String[] findAllVariablesUsedInQuery(QueryRoot node) {
