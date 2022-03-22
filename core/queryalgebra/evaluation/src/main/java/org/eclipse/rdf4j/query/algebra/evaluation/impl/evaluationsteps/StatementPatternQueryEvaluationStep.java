@@ -185,10 +185,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> getIteration() {
-		Resource[] contexts = contextSup.apply(null);
+
+		Var contextVar = statementPattern.getContextVar();
+		Resource[] contexts = contextSup.apply(contextVar != null ? contextVar.getValue() : null);
+
 		if (contexts == null) {
 			return EMPTY_ITERATION;
 		}
+
 		Value subject = statementPattern.getSubjectVar().getValue();
 		Value predicate = statementPattern.getPredicateVar().getValue();
 		Value object = statementPattern.getObjectVar().getValue();
