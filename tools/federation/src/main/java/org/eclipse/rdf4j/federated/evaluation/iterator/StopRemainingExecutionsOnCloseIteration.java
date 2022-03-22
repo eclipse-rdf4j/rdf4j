@@ -60,7 +60,6 @@ public class StopRemainingExecutionsOnCloseIteration
 		try {
 			inner.close();
 		} finally {
-			super.handleClose();
 			// make sure to close all scheduled / running parallel executions
 			// (e.g. if the query result is not fully consumed)
 			queryInfo.close();

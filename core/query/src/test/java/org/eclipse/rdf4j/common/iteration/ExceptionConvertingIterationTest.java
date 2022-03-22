@@ -11,14 +11,7 @@ public class ExceptionConvertingIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<? extends String, Exception> createTestIteration() {
-		return new ExceptionConvertingIteration<String, Exception>(createStringList1Iteration()) {
-
-			@Override
-			protected Exception convert(Exception e) {
-				return e;
-			}
-
-		};
+		return new CloseableExceptionConvertingIteration<>(createStringList1Iteration(), e -> e);
 	}
 
 	@Override

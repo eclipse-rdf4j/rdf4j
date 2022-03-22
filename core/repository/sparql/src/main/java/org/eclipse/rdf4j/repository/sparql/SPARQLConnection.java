@@ -17,6 +17,7 @@ import java.net.URL;
 import java.util.Objects;
 
 import org.apache.http.client.HttpClient;
+import org.eclipse.rdf4j.common.iteration.CloseableExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -129,18 +130,18 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * SPARQL `CLEAR GRAPH` update operation. This operation has an optional <code>SILENT</code> modifier, which can be
 	 * enabled by setting this flag to <code>true</code>. The behavior of this modifier is speficied as follows in the
 	 * SPARQL 1.1 Recommendation:
-	 * 
+	 *
 	 * <blockquote> If the store records the existence of empty graphs, then the SPARQL 1.1 Update service, by default,
 	 * SHOULD return failure if the specified graph does not exist. If SILENT is present, the result of the operation
 	 * will always be success.
 	 * <p>
 	 * Stores that do not record empty graphs will always return success. </blockquote>
-	 * 
+	 *
 	 * Note that in most SPARQL endpoint implementations not recording empty graphs is the default behavior, and setting
 	 * this flag to <code>true</code> will have no effect. Setting this flag will have no effect on any other errors or
 	 * other API or SPARQL operations: <strong>only</strong> the behavior of the {@link #clear(Resource...)} API
 	 * operation is modified to respond with a success message when removing a non-existent named graph.
-	 * 
+	 *
 	 * @param silent the value to set this to.
 	 * @see https://www.w3.org/TR/sparql11-update/#clear
 	 */
@@ -156,18 +157,18 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * SPARQL `CLEAR GRAPH` update operation. This operation has an optional <code>SILENT</code> modifier, which can be
 	 * enabled by setting this flag to <code>true</code>. The behavior of this modifier is speficied as follows in the
 	 * SPARQL 1.1 Recommendation:
-	 * 
+	 *
 	 * <blockquote> If the store records the existence of empty graphs, then the SPARQL 1.1 Update service, by default,
 	 * SHOULD return failure if the specified graph does not exist. If SILENT is present, the result of the operation
 	 * will always be success.
 	 * <p>
 	 * Stores that do not record empty graphs will always return success. </blockquote>
-	 * 
+	 *
 	 * Note that in most SPARQL endpoint implementations not recording empty graphs is the default behavior, and setting
 	 * this flag to <code>true</code> will have no effect. Setting this flag will have no effect on any other errors or
 	 * other API or SPARQL operations: <strong>only</strong> the behavior of the {@link #clear(Resource...)} API
 	 * operation is modified to respond with a success message when removing a non-existent named graph.
-	 * 
+	 *
 	 * @param silent the value to set this to.
 	 * @see https://www.w3.org/TR/sparql11-update/#clear
 	 * @deprecated since 3.6.0 - use {@link #setSilentClear(boolean)} instead.
@@ -223,20 +224,14 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 		try {
 			TupleQuery query = prepareTupleQuery(SPARQL, NAMEDGRAPHS, "");
 			iter = query.evaluate();
-			result = new RepositoryResult<>(new ExceptionConvertingIteration<Resource, RepositoryException>(
-					new ConvertingIteration<BindingSet, Resource, QueryEvaluationException>(iter) {
+			result = new RepositoryResult<>(new CloseableExceptionConvertingIteration<>(
+					new ConvertingIteration<>(iter) {
 
 						@Override
 						protected Resource convert(BindingSet bindings) throws QueryEvaluationException {
 							return (Resource) bindings.getValue("_");
 						}
-					}) {
-
-				@Override
-				protected RepositoryException convert(Exception e) {
-					return new RepositoryException(e);
-				}
-			});
+					}, RepositoryException::new));
 			allGood = true;
 			return result;
 		} catch (MalformedQueryException |
@@ -323,7 +318,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			setBindings(tupleQuery, subj, pred, obj, contexts);
 			tupleQuery.setIncludeInferred(includeInferred);
 			qRes = tupleQuery.evaluate();
-			result = new RepositoryResult<>(new ExceptionConvertingIteration<Statement, RepositoryException>(
+			result = new RepositoryResult<>(new ExceptionConvertingIteration<>(
 					toStatementIteration(qRes, subj, pred, obj)) {
 
 				@Override

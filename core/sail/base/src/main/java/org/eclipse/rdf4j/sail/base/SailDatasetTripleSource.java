@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import org.eclipse.rdf4j.common.iteration.CloseableExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
@@ -56,28 +57,18 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 		return vf;
 	}
 
-	public static class Eval extends ExceptionConvertingIteration<Statement, QueryEvaluationException> {
-
-		public Eval(Iteration<? extends Statement, ? extends Exception> iter) {
-			super(iter);
+	public static class Eval extends
+			CloseableExceptionConvertingIteration<Statement, QueryEvaluationException, CloseableIteration<? extends Statement, SailException>> {
+		public Eval(CloseableIteration<? extends Statement, SailException> iter) {
+			super(iter, QueryEvaluationException::new);
 		}
-
-		@Override
-		protected QueryEvaluationException convert(Exception e) {
-			return new QueryEvaluationException(e);
-		}
-
 	}
 
-	static class TriplesIteration extends ExceptionConvertingIteration<Triple, QueryEvaluationException> {
+	static class TriplesIteration extends
+			CloseableExceptionConvertingIteration<Triple, QueryEvaluationException, CloseableIteration<? extends Triple, ? extends Exception>> {
 
-		public TriplesIteration(Iteration<? extends Triple, ? extends Exception> iter) {
-			super(iter);
-		}
-
-		@Override
-		protected QueryEvaluationException convert(Exception e) {
-			return new QueryEvaluationException(e);
+		public TriplesIteration(CloseableIteration<? extends Triple, ? extends Exception> iter) {
+			super(iter, QueryEvaluationException::new);
 		}
 
 	}

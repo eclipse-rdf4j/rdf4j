@@ -50,7 +50,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 		leftIter = leftPrepared.evaluate(bindings);
 
 		// Initialize with empty iteration so that var is never null
-		rightIter = new EmptyIteration<>();
+		rightIter = QueryEvaluationStep.EMPTY_ITERATION;
 		this.preparedRight = rightPrepared;
 	}
 
@@ -59,7 +59,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		// Initialize with empty iteration so that var is never null
-		rightIter = new EmptyIteration<>();
+		rightIter = QueryEvaluationStep.EMPTY_ITERATION;
 		preparedRight = strategy.precompile(join.getRightArg(), context);
 		join.setAlgorithm(this);
 	}
@@ -95,13 +95,9 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			super.handleClose();
+			leftIter.close();
 		} finally {
-			try {
-				leftIter.close();
-			} finally {
-				rightIter.close();
-			}
+			rightIter.close();
 		}
 	}
 }

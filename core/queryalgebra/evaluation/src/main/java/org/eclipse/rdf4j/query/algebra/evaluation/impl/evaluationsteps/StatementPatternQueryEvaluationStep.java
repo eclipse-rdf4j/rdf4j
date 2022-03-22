@@ -133,14 +133,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		} else if (bindings.isEmpty()) {
 			return getIteration();
 
 		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
 			// https://www.w3.org/TR/sparql11-query/#assignment
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		} else {
 			return getIteration(bindings);
 		}
@@ -151,27 +151,28 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Resource[] contexts = contextSup.apply(contextValue);
 		if (contexts == null) {
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		}
 
 		// Check that the subject is a Resource and the predicate can be an IRI
 		// if not we can't return any value.
-		Resource subjResouce;
-		IRI predIri;
-		try {
-			subjResouce = (Resource) getSubjectVar.apply(bindings);
-			predIri = (IRI) getPredicateVar.apply(bindings);
-		} catch (ClassCastException e) {
-			// Invalid value type for subject, predicate and/or context
-			return new EmptyIteration<>();
+
+		Value subject = getSubjectVar.apply(bindings);
+		if (subject != null && !subject.isResource()) {
+			return EMPTY_ITERATION;
+		}
+
+		Value predicate = getPredicateVar.apply(bindings);
+		if (predicate != null && !predicate.isIRI()) {
+			return EMPTY_ITERATION;
 		}
 
 		Value object = getObjectVar.apply(bindings);
 
 		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
 		try {
-			iteration = tripleSource.getStatements(subjResouce, predIri, object, contexts);
-			iteration = handleFilter(contexts, subjResouce, predIri, object, iteration);
+			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings
 			return new ConvertStatmentToBindingSetIterator(iteration, converter, bindings, context);
@@ -186,16 +187,20 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private CloseableIteration<BindingSet, QueryEvaluationException> getIteration() {
 		Resource[] contexts = contextSup.apply(null);
 		if (contexts == null) {
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		}
-		Resource subject = (Resource) statementPattern.getSubjectVar().getValue();
-		IRI predicate = (IRI) statementPattern.getPredicateVar().getValue();
+		Value subject = statementPattern.getSubjectVar().getValue();
+		Value predicate = statementPattern.getPredicateVar().getValue();
 		Value object = statementPattern.getObjectVar().getValue();
+
+		if ((subject != null && !subject.isResource()) || (predicate != null && !predicate.isIRI())) {
+			return EMPTY_ITERATION;
+		}
 
 		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
 		try {
-			iteration = tripleSource.getStatements(subject, predicate, object, contexts);
-			iteration = handleFilter(contexts, subject, predicate, object, iteration);
+			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings
 			return new ConvertStatmentToBindingSetIterator(iteration, converter, context);

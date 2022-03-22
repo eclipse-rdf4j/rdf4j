@@ -211,7 +211,6 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 			@Override
 			protected void handleClose() throws SailException {
-				super.handleClose();
 				iterator.close();
 			}
 

@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
@@ -148,12 +149,12 @@ public class TupleFunctionFederatedService implements FederatedService {
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
 			throws QueryEvaluationException {
 		if (!bindings.hasNext()) {
-			return new EmptyIteration<>();
+			return QueryEvaluationStep.EMPTY_ITERATION;
 		}
 
 		TupleExpr expr = service.getArg();
 		if (!(expr instanceof TupleFunctionCall)) {
-			return new EmptyIteration<>();
+			return QueryEvaluationStep.EMPTY_ITERATION;
 		}
 
 		TupleFunctionCall funcCall = (TupleFunctionCall) expr;

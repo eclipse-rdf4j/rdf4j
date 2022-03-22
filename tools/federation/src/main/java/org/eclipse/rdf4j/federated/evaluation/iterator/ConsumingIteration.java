@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -40,30 +39,32 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 	private int currentIndex = 0;
 
 	/**
-	 * @param iter iteration to be consumed
-	 * @param max  the number of results to be consumed.
+	 * @param innerIter iteration to be consumed
+	 * @param max       the number of results to be consumed.
 	 * @throws QueryEvaluationException
 	 */
-	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, int max)
+	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> innerIter, int max)
 			throws QueryEvaluationException {
 
-		innerIter = iter;
+		this.innerIter = innerIter;
+		consume(max);
+	}
 
+	private void consume(int max) {
 		boolean completed = false;
 		try {
-			while (consumed.size() < max && iter.hasNext()) {
-				consumed.add(iter.next());
+			while (consumed.size() < max && this.innerIter.hasNext()) {
+				consumed.add(this.innerIter.next());
 			}
-			if (!iter.hasNext()) {
-				iter.close();
+			if (!this.innerIter.hasNext()) {
+				this.innerIter.close();
 			}
 			completed = true;
 		} finally {
 			if (!completed) {
-				iter.close();
+				this.innerIter.close();
 			}
 		}
-
 	}
 
 	@Override
@@ -94,7 +95,7 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 
 	@Override
 	public void close() throws QueryEvaluationException {
-		Iterations.closeCloseable(innerIter);
+		innerIter.close();
 	}
 
 }

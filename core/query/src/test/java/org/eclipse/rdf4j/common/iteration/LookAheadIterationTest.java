@@ -15,15 +15,20 @@ public class LookAheadIterationTest extends CloseableIterationTest {
 	protected CloseableIteration<? extends String, Exception> createTestIteration() {
 		final Iterator<String> iter = stringList1.iterator();
 
-		return new LookAheadIteration<String, Exception>() {
+		return new LookAheadIteration<>() {
 
 			@Override
-			protected String getNextElement() throws Exception {
+			protected String getNextElement() {
 				if (iter.hasNext()) {
 					return iter.next();
 				} else {
 					return null;
 				}
+			}
+
+			@Override
+			protected void handleClose() {
+				// no-op
 			}
 
 		};

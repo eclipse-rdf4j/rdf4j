@@ -139,11 +139,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 
 					@Override
 					protected void handleClose() throws SailException {
-						try {
-							unionIteration.close();
-						} finally {
-							super.handleClose();
-						}
+						unionIteration.close();
 					}
 
 				};

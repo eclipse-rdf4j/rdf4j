@@ -184,12 +184,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 	@Override
 	protected void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			statementList = null;
-		}
-
+		statementList = null;
 	}
 
 	/**
@@ -200,7 +195,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	private boolean isCandidateForCache() {
 		if (exhausted) { // we will only consider caching if the iterator has been completely consumed
 			if (statementIndex > MIN_SIZE_TO_CONSIDER_FOR_CACHE) { // minimum 1000 statements need to have been checked
-																	// by the iterator
+				// by the iterator
 				if (matchingStatements == 0) { // if the iterator was effectively empty we can always cache it
 					return true;
 				} else if (matchingStatements < 100) { // we will not cache iterators that returned more than 99
@@ -353,16 +348,12 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 		@Override
 		protected void handleClose() throws X {
-			try {
-				super.handleClose();
-			} finally {
-				if (memStatementIterator != null) {
-					if (memStatementIterator.isCandidateForCache()) {
-						iteratorCache.incrementIteratorFrequencyMap(memStatementIterator);
-					}
-				} else {
-					cachedIterator.close();
+			if (memStatementIterator != null) {
+				if (memStatementIterator.isCandidateForCache()) {
+					iteratorCache.incrementIteratorFrequencyMap(memStatementIterator);
 				}
+			} else {
+				cachedIterator.close();
 			}
 		}
 	}

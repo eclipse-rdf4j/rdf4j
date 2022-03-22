@@ -44,6 +44,11 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 		result = new LookAheadIteration<>() {
 
 			@Override
+			protected void handleClose() throws QueryEvaluationException {
+				// no-op
+			}
+
+			@Override
 			protected BindingSet getNextElement() throws QueryEvaluationException {
 				MutableBindingSet nextResult = null;
 				while (nextResult == null && assignments.hasNext()) {

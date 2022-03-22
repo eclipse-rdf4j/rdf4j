@@ -80,4 +80,9 @@ class SimpleBindingSet extends AbstractBindingSet {
 	public int size() {
 		return bindings.length;
 	}
+
+	@Override
+	public boolean isEmpty() {
+		return bindings.length == 0;
+	}
 }

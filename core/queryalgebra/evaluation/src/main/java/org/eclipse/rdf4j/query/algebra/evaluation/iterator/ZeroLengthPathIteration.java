@@ -166,4 +166,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	public Var createAnonVar(String varName) {
 		return new Var(varName, true);
 	}
+
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		// no-op
+	}
 }

@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated.evaluation;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
@@ -85,7 +84,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 				FilteringIteration filteredRes = new FilteringIteration(filterExpr, resultHolder.get(),
 						queryInfo.getStrategy());
 				if (!filteredRes.hasNext()) {
-					Iterations.closeCloseable(filteredRes);
+					filteredRes.close();
 					resultHolder.set(new EmptyIteration<>());
 					return;
 				}
@@ -147,9 +146,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 		if (ds != null) {
 
 			// if FROM NAMED is used we rely on a prepared query
-			if (!ds.getNamedGraphs().isEmpty()) {
-				return true;
-			}
+			return !ds.getNamedGraphs().isEmpty();
 		}
 
 		// in all other cases: try to use the Repository API

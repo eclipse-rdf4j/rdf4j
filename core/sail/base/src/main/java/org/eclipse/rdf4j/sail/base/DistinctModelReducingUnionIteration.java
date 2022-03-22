@@ -74,11 +74,7 @@ public class DistinctModelReducingUnionIteration extends LookAheadIteration<Stat
 
 	@Override
 	protected void handleClose() throws SailException {
-		try {
-			iterator.close();
-		} finally {
-			super.handleClose();
-		}
+		iterator.close();
 	}
 
 }

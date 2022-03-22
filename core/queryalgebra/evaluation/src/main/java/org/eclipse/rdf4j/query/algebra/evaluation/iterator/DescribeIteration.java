@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /**
  * Iteration that implements a simplified version of Symmetric Concise Bounded Description (omitting reified
@@ -52,6 +53,11 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	private final Set<BNode> processedNodes = new HashSet<>();
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> currentDescribeExprIter;
+
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		// no-op
+	}
 
 	private enum Mode {
 		OUTGOING_LINKS,
@@ -205,7 +211,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	protected CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
 			throws QueryEvaluationException {
 		if (subject == null && object == null) {
-			return new EmptyIteration<>();
+			return QueryEvaluationStep.EMPTY_ITERATION;
 		}
 
 		Var subjVar = new Var(VARNAME_SUBJECT, subject);

@@ -12,7 +12,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -25,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -92,7 +92,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		again: while (true) {
 			while (!currentIter.hasNext()) {
-				Iterations.closeCloseable(currentIter);
+				currentIter.close();
 				createIteration();
 				// stop condition: if the iter is an EmptyIteration
 				if (currentIter instanceof EmptyIteration<?, ?>) {
@@ -202,12 +202,9 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		try {
-			super.handleClose();
-		} finally {
-			Iterations.closeCloseable(currentIter);
+		if (currentIter != null) {
+			currentIter.close();
 		}
-
 	}
 
 	/**
@@ -253,7 +250,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 		if (isUnbound(startVar, bindings) || isUnbound(endVar, bindings)) {
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
-			currentIter = new EmptyIteration<>();
+			currentIter = QueryEvaluationStep.EMPTY_ITERATION;
 		} else if (currentLength == 0L) {
 			ZeroLengthPath zlp = new ZeroLengthPath(scope, startVar.clone(), endVar.clone(),
 					contextVar != null ? contextVar.clone() : null);
@@ -311,7 +308,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 				currentIter = this.strategy.evaluate(pathExprClone, bindings);
 			} else {
-				currentIter = new EmptyIteration<>();
+				currentIter = QueryEvaluationStep.EMPTY_ITERATION;
 			}
 			currentLength++;
 
@@ -381,8 +378,9 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			}
 			if (startValue == null) {
 				return other.startValue == null;
-			} else
+			} else {
 				return startValue.equals(other.startValue);
+			}
 		}
 	}
 

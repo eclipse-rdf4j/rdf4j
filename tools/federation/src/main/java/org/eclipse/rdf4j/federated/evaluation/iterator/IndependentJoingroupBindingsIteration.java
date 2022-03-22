@@ -93,4 +93,8 @@ public class IndependentJoingroupBindingsIteration extends LookAheadIteration<Bi
 		return res;
 	}
 
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		// no-op
+	}
 }

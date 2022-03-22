@@ -147,6 +147,11 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 		return null;
 	}
 
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		// no-op
+	}
+
 	/**
 	 * Task for evaluating service requests
 	 *

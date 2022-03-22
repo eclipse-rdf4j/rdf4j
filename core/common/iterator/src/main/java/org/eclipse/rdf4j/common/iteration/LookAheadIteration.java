@@ -46,8 +46,10 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 		if (isClosed()) {
 			return false;
 		}
-
-		return lookAhead() != null;
+		if (nextElement == null) {
+			lookAhead();
+		}
+		return nextElement != null;
 	}
 
 	@Override
@@ -55,11 +57,15 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
-		E result = lookAhead();
 
-		if (result != null) {
+		if (nextElement == null) {
+			lookAhead();
+		}
+
+		if (nextElement != null) {
+			E temp = nextElement;
 			nextElement = null;
-			return result;
+			return temp;
 		} else {
 			throw new NoSuchElementException();
 		}
@@ -71,15 +77,11 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 	 * @return The next element, or null if there are no more results.
 	 * @throws X If there is an issue getting the next element or closing the iteration.
 	 */
-	private E lookAhead() throws X {
+	private void lookAhead() throws X {
+		nextElement = getNextElement();
 		if (nextElement == null) {
-			nextElement = getNextElement();
-
-			if (nextElement == null) {
-				close();
-			}
+			close();
 		}
-		return nextElement;
 	}
 
 	/**
@@ -90,8 +92,4 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 		throw new UnsupportedOperationException();
 	}
 
-	@Override
-	protected void handleClose() throws X {
-		nextElement = null;
-	}
 }

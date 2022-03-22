@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.iteration.CloseableExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -849,14 +850,8 @@ public class MemTripleSourceTest {
 			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
 					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
 				try {
-					return new ExceptionConvertingIteration<Statement, QueryEvaluationException>(
-							snapshot.getStatements(subj, pred, obj, contexts)) {
-
-						@Override
-						protected QueryEvaluationException convert(Exception e) {
-							return new QueryEvaluationException(e);
-						}
-					};
+					return new CloseableExceptionConvertingIteration<Statement, QueryEvaluationException, CloseableIteration<? extends Statement, SailException>>(
+							snapshot.getStatements(subj, pred, obj, contexts), QueryEvaluationException::new);
 				} catch (SailException e) {
 					throw new QueryEvaluationException(e);
 				}

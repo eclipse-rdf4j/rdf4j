@@ -182,8 +182,6 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 				}
 			}
 		}
-
-		super.handleClose();
 	}
 
 	/**

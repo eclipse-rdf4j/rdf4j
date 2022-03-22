@@ -11,7 +11,6 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
@@ -79,7 +78,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				if (queryInfo.getResultHandler().isPresent()) {
 					// pass through result to configured handler, and return an empty iteration as marker result
 					tQuery.evaluate(queryInfo.getResultHandler().get());
-					resultHolder.set(new EmptyIteration<BindingSet, QueryEvaluationException>());
+					resultHolder.set(new EmptyIteration<>());
 				} else {
 					resultHolder.set(tQuery.evaluate());
 				}
@@ -94,15 +93,13 @@ public abstract class TripleSourceBase implements TripleSource {
 				return;
 			case ASK:
 				monitorRemoteRequest();
-				boolean hasResults = false;
 				try (RepositoryConnection _conn = conn) {
 					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
 					applyBindings(bQuery, queryBindings);
 					applyMaxExecutionTimeUpperBound(bQuery);
 					configureInference(bQuery, queryInfo);
-					hasResults = bQuery.evaluate();
+					resultHolder.set(booleanToBindingSetIteration(bQuery.evaluate()));
 				}
-				resultHolder.set(booleanToBindingSetIteration(hasResults));
 				return;
 			default:
 				throw new UnsupportedOperationException("Operation not supported for query type " + queryType);
@@ -145,7 +142,7 @@ public abstract class TripleSourceBase implements TripleSource {
 					res = new FilteringIteration(filterExpr, res, queryInfo.getStrategy());
 				}
 				if (!res.hasNext()) {
-					Iterations.closeCloseable(res);
+					res.close();
 					conn.close();
 					resultHolder.set(new EmptyIteration<>());
 					return;
@@ -251,7 +248,10 @@ public abstract class TripleSourceBase implements TripleSource {
 
 		} catch (Throwable t) {
 			// handle all other exception case
-			Iterations.closeCloseable(resultHolder.get());
+			CloseableIteration<?, QueryEvaluationException> iter = resultHolder.get();
+			if (iter != null) {
+				iter.close();
+			}
 			conn.close();
 			throw ExceptionUtil.traceExceptionSource(endpoint, t, "");
 		}

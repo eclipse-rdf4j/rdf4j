@@ -87,7 +87,6 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 
 	@Override
 	protected void handleClose() throws X {
-		super.handleClose();
 		if (closeableWrappedIteration != null) {
 			assert (wrappedIteration == closeableWrappedIteration);
 			closeableWrappedIteration.close();

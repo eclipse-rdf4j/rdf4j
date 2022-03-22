@@ -58,16 +58,9 @@ public class CloseableIterationWrapper<E, X extends Exception, T extends Closeab
 	public E next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
-		} else if (Thread.currentThread().isInterrupted()) {
-			close();
-			throw new NoSuchElementException("The iteration has been interrupted.");
 		}
-		try {
-			return wrappedIter.next();
-		} catch (NoSuchElementException e) {
-			close();
-			throw e;
-		}
+
+		return wrappedIter.next();
 	}
 
 	/**

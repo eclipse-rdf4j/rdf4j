@@ -16,7 +16,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.SilentIteration;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -216,9 +215,7 @@ public class RepositoryFederatedService implements FederatedService {
 			conn = useFreshConnection ? freshConnection() : getConnection();
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparqlQueryString, baseUri);
 
-			Iterator<Binding> bIter = bindings.iterator();
-			while (bIter.hasNext()) {
-				Binding b = bIter.next();
+			for (Binding b : bindings) {
 				if (service.getServiceVars().contains(b.getName())) {
 					query.setBinding(b.getName(), b.getValue());
 				}
@@ -271,9 +268,7 @@ public class RepositoryFederatedService implements FederatedService {
 			conn = useFreshConnection ? freshConnection() : getConnection();
 			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, sparqlQueryString, baseUri);
 
-			Iterator<Binding> bIter = bindings.iterator();
-			while (bIter.hasNext()) {
-				Binding b = bIter.next();
+			for (Binding b : bindings) {
 				if (service.getServiceVars().contains(b.getName())) {
 					query.setBinding(b.getName(), b.getValue());
 				}
@@ -338,7 +333,7 @@ public class RepositoryFederatedService implements FederatedService {
 			// fallback to simple evaluation (just a single binding)
 			if (allBindings.size() == 1) {
 				result = select(service, projectionVars, allBindings.get(0), baseUri);
-				result = service.isSilent() ? new SilentIteration(result) : result;
+				result = service.isSilent() ? new SilentIteration<>(result) : result;
 				return result;
 			}
 
@@ -361,7 +356,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 			conn = useFreshConnection ? freshConnection() : getConnection();
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);
-			TupleQueryResult res = null;
+			TupleQueryResult res;
 			query.setMaxExecutionTime(60); // TODO how to retrieve max query value
 			// from actual setting?
 			res = query.evaluate();
@@ -378,14 +373,16 @@ public class RepositoryFederatedService implements FederatedService {
 				result = new CloseConnectionIteration(result, conn);
 			}
 
-			result = service.isSilent() ? new SilentIteration(result) : result;
+			result = service.isSilent() ? new SilentIteration<>(result) : result;
 			return result;
 
 		} catch (RepositoryException e) {
 			if (useFreshConnection) {
 				closeQuietly(conn);
 			}
-			Iterations.closeCloseable(result);
+			if (result != null) {
+				result.close();
+			}
 			if (service.isSilent()) {
 				return new CollectionIteration<>(allBindings);
 			}
@@ -400,20 +397,13 @@ public class RepositoryFederatedService implements FederatedService {
 			logger.debug("Encounted malformed query exception: " + e.getMessage()
 					+ ". Falling back to simple SERVICE evaluation.");
 			return evaluateInternalFallback(service, allBindings, baseUri);
-		} catch (QueryEvaluationException e) {
-			if (useFreshConnection) {
-				closeQuietly(conn);
-			}
-			Iterations.closeCloseable(result);
-			if (service.isSilent()) {
-				return new CollectionIteration<>(allBindings);
-			}
-			throw e;
 		} catch (RuntimeException e) {
 			if (useFreshConnection) {
 				closeQuietly(conn);
 			}
-			Iterations.closeCloseable(result);
+			if (result != null) {
+				result.close();
+			}
 			// suppress special exceptions (e.g. UndeclaredThrowable with wrapped
 			// QueryEval) if silent
 			if (service.isSilent()) {
@@ -439,7 +429,7 @@ public class RepositoryFederatedService implements FederatedService {
 				allBindings, baseUri);
 
 		if (service.isSilent()) {
-			res = new SilentIteration(res);
+			res = new SilentIteration<>(res);
 		}
 		return res;
 

@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.evaluation;
 
+import org.eclipse.rdf4j.common.iteration.CloseableExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -37,18 +38,12 @@ public class SailTripleSource implements TripleSource {
 	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement, SailException> iter = null;
-		CloseableIteration<? extends Statement, QueryEvaluationException> result = null;
+		CloseableExceptionConvertingIteration<? extends Statement, QueryEvaluationException, CloseableIteration<? extends Statement, SailException>> result = null;
 
 		boolean allGood = false;
 		try {
 			iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
-			result = new ExceptionConvertingIteration<Statement, QueryEvaluationException>(iter) {
-
-				@Override
-				protected QueryEvaluationException convert(Exception e) {
-					return new QueryEvaluationException(e);
-				}
-			};
+			result = new CloseableExceptionConvertingIteration<>(iter, QueryEvaluationException::new);
 			allGood = true;
 			return result;
 		} catch (SailException e) {

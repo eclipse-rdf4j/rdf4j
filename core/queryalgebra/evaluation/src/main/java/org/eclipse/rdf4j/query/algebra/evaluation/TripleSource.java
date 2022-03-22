@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -20,6 +21,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * defines the methods that are needed by the Sail Query Model to be able to evaluate itself.
  */
 public interface TripleSource {
+
+	EmptyIteration<? extends Statement, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
 
 	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to

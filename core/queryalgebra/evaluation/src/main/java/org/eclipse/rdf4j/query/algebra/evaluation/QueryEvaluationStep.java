@@ -11,6 +11,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DelayedIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -22,6 +23,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  */
 @FunctionalInterface
 public interface QueryEvaluationStep {
+
+	EmptyIteration<BindingSet, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
+
 	/**
 	 * Utility class that removes code duplication and makes a precompiled QueryEvaluationStep available as an iteration
 	 * that may be created and used later.

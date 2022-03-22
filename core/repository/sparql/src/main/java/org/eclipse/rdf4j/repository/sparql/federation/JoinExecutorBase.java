@@ -99,7 +99,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	}
 
 	public void done() {
-		; // no-op
+		// no-op
 	}
 
 	public void toss(Exception e) {
@@ -133,26 +133,24 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	@Override
 	public void handleClose() throws QueryEvaluationException {
 		closed = true;
+
 		try {
-			super.handleClose();
+			rightQueue.close();
 		} finally {
 			try {
-				rightQueue.close();
+				CloseableIteration<T, QueryEvaluationException> toCloseRightIter = rightIter;
+				rightIter = null;
+				if (toCloseRightIter != null) {
+					toCloseRightIter.close();
+				}
 			} finally {
-				try {
-					CloseableIteration<T, QueryEvaluationException> toCloseRightIter = rightIter;
-					rightIter = null;
-					if (toCloseRightIter != null) {
-						toCloseRightIter.close();
-					}
-				} finally {
-					CloseableIteration<T, QueryEvaluationException> toCloseLeftIter = leftIter;
-					if (toCloseLeftIter != null) {
-						toCloseLeftIter.close();
-					}
+				CloseableIteration<T, QueryEvaluationException> toCloseLeftIter = leftIter;
+				if (toCloseLeftIter != null) {
+					toCloseLeftIter.close();
 				}
 			}
 		}
+
 	}
 
 	/**
