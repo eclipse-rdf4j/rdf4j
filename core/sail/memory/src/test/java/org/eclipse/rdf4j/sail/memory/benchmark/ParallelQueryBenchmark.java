@@ -13,12 +13,16 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -49,11 +53,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 3)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
-//@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+//@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=20s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints" })
+@Measurement(iterations = 3, time = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ParallelQueryBenchmark {
 
@@ -76,10 +80,12 @@ public class ParallelQueryBenchmark {
 	}
 
 	private SailRepository repository;
+	ExecutorService executorService;
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException, InterruptedException {
 		repository = new SailRepository(new MemoryStore());
+		executorService = Executors.newFixedThreadPool(8);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -93,31 +99,42 @@ public class ParallelQueryBenchmark {
 	@TearDown(Level.Trial)
 	public void afterClass() {
 		repository.shutDown();
+		List<Runnable> runnables = executorService.shutdownNow();
+		if (!runnables.isEmpty()) {
+			throw new IllegalStateException("Not all tasks were complete!");
+		}
 	}
 
-	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("ParallelQueryBenchmark.*") // adapt to run other benchmark tests
-				.forks(1)
-				.build();
-
-		new Runner(opt).run();
+	public static void main(String[] args) throws RunnerException, InterruptedException, IOException {
+		ParallelQueryBenchmark parallelQueryBenchmark = new ParallelQueryBenchmark();
+		parallelQueryBenchmark.beforeClass();
+		for (int i = 0; i < 400; i++) {
+			System.out.println(i);
+			parallelQueryBenchmark.mixedWorkload(new Blackhole(
+					"Today's password is swordfish. I understand instantiating Blackholes directly is dangerous."));
+		}
+		parallelQueryBenchmark.afterClass();
 	}
 
 	@Benchmark
 	public void mixedWorkload(Blackhole blackhole) throws InterruptedException {
-		ExecutorService executorService = Executors.newFixedThreadPool(8);
 		CountDownLatch startSignal = new CountDownLatch(1);
 
-		getMixedWorkload(blackhole, startSignal, null)
-				.forEach(executorService::submit);
+		List<? extends Future<?>> collect = getMixedWorkload(blackhole, startSignal, null)
+				.stream()
+				.map(executorService::submit)
+				.collect(Collectors.toList());
 
 		startSignal.countDown();
 
-		executorService.shutdown();
-		while (!executorService.isTerminated()) {
-			executorService.awaitTermination(100, TimeUnit.MILLISECONDS);
+		for (Future<?> future : collect) {
+			try {
+				future.get();
+			} catch (ExecutionException e) {
+				throw new IllegalStateException(e);
+			}
 		}
+
 	}
 
 	private ArrayList<Runnable> getMixedWorkload(Blackhole blackhole, CountDownLatch startSignal,
