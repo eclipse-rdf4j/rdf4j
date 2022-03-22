@@ -53,16 +53,16 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 	private void consume(int max) {
 		boolean completed = false;
 		try {
-			while (consumed.size() < max && this.innerIter.hasNext()) {
-				consumed.add(this.innerIter.next());
+			while (consumed.size() < max && innerIter.hasNext()) {
+				consumed.add(innerIter.next());
 			}
-			if (!this.innerIter.hasNext()) {
-				this.innerIter.close();
+			if (!innerIter.hasNext()) {
+				innerIter.close();
 			}
 			completed = true;
 		} finally {
 			if (!completed) {
-				this.innerIter.close();
+				innerIter.close();
 			}
 		}
 	}
