@@ -15,7 +15,8 @@ import java.util.function.Supplier;
 /**
  * An Iteration that filters any duplicate elements from an underlying iterator.
  */
-public class DistinctIteration<E, X extends Exception> extends FilterIteration<E, X> {
+public class DistinctIteration<K extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
+		extends FilterIteration<K, E, X> {
 
 	/*-----------*
 	 * Variables *
@@ -35,13 +36,13 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	 *
 	 * @param iter The underlying iterator.
 	 */
-	public DistinctIteration(Iteration<? extends E, ? extends X> iter) {
+	public DistinctIteration(K iter) {
 		super(iter);
 
 		excludeSet = makeSet();
 	}
 
-	public DistinctIteration(Iteration<? extends E, ? extends X> iter, Supplier<Set<E>> setMaker) {
+	public DistinctIteration(K iter, Supplier<Set<E>> setMaker) {
 		super(iter);
 		excludeSet = setMaker.get();
 	}

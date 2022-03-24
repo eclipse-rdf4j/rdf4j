@@ -1,10 +1,4 @@
-/*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Distribution License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.Objects;
@@ -13,24 +7,25 @@ import java.util.Spliterators;
 import java.util.function.Consumer;
 
 /**
- * A {@link Spliterator} implementation that wraps an {@link Iteration}. It handles occurrence of checked exceptions by
- * wrapping them in RuntimeExceptions, and in addition ensures that the wrapped Iteration is closed when exhausted (if
- * it's a {@link CloseableIteration}).
+ * A {@link Spliterator} implementation that wraps a {@link CloseableIteration}. It handles occurrence of checked
+ * exceptions by wrapping them in RuntimeExceptions, and in addition ensures that the wrapped Iteration is closed when
+ * exhausted.
  *
- * @author Jeen Broekstra
+ * @author Håvard Ottestad
  */
-public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T> {
+public class CloseableIterationSpliterator<T, K extends CloseableIteration<T, ? extends Exception>>
+		extends Spliterators.AbstractSpliterator<T> {
 
-	private final Iteration<T, ? extends Exception> iteration;
+	private final K iteration;
 
 	/**
-	 * Creates a {@link Spliterator} implementation that wraps the supplied {@link Iteration}. It handles occurrence of
-	 * checked exceptions by wrapping them in RuntimeExceptions, and in addition ensures that the wrapped Iteration is
-	 * closed when exhausted (if it's a {@link CloseableIteration}).
+	 * Creates a {@link Spliterator} implementation that wraps the supplied {@link CloseableIteration}. It handles
+	 * occurrence of checked exceptions by wrapping them in RuntimeExceptions, and in addition ensures that the wrapped
+	 * Iteration is closed when exhausted.
 	 *
 	 * @param iteration the iteration to wrap
 	 */
-	public IterationSpliterator(Iteration<T, ? extends Exception> iteration) {
+	public CloseableIterationSpliterator(K iteration) {
 		super(Long.MAX_VALUE, Spliterator.IMMUTABLE | Spliterator.NONNULL);
 		this.iteration = iteration;
 	}
@@ -58,7 +53,7 @@ public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T>
 		} finally {
 			if (needsToBeClosed) {
 				try {
-					Iterations.closeCloseable(iteration);
+					iteration.close();
 				} catch (Exception ignored) {
 				}
 			}
@@ -79,7 +74,7 @@ public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T>
 			throw new RuntimeException(e);
 		} finally {
 			try {
-				Iterations.closeCloseable(iteration);
+				iteration.close();
 			} catch (Exception ignored) {
 			}
 		}

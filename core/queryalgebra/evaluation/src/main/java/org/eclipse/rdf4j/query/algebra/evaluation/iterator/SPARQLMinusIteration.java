@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -25,13 +26,14 @@ import org.eclipse.rdf4j.query.QueryResults;
  * @see <a href="http://www.w3.org/TR/sparql11-query/#sparqlAlgebra">SPARQL Algebra Documentation</a>
  * @author Jeen
  */
-public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<BindingSet, X> {
+public class SPARQLMinusIteration<X extends Exception>
+		extends FilterIteration<CloseableIteration<BindingSet, X>, BindingSet, X> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private final Iteration<BindingSet, X> rightArg;
+	private final CloseableIteration<BindingSet, X> rightArg;
 
 	private boolean initialized;
 
@@ -48,7 +50,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 */
-	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg) {
+	public SPARQLMinusIteration(CloseableIteration<BindingSet, X> leftArg, CloseableIteration<BindingSet, X> rightArg) {
 		super(leftArg);
 
 		assert rightArg != null;
@@ -66,7 +68,8 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 * @param distinct This argument is ignored
 	 */
 	@Deprecated(since = "4.0.0", forRemoval = true)
-	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg, boolean distinct) {
+	public SPARQLMinusIteration(CloseableIteration<BindingSet, X> leftArg, CloseableIteration<BindingSet, X> rightArg,
+			boolean distinct) {
 		this(leftArg, rightArg);
 	}
 

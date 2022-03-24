@@ -14,7 +14,8 @@ import java.util.NoSuchElementException;
  * A CloseableIteration that wraps another Iteration, applying a filter on the objects that are returned. Subclasses
  * must implement the <var>accept</var> method to indicate which objects should be returned.
  */
-public abstract class FilterIteration<E, X extends Exception> extends IterationWrapper<E, X> {
+public abstract class FilterIteration<K extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
+		extends CloseableIterationWrapper<K, E, X> {
 
 	/*-----------*
 	 * Variables *
@@ -29,7 +30,7 @@ public abstract class FilterIteration<E, X extends Exception> extends IterationW
 	/**
 	 * @param iter
 	 */
-	protected FilterIteration(Iteration<? extends E, ? extends X> iter) {
+	protected FilterIteration(K iter) {
 		super(iter);
 	}
 

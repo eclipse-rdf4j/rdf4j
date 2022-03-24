@@ -10,11 +10,12 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.function.Predicate;
 
-public class PredicateFilterIteration<E, X extends Exception> extends FilterIteration<E, X> {
+public class PredicateFilterIteration<K extends CloseableIteration<? extends E, X>, E, X extends Exception>
+		extends FilterIteration<K, E, X> {
 
 	private final Predicate<E> filter;
 
-	public PredicateFilterIteration(CloseableIteration<? extends E, X> stIter1, Predicate<E> filter) {
+	public PredicateFilterIteration(K stIter1, Predicate<E> filter) {
 		super(stIter1);
 		this.filter = filter;
 	}

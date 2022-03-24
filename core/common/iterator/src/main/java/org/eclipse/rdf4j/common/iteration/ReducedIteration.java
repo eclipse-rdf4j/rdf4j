@@ -12,11 +12,12 @@ package org.eclipse.rdf4j.common.iteration;
  *
  * @author Arjohn Kampman
  */
-public class ReducedIteration<E, X extends Exception> extends FilterIteration<E, X> {
+public class ReducedIteration<K extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
+		extends FilterIteration<K, E, X> {
 
 	private E previousObject;
 
-	public ReducedIteration(Iteration<? extends E, ? extends X> delegate) {
+	public ReducedIteration(K delegate) {
 		super(delegate);
 	}
 

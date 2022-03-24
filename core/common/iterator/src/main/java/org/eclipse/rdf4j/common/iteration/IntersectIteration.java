@@ -19,13 +19,14 @@ import java.util.function.Supplier;
  * Note that duplicates can also be filtered by wrapping this Iteration in a {@link DistinctIteration}, but that has a
  * bit more overhead as it adds a second hash table lookup.
  */
-public class IntersectIteration<E, X extends Exception> extends FilterIteration<E, X> {
+public class IntersectIteration<K extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
+		extends FilterIteration<K, E, X> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	protected final Iteration<? extends E, ? extends X> arg2;
+	protected final K arg2;
 
 	private final boolean distinct;
 
@@ -46,11 +47,11 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param arg1 An Iteration containing the first set of elements.
 	 * @param arg2 An Iteration containing the second set of elements.
 	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2) {
+	public IntersectIteration(K arg1, K arg2) {
 		this(arg1, arg2, false);
 	}
 
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
+	public IntersectIteration(K arg1, K arg2,
 			Supplier<Set<E>> setMaker) {
 		this(arg1, arg2, false, setMaker);
 	}
@@ -62,7 +63,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param arg2     An Iteration containing the second set of elements.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
+	public IntersectIteration(K arg1, K arg2,
 			boolean distinct) {
 		super(arg1);
 
@@ -81,7 +82,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param arg2     An Iteration containing the second set of elements.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
+	public IntersectIteration(K arg1, K arg2,
 			boolean distinct, Supplier<Set<E>> setMaker) {
 		super(arg1);
 
@@ -145,7 +146,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(arg2);
+			arg2.close();
 		}
 	}
 

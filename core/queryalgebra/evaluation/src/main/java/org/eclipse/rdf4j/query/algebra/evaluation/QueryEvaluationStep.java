@@ -12,7 +12,6 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DelayedIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -41,7 +40,7 @@ public interface QueryEvaluationStep {
 		}
 
 		@Override
-		protected Iteration<? extends BindingSet, ? extends QueryEvaluationException> createIteration()
+		protected CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> createIteration()
 				throws QueryEvaluationException {
 			return arg.evaluate(bs);
 		}

@@ -15,7 +15,8 @@ import java.util.Objects;
  * A CloseableIteration that converts an arbitrary iteration to an iteration with exceptions of type <var>X</var>.
  * Subclasses need to override {@link #convert(Exception)} to do the conversion.
  */
-public abstract class ExceptionConvertingIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public abstract class ExceptionConvertingIteration<K extends CloseableIteration<? extends E, ? extends Exception>, E, X extends Exception>
+		extends AbstractCloseableIteration<E, X> {
 
 	/*-----------*
 	 * Variables *
@@ -24,7 +25,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	/**
 	 * The underlying Iteration.
 	 */
-	private final Iteration<? extends E, ? extends Exception> iter;
+	private final K iter;
 
 	/*--------------*
 	 * Constructors *
@@ -36,7 +37,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	 * @param iter The Iteration that this <var>ExceptionConvertingIteration</var> operates on, must not be
 	 *             <var>null</var>.
 	 */
-	protected ExceptionConvertingIteration(Iteration<? extends E, ? extends Exception> iter) {
+	protected ExceptionConvertingIteration(K iter) {
 		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 
@@ -120,7 +121,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	@Override
 	protected void handleClose() throws X {
 		try {
-			Iterations.closeCloseable(iter);
+			iter.close();
 		} catch (Exception e) {
 			throw convert(e);
 		}

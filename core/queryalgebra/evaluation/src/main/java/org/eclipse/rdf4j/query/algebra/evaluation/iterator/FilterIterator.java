@@ -21,7 +21,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
-public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationException> {
+public class FilterIterator extends
+		FilterIteration<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException> {
 
 	/*-----------*
 	 * Constants *

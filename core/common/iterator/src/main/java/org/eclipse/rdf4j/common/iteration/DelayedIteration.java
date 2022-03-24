@@ -22,7 +22,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 * Variables *
 	 *-----------*/
 
-	private Iteration<? extends E, ? extends X> iter;
+	private CloseableIteration<? extends E, ? extends X> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -42,8 +42,10 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	/**
 	 * Creates the iteration that should be iterated over. This method is called only once, when the iteration is first
 	 * needed.
+	 * 
+	 * @return
 	 */
-	protected abstract Iteration<? extends E, ? extends X> createIteration() throws X;
+	protected abstract CloseableIteration<? extends E, ? extends X> createIteration() throws X;
 
 	/**
 	 * Calls the <var>hasNext</var> method of the underlying iteration.
@@ -101,7 +103,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	@Override
 	protected void handleClose() throws X {
 		if (iter != null) {
-			Iterations.closeCloseable(iter);
+			iter.close();
 		}
 	}
 }

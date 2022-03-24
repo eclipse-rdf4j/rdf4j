@@ -47,7 +47,7 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter1 = null;
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter2 = null;
+		CloseableIteration<BindingSet, QueryEvaluationException> bindingsIter2 = null;
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter3 = null;
 		CloseableIteration<Statement, QueryEvaluationException> stIter = null;
 		IteratingGraphQueryResult result = null;
@@ -58,7 +58,8 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 
 			// Filters out all partial and invalid matches
-			bindingsIter2 = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter1) {
+			bindingsIter2 = new FilterIteration<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException>(
+					bindingsIter1) {
 
 				@Override
 				protected boolean accept(BindingSet bindingSet) {

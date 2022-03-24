@@ -19,13 +19,14 @@ import java.util.function.Supplier;
  * Note that duplicates can also be filtered by wrapping this Iteration in a {@link DistinctIteration}, but that has a
  * bit more overhead as it adds a second hash table lookup.
  */
-public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X> {
+public class MinusIteration<K extends CloseableIteration<E, X>, E, X extends Exception>
+		extends FilterIteration<K, E, X> {
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
-	private final Iteration<? extends E, X> rightArg;
+	private final K rightArg;
 
 	private final boolean distinct;
 
@@ -46,7 +47,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 */
-	public MinusIteration(Iteration<? extends E, X> leftArg, Iteration<? extends E, X> rightArg) {
+	public MinusIteration(K leftArg, K rightArg) {
 		this(leftArg, rightArg, false);
 	}
 
@@ -58,7 +59,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public MinusIteration(Iteration<? extends E, X> leftArg, Iteration<? extends E, X> rightArg, boolean distinct) {
+	public MinusIteration(K leftArg, K rightArg, boolean distinct) {
 		super(leftArg);
 
 		assert rightArg != null;
@@ -77,7 +78,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public MinusIteration(Iteration<? extends E, X> leftArg, Iteration<? extends E, X> rightArg, boolean distinct,
+	public MinusIteration(K leftArg, K rightArg, boolean distinct,
 			Supplier<Set<E>> setMaker) {
 		super(leftArg);
 

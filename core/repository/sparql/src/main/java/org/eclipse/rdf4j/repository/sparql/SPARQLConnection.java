@@ -367,8 +367,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			setBindings(query, subj, pred, obj, contexts);
 			gRes = query.evaluate();
 			result = new RepositoryResult<>(
-					new ExceptionConvertingIteration<Statement, RepositoryException>(gRes) {
-
+					new ExceptionConvertingIteration<>(gRes) {
 						@Override
 						protected RepositoryException convert(Exception e) {
 							return new RepositoryException(e);
@@ -1068,10 +1067,11 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * @param obj  the object {@link Value} used as input or <code>null</code> if wildcard was used
 	 * @return the converted iteration
 	 */
-	protected Iteration<Statement, QueryEvaluationException> toStatementIteration(TupleQueryResult iter,
+	protected ConvertingIteration<BindingSet, Statement, QueryEvaluationException> toStatementIteration(
+			TupleQueryResult iter,
 			final Resource subj, final IRI pred, final Value obj) {
 
-		return new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(iter) {
+		return new ConvertingIteration<>(iter) {
 
 			@Override
 			protected Statement convert(BindingSet b) throws QueryEvaluationException {

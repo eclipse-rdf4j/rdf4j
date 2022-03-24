@@ -19,7 +19,6 @@ import java.util.AbstractQueue;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -31,7 +30,6 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.DelayedIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.LimitIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -271,7 +269,8 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 *---------*/
 
 	@Override
-	protected Iteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
+	protected CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> createIteration()
+			throws QueryEvaluationException {
 		BindingSet threshold = null;
 		List<BindingSet> list = new LinkedList<>();
 		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;

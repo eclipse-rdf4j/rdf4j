@@ -44,7 +44,7 @@ public class Iterations {
 	 * @param iter the Iteration to get the elements from
 	 * @return a Set containing all elements obtained from the specified Iteration.
 	 */
-	public static <E, X extends Exception> Set<E> asSet(Iteration<? extends E, X> iter) throws X {
+	public static <E, X extends Exception> Set<E> asSet(Iteration<? extends E, ? extends X> iter) throws X {
 		try (Stream<? extends E> stream = iter.stream()) {
 			return stream.collect(Collectors.toSet());
 		}
@@ -86,6 +86,20 @@ public class Iterations {
 		return StreamSupport.stream(spliterator, false).onClose(() -> {
 			try {
 				Iterations.closeCloseable(iteration);
+			} catch (RuntimeException e) {
+				throw e;
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+	}
+
+	public static <T, X extends Exception, K extends CloseableIteration<T, X>> Stream<T> stream(K iteration) {
+		Spliterator<T> spliterator = new CloseableIterationSpliterator<>(iteration);
+
+		return StreamSupport.stream(spliterator, false).onClose(() -> {
+			try {
+				iteration.close();
 			} catch (RuntimeException e) {
 				throw e;
 			} catch (Exception e) {

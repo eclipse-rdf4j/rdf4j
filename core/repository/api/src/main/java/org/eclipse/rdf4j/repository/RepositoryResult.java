@@ -41,7 +41,7 @@ import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
  */
 public class RepositoryResult<T> extends AbstractCloseableIteration<T, RepositoryException> implements Iterable<T> {
 
-	private Iteration<? extends T, RepositoryException> wrappedIter;
+	private CloseableIteration<? extends T, RepositoryException> wrappedIter;
 
 	public RepositoryResult(CloseableIteration<? extends T, RepositoryException> iter) {
 		assert iter != null;
@@ -82,7 +82,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 			return;
 		}
 
-		wrappedIter = new DistinctIteration<T, RepositoryException>(wrappedIter);
+		wrappedIter = new DistinctIteration<>(wrappedIter);
 	}
 
 	@Override

@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 
 class SailClosableIteration<T, X extends Exception>
-		extends CloseableIterationWrapper<T, X, CloseableIteration<? extends T, X>> {
+		extends CloseableIterationWrapper<CloseableIteration<? extends T, X>, T, X> {
 
 	public static <T, X extends Exception> SailClosableIteration<T, X> getInstance(
 			CloseableIteration<? extends T, X> iter, SailClosable closes1) {

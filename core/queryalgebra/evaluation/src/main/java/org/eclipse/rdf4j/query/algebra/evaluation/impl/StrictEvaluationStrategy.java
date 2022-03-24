@@ -17,8 +17,6 @@ import java.util.function.Consumer;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
@@ -572,7 +570,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		final QueryEvaluationStep child = precompile(node.getArg(), context);
 		return bindings -> {
 			final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
-			return new DistinctIteration<BindingSet, QueryEvaluationException>(evaluate,
+			return new DistinctIteration<>(evaluate,
 					StrictEvaluationStrategy.this::makeSet);
 		};
 
@@ -1903,7 +1901,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * represents. This means we can track the number of tuples that have been retrieved from this node.
 	 */
 	private static class ResultSizeCountingIterator extends
-			CloseableIterationWrapper<BindingSet, QueryEvaluationException, CloseableIteration<BindingSet, QueryEvaluationException>> {
+			CloseableIterationWrapper<CloseableIteration<BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException> {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
 		QueryModelNode queryModelNode;
@@ -1932,7 +1930,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * This class wraps an iterator and tracks the time used to execute next() and hasNext()
 	 */
 	private static class TimedIterator extends
-			CloseableIterationWrapper<BindingSet, QueryEvaluationException, CloseableIteration<BindingSet, QueryEvaluationException>> {
+			CloseableIterationWrapper<CloseableIteration<BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException> {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
 		QueryModelNode queryModelNode;

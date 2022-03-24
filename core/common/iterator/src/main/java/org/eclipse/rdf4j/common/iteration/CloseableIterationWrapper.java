@@ -11,10 +11,10 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 
-public class CloseableIterationWrapper<E, X extends Exception, T extends CloseableIteration<? extends E, ? extends X>>
+public class CloseableIterationWrapper<T extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
 		extends AbstractCloseableIteration<E, X> {
 
-	private final T wrappedIter;
+	protected final T wrappedIter;
 
 	/**
 	 * Creates a new IterationWrapper that operates on the supplied Iteration.

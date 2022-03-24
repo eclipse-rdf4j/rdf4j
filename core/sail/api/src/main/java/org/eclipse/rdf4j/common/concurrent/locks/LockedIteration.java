@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
  */
 @InternalUseOnly
 public class LockedIteration<E, X extends Exception>
-		extends CloseableIterationWrapper<E, X, CloseableIteration<? extends E, X>> {
+		extends CloseableIterationWrapper<CloseableIteration<? extends E, X>, E, X> {
 
 	/**
 	 * The lock to release when the Iteration is closed.

@@ -14,8 +14,6 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.PredicateFilterIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -388,7 +386,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		private final Function<Statement, MutableBindingSet> convertingFunction;
 
 		private ConvertStatmentToBindingSetIterator(
-				Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
+				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BiConsumer<MutableBindingSet, Statement> action, QueryEvaluationContext context) {
 			super(iter);
 			convertingFunction = (st) -> {
@@ -400,7 +398,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 
 		private ConvertStatmentToBindingSetIterator(
-				Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
+				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
 			super(iter);
 			assert !bindings.isEmpty();

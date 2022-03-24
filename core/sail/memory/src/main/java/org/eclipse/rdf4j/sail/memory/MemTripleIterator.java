@@ -55,7 +55,7 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	/**
 	 * The index of the last statement that has been returned.
 	 */
-	private volatile int statementIdx;
+	private int statementIdx;
 
 	/*--------------*
 	 * Constructors *

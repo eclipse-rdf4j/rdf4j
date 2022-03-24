@@ -219,7 +219,8 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 						getIncludeInferred(), getMaxExecutionTime());
 
 				// Filters out all partial and invalid matches
-				bindingsIter2 = new FilterIteration<BindingSet, QueryEvaluationException>(bindingsIter1) {
+				bindingsIter2 = new FilterIteration<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException>(
+						bindingsIter1) {
 
 					@Override
 					protected boolean accept(BindingSet bindingSet) {

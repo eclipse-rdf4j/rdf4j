@@ -322,7 +322,8 @@ class SailDatasetImpl implements SailDataset {
 
 	private CloseableIteration<? extends Statement, SailException> difference(
 			CloseableIteration<? extends Statement, SailException> result, Function<Statement, Boolean> excluded) {
-		return new FilterIteration<Statement, SailException>(result) {
+		return new FilterIteration<CloseableIteration<? extends Statement, SailException>, Statement, SailException>(
+				result) {
 
 			@Override
 			protected boolean accept(Statement stmt) {
@@ -333,7 +334,7 @@ class SailDatasetImpl implements SailDataset {
 
 	private CloseableIteration<? extends Triple, SailException> triplesDifference(
 			CloseableIteration<? extends Triple, SailException> result, Function<Triple, Boolean> excluded) {
-		return new FilterIteration<Triple, SailException>(result) {
+		return new FilterIteration<CloseableIteration<? extends Triple, SailException>, Triple, SailException>(result) {
 
 			@Override
 			protected boolean accept(Triple stmt) {

@@ -14,6 +14,9 @@ import java.io.Reader;
 import java.net.URL;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIterationIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IteratorIteration;
@@ -323,8 +326,14 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	public <E extends Exception> void add(Iteration<? extends Statement, E> statementIter, Resource... contexts)
 			throws RepositoryException, E {
 		final IRI insertContext = getInsertContext();
+		CloseableIteration<Statement, E> closeableIteration;
+		if (!(statementIter instanceof CloseableIteration)) {
+			closeableIteration = new CloseableIterationIteration<>(((Iteration<Statement, E>) statementIter));
+		} else {
+			closeableIteration = (CloseableIteration<Statement, E>) statementIter;
+		}
 		if (isNilContext(contexts)) {
-			super.add(new ConvertingIteration<Statement, Statement, E>(statementIter) {
+			super.add(new ConvertingIteration<>(closeableIteration) {
 
 				@Override
 				protected Statement convert(Statement st) {
@@ -655,8 +664,15 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	public <E extends Exception> void remove(Iteration<? extends Statement, E> statementIter, Resource... contexts)
 			throws RepositoryException, E {
 		final IRI[] removeContexts = getRemoveContexts();
+		CloseableIteration<Statement, E> closeableIteration;
+		if (!(statementIter instanceof CloseableIteration)) {
+			closeableIteration = new CloseableIterationIteration<>(((Iteration<Statement, E>) statementIter));
+		} else {
+			closeableIteration = (CloseableIteration<Statement, E>) statementIter;
+		}
+
 		if (isAllContext(contexts) && removeContexts.length == 1) {
-			super.remove(new ConvertingIteration<Statement, Statement, E>(statementIter) {
+			super.remove(new ConvertingIteration<>(closeableIteration) {
 
 				@Override
 				protected Statement convert(Statement st) {

@@ -534,7 +534,7 @@ public class QueryResults extends Iterations {
 	private static class GraphQueryResultFilter extends AbstractCloseableIteration<Statement, QueryEvaluationException>
 			implements GraphQueryResult {
 
-		private final DistinctIteration<Statement, QueryEvaluationException> filter;
+		private final DistinctIteration<GraphQueryResult, Statement, QueryEvaluationException> filter;
 
 		private final GraphQueryResult unfiltered;
 
@@ -598,7 +598,7 @@ public class QueryResults extends Iterations {
 	private static class TupleQueryResultFilter extends AbstractCloseableIteration<BindingSet, QueryEvaluationException>
 			implements TupleQueryResult {
 
-		private final DistinctIteration<BindingSet, QueryEvaluationException> filter;
+		private final DistinctIteration<TupleQueryResult, BindingSet, QueryEvaluationException> filter;
 
 		private final TupleQueryResult unfiltered;
 

@@ -24,7 +24,7 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	/**
 	 * The source type iteration.
 	 */
-	private final Iteration<? extends S, ? extends X> iter;
+	private final CloseableIteration<? extends S, ? extends X> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -35,7 +35,7 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 *
 	 * @param iter The source type iteration for this <var>ConvertingIteration</var>, must not be <var>null</var>.
 	 */
-	protected ConvertingIteration(Iteration<? extends S, ? extends X> iter) {
+	protected ConvertingIteration(CloseableIteration<? extends S, ? extends X> iter) {
 		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 
@@ -102,6 +102,6 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 */
 	@Override
 	protected void handleClose() throws X {
-		Iterations.closeCloseable(iter);
+		iter.close();
 	}
 }

@@ -7,11 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
-import java.lang.ref.Cleaner;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
-import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
 /**
  * An iteration extension that keeps a reference to the AbstractSailConnection from which it originates and signals when
@@ -20,7 +17,7 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
  * @author Jeen Broekstra
  */
 class SailBaseIteration<T, E extends Exception>
-		extends CloseableIterationWrapper<T, E, CloseableIteration<? extends T, ? extends E>> {
+		extends CloseableIterationWrapper<CloseableIteration<? extends T, ? extends E>, T, E> {
 
 	private final AbstractSailConnection connection;
 
