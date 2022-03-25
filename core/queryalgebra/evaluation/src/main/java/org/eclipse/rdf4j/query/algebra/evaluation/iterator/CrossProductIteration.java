@@ -27,13 +27,13 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 
 	protected final List<BindingSet> inputBindings;
 
-	protected final CloseableIteration<BindingSet, QueryEvaluationException> resultIteration;
+	protected final CloseableIteration<? extends BindingSet, QueryEvaluationException> resultIteration;
 
 	protected Iterator<BindingSet> inputBindingsIterator = null;
 
 	protected BindingSet currentInputBinding = null;
 
-	public CrossProductIteration(CloseableIteration<BindingSet, QueryEvaluationException> resultIteration,
+	public CrossProductIteration(CloseableIteration<? extends BindingSet, QueryEvaluationException> resultIteration,
 			List<BindingSet> inputBindings) {
 		super();
 		this.resultIteration = resultIteration;

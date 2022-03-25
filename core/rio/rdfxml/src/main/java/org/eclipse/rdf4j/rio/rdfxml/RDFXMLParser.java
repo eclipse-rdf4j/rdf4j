@@ -1028,7 +1028,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 		private Resource resource;
 
-		private boolean isVolatile = false;;
+		private boolean isVolatile = false;
 
 		private int liCounter = 1;
 

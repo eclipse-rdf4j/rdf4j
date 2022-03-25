@@ -44,16 +44,19 @@ public class OrderComparatorTest {
 	private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
 			vf.createLiteral(Date.from(Instant.now())), null);
 
-	class EvaluationStrategyStub implements EvaluationStrategy {
+	static class EvaluationStrategyStub implements EvaluationStrategy {
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-				CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
+		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr,
+				String serviceUri,
+				CloseableIteration<BindingSet, QueryEvaluationException> bindings)
+				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
-		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
+		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
+				BindingSet bindings)
 				throws QueryEvaluationException {
 			throw new UnsupportedOperationException();
 		}
@@ -94,7 +97,7 @@ public class OrderComparatorTest {
 		}
 	}
 
-	class ComparatorStub extends ValueComparator {
+	static class ComparatorStub extends ValueComparator {
 
 		Iterator<Integer> iter;
 

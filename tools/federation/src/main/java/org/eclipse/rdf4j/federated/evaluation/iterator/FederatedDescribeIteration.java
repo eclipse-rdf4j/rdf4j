@@ -42,7 +42,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 
 	private final List<StatementSource> allSources;
 
-	public FederatedDescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter,
+	public FederatedDescribeIteration(CloseableIteration<BindingSet, QueryEvaluationException> sourceIter,
 			FederationEvalStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings,
 			QueryInfo queryInfo) {
 		super(sourceIter, strategy, describeExprNames, parentBindings);
@@ -79,7 +79,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 		// we need to make sure that subject or object are added to the binding set
 		// Note: FedX uses prepared SELECT queries to evaluate a statement pattern and
 		// thus does not add bound values to the result bindingset
-		return new ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>(res) {
+		return new ConvertingIteration<>(res) {
 
 			@Override
 			protected BindingSet convert(BindingSet sourceObject) throws QueryEvaluationException {

@@ -236,7 +236,8 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 				bindingsIter3 = enforceMaxQueryTime(bindingsIter2);
 
 				// Convert the BindingSet objects to actual RDF statements
-				stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(bindingsIter3) {
+				stIter = new ConvertingIteration<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, Statement, QueryEvaluationException>(
+						bindingsIter3) {
 
 					private final ValueFactory vf = tripleSource.getValueFactory();
 

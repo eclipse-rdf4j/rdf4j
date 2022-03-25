@@ -44,7 +44,7 @@ public class FilterIterator extends
 	 * Constructors *
 	 *--------------*/
 
-	public FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public FilterIterator(Filter filter, CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
 			QueryValueEvaluationStep ves, EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.filter = filter;

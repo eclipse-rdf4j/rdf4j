@@ -163,7 +163,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws RepositoryException {
-		try (RepositoryResult<Statement> stIter = getStatements(subj, pred, obj, includeInferred, contexts);) {
+		try (RepositoryResult<Statement> stIter = getStatements(subj, pred, obj, includeInferred, contexts)) {
 			return stIter.hasNext();
 		}
 	}

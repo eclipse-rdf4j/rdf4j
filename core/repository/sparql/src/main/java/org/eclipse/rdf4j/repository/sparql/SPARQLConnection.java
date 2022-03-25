@@ -1067,7 +1067,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * @param obj  the object {@link Value} used as input or <code>null</code> if wildcard was used
 	 * @return the converted iteration
 	 */
-	protected ConvertingIteration<BindingSet, Statement, QueryEvaluationException> toStatementIteration(
+	protected ConvertingIteration<TupleQueryResult, BindingSet, Statement, QueryEvaluationException> toStatementIteration(
 			TupleQueryResult iter,
 			final Resource subj, final IRI pred, final Value obj) {
 

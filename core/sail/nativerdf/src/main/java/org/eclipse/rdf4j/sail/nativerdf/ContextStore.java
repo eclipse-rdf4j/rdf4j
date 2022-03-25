@@ -176,7 +176,7 @@ class ContextStore implements Iterable<Resource> {
 
 	private void initializeContextCache() throws IOException {
 		logger.debug("initializing context cache");
-		try (CloseableIteration<Resource, SailException> contextIter = store.getContexts()) {
+		try (CloseableIteration<? extends Resource, SailException> contextIter = store.getContexts()) {
 			while (contextIter.hasNext()) {
 				increment(contextIter.next());
 			}

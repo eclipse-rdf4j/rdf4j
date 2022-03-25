@@ -37,13 +37,13 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> leftIter;
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> rightIter;
 
 	private List<BindingSet> scanList;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> restIter;
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> restIter;
 
 	private Map<BindingSet, List<BindingSet>> hashTable;
 

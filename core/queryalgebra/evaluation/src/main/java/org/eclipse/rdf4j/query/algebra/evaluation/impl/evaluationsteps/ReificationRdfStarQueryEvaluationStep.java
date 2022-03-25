@@ -50,7 +50,7 @@ public class ReificationRdfStarQueryEvaluationStep implements QueryEvaluationSte
 		final Value extValue = StrictEvaluationStrategy.getVarValue(extVar, bindings);
 		// standard reification iteration
 		// 1. walk over resources used as subjects of (x rdf:type rdf:Statement)
-		final CloseableIteration<? extends Resource, QueryEvaluationException> iter = new ConvertingIteration<Statement, Resource, QueryEvaluationException>(
+		final CloseableIteration<? extends Resource, QueryEvaluationException> iter = new ConvertingIteration<CloseableIteration<? extends Statement, QueryEvaluationException>, Statement, Resource, QueryEvaluationException>(
 				tripleSource.getStatements((Resource) extValue, RDF.TYPE, RDF.STATEMENT)) {
 
 			@Override

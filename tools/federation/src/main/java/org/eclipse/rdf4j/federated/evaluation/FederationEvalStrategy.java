@@ -554,8 +554,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			return new QueryEvaluationStep() {
-				QueryEvaluationStep leftES = precompile(leftJoin.getLeftArg(), context);
-				QueryEvaluationStep rightES = precompile(leftJoin.getRightArg(), context);
+				final QueryEvaluationStep leftES = precompile(leftJoin.getLeftArg(), context);
+				final QueryEvaluationStep rightES = precompile(leftJoin.getRightArg(), context);
 
 				@Override
 				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {

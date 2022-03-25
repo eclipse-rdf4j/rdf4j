@@ -346,7 +346,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 		iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings);
 		long setId = 0;
 

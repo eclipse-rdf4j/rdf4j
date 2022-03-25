@@ -22,7 +22,8 @@ import org.slf4j.LoggerFactory;
  *
  * @author Andreas Schwarte
  */
-public class FilteringIteration extends FilterIteration<BindingSet, QueryEvaluationException> {
+public class FilteringIteration extends
+		FilterIteration<CloseableIteration<BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException> {
 
 	private static final Logger log = LoggerFactory.getLogger(FilteringIteration.class);
 

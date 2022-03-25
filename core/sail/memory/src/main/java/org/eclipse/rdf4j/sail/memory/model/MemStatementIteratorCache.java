@@ -80,7 +80,8 @@ public class MemStatementIteratorCache {
 		}
 	}
 
-	<X extends Exception> CloseableIteration<MemStatement, X> getCachedIterator(MemStatementIterator<X> iterator)
+	<X extends Exception> CloseableIteratorIteration<MemStatement, X> getCachedIterator(
+			MemStatementIterator<X> iterator)
 			throws Exception {
 
 		List<MemStatement> cached = iteratorCache.getIfPresent(iterator);

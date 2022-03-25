@@ -225,7 +225,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		SailSource branch = null;
 		SailDataset rdfDataset = null;
-		CloseableIteration<BindingSet, QueryEvaluationException> iteration = null;
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> iteration = null;
 
 		boolean allGood = false;
 		try {

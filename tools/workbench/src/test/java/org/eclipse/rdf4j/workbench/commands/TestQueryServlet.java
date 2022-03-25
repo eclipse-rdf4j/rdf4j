@@ -73,7 +73,6 @@ public class TestQueryServlet {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(false);
 		assertThat(servlet.getQueryText(request)).isEmpty();
-		;
 	}
 
 	@Test

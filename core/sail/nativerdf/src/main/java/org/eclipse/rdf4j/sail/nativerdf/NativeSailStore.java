@@ -176,7 +176,7 @@ class NativeSailStore implements SailStore {
 		return contextIDs;
 	}
 
-	CloseableIteration<Resource, SailException> getContexts() throws IOException {
+	CloseableIteration<? extends Resource, SailException> getContexts() throws IOException {
 		RecordIterator btreeIter = tripleStore.getAllTriplesSortedByContext(false);
 		CloseableIteration<? extends Statement, SailException> stIter1;
 		if (btreeIter == null) {
@@ -186,7 +186,7 @@ class NativeSailStore implements SailStore {
 			stIter1 = new NativeStatementIterator(btreeIter, valueStore);
 		}
 
-		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<Statement, SailException>(
+		FilterIteration<CloseableIteration<? extends Statement, SailException>, Statement, SailException> stIter2 = new FilterIteration<>(
 				stIter1) {
 			@Override
 			protected boolean accept(Statement st) {
@@ -194,7 +194,7 @@ class NativeSailStore implements SailStore {
 			}
 		};
 
-		return new ConvertingIteration<Statement, Resource, SailException>(stIter2) {
+		return new ConvertingIteration<>(stIter2) {
 			@Override
 			protected Resource convert(Statement sourceObject) throws SailException {
 				return sourceObject.getContext();

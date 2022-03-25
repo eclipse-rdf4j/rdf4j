@@ -15,7 +15,7 @@ import java.util.function.Supplier;
 /**
  * An Iteration that filters any duplicate elements from an underlying iterator.
  */
-public class DistinctIteration<K extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
+public class DistinctIteration<K extends CloseableIteration<E, X>, E, X extends Exception>
 		extends FilterIteration<K, E, X> {
 
 	/*-----------*

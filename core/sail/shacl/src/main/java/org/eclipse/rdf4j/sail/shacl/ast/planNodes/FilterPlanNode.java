@@ -74,7 +74,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	private CloseableIteration<ValidationTuple, SailException> iteratorInternal() {
 
-		return new CloseableIteration<ValidationTuple, SailException>() {
+		return new CloseableIteration<>() {
 
 			CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 

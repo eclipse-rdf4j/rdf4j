@@ -16,13 +16,13 @@ import org.junit.Test;
 
 public class OffsetIterationTest extends CloseableIterationTest {
 
-	protected static OffsetIteration<CloseableIteration<? extends String, Exception>, String, Exception> createOffsetIteration(
+	protected static OffsetIteration<CloseableIteration<String, Exception>, String, Exception> createOffsetIteration(
 			int offset) {
 		return new OffsetIteration<>(createStringList1Iteration(), offset);
 	}
 
 	@Override
-	protected CloseableIteration<? extends String, Exception> createTestIteration() {
+	protected CloseableIteration<String, Exception> createTestIteration() {
 		return createOffsetIteration(5);
 	}
 

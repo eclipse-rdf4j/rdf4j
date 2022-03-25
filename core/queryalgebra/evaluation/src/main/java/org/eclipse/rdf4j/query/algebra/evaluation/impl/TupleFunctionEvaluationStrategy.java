@@ -69,7 +69,8 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 
 	@Deprecated(forRemoval = true)
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
+			BindingSet bindings)
 			throws QueryEvaluationException {
 		if (expr instanceof TupleFunctionCall) {
 			return evaluate((TupleFunctionCall) expr, bindings);

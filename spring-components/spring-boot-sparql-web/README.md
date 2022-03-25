@@ -31,12 +31,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
 @SpringBootApplication
-@ComponentScan(basePackages = { "org.eclipse.rdf4j", "org.example" })
+@ComponentScan(basePackages = {"org.eclipse.rdf4j", "org.example"})
 @Import(QueryResponder.class)
 public class Server {
 	@Bean
-	public Repository getRepository(){
-		MemoryStore store = ... ;//Configure progamatically your specific store
+	public Repository getRepository() {
+		MemoryStore store = ... //Configure progamatically your specific store
 		SailRepository sailRepository = new SailRepository(store);
 		sailRepository.init();
 		retun sailRepository;

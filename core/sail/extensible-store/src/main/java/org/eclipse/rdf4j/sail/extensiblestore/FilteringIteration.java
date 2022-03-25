@@ -24,8 +24,7 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 @Experimental
 public class FilteringIteration<E extends ExtensibleStatement, X extends Exception> extends LookAheadIteration<E, X> {
 
-	final Iteration<E, X> wrappedIteration;
-	CloseableIteration<E, X> closeableWrappedIteration;
+	final CloseableIteration<E, X> wrappedIteration;
 
 	private final Resource subject;
 	private final IRI predicate;
@@ -34,17 +33,6 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 	private final Resource[] context;
 
 	public FilteringIteration(CloseableIteration<E, X> wrappedIteration, Resource subject, IRI predicate, Value object,
-			boolean inferred, Resource... context) {
-		this.wrappedIteration = wrappedIteration;
-		this.closeableWrappedIteration = wrappedIteration;
-		this.subject = subject;
-		this.predicate = predicate;
-		this.object = object;
-		this.inferred = inferred;
-		this.context = context;
-	}
-
-	public FilteringIteration(Iteration<E, X> wrappedIteration, Resource subject, IRI predicate, Value object,
 			boolean inferred, Resource... context) {
 		this.wrappedIteration = wrappedIteration;
 		this.subject = subject;
@@ -87,9 +75,8 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 
 	@Override
 	protected void handleClose() throws X {
-		if (closeableWrappedIteration != null) {
-			assert (wrappedIteration == closeableWrappedIteration);
-			closeableWrappedIteration.close();
+		if (wrappedIteration != null) {
+			wrappedIteration.close();
 		}
 	}
 

@@ -20,7 +20,6 @@ public class UnionQueryEvaluationStep implements QueryEvaluationStep {
 	public UnionQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes) {
 		this.leftQes = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(leftQes, bs);
 		this.rightQes = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(rightQes, bs);
-		;
 	}
 
 	@SuppressWarnings("unchecked")

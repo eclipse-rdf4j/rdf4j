@@ -121,7 +121,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	@Override
 	public Iterator<V> iterator() {
 		logger.warn("This method is not thread safe! Use closeableIterator() instead.");
-		return new AutoCloseableIterator<V>(objectMap, null);
+		return new AutoCloseableIterator<>(objectMap, null);
 	}
 
 	public static class AutoCloseableIterator<E> implements Iterator<E>, AutoCloseable {

@@ -58,7 +58,7 @@ public class MockInputPlanNode implements PlanNode {
 
 	@Override
 	public CloseableIteration<ValidationTuple, SailException> iterator() {
-		return new CloseableIteration<ValidationTuple, SailException>() {
+		return new CloseableIteration<>() {
 
 			final Iterator<ValidationTuple> iterator = initialData.iterator();
 

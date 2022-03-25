@@ -38,9 +38,9 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	 */
 	private final Set<String> scopeBindingNames;
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> leftIter;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> rightIter;
 
 	private final QueryEvaluationStep prepareRightArg;
 
@@ -92,7 +92,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		try {
-			CloseableIteration<BindingSet, QueryEvaluationException> nextRightIter = rightIter;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> nextRightIter = rightIter;
 			while (nextRightIter.hasNext() || leftIter.hasNext()) {
 				BindingSet leftBindings = null;
 

@@ -106,7 +106,7 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 
 	protected QueryEvaluationException runQuery(TupleQuery q) {
 		QueryEvaluationException shouldThrow = null;
-		try (TupleQueryResult r = q.evaluate();) {
+		try (TupleQueryResult r = q.evaluate()) {
 			assertTrue(r.hasNext());
 			while (r.hasNext()) {
 				assertNotNull(r.next());

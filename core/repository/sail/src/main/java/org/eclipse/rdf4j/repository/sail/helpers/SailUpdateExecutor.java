@@ -475,7 +475,6 @@ public class SailUpdateExecutor {
 			throws SailException, QueryEvaluationException {
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings1 = null;
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceBindings2 = null;
-		ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> result = null;
 		boolean allGood = false;
 		try {
 			sourceBindings1 = con.evaluate(whereClause, uc.getDataset(), uc.getBindingSet(), uc.isIncludeInferred());
@@ -493,7 +492,8 @@ public class SailUpdateExecutor {
 				sourceBindings2 = sourceBindings1;
 			}
 
-			result = new ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>(sourceBindings2) {
+			ConvertingIteration<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, BindingSet, QueryEvaluationException> result = new ConvertingIteration<>(
+					sourceBindings2) {
 
 				@Override
 				protected BindingSet convert(BindingSet sourceBinding) throws QueryEvaluationException {
@@ -532,20 +532,15 @@ public class SailUpdateExecutor {
 		} finally {
 			if (!allGood) {
 				try {
-					if (result != null) {
-						result.close();
+					if (sourceBindings2 != null) {
+						sourceBindings2.close();
 					}
 				} finally {
-					try {
-						if (sourceBindings2 != null) {
-							sourceBindings2.close();
-						}
-					} finally {
-						if (sourceBindings1 != null) {
-							sourceBindings1.close();
-						}
+					if (sourceBindings1 != null) {
+						sourceBindings1.close();
 					}
 				}
+
 			}
 		}
 	}

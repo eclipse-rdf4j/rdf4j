@@ -183,7 +183,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	@Override
 	public Set<Resource> subjects() {
-		return new ValueSet<Resource>() {
+		return new ValueSet<>() {
 
 			@Override
 			public boolean contains(Object o) {
@@ -220,7 +220,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	@Override
 	public Set<IRI> predicates() {
-		return new ValueSet<IRI>() {
+		return new ValueSet<>() {
 
 			@Override
 			public boolean contains(Object o) {
@@ -257,7 +257,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	@Override
 	public Set<Value> objects() {
-		return new ValueSet<Value>() {
+		return new ValueSet<>() {
 
 			@Override
 			public boolean contains(Object o) {
@@ -294,7 +294,7 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 
 	@Override
 	public Set<Resource> contexts() {
-		return new ValueSet<Resource>() {
+		return new ValueSet<>() {
 
 			@Override
 			public boolean contains(Object o) {

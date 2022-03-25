@@ -25,11 +25,14 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
-public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+public class ProjectionIterator extends
+		ConvertingIteration<CloseableIteration<BindingSet, QueryEvaluationException>, BindingSet, BindingSet, QueryEvaluationException> {
 
 	/*-----------*
 	 * Constants *
 	 *-----------*/
+	private final static BiConsumer<MutableBindingSet, BindingSet> NO_OP = (a, b) -> {
+	};
 
 	private final BiConsumer<MutableBindingSet, BindingSet> projector;
 
@@ -39,50 +42,41 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 * Constructors *
 	 *--------------*/
 
-	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public ProjectionIterator(Projection projection,
+			CloseableIteration<BindingSet, QueryEvaluationException> iter,
 			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
 		boolean isOuterProjection = determineOuterProjection(projection);
 		boolean includeAllParentBindings = !isOuterProjection;
 
-		BiConsumer<MutableBindingSet, BindingSet> consumer = null;
-		for (ProjectionElem pe : projectionElemList.getElements()) {
-			String sourceName = pe.getSourceName();
-			String targetName = pe.getTargetName();
-			Function<BindingSet, Value> valueWithSourceName = context.getValue(sourceName);
-			BiConsumer<Value, MutableBindingSet> setTarget = context.setBinding(targetName);
-			BiConsumer<MutableBindingSet, BindingSet> next = (resultBindings, sourceBindings) -> {
-				Value targetValue = valueWithSourceName.apply(sourceBindings);
-				if (!includeAllParentBindings && targetValue == null) {
-					targetValue = valueWithSourceName.apply(parentBindings);
-				}
-				if (targetValue != null) {
-					setTarget.accept(targetValue, resultBindings);
-				}
-			};
-			consumer = andThen(consumer, next);
-		}
-		if (projectionElemList.getElements().isEmpty()) {
-			consumer = (resultBindings, sourceBindings) -> {
-				// If there are no projection elements we do nothing.
-			};
-		}
+		this.projector = projectionElemList.getElements()
+				.stream()
+				.map(pe -> {
+					String sourceName = pe.getSourceName();
+					String targetName = pe.getTargetName();
+
+					Function<BindingSet, Value> getSourceValue = context.getValue(sourceName);
+					BiConsumer<Value, MutableBindingSet> setTargetValue = context.setBinding(targetName);
+
+					return (BiConsumer<MutableBindingSet, BindingSet>) (resultBindings, sourceBindings) -> {
+						Value targetValue = getSourceValue.apply(sourceBindings);
+						if (!includeAllParentBindings && targetValue == null) {
+							targetValue = getSourceValue.apply(parentBindings);
+						}
+						if (targetValue != null) {
+							setTargetValue.accept(targetValue, resultBindings);
+						}
+					};
+				})
+				.reduce(BiConsumer::andThen)
+				.orElse(NO_OP);
 
 		if (includeAllParentBindings) {
 			this.maker = () -> context.createBindingSet(parentBindings);
 		} else {
 			this.maker = context::createBindingSet;
 		}
-		this.projector = consumer;
-	}
-
-	private BiConsumer<MutableBindingSet, BindingSet> andThen(BiConsumer<MutableBindingSet, BindingSet> consumer,
-			BiConsumer<MutableBindingSet, BindingSet> next) {
-		if (consumer == null)
-			return next;
-		else
-			return consumer.andThen(next);
 	}
 
 	private boolean determineOuterProjection(QueryModelNode ancestor) {
@@ -100,7 +94,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 *---------*/
 
 	@Override
-	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
+	protected MutableBindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		MutableBindingSet qbs = maker.get();
 		projector.accept(qbs, sourceBindings);
 		return qbs;

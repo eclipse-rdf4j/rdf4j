@@ -84,7 +84,7 @@ class ReadCommittedWrapper implements DataStructureInterface {
 		} else {
 			synchronized (dataStructure) {
 
-				return new LookAheadIteration<ExtensibleStatement, SailException>() {
+				return new LookAheadIteration<>() {
 
 					final Set<ExtensibleStatement> internalAddedLocal = new HashSet<>(internalAdded.values());
 					final Set<ExtensibleStatement> internalRemovedLocal = new HashSet<>(internalRemoved.values());

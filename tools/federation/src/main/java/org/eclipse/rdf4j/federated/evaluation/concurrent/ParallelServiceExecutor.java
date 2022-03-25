@@ -93,7 +93,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 
 	@Override
 	public void done() {
-		; // no-op
+		// no-op
 	}
 
 	@Override

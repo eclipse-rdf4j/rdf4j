@@ -116,7 +116,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 
 		@Override
 		public Iterator<E> iterator() {
-			return new Iterator<E>() {
+			return new Iterator<>() {
 
 				@Override
 				public boolean hasNext() {
@@ -225,7 +225,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 
 	private final Comparator<BindingSet> comparator;
 
@@ -245,17 +245,17 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	 * Constructors *
 	 *--------------*/
 
-	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public OrderIterator(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
 			Comparator<BindingSet> comparator) {
 		this(iter, comparator, Long.MAX_VALUE, false);
 	}
 
-	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public OrderIterator(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
 			Comparator<BindingSet> comparator, long limit, boolean distinct) {
 		this(iter, comparator, limit, distinct, Integer.MAX_VALUE);
 	}
 
-	public OrderIterator(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public OrderIterator(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
 			Comparator<BindingSet> comparator, long limit, boolean distinct, long iterationSyncThreshold) {
 		this.iter = iter;
 		this.comparator = comparator;

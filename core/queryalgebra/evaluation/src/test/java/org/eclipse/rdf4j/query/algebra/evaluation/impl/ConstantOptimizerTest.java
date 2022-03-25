@@ -61,7 +61,7 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		optimized.visit(finder);
 		assertThat(finder.logicalAndfound).isFalse();
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
 				new EmptyBindingSet());
 		assertNotNull(result);
 		assertTrue(result.hasNext());
@@ -96,7 +96,7 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		optimized.visit(finder);
 		assertThat(finder.functionCallFound).isFalse();
 
-		CloseableIteration<BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> result = strategy.evaluate(optimized,
 				new EmptyBindingSet());
 		assertNotNull(result);
 		assertTrue(result.hasNext());

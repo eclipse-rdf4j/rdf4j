@@ -32,7 +32,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * @since 3.0
  */
 public class BoundJoinVALUESConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+		extends
+		ConvertingIteration<CloseableIteration<BindingSet, QueryEvaluationException>, BindingSet, BindingSet, QueryEvaluationException> {
 
 	/**
 	 * The binding name for the index

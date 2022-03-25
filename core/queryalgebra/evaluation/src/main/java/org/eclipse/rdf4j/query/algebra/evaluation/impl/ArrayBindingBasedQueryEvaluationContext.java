@@ -65,9 +65,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public Predicate<BindingSet> hasBinding(String variableName) {
+		assert variableName != null && !variableName.isEmpty();
 		Function<ArrayBindingSet, Boolean> directHasVariable = defaultArrayBindingSet
 				.getDirectHasBinding(variableName);
 		return (bs) -> {
+			if (bs.isEmpty())
+				return false;
 			if (bs instanceof ArrayBindingSet) {
 				return directHasVariable.apply((ArrayBindingSet) bs);
 			} else {
@@ -81,6 +84,8 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetBinding(variableName);
 		return (bs) -> {
+			if (bs.isEmpty())
+				return null;
 			if (bs instanceof ArrayBindingSet) {
 				return directAccessForVariable.apply((ArrayBindingSet) bs);
 			} else {
@@ -94,6 +99,8 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetValue(variableName);
 		return (bs) -> {
+			if (bs.isEmpty())
+				return null;
 			if (bs instanceof ArrayBindingSet) {
 				return directAccessForVariable.apply((ArrayBindingSet) bs);
 			} else {

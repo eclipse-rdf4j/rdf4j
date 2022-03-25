@@ -32,7 +32,7 @@ class ValueMappingBindingSet extends AbstractBindingSet {
 
 	@Override
 	public Iterator<Binding> iterator() {
-		return new Iterator<Binding>() {
+		return new Iterator<>() {
 			Iterator<Binding> idelegate = delegate.iterator();
 
 			@Override

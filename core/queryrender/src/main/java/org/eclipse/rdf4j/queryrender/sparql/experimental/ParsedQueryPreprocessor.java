@@ -104,7 +104,7 @@ import com.google.common.collect.Lists;
  * A query visitor that parses the incoming query or TupleExpr and collects meta-level information that is later used by
  * the {@link SparqlQueryRenderer} (e.g., information about the included subquery, all group, order, and slice
  * operations etc.).
- * 
+ *
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
@@ -112,9 +112,9 @@ import com.google.common.collect.Lists;
  */
 class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException> {
 
-	public Map<Projection, SerializableParsedTupleQuery> queriesByProjection = new HashMap<Projection, SerializableParsedTupleQuery>();
+	public Map<Projection, SerializableParsedTupleQuery> queriesByProjection = new HashMap<>();
 
-	public Stack<SerializableParsedTupleQuery> queryProfilesStack = new Stack<SerializableParsedTupleQuery>();
+	public Stack<SerializableParsedTupleQuery> queryProfilesStack = new Stack<>();
 
 	public SerializableParsedTupleQuery currentQueryProfile = new SerializableParsedTupleQuery();
 
@@ -129,7 +129,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	/**
 	 * Processes the incoming parsed query collecting the information required for rendering.
-	 * 
+	 *
 	 * @param query standard {@link ParsedTupleQuery}
 	 * @return {@link SerializableParsedTupleQuery} containing the original query and the required additional
 	 *         information.
@@ -223,7 +223,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	/**
 	 * Processes the incoming parsed ASK query collecting the information required for rendering.
-	 * 
+	 *
 	 * @param query standard {@link ParsedBooleanQuery}
 	 * @return {@link SerializableParsedBooleanQuery} containing the original query and the required additional
 	 *         information.
@@ -267,7 +267,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	/**
 	 * Processes the incoming parsed {@link TupleExpr} collecting the information required for rendering.
-	 * 
+	 *
 	 * @param tupleExpr standard {@link TupleExpr}
 	 * @return {@link SerializableParsedTupleQuery} containing the original query and the required additional
 	 *         information.

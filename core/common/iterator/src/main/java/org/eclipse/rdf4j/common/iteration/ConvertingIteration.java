@@ -15,7 +15,8 @@ import java.util.Objects;
  * A CloseableIteration that converts an iteration over objects of type <var>S</var> (the source type) to an iteration
  * over objects of type <var>T</var> (the target type).
  */
-public abstract class ConvertingIteration<S, T, X extends Exception> extends AbstractCloseableIteration<T, X> {
+public abstract class ConvertingIteration<K extends CloseableIteration<? extends S, ? extends X>, S, T, X extends Exception>
+		extends AbstractCloseableIteration<T, X> {
 
 	/*-----------*
 	 * Variables *
@@ -24,7 +25,7 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	/**
 	 * The source type iteration.
 	 */
-	private final CloseableIteration<? extends S, ? extends X> iter;
+	private final K iter;
 
 	/*--------------*
 	 * Constructors *
@@ -35,7 +36,7 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 *
 	 * @param iter The source type iteration for this <var>ConvertingIteration</var>, must not be <var>null</var>.
 	 */
-	protected ConvertingIteration(CloseableIteration<? extends S, ? extends X> iter) {
+	protected ConvertingIteration(K iter) {
 		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 
@@ -74,11 +75,12 @@ public abstract class ConvertingIteration<S, T, X extends Exception> extends Abs
 	 * @throws IllegalStateException            If the iteration has been closed.
 	 */
 	@Override
-	public T next() throws X {
+	public final T next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
-		return convert(iter.next());
+		S next = iter.next();
+		return convert(next);
 	}
 
 	/**

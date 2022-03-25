@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -40,7 +41,7 @@ public class NaiveHashSetDataStructure implements DataStructureInterface {
 			IRI predicate,
 			Value object, boolean inferred, Resource... context) {
 		return new FilteringIteration<>(
-				new IteratorIteration<>(statements.iterator()), subject, predicate, object, inferred, context);
+				new CloseableIteratorIteration<>(statements.iterator()), subject, predicate, object, inferred, context);
 	}
 
 	@Override

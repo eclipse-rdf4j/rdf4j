@@ -23,7 +23,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * @author Andreas Schwarte
  */
 public class BoundJoinConversionIteration
-		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+		extends
+		ConvertingIteration<CloseableIteration<BindingSet, QueryEvaluationException>, BindingSet, BindingSet, QueryEvaluationException> {
 
 	protected final List<BindingSet> bindings;
 

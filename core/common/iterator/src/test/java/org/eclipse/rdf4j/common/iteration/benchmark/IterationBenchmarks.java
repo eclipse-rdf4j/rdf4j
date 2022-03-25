@@ -166,7 +166,7 @@ public class IterationBenchmarks {
 	}
 
 	private Iteration<String, Exception> getIterator(List<String> list) throws Exception {
-		return new Iteration<String, Exception>() {
+		return new Iteration<>() {
 
 			Iterator<String> iterator = list.iterator();
 

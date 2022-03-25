@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
@@ -63,7 +62,8 @@ public class RepositoryFederatedService implements FederatedService {
 		 * @param inputBindings
 		 * @throws QueryEvaluationException
 		 */
-		public BatchingServiceIteration(CloseableIteration<BindingSet, QueryEvaluationException> inputBindings,
+		public BatchingServiceIteration(
+				CloseableIteration<BindingSet, QueryEvaluationException> inputBindings,
 				int blockSize, Service service) throws QueryEvaluationException {
 			super(inputBindings, null, EmptyBindingSet.getInstance());
 			this.blockSize = blockSize;
@@ -167,9 +167,9 @@ public class RepositoryFederatedService implements FederatedService {
 	private final Repository rep;
 
 	/**
-	 * The number of bindings sent in a single subquery in {@link #evaluate(Service, CloseableIteration, String)} If
-	 * blockSize is set to 0, the entire input stream is used as block input the block size effectively determines the
-	 * number of remote requests
+	 * The number of bindings sent in a single subquery in
+	 * {@link FederatedService#evaluate(Service, CloseableIteration, String)} If blockSize is set to 0, the entire input
+	 * stream is used as block input the block size effectively determines the number of remote requests
 	 */
 	protected int boundJoinBlockSize = 15;
 
@@ -203,9 +203,12 @@ public class RepositoryFederatedService implements FederatedService {
 	/**
 	 * Evaluate the provided sparqlQueryString at the initialized {@link Repository} of this {@link FederatedService}.
 	 * Insert bindings into SELECT query and evaluate
+	 *
+	 * @return
 	 */
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service, Set<String> projectionVars,
+	public CloseableIteration<BindingSet, QueryEvaluationException> select(Service service,
+			Set<String> projectionVars,
 			BindingSet bindings, String baseUri) throws QueryEvaluationException {
 
 		RepositoryConnection conn = null;
@@ -224,7 +227,8 @@ public class RepositoryFederatedService implements FederatedService {
 			TupleQueryResult res = query.evaluate();
 
 			// insert original bindings again
-			CloseableIteration<BindingSet, QueryEvaluationException> result = new InsertBindingSetCursor(res, bindings);
+			CloseableIteration<BindingSet, QueryEvaluationException> result = new InsertBindingSetCursor(res,
+					bindings);
 
 			if (useFreshConnection) {
 				result = new CloseConnectionIteration(result, conn);

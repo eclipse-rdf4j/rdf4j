@@ -52,7 +52,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private final Set<BNode> processedNodes = new HashSet<>();
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> currentDescribeExprIter;
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> currentDescribeExprIter;
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
@@ -66,9 +66,10 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private Mode currentMode = Mode.OUTGOING_LINKS;
 
-	private Iteration<BindingSet, QueryEvaluationException> sourceIter;
+	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceIter;
 
-	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter, EvaluationStrategy strategy,
+	public DescribeIteration(CloseableIteration<? extends BindingSet, QueryEvaluationException> sourceIter,
+			EvaluationStrategy strategy,
 			Set<String> describeExprNames, BindingSet parentBindings) {
 		this.strategy = strategy;
 		this.sourceIter = sourceIter;
@@ -208,7 +209,8 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		return null;
 	}
 
-	protected CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
+	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> createNextIteration(Value subject,
+			Value object)
 			throws QueryEvaluationException {
 		if (subject == null && object == null) {
 			return QueryEvaluationStep.EMPTY_ITERATION;

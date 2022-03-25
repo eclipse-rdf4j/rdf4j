@@ -48,11 +48,11 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	 *-----------*/
 
 	protected final String[] joinAttributes;
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
-	private final CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> rightIter;
 	private final boolean leftJoin;
 	private Iterator<BindingSet> scanList;
-	private CloseableIteration<BindingSet, QueryEvaluationException> restIter;
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> restIter;
 	private Map<BindingSetHashKey, List<BindingSet>> hashTable;
 	private BindingSet currentScanElem;
 	private Iterator<BindingSet> hashTableValues;
@@ -100,8 +100,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	public HashJoinIteration(
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
-			CloseableIteration<BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
 			boolean leftJoin
 	) throws QueryEvaluationException {
 		this.leftIter = leftIter;
@@ -119,8 +119,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	@Deprecated(forRemoval = true)
 	public HashJoinIteration(
-			CloseableIteration<BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
-			CloseableIteration<BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> leftIter, Set<String> leftBindingNames,
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> rightIter, Set<String> rightBindingNames,
 			boolean leftJoin, IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker,
 			IntFunction<List<BindingSet>> mapValueMaker
 	) throws QueryEvaluationException {
@@ -329,7 +329,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	 *
 	 * @return list
 	 */
-	protected Collection<BindingSet> makeIterationCache(CloseableIteration<BindingSet, QueryEvaluationException> iter) {
+	protected Collection<BindingSet> makeIterationCache(
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> iter) {
 		return new ArrayList<>();
 	}
 

@@ -49,7 +49,7 @@ public class ElasticsearchQuery implements SearchQuery {
 		} else {
 			hits = index.search(request, qb);
 		}
-		return Iterables.transform(hits, new Function<SearchHit, DocumentScore>() {
+		return Iterables.transform(hits, new Function<>() {
 
 			@Override
 			public DocumentScore apply(SearchHit hit) {

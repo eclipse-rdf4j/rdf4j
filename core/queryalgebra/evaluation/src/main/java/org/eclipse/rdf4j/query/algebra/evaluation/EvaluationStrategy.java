@@ -78,7 +78,8 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	 * @return A closeable iterator over all of variable binding sets that match the tuple expression.
 	 */
 	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service expr, String serviceUri,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException;
+			CloseableIteration<BindingSet, QueryEvaluationException> bindings)
+			throws QueryEvaluationException;
 
 	/**
 	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
@@ -164,10 +165,10 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	}
 
 	default <T> Set<T> makeSet() {
-		return new HashSet<T>();
+		return new HashSet<>();
 	}
 
 	default <T> Queue<T> makeQueue() {
-		return new ArrayDeque<T>();
+		return new ArrayDeque<>();
 	}
 }

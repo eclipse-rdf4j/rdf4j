@@ -23,7 +23,7 @@ public class CompatibleBindingSetFilter extends
 
 	private final BindingSet inputBindings;
 
-	public CompatibleBindingSetFilter(CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public CompatibleBindingSetFilter(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
 			BindingSet inputBindings) {
 		super(iter);
 

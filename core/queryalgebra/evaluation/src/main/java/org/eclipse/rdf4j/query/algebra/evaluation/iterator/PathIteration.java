@@ -36,7 +36,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private long currentLength;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> currentIter;
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> currentIter;
 
 	private final BindingSet bindings;
 

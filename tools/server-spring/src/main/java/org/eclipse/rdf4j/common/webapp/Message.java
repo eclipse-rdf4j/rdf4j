@@ -20,8 +20,6 @@ public class Message {
 		INFO
 	}
 
-	;
-
 	private Type type;
 
 	private String i18n;

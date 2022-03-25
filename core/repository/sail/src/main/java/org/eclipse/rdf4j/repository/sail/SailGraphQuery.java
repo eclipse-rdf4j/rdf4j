@@ -76,7 +76,8 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 
 			// Convert the BindingSet objects to actual RDF statements
 			final ValueFactory vf = getConnection().getRepository().getValueFactory();
-			stIter = new ConvertingIteration<BindingSet, Statement, QueryEvaluationException>(bindingsIter3) {
+			stIter = new ConvertingIteration<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, Statement, QueryEvaluationException>(
+					bindingsIter3) {
 
 				@Override
 				protected Statement convert(BindingSet bindingSet) {

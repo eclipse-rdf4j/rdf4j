@@ -43,7 +43,7 @@ public abstract class Protocol {
 		/** commit */
 		COMMIT,
 		/** rollback */
-		ROLLBACK;
+		ROLLBACK
 	}
 
 	/**

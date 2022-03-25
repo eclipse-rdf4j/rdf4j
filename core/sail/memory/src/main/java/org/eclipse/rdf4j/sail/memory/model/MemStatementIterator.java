@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.memory.model;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -305,13 +306,13 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 		private final MemStatementIteratorCache iteratorCache;
 		private final MemStatementIterator<X> memStatementIterator;
-		private final CloseableIteration<MemStatement, X> cachedIterator;
+		private final CloseableIteratorIteration<MemStatement, X> cachedIterator;
 		private Exception e;
 
 		private CacheAwareIteration(MemStatementIterator<X> memStatementIterator,
 				MemStatementIteratorCache iteratorCache) {
 			if (iteratorCache.shouldBeCached(memStatementIterator)) {
-				CloseableIteration<MemStatement, X> cachedIterator = null;
+				CloseableIteratorIteration<MemStatement, X> cachedIterator = null;
 				try {
 					cachedIterator = iteratorCache.getCachedIterator(memStatementIterator);
 				} catch (Exception e) {

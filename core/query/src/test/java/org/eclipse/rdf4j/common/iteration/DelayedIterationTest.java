@@ -11,7 +11,7 @@ public class DelayedIterationTest extends CloseableIterationTest {
 
 	@Override
 	protected CloseableIteration<? extends String, Exception> createTestIteration() {
-		return new DelayedIteration<String, Exception>() {
+		return new DelayedIteration<>() {
 
 			@Override
 			protected CloseableIteration<? extends String, ? extends Exception> createIteration() {

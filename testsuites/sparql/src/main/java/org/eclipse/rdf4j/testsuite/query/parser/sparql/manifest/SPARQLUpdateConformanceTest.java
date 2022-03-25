@@ -126,7 +126,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	protected void setUp() throws Exception {
 		dataRep = createRepository();
 
-		try (RepositoryConnection conn = dataRep.getConnection();) {
+		try (RepositoryConnection conn = dataRep.getConnection()) {
 			conn.clear();
 
 			if (inputDefaultGraph != null) {
@@ -146,7 +146,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 		expectedResultRepo = createRepository();
 
-		try (RepositoryConnection conn = expectedResultRepo.getConnection();) {
+		try (RepositoryConnection conn = expectedResultRepo.getConnection()) {
 			conn.clear();
 
 			if (resultDefaultGraph != null) {

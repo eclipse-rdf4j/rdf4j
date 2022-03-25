@@ -121,7 +121,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 
 	@Override
 	public void done() {
-		; // no-op
+		// no-op
 	}
 
 	@Override

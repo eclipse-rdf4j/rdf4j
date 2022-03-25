@@ -19,7 +19,7 @@ import java.util.function.Supplier;
  * Note that duplicates can also be filtered by wrapping this Iteration in a {@link DistinctIteration}, but that has a
  * bit more overhead as it adds a second hash table lookup.
  */
-public class IntersectIteration<K extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
+public class IntersectIteration<K extends CloseableIteration<E, X>, E, X extends Exception>
 		extends FilterIteration<K, E, X> {
 
 	/*-----------*
@@ -125,7 +125,7 @@ public class IntersectIteration<K extends CloseableIteration<? extends E, ? exte
 	}
 
 	// this method does not seem to "addSecondSet" since the second set seems to be ignored
-	public Set<E> addSecondSet(Iteration<? extends E, ? extends X> arg2, Set<E> set) throws X {
+	public Set<E> addSecondSet(Iteration<E, X> arg2, Set<E> set) throws X {
 		return Iterations.addAll(arg2, setMaker.get());
 	}
 

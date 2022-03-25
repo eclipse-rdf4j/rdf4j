@@ -63,7 +63,7 @@ public abstract class InferencingTest {
 		Collection<? extends Statement> entailedStatements = new HashSet<>();
 
 		Sail sail = createSail();
-		try (SailConnection con = sail.getConnection();) {
+		try (SailConnection con = sail.getConnection()) {
 			con.begin();
 
 			// clear the input store
@@ -71,7 +71,7 @@ public abstract class InferencingTest {
 			con.commit();
 
 			// Upload input data
-			try (InputStream stream = getClass().getResourceAsStream(inputData);) {
+			try (InputStream stream = getClass().getResourceAsStream(inputData)) {
 				con.begin();
 				Model m = Rio.parse(stream, inputData, RDFFormat.NTRIPLES);
 				for (Statement st : m) {

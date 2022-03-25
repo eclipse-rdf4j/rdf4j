@@ -75,11 +75,11 @@ public class RemoveIsolationTest {
 		con.add(f.createIRI("http://example.org/people/alice"), f.createIRI("http://example.org/ontology/name"),
 				f.createLiteral("Alice"));
 
-		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
+		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true)) {
 			con.remove(stats);
 		}
 
-		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
+		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true)) {
 			assertEquals(Collections.emptyList(), QueryResults.asList(stats));
 		}
 		con.rollback();
@@ -92,11 +92,11 @@ public class RemoveIsolationTest {
 		con.add(f.createIRI("http://example.org/people/alice"), f.createIRI("http://example.org/ontology/name"),
 				f.createLiteral("Alice"));
 
-		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
+		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true)) {
 			con.remove(stats);
 		}
 
-		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true);) {
+		try (RepositoryResult<Statement> stats = con.getStatements(null, null, null, true)) {
 			assertEquals(Collections.emptyList(), QueryResults.asList(stats));
 		}
 		con.rollback();

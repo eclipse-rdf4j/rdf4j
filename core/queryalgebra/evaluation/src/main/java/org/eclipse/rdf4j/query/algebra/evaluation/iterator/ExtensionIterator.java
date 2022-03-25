@@ -25,12 +25,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
-public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
+public class ExtensionIterator extends
+		ConvertingIteration<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, BindingSet, QueryEvaluationException> {
 
 	private final Consumer<MutableBindingSet> setter;
 	private final QueryEvaluationContext context;
 
-	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet, QueryEvaluationException> iter,
+	public ExtensionIterator(Extension extension,
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
 			EvaluationStrategy strategy, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		this.context = context;

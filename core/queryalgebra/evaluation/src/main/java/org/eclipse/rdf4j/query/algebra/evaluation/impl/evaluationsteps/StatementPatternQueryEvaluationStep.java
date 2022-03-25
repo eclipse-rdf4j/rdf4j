@@ -173,7 +173,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings
-			return new ConvertStatmentToBindingSetIterator(iteration, converter, bindings, context);
+			return new JoinStatementWithBindingSetIterator(iteration, converter, bindings, context);
 		} catch (Throwable t) {
 			if (iteration != null) {
 				iteration.close();
@@ -205,7 +205,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings
-			return new ConvertStatmentToBindingSetIterator(iteration, converter, context);
+			return new ConvertStatementToBindingSetIterator(iteration, converter, context);
 		} catch (Throwable t) {
 			if (iteration != null) {
 				iteration.close();
@@ -381,39 +381,52 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * This allows avoiding of significant work during the iteration. Which pays of if the iteration is long, otherwise
 	 * it of course is an unneeded expense.
 	 */
-	private static final class ConvertStatmentToBindingSetIterator
-			extends ConvertingIteration<Statement, BindingSet, QueryEvaluationException> {
-		private final Function<Statement, MutableBindingSet> convertingFunction;
+	private static final class ConvertStatementToBindingSetIterator
+			extends
+			ConvertingIteration<CloseableIteration<? extends Statement, ? extends QueryEvaluationException>, Statement, BindingSet, QueryEvaluationException> {
 
-		private ConvertStatmentToBindingSetIterator(
+		private final BiConsumer<MutableBindingSet, Statement> action;
+		private final QueryEvaluationContext context;
+
+		private ConvertStatementToBindingSetIterator(
 				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BiConsumer<MutableBindingSet, Statement> action, QueryEvaluationContext context) {
 			super(iter);
-			convertingFunction = (st) -> {
-				MutableBindingSet made = context.createBindingSet();
-				action.accept(made, st);
-				return made;
-			};
-
+			this.action = action;
+			this.context = context;
 		}
 
-		private ConvertStatmentToBindingSetIterator(
+		@Override
+		protected BindingSet convert(Statement st) {
+			MutableBindingSet made = context.createBindingSet();
+			action.accept(made, st);
+			return made;
+		}
+	}
+
+	private static final class JoinStatementWithBindingSetIterator
+			extends
+			ConvertingIteration<CloseableIteration<? extends Statement, ? extends QueryEvaluationException>, Statement, BindingSet, QueryEvaluationException> {
+		private final BiConsumer<MutableBindingSet, Statement> action;
+		private final QueryEvaluationContext context;
+		private final BindingSet bindings;
+
+		private JoinStatementWithBindingSetIterator(
 				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
 			super(iter);
 			assert !bindings.isEmpty();
-
-			convertingFunction = (st) -> {
-				MutableBindingSet made = context.createBindingSet(bindings);
-				action.accept(made, st);
-				return made;
-			};
+			this.action = action;
+			this.context = context;
+			this.bindings = bindings;
 
 		}
 
 		@Override
 		protected BindingSet convert(Statement st) {
-			return convertingFunction.apply(st);
+			MutableBindingSet made = context.createBindingSet(bindings);
+			action.accept(made, st);
+			return made;
 		}
 	}
 

@@ -277,7 +277,7 @@ class LmdbSailStore implements SailStore {
 			stIter1 = new LmdbStatementIterator(records, valueStore);
 		}
 
-		FilterIteration<Statement, SailException> stIter2 = new FilterIteration<>(
+		FilterIteration<CloseableIteration<? extends Statement, SailException>, Statement, SailException> stIter2 = new FilterIteration<>(
 				stIter1) {
 			@Override
 			protected boolean accept(Statement st) {

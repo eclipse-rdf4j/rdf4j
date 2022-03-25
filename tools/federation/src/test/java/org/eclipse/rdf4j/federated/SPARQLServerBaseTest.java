@@ -46,7 +46,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	public enum REPOSITORY_TYPE {
 		SPARQLREPOSITORY,
 		REMOTEREPOSITORY,
-		NATIVE;
+		NATIVE
 	}
 
 	protected static final int MAX_ENDPOINTS = 4;

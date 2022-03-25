@@ -114,7 +114,7 @@ public abstract class SailInterruptTest {
 
 	private void iterateStatements() throws SailException {
 		try (SailConnection con = store.getConnection();
-				CloseableIteration<?, SailException> iter = con.getStatements(null, null, null, true);) {
+				CloseableIteration<?, SailException> iter = con.getStatements(null, null, null, true)) {
 			while (iter.hasNext()) {
 				iter.next();
 			}

@@ -50,7 +50,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private BindingSet bindings;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> iter;
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
 
 	private Set<Value> reportedValues;
 
@@ -159,7 +159,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 		}
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> createIteration() throws QueryEvaluationException {
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> createIteration()
+			throws QueryEvaluationException {
 		return precompile.evaluate(bindings);
 	}
 

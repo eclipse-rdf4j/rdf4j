@@ -35,9 +35,9 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<BindingSet, QueryEvaluationException> leftIter;
+	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> leftIter;
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> rightIter;
 
 	private final QueryEvaluationStep preparedRight;
 
@@ -70,15 +70,15 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-
 		try {
-			while (rightIter.hasNext() || leftIter.hasNext()) {
-				if (rightIter.hasNext()) {
-					return rightIter.next();
+			while (leftIter.hasNext() || rightIter.hasNext()) {
+				if (rightIter != QueryEvaluationStep.EMPTY_ITERATION) {
+					if (rightIter.hasNext()) {
+						return rightIter.next();
+					}
+					// Right iteration exhausted
+					rightIter.close();
 				}
-
-				// Right iteration exhausted
-				rightIter.close();
 
 				if (leftIter.hasNext()) {
 					rightIter = preparedRight.evaluate(leftIter.next());

@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Jerven Bolleman, SIB Swiss Institute of Bioinformatics
  */
 public class LimitedSizeDistinctIteration extends
-		DistinctIteration<CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException>, BindingSet, QueryEvaluationException> {
+		DistinctIteration<CloseableIteration<BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException> {
 
 	private final AtomicLong used;
 
@@ -29,7 +29,7 @@ public class LimitedSizeDistinctIteration extends
 	 * @param iter
 	 */
 	public LimitedSizeDistinctIteration(
-			CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> iter,
+			CloseableIteration<BindingSet, QueryEvaluationException> iter,
 			AtomicLong used, long maxSize) {
 		super(iter);
 		this.used = used;

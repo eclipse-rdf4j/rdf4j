@@ -470,7 +470,7 @@ class GraphComparisons {
 		public Collection<BNode> getLowestNonTrivialPartition() {
 			final List<Collection<BNode>> sortedPartitions = new ArrayList<>(
 					getCurrentHashCodeMapping().asMap().values());
-			Collections.sort(sortedPartitions, new Comparator<Collection<BNode>>() {
+			Collections.sort(sortedPartitions, new Comparator<>() {
 				public int compare(Collection<BNode> a, Collection<BNode> b) {
 					int result = a.size() - b.size();
 					if (result == 0) {

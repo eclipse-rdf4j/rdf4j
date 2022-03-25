@@ -133,7 +133,7 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 				.filter(entry -> entry.getValue() != null)
 				.iterator();
 
-		return new ConvertingIterator<Map.Entry<String, Value>, Binding>(entries) {
+		return new ConvertingIterator<>(entries) {
 
 			@Override
 			protected Binding convert(Map.Entry<String, Value> entry) {

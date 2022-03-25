@@ -14,19 +14,21 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-class CleanerIteration<E, X extends Exception> implements CloseableIteration<E, X> {
+class CleanerIteration<K extends AbstractCloseableIteration<? extends E, X>, E, X extends Exception>
+		implements CloseableIteration<E, X> {
 
 	private static final Logger logger = LoggerFactory.getLogger(CleanerIteration.class);
 
-	private final AbstractCloseableIteration<E, X> delegate;
+	private final K delegate;
 	private final Cleaner.Cleanable cleanable;
 
-	public CleanerIteration(AbstractCloseableIteration<E, X> delegate, ConcurrentCleaner cleaner) {
+	public CleanerIteration(K delegate, ConcurrentCleaner cleaner) {
 		this.delegate = delegate;
-		this.cleanable = cleaner.register(this, new CleanableState(delegate));
+		this.cleanable = cleaner.register(this, new CleanableState<>(delegate));
 	}
 
 	@Override
@@ -50,11 +52,11 @@ class CleanerIteration<E, X extends Exception> implements CloseableIteration<E, 
 		delegate.remove();
 	}
 
-	static class CleanableState implements Runnable {
+	static class CleanableState<K extends AbstractCloseableIteration<?, ?>> implements Runnable {
 
-		private final AbstractCloseableIteration iteration;
+		private final K iteration;
 
-		public CleanableState(AbstractCloseableIteration iteration) {
+		public CleanableState(K iteration) {
 			this.iteration = iteration;
 		}
 

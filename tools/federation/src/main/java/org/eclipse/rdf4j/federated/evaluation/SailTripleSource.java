@@ -108,7 +108,7 @@ public class SailTripleSource extends TripleSourceBase implements TripleSource {
 			// The same variable might have been used multiple times in this
 			// StatementPattern, verify value equality in those cases.
 
-			resultHolder.set(new ExceptionConvertingIteration<Statement, QueryEvaluationException>(repoResult) {
+			resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
 				@Override
 				protected QueryEvaluationException convert(Exception arg0) {
 					return new QueryEvaluationException(arg0);

@@ -10,10 +10,12 @@ package org.eclipse.rdf4j.query.impl;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -72,5 +74,10 @@ public class IteratingTupleQueryResult extends
 	@Override
 	public List<String> getBindingNames() throws QueryEvaluationException {
 		return bindingNames;
+	}
+
+	@Override
+	public Stream<BindingSet> stream() {
+		return Iterations.stream(this);
 	}
 }

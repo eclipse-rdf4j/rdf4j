@@ -129,7 +129,7 @@ public class SPARQLQueryBindingSet extends AbstractBindingSet {
 	public Iterator<Binding> iterator() {
 		Iterator<Map.Entry<String, Value>> entries = bindings.entrySet().iterator();
 
-		return new ConvertingIterator<Map.Entry<String, Value>, Binding>(entries) {
+		return new ConvertingIterator<>(entries) {
 
 			@Override
 			protected Binding convert(Map.Entry<String, Value> entry) {

@@ -268,7 +268,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	@Deprecated(forRemoval = true)
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleExpr expr,
+			BindingSet bindings)
 			throws QueryEvaluationException {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> ret;
@@ -415,8 +416,10 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	@Deprecated(forRemoval = true)
 	@Override
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, String serviceUri,
-			CloseableIteration<BindingSet, QueryEvaluationException> bindings) throws QueryEvaluationException {
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
+			String serviceUri,
+			CloseableIteration<BindingSet, QueryEvaluationException> bindings)
+			throws QueryEvaluationException {
 		try {
 			FederatedService fs = serviceResolver.getService(serviceUri);
 			return fs.evaluate(service, bindings, service.getBaseURI());
@@ -431,7 +434,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Service service,
+			BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(service).evaluate(bindings);
 	}
@@ -569,7 +573,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			throws QueryEvaluationException {
 		final QueryEvaluationStep child = precompile(node.getArg(), context);
 		return bindings -> {
-			final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
+			final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child
+					.evaluate(bindings);
 			return new DistinctIteration<>(evaluate,
 					StrictEvaluationStrategy.this::makeSet);
 		};
@@ -587,7 +592,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		return precompile(operator).evaluate(bindings);
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern statementPattern,
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(
+			StatementPattern statementPattern,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(statementPattern).evaluate(bindings);
 	}
@@ -681,7 +687,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Projection projection, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Projection projection,
+			BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(projection).evaluate(bindings);
 	}
@@ -693,7 +700,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Filter filter, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Filter filter,
+			BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(filter).evaluate(bindings);
 	}
@@ -705,19 +713,22 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Extension extension, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Extension extension,
+			BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(extension).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Distinct distinct,
+			BindingSet bindings)
 			throws QueryEvaluationException {
 		return precompile(distinct).evaluate(bindings);
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Reduced reduced, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(Reduced reduced,
+			BindingSet bindings)
 			throws QueryEvaluationException {
 		return new ReducedIteration<>(evaluate(reduced.getArg(), bindings));
 	}
@@ -816,7 +827,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	@Deprecated(forRemoval = true)
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet, BindingSet bindings)
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet,
+			BindingSet bindings)
 			throws QueryEvaluationException {
 		return QueryEvaluationStep.EMPTY_ITERATION;
 	}
@@ -1690,7 +1702,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
+		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
+				bindings)) {
 			while (!result && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 
@@ -1748,7 +1761,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
+		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
+				bindings)) {
 			while (!result && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 
@@ -1776,7 +1790,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		// Use first binding name from tuple expr to compare values
 		String bindingName = node.getSubQuery().getBindingNames().iterator().next();
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
+		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
+				bindings)) {
 			while (result && iter.hasNext()) {
 				BindingSet bindingSet = iter.next();
 
@@ -1797,7 +1812,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Deprecated(forRemoval = true)
 	public Value evaluate(Exists node, BindingSet bindings)
 			throws QueryEvaluationException {
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
+		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
+				bindings)) {
 			return BooleanLiteral.valueOf(iter.hasNext());
 		}
 	}
@@ -1875,7 +1891,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	 * @param bindings with the solutions
 	 * @return iteration over the solutions
 	 */
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TripleRef ref, BindingSet bindings) {
+	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TripleRef ref,
+			BindingSet bindings) {
 		return precompile(ref).evaluate(bindings);
 	}
 
