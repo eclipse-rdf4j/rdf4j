@@ -8,8 +8,9 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -69,8 +70,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		Function<ArrayBindingSet, Boolean> directHasVariable = defaultArrayBindingSet
 				.getDirectHasBinding(variableName);
 		return (bs) -> {
-			if (bs.isEmpty())
+			if (bs.isEmpty()) {
 				return false;
+			}
 			if (bs instanceof ArrayBindingSet) {
 				return directHasVariable.apply((ArrayBindingSet) bs);
 			} else {
@@ -84,8 +86,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetBinding(variableName);
 		return (bs) -> {
-			if (bs.isEmpty())
+			if (bs.isEmpty()) {
 				return null;
+			}
 			if (bs instanceof ArrayBindingSet) {
 				return directAccessForVariable.apply((ArrayBindingSet) bs);
 			} else {
@@ -99,8 +102,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetValue(variableName);
 		return (bs) -> {
-			if (bs.isEmpty())
+			if (bs.isEmpty()) {
 				return null;
+			}
 			if (bs instanceof ArrayBindingSet) {
 				return directAccessForVariable.apply((ArrayBindingSet) bs);
 			} else {
@@ -147,21 +151,23 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	public static String[] findAllVariablesUsedInQuery(QueryRoot node) {
-		Set<String> varNames = new LinkedHashSet<>();
+		HashMap<String, String> varNames = new LinkedHashMap<>();
 		AbstractSimpleQueryModelVisitor<QueryEvaluationException> queryModelVisitorBase = new AbstractSimpleQueryModelVisitor<>(
 				true) {
 
 			@Override
 			public void meet(Var node) throws QueryEvaluationException {
 				super.meet(node);
-				varNames.add(node.getName());
+				if (!node.isConstant()) {
+					node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
+				}
 			}
 
 			@Override
 			public void meet(ProjectionElem node) throws QueryEvaluationException {
 				super.meet(node);
-				varNames.add(node.getSourceName());
-				varNames.add(node.getTargetName());
+				node.setSourceName(varNames.computeIfAbsent(node.getSourceName(), k -> k));
+				node.setTargetName(varNames.computeIfAbsent(node.getTargetName(), k -> k));
 			}
 
 			@Override
@@ -176,27 +182,29 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 			@Override
 			public void meet(MultiProjection node) throws QueryEvaluationException {
-				varNames.addAll(node.getBindingNames());
+				for (String bindingName : node.getBindingNames()) {
+					varNames.computeIfAbsent(bindingName, k -> k);
+				}
 				super.meet(node);
 			}
 
 			@Override
 			public void meet(ZeroLengthPath node) throws QueryEvaluationException {
-				varNames.add(ZeroLengthPathIteration.ANON_SUBJECT_VAR);
-				varNames.add(ZeroLengthPathIteration.ANON_PREDICATE_VAR);
-				varNames.add(ZeroLengthPathIteration.ANON_OBJECT_VAR);
-				varNames.add(ZeroLengthPathIteration.ANON_SEQUENCE_VAR);
+				varNames.computeIfAbsent(ZeroLengthPathIteration.ANON_SUBJECT_VAR, k -> k);
+				varNames.computeIfAbsent(ZeroLengthPathIteration.ANON_PREDICATE_VAR, k -> k);
+				varNames.computeIfAbsent(ZeroLengthPathIteration.ANON_OBJECT_VAR, k -> k);
+				varNames.computeIfAbsent(ZeroLengthPathIteration.ANON_SEQUENCE_VAR, k -> k);
 				super.meet(node);
 			}
 
 			@Override
 			public void meet(ExtensionElem node) throws QueryEvaluationException {
-				varNames.add(node.getName());
+				node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
 				super.meet(node);
 			}
 		};
 		node.visit(queryModelVisitorBase);
-		String[] varNamesArr = varNames.toArray(new String[0]);
+		String[] varNamesArr = varNames.keySet().toArray(new String[0]);
 		return varNamesArr;
 	}
 }

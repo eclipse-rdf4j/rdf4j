@@ -57,14 +57,7 @@ public abstract class ConvertingIteration<K extends CloseableIteration<? extends
 	 */
 	@Override
 	public boolean hasNext() throws X {
-		if (isClosed()) {
-			return false;
-		}
-		boolean result = iter.hasNext();
-		if (!result) {
-			close();
-		}
-		return result;
+		return iter.hasNext();
 	}
 
 	/**
@@ -76,11 +69,7 @@ public abstract class ConvertingIteration<K extends CloseableIteration<? extends
 	 */
 	@Override
 	public final T next() throws X {
-		if (isClosed()) {
-			throw new NoSuchElementException("The iteration has been closed.");
-		}
-		S next = iter.next();
-		return convert(next);
+		return convert(iter.next());
 	}
 
 	/**
@@ -93,9 +82,6 @@ public abstract class ConvertingIteration<K extends CloseableIteration<? extends
 	 */
 	@Override
 	public void remove() throws X {
-		if (isClosed()) {
-			throw new IllegalStateException("The iteration has been closed.");
-		}
 		iter.remove();
 	}
 

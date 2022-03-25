@@ -52,8 +52,6 @@ public class CloseableIterationWrapper<T extends CloseableIteration<? extends E,
 		return result;
 	}
 
-	static final Set<Class> classes = Collections.synchronizedSet(new HashSet<>());
-
 	/**
 	 * Returns the next element from the wrapped Iteration.
 	 *
@@ -64,11 +62,6 @@ public class CloseableIterationWrapper<T extends CloseableIteration<? extends E,
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
-
-//		boolean add = classes.add(wrappedIter.getClass());
-//		if (add) {
-//			System.out.println(wrappedIter.getClass());
-//		}
 
 		return wrappedIter.next();
 	}

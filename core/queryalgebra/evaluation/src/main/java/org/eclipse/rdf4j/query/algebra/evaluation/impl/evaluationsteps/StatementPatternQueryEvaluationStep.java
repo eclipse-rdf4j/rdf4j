@@ -14,6 +14,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.PredicateFilterIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -104,6 +105,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private static Predicate<BindingSet> unbound(final Var var, QueryEvaluationContext context) {
 		if (var == null) {
 			return (bindings) -> false;
+		} else if (var.isConstant()) {
+			return (bindings) -> false;
 		} else {
 			Predicate<BindingSet> hasBinding = context.hasBinding(var.getName());
 			Function<BindingSet, Value> getValue = context.getValue(var.getName());
@@ -170,6 +173,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			if (iteration instanceof EmptyIteration) {
+				return EMPTY_ITERATION;
+			}
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings

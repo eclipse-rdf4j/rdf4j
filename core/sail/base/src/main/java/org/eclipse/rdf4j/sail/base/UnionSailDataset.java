@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -39,6 +38,18 @@ class UnionSailDataset implements SailDataset {
 	public UnionSailDataset(SailDataset dataset1, SailDataset dataset2) {
 		this.dataset1 = dataset1;
 		this.dataset2 = dataset2;
+	}
+
+	public static SailDataset getInstance(SailDataset dataset1, SailDataset dataset2) {
+		if (dataset1.isEmpty()) {
+			dataset1.close();
+			return dataset2;
+		}
+		if (dataset2.isEmpty()) {
+			dataset2.close();
+			return dataset1;
+		}
+		return new UnionSailDataset(dataset1, dataset2);
 	}
 
 	@Override
@@ -90,6 +101,11 @@ class UnionSailDataset implements SailDataset {
 	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
 		return UnionIteration.getInstance(dataset1.getTriples(subj, pred, obj), dataset2.getTriples(subj, pred, obj));
+	}
+
+	@Override
+	public boolean isEmpty() {
+		return dataset1.isEmpty() && dataset2.isEmpty();
 	}
 
 }

@@ -1073,22 +1073,24 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Deprecated(forRemoval = true)
 	public Value evaluate(Str node, BindingSet bindings) throws QueryEvaluationException {
 		Value argValue = evaluate(node.getArg(), bindings);
+		if (argValue != null) {
 
-		if (argValue instanceof IRI) {
-			return tripleSource.getValueFactory().createLiteral(argValue.toString());
-		} else if (argValue instanceof Literal) {
-			Literal literal = (Literal) argValue;
+			if (argValue.isIRI()) {
+				return tripleSource.getValueFactory().createLiteral(argValue.toString());
+			} else if (argValue.isLiteral()) {
+				Literal literal = (Literal) argValue;
 
-			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
-				return literal;
-			} else {
-				return tripleSource.getValueFactory().createLiteral(literal.getLabel());
+				if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
+					return literal;
+				} else {
+					return tripleSource.getValueFactory().createLiteral(literal.getLabel());
+				}
+			} else if (argValue.isTriple()) {
+				return tripleSource.getValueFactory().createLiteral(argValue.toString());
 			}
-		} else if (argValue instanceof Triple) {
-			return tripleSource.getValueFactory().createLiteral(argValue.toString());
-		} else {
-			throw new ValueExprEvaluationException();
 		}
+		throw new ValueExprEvaluationException();
+
 	}
 
 	@Deprecated(forRemoval = true)

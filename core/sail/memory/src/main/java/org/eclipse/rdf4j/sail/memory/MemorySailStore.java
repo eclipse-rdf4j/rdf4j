@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -202,8 +201,13 @@ class MemorySailStore implements SailStore {
 			Boolean explicit, int snapshot, Resource... contexts) {
 		// Perform look-ups for value-equivalents of the specified values
 
-		if (statements.isEmpty())
+		if (explicit != null && !explicit && !mayHaveInferred && snapshot >= 0) {
 			return EMPTY_ITERATION;
+		}
+
+		if (statements.isEmpty()) {
+			return EMPTY_ITERATION;
+		}
 
 		MemResource memSubj = valueFactory.getMemResource(subj);
 		if (subj != null && memSubj == null) {
@@ -243,8 +247,9 @@ class MemorySailStore implements SailStore {
 
 				memContexts = new MemResource[] { memContext };
 				smallestList = memContext.getContextStatementList();
-				if (smallestList.isEmpty())
+				if (smallestList.isEmpty()) {
 					return EMPTY_ITERATION;
+				}
 
 			}
 
@@ -274,8 +279,9 @@ class MemorySailStore implements SailStore {
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(MemResource subj, MemIRI pred,
 			MemValue obj, MemResource... contexts) {
 
-		if (statements.isEmpty())
+		if (statements.isEmpty()) {
 			return EMPTY_ITERATION;
+		}
 
 		MemResource[] memContexts;
 		MemStatementList smallestList;
@@ -299,7 +305,7 @@ class MemorySailStore implements SailStore {
 
 		if (explicit != null && !explicit) {
 			// we are looking for inferred statements
-			if (!mayHaveInferred) {
+			if (!mayHaveInferred && snapshot >= 0) {
 				return EMPTY_ITERATION;
 			}
 		}
@@ -950,6 +956,9 @@ class MemorySailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
+			if (!explicit && !mayHaveInferred && snapshot >= 0) {
+				return EMPTY_ITERATION;
+			}
 
 			boolean simpleReadLock = false;
 			try {
@@ -992,6 +1001,11 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public boolean hasStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+
+			if (!explicit && !mayHaveInferred && snapshot >= 0) {
+				return false;
+			}
+
 			boolean locked = false;
 			try {
 				locked = statementListLockManager.lockReadLock();
@@ -1011,6 +1025,10 @@ class MemorySailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 				throws SailException {
+			if (!explicit && !mayHaveInferred && snapshot >= 0) {
+				return EMPTY_TRIPLE_ITERATION;
+			}
+
 			CloseableIteration<? extends Triple, SailException> stIter1 = null;
 
 			boolean allGood = false;

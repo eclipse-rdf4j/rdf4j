@@ -75,7 +75,7 @@ class UnionSailSource implements SailSource {
 
 	@Override
 	public SailDataset dataset(IsolationLevel level) throws SailException {
-		return new UnionSailDataset(primary.dataset(level), additional.dataset(level));
+		return UnionSailDataset.getInstance(primary.dataset(level), additional.dataset(level));
 	}
 
 }

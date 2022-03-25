@@ -52,9 +52,9 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 		return new ArbitrarySizeUnionIteration<>(args);
 	}
 
-	public static <E, X extends Exception, F extends E> CloseableIteration<E, X> getInstance(
-			CloseableIteration<F, X> leftIteration,
-			CloseableIteration<F, X> rightIteration) {
+	public static <E, X extends Exception> CloseableIteration<E, X> getInstance(
+			CloseableIteration<? extends E, X> leftIteration,
+			CloseableIteration<? extends E, X> rightIteration) {
 
 		if (rightIteration instanceof EmptyIteration) {
 			return (CloseableIteration<E, X>) leftIteration;

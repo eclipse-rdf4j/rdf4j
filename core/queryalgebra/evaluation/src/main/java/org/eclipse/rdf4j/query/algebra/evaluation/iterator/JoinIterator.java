@@ -89,6 +89,8 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 			// handleClose()
 		}
 
+		leftIter.close();
+
 		return null;
 	}
 

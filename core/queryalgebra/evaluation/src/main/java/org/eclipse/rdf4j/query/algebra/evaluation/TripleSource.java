@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public interface TripleSource {
 
 	EmptyIteration<? extends Statement, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
+	EmptyIteration<? extends Triple, QueryEvaluationException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 
 	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to

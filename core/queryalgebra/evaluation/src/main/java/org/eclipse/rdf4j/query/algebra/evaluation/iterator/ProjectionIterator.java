@@ -59,15 +59,25 @@ public class ProjectionIterator extends
 					Function<BindingSet, Value> getSourceValue = context.getValue(sourceName);
 					BiConsumer<Value, MutableBindingSet> setTargetValue = context.setBinding(targetName);
 
-					return (BiConsumer<MutableBindingSet, BindingSet>) (resultBindings, sourceBindings) -> {
-						Value targetValue = getSourceValue.apply(sourceBindings);
-						if (!includeAllParentBindings && targetValue == null) {
-							targetValue = getSourceValue.apply(parentBindings);
-						}
-						if (targetValue != null) {
-							setTargetValue.accept(targetValue, resultBindings);
-						}
-					};
+					if (!includeAllParentBindings) {
+						return (BiConsumer<MutableBindingSet, BindingSet>) (resultBindings, sourceBindings) -> {
+							Value targetValue = getSourceValue.apply(sourceBindings);
+							if (targetValue == null) {
+								targetValue = getSourceValue.apply(parentBindings);
+							}
+							if (targetValue != null) {
+								setTargetValue.accept(targetValue, resultBindings);
+							}
+						};
+					} else {
+						return (BiConsumer<MutableBindingSet, BindingSet>) (resultBindings, sourceBindings) -> {
+							Value targetValue = getSourceValue.apply(sourceBindings);
+							if (targetValue != null) {
+								setTargetValue.accept(targetValue, resultBindings);
+							}
+						};
+					}
+
 				})
 				.reduce(BiConsumer::andThen)
 				.orElse(NO_OP);

@@ -111,4 +111,8 @@ public interface SailDataset extends SailClosable {
 		throw new SailException("RDF-star triple retrieval not supported by this store");
 	}
 
+	default boolean isEmpty() {
+		return !hasStatement(null, null, null);
+	}
+
 }

@@ -114,18 +114,19 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	 *         identical bindingNames array. Otherwise returns null.
 	 */
 	public BiConsumer<Value, ArrayBindingSet> getDirectSetBinding(String bindingName) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(bindingName)) {
-				final int idx = i;
-				return (v, a) -> {
-					a.values[idx] = v;
-					a.whichBindingsHaveBeenSet.set(idx, true);
-					a.clearCache();
-				};
-			}
+		int index = getIndex(bindingName);
+
+		if (index >= 0) {
+			return (v, a) -> {
+				a.values[index] = v;
+				a.whichBindingsHaveBeenSet.set(index, true);
+				a.clearCache();
+			};
 		}
+
 		assert false : "variable not known to ArrayBindingSet : " + bindingName;
 		return null;
+
 	}
 
 	public BiConsumer<Value, ArrayBindingSet> getDirectAddBinding(String bindingName) {
@@ -190,7 +191,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index >= 0) {
 			return bindings -> bindings.values[index] != null || bindings.whichBindingsHaveBeenSet.get(index);
 		}
-		return null;
+		return (bindings) -> false;
 	}
 
 	@Override
@@ -368,18 +369,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean isEmpty() {
-		for (int i = 0; i < values.length; i++) {
-			if (values[i] != null) {
-				return false;
-			}
-		}
-
-		for (int i = 0; i < values.length; i++) {
-			if (whichBindingsHaveBeenSet.get(i)) {
-				return false;
-			}
-		}
-		return true;
+		return whichBindingsHaveBeenSet.isEmpty();
 	}
 
 	private void clearCache() {
