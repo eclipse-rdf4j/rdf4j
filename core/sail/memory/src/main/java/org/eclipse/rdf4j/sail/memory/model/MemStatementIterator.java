@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import java.util.Arrays;
+import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -116,7 +117,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 		this.statementIndex = 0;
 	}
 
-	public static CloseableIteration<MemStatement, SailException> cacheAwareInstance(MemStatementList smallestList,
+	public static LookAheadIteration<MemStatement, SailException> cacheAwareInstance(MemStatementList smallestList,
 			MemResource subj, MemIRI pred, MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts,
 			MemStatementIteratorCache iteratorCache) {
 
@@ -306,13 +307,13 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 		private final MemStatementIteratorCache iteratorCache;
 		private final MemStatementIterator<X> memStatementIterator;
-		private final CloseableIteratorIteration<MemStatement, X> cachedIterator;
+		private final CloseableIteratorIteration<Iterator<MemStatement>, MemStatement, X> cachedIterator;
 		private Exception e;
 
 		private CacheAwareIteration(MemStatementIterator<X> memStatementIterator,
 				MemStatementIteratorCache iteratorCache) {
 			if (iteratorCache.shouldBeCached(memStatementIterator)) {
-				CloseableIteratorIteration<MemStatement, X> cachedIterator = null;
+				CloseableIteratorIteration<Iterator<MemStatement>, MemStatement, X> cachedIterator = null;
 				try {
 					cachedIterator = iteratorCache.getCachedIterator(memStatementIterator);
 				} catch (Exception e) {

@@ -786,7 +786,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
-			return new CloseableIteratorIteration<Namespace, SailException>(namespaceStore.iterator());
+			return new CloseableIteratorIteration<>(namespaceStore.iterator());
 		}
 
 		@Override

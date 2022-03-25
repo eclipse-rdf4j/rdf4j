@@ -15,8 +15,8 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * An Iteration that returns the bag union of the results of a number of Iterations. 'Bag union' means that the
- * UnionIteration does not filter duplicate objects.
+ * An CloseableIteration that returns the bag union of the results of a number of CloseableIterations. 'Bag union' means
+ * that the UnionIteration does not filter duplicate objects.
  */
 public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E, X> {
 
@@ -27,46 +27,44 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	}
 
 	/**
-	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
+	 * Creates a new UnionIteration that returns the bag union of the results of a number of CloseableIterations.
 	 *
-	 * @param args The Iterations containing the elements to iterate over.
-	 * @deprecated Use {@link UnionIteration#getInstance(Iteration[])} instead;
+	 * @param args The CloseableIterations containing the elements to iterate over.
 	 */
-	@Deprecated(since = "4.0.0", forRemoval = true)
 	@SafeVarargs
-	public UnionIteration(Iteration<? extends E, X>... args) {
-		this.delegate = getInstance(args);
+	public UnionIteration(CloseableIteration<? extends E, X>... args) {
+		this(Arrays.asList(args));
 	}
 
 	/**
-	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
+	 * Creates a new UnionIteration that returns the bag union of the results of a number of CloseableIterations.
 	 *
-	 * @param args The Iterations containing the elements to iterate over.
+	 * @param args The CloseableIterations containing the elements to iterate over.
 	 * @deprecated Use {@link UnionIteration#getInstance(List)} instead;
 	 */
 	@Deprecated(since = "4.0.0", forRemoval = true)
-	public UnionIteration(Iterable<? extends Iteration<? extends E, X>> args) {
+	public UnionIteration(Iterable<? extends CloseableIteration<? extends E, X>> args) {
 		this.delegate = new ArbitrarySizeUnionIteration<>(args);
 	}
 
-	@SafeVarargs
-	public static <E, X extends Exception> CloseableIteration<E, X> getInstance(Iteration<? extends E, X>... args) {
-		return new ArbitrarySizeUnionIteration<>(Arrays.asList(args));
-	}
-
 	public static <E, X extends Exception> CloseableIteration<E, X> getInstance(
-			List<? extends Iteration<? extends E, X>> args) {
+			List<? extends CloseableIteration<? extends E, X>> args) {
 		return new ArbitrarySizeUnionIteration<>(args);
 	}
 
-	public static <E, X extends Exception> CloseableIteration<E, X> getInstance(Iteration<? extends E, X> iteration1,
-			Iteration<? extends E, X> iteration2) {
-//		if (iteration2 instanceof EmptyIteration) {
-//			return (CloseableIteration<E, X>) iteration1;
-//		} else if (iteration1 instanceof EmptyIteration) {
-//			return (CloseableIteration<E, X>) iteration2;
+	public static <E, X extends Exception> CloseableIteration<E, X> getInstance(
+			CloseableIteration<? extends E, X> leftIteration,
+			CloseableIteration<? extends E, X> rightIteration) {
+
+//		if (rightIteration instanceof EmptyIteration) {
+//			if(leftIteration instanceof EmptyIteration){
+//				return new EmptyIteration<>();
+//			}
+//			return new SingleUnionIteration<>(leftIteration);
+//		} else if (leftIteration instanceof EmptyIteration) {
+//			return new SingleUnionIteration<>(rightIteration);
 //		} else {
-		return new DualUnionIteration<>(iteration1, iteration2);
+		return new DualUnionIteration<>(leftIteration, rightIteration);
 //		}
 	}
 
@@ -87,16 +85,16 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 	private static class ArbitrarySizeUnionIteration<E, X extends Exception> extends UnionIteration<E, X> {
 
-		private final Iterator<? extends Iteration<? extends E, X>> argIter;
+		private final Iterator<? extends CloseableIteration<? extends E, X>> argIter;
 
-		private Iteration<? extends E, X> currentIter;
+		private CloseableIteration<? extends E, X> currentIter;
 
-		private ArbitrarySizeUnionIteration(List<? extends Iteration<? extends E, X>> args) {
+		private ArbitrarySizeUnionIteration(List<? extends CloseableIteration<? extends E, X>> args) {
 			super();
 			argIter = args.iterator();
 		}
 
-		private ArbitrarySizeUnionIteration(Iterable<? extends Iteration<? extends E, X>> args) {
+		private ArbitrarySizeUnionIteration(Iterable<? extends CloseableIteration<? extends E, X>> args) {
 			super();
 			argIter = args.iterator();
 		}
@@ -113,8 +111,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 					if (currentIter.hasNext()) {
 						return currentIter.next();
 					} else {
-						// Current Iteration exhausted, continue with the next one
-						Iterations.closeCloseable(currentIter);
+						currentIter.close();
 					}
 				}
 
@@ -138,7 +135,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 					List<Throwable> collectedExceptions = null;
 					while (argIter.hasNext()) {
 						try {
-							Iterations.closeCloseable(argIter.next());
+							argIter.next().close();
 						} catch (Throwable e) {
 							if (collectedExceptions == null) {
 								collectedExceptions = new ArrayList<>();
@@ -150,7 +147,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 						throw new UndeclaredThrowableException(collectedExceptions.get(0));
 					}
 				} finally {
-					Iterations.closeCloseable(currentIter);
+					currentIter.close();
 				}
 			}
 		}
@@ -159,10 +156,11 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 	private static class DualUnionIteration<E, X extends Exception> extends UnionIteration<E, X> {
 
-		private final Iteration<? extends E, X> iteration1;
-		private final Iteration<? extends E, X> iteration2;
+		private CloseableIteration<? extends E, X> iteration1;
+		private final CloseableIteration<? extends E, X> iteration2;
 
-		public DualUnionIteration(Iteration<? extends E, X> iteration1, Iteration<? extends E, X> iteration2) {
+		public DualUnionIteration(CloseableIteration<? extends E, X> iteration1,
+				CloseableIteration<? extends E, X> iteration2) {
 			super();
 			this.iteration1 = iteration1;
 			this.iteration2 = iteration2;
@@ -170,10 +168,24 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 		@Override
 		public E getNextElement() throws X {
-			if (iteration1.hasNext()) {
-				return iteration1.next();
-			} else if (iteration2.hasNext()) {
-				return iteration2.next();
+			if (iteration1 == null) {
+				if (iteration2.hasNext()) {
+					return iteration2.next();
+				} else {
+					iteration2.close();
+				}
+			} else {
+				if (iteration1.hasNext()) {
+					return iteration1.next();
+				} else if (iteration2.hasNext()) {
+					iteration1.close();
+					iteration1 = null;
+					return iteration2.next();
+				} else {
+					iteration1.close();
+					iteration1 = null;
+					iteration2.close();
+				}
 			}
 
 			return null;
@@ -182,10 +194,37 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 		@Override
 		public void handleClose() throws X {
 			try {
-				Iterations.closeCloseable(iteration1);
+				if (iteration1 != null) {
+					iteration1.close();
+				}
 			} finally {
-				Iterations.closeCloseable(iteration2);
+				iteration2.close();
 			}
+		}
+	}
+
+	private static class SingleUnionIteration<E, X extends Exception> extends UnionIteration<E, X> {
+
+		private final CloseableIteration<? extends E, X> iteration;
+
+		public SingleUnionIteration(CloseableIteration<? extends E, X> iteration) {
+			super();
+			this.iteration = iteration;
+		}
+
+		@Override
+		public E getNextElement() throws X {
+			if (iteration.hasNext()) {
+				return iteration.next();
+			} else {
+				iteration.close();
+			}
+			return null;
+		}
+
+		@Override
+		public void handleClose() throws X {
+			iteration.close();
 		}
 	}
 

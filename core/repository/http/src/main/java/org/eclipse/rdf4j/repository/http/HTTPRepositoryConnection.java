@@ -787,7 +787,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	 * Creates a RepositoryResult for the supplied element set.
 	 */
 	protected <E> RepositoryResult<E> createRepositoryResult(Iterable<? extends E> elements) {
-		return new RepositoryResult<>(new CloseableIteratorIteration<E, RepositoryException>(elements.iterator()));
+		return new RepositoryResult<>(new CloseableIteratorIteration<>(elements.iterator()));
 	}
 
 	@Override

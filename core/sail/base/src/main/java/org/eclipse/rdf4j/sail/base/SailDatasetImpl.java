@@ -305,7 +305,7 @@ class SailDatasetImpl implements SailDataset {
 				// merge newly approved triples in the changeset with data from the backing source
 				return new DistinctIteration<>(UnionIteration.getInstance(
 						iter,
-						new IteratorIteration<>(changes.getApprovedTriples(subj, pred, obj).iterator())
+						new CloseableIteratorIteration<>(changes.getApprovedTriples(subj, pred, obj).iterator())
 				));
 			}
 

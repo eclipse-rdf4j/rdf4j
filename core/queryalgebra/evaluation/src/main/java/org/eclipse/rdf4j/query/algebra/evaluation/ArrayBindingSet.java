@@ -55,7 +55,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public ArrayBindingSet(String... names) {
 		this.bindingNames = names;
 		this.values = new Value[names.length];
-		this.whichBindingsHaveBeenSet = new BitSet();
+		this.whichBindingsHaveBeenSet = new BitSet(names.length);
 	}
 
 	public ArrayBindingSet(BindingSet toCopy, LinkedHashSet<String> names, String[] namesArray) {
@@ -65,7 +65,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		if (names == toCopyBindingNames || names.containsAll(toCopyBindingNames)) {
 			this.bindingNames = namesArray;
-			this.whichBindingsHaveBeenSet = new BitSet();
+			this.whichBindingsHaveBeenSet = new BitSet(this.bindingNames.length);
 			this.values = new Value[this.bindingNames.length];
 			for (int i = 0; i < this.bindingNames.length; i++) {
 				Binding binding = toCopy.getBinding(this.bindingNames[i]);
@@ -79,7 +79,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			newNames.addAll(names);
 			newNames.addAll(toCopyBindingNames);
 			this.bindingNames = newNames.toArray(new String[0]);
-			this.whichBindingsHaveBeenSet = new BitSet();
+			this.whichBindingsHaveBeenSet = new BitSet(this.bindingNames.length);
 			this.values = new Value[this.bindingNames.length];
 			for (int i = 0; i < this.bindingNames.length; i++) {
 				Binding binding = toCopy.getBinding(this.bindingNames[i]);

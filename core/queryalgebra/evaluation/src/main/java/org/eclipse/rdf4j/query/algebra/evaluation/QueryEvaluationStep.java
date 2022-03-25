@@ -25,27 +25,6 @@ public interface QueryEvaluationStep {
 
 	EmptyIteration<BindingSet, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
 
-	/**
-	 * Utility class that removes code duplication and makes a precompiled QueryEvaluationStep available as an iteration
-	 * that may be created and used later.
-	 */
-	class DelayedEvaluationIteration
-			extends DelayedIteration<BindingSet, QueryEvaluationException> {
-		private final QueryEvaluationStep arg;
-		private final BindingSet bs;
-
-		public DelayedEvaluationIteration(QueryEvaluationStep arg, BindingSet bs) {
-			this.arg = arg;
-			this.bs = bs;
-		}
-
-		@Override
-		protected CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> createIteration()
-				throws QueryEvaluationException {
-			return arg.evaluate(bs);
-		}
-	}
-
 	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings);
 
 	/**

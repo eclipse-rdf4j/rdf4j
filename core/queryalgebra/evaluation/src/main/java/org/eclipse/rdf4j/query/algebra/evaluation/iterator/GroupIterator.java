@@ -68,7 +68,8 @@ import org.mapdb.DBMaker;
  * @author James Leigh
  * @author Jerven Bolleman
  */
-public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
+public class GroupIterator
+		extends CloseableIteratorIteration<Iterator<BindingSet>, BindingSet, QueryEvaluationException> {
 
 	/*-----------*
 	 * Constants *

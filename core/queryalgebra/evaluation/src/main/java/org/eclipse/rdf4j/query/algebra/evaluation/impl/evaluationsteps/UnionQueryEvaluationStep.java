@@ -7,24 +7,39 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DelayedEvaluationIteration;
 
 public class UnionQueryEvaluationStep implements QueryEvaluationStep {
+
 	private final QueryEvaluationStep leftQes;
-	private final QueryEvaluationStep rightQes;
+	private final Function<BindingSet, DelayedEvaluationIteration> rightQes;
+	private final QueryEvaluationStep rightQes2;
 
 	public UnionQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes) {
-		this.leftQes = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(leftQes, bs);
-		this.rightQes = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(rightQes, bs);
+		this.leftQes = leftQes;
+		this.rightQes = bs -> new DelayedEvaluationIteration(rightQes, bs);
+		this.rightQes2 = rightQes;
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		return UnionIteration.getInstance(leftQes.evaluate(bindings), rightQes.evaluate(bindings));
+		CloseableIteration<BindingSet, QueryEvaluationException> evaluate = leftQes.evaluate(bindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> evaluate1 = rightQes2.evaluate(bindings);
+
+		if (evaluate instanceof EmptyIteration) {
+			return evaluate1;
+		} else if (evaluate1 instanceof EmptyIteration) {
+			return evaluate;
+		}
+
+		return UnionIteration.getInstance(evaluate, evaluate1);
 	}
 }

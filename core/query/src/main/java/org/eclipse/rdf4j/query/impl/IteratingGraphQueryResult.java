@@ -43,7 +43,7 @@ public class IteratingGraphQueryResult extends
 	}
 
 	public IteratingGraphQueryResult(Map<String, String> namespaces, Iterator<? extends Statement> statementIter) {
-		this(namespaces, new CloseableIteratorIteration<Statement, QueryEvaluationException>(statementIter));
+		this(namespaces, new CloseableIteratorIteration<>(statementIter));
 	}
 
 	public IteratingGraphQueryResult(Map<String, String> namespaces,

@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 
 public class CloseableIterationWrapper<T extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
 		extends AbstractCloseableIteration<E, X> {
@@ -49,6 +52,8 @@ public class CloseableIterationWrapper<T extends CloseableIteration<? extends E,
 		return result;
 	}
 
+	static final Set<Class> classes = Collections.synchronizedSet(new HashSet<>());
+
 	/**
 	 * Returns the next element from the wrapped Iteration.
 	 *
@@ -59,6 +64,11 @@ public class CloseableIterationWrapper<T extends CloseableIteration<? extends E,
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
+
+//		boolean add = classes.add(wrappedIter.getClass());
+//		if (add) {
+//			System.out.println(wrappedIter.getClass());
+//		}
 
 		return wrappedIter.next();
 	}

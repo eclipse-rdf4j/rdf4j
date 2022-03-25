@@ -49,7 +49,9 @@ public class IteratingTupleQueryResult extends
 	}
 
 	public IteratingTupleQueryResult(List<String> bindingNames, Iterator<? extends BindingSet> bindingSetIter) {
-		this(bindingNames, new CloseableIteratorIteration<BindingSet, QueryEvaluationException>(bindingSetIter));
+		super(new CloseableIteratorIteration<Iterator<? extends BindingSet>, BindingSet, QueryEvaluationException>(
+				bindingSetIter));
+		this.bindingNames = bindingNames;
 	}
 
 	/**

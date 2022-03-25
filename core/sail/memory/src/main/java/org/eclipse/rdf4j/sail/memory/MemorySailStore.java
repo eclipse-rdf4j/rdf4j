@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -899,7 +900,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
-			return new CloseableIteratorIteration<Namespace, SailException>(namespaceStore.iterator());
+			return new CloseableIteratorIteration<>(namespaceStore.iterator());
 		}
 
 		@Override

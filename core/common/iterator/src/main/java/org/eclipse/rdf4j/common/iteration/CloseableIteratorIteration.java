@@ -15,9 +15,10 @@ import java.util.Objects;
 /**
  * An Iteration that can convert an {@link Iterator} to a {@link CloseableIteration}.
  */
-public class CloseableIteratorIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
+public class CloseableIteratorIteration<K extends Iterator<? extends E>, E, X extends Exception>
+		extends AbstractCloseableIteration<E, X> {
 
-	private Iterator<? extends E> iter;
+	private K iter;
 
 	/**
 	 * Creates an uninitialized CloseableIteratorIteration, needs to be initialized by calling
@@ -29,11 +30,11 @@ public class CloseableIteratorIteration<E, X extends Exception> extends Abstract
 	/**
 	 * Creates a CloseableIteratorIteration that wraps the supplied iterator.
 	 */
-	public CloseableIteratorIteration(Iterator<? extends E> iter) {
+	public CloseableIteratorIteration(K iter) {
 		setIterator(iter);
 	}
 
-	protected void setIterator(Iterator<? extends E> iter) {
+	protected void setIterator(K iter) {
 		this.iter = Objects.requireNonNull(iter, "Iterator was null");
 	}
 

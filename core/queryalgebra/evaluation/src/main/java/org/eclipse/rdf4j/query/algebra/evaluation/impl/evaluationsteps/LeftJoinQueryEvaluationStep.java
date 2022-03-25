@@ -41,13 +41,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			Set<String> joinAttributeNames = new HashSet<>(leftBindingNames);
 			joinAttributeNames.retainAll(rightBindingNames);
 			String[] joinAttributes = joinAttributeNames.toArray(new String[0]);
-			return new QueryEvaluationStep() {
-
-				@Override
-				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-					return new HashJoinIteration(left, right, bs, true, joinAttributes, context);
-				}
-			};
+			return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
 		}
 
 		// Check whether optional join is "well designed" as defined in section

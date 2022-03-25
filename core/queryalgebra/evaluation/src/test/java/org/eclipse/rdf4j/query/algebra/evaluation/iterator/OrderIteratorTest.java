@@ -28,7 +28,7 @@ import junit.framework.TestCase;
  */
 public class OrderIteratorTest extends TestCase {
 
-	class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
+	class IterationStub extends CloseableIteratorIteration<Iterator<BindingSet>, BindingSet, QueryEvaluationException> {
 
 		int hasNextCount = 0;
 
