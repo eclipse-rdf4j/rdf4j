@@ -309,7 +309,7 @@ class SailSourceBranch implements SailSource {
 			pending.remove(change);
 			if (isChanged(change)) {
 				Changeset merged;
-				changes.add(Changeset.simpleClone(change));
+				changes.add(change.shallowClone());
 				compressChanges();
 				merged = changes.getLast();
 				for (Changeset c : pending) {

@@ -377,8 +377,9 @@ abstract class Changeset implements SailSink, ModelFactory {
 		this.statementCleared = from.statementCleared;
 	}
 
-	public static Changeset simpleClone(Changeset from) {
-		assert !from.closed;
+	public Changeset shallowClone() {
+
+		assert !closed;
 
 		Changeset changeset = new Changeset() {
 			@Override
@@ -388,11 +389,11 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 			@Override
 			public Model createEmptyModel() {
-				return from.createEmptyModel();
+				return Changeset.this.createEmptyModel();
 			}
 		};
 
-		changeset.setChangeset(from);
+		changeset.setChangeset(this);
 
 		return changeset;
 	}
