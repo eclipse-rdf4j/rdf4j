@@ -69,7 +69,35 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		assert variableName != null && !variableName.isEmpty();
 		Function<ArrayBindingSet, Boolean> directHasVariable = defaultArrayBindingSet
 				.getDirectHasBinding(variableName);
-		return (bs) -> {
+		return new HasBinding(variableName, directHasVariable);
+	}
+
+	static private class HasBinding implements Predicate<BindingSet> {
+
+		private final String variableName;
+		private final Function<ArrayBindingSet, Boolean> directHasVariable;
+
+		public HasBinding(String variableName, Function<ArrayBindingSet, Boolean> directHasVariable) {
+			this.variableName = variableName;
+			this.directHasVariable = directHasVariable;
+		}
+
+		@Override
+		public Predicate<BindingSet> negate() {
+			return (bs) -> {
+				if (!bs.isEmpty()) {
+					if (bs instanceof ArrayBindingSet) {
+						return !directHasVariable.apply((ArrayBindingSet) bs);
+					} else {
+						return !bs.hasBinding(variableName);
+					}
+				}
+				return true;
+			};
+		}
+
+		@Override
+		public boolean test(BindingSet bs) {
 			if (bs.isEmpty()) {
 				return false;
 			}
@@ -78,7 +106,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			} else {
 				return bs.hasBinding(variableName);
 			}
-		};
+		}
 	}
 
 	@Override
@@ -101,7 +129,22 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	public Function<BindingSet, Value> getValue(String variableName) {
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetValue(variableName);
-		return (bs) -> {
+		return new ValueGetter(variableName, directAccessForVariable);
+	}
+
+	private static class ValueGetter implements Function<BindingSet, Value> {
+
+		private final String variableName;
+		private final Function<ArrayBindingSet, Value> directAccessForVariable;
+
+		public ValueGetter(String variableName, Function<ArrayBindingSet, Value> directAccessForVariable) {
+
+			this.variableName = variableName;
+			this.directAccessForVariable = directAccessForVariable;
+		}
+
+		@Override
+		public Value apply(BindingSet bs) {
 			if (bs.isEmpty()) {
 				return null;
 			}
@@ -110,7 +153,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			} else {
 				return bs.getValue(variableName);
 			}
-		};
+		}
 	}
 
 	@Override

@@ -14,9 +14,8 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.WeakHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.concurrent.locks.StampedLock;
 import java.util.function.Supplier;
 
 import org.slf4j.Logger;
@@ -210,7 +209,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	@Override
 	public boolean add(V object) {
 		int index = getIndex(object);
-		long writeLock = locks[index].writeLock();
+		boolean writeLock = locks[index].writeLock();
 		try {
 			Map<V, WeakReference<V>> weakReferenceMap = objectMap[index];
 			WeakReference<V> ref = new WeakReference<>(object);
@@ -254,7 +253,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 		}
 
 		// we could not find the object, so we will use the supplier to create a new object and add that
-		long writeLock = locks[index].writeLock();
+		boolean writeLock = locks[index].writeLock();
 		try {
 			V object = supplier.get();
 			WeakReference<V> ref = weakReferenceMap.put(object, new WeakReference<>(object));
@@ -281,7 +280,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	public boolean remove(Object object) {
 
 		int index = getIndex(object);
-		long writeLock = locks[index].writeLock();
+		boolean writeLock = locks[index].writeLock();
 		try {
 			Map<V, WeakReference<V>> weakReferenceMap = objectMap[index];
 			WeakReference<V> ref = weakReferenceMap.remove(object);
@@ -296,7 +295,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	public void clear() {
 
 		for (int index = 0; index < objectMap.length; index++) {
-			long writeLock = locks[index].writeLock();
+			boolean writeLock = locks[index].writeLock();
 			try {
 				objectMap[index].clear();
 			} finally {
@@ -309,7 +308,8 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	private static class AdderBasedReadWriteLock {
 
 		// StampedLock for handling writers.
-		private final StampedLock lock = new StampedLock();
+		private volatile boolean writeLocked;
+		private final AtomicBoolean writeLock = new AtomicBoolean();
 
 		// LongAdder for handling readers. When the count is equal then there are no active readers.
 		private final LongAdder readersLocked = new LongAdder();
@@ -318,13 +318,13 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 		public boolean readLock() {
 			while (true) {
 				readersLocked.increment();
-				if (!lock.isWriteLocked()) {
+				if (!writeLocked) {
 					// Everything is good! We have acquired a read-lock and there are no active writers.
 					return true;
 				} else {
 					// Release our read lock so we don't block any writers.
 					readersUnlocked.increment();
-					while (lock.isWriteLocked()) {
+					while (writeLocked) {
 						Thread.onSpinWait();
 					}
 				}
@@ -339,9 +339,16 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 			}
 		}
 
-		public long writeLock() {
+		public boolean writeLock() {
+
 			// Acquire a write-lock.
-			long writeStamp = lock.writeLock();
+			boolean writeLocked;
+			do {
+				writeLocked = writeLock.compareAndSet(false, true);
+				if (writeLocked) {
+					this.writeLocked = true;
+				}
+			} while (!writeLocked);
 
 			// Wait for active readers to finish.
 			while (true) {
@@ -350,7 +357,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 				long lockedSum = readersLocked.sum();
 				if (unlockedSum == lockedSum) {
 					// No active readers.
-					return writeStamp;
+					return writeLocked;
 				} else {
 					Thread.onSpinWait();
 				}
@@ -358,9 +365,10 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 			}
 		}
 
-		public void unlockWriter(long stamp) {
-			if (stamp != 0) {
-				lock.unlockWrite(stamp);
+		public void unlockWriter(boolean writeLocked) {
+			if (writeLocked) {
+				this.writeLocked = false;
+				this.writeLock.set(false);
 			} else {
 				throw new IllegalMonitorStateException();
 			}

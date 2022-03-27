@@ -44,7 +44,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 
 	@Override
 	Lock createReadLockInner() throws InterruptedException {
-		while (stampedLock.isWriteLocked()) {
+		while (writeLocked) {
 			spinWaitAtReadLock();
 			if (Thread.interrupted()) {
 				throw new InterruptedException();
@@ -53,7 +53,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 
 		while (true) {
 			readersLocked.increment();
-			if (!stampedLock.isWriteLocked()) {
+			if (!writeLocked) {
 				// Everything is good! We have acquired a read-lock and there are no active writers.
 				break;
 			} else {

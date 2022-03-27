@@ -8,9 +8,8 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.concurrent.locks.StampedLock;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockCleaner;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
@@ -29,7 +28,10 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	private final LockMonitoring writeLockMonitoring;
 
 	// StampedLock for handling writers.
-	final StampedLock stampedLock = new StampedLock();
+//	final StampedLock stampedLock = new StampedLock();
+
+	volatile boolean writeLocked;
+	private final AtomicBoolean writeLock = new AtomicBoolean();
 
 	// LongAdder for handling readers. When the count is equal then there are no active readers.
 	final LongAdder readersLocked = new LongAdder();
@@ -139,7 +141,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 */
 	@Override
 	public boolean isWriterActive() {
-		return stampedLock.isWriteLocked();
+		return writeLocked;
 	}
 
 	/**
@@ -157,7 +159,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	 */
 	@Override
 	public void waitForActiveWriter() throws InterruptedException {
-		while (stampedLock.isWriteLocked() && !isReaderActive()) {
+		while (writeLocked && !isReaderActive()) {
 			spinWait();
 		}
 	}
@@ -187,7 +189,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	public boolean lockReadLock() throws InterruptedException {
 		readersLocked.increment();
 
-		while (stampedLock.isWriteLocked()) {
+		while (writeLocked) {
 
 			spinWaitAtReadLock();
 
@@ -228,7 +230,10 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	private Lock createWriteLockInner() throws InterruptedException {
 
 		// Acquire a write-lock.
-		long writeStamp = writeLockInterruptibly();
+		boolean writeLocked = writeLockInterruptibly();
+		if (!writeLocked) {
+			throw new IllegalMonitorStateException("Excepted write lock to succeed");
+		}
 		boolean lockAcquired = false;
 
 		try {
@@ -261,12 +266,12 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 					if (attempts++ > writePreference) {
 						attempts = 0;
 
-						stampedLock.unlockWrite(writeStamp);
-						writeStamp = 0;
+						unlockWrite(writeLocked);
+						writeLocked = false;
 
 						yieldWait();
 
-						writeStamp = writeLockInterruptibly();
+						writeLocked = writeLockInterruptibly();
 					} else {
 						spinWait();
 					}
@@ -275,37 +280,45 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 
 			} while (!lockAcquired);
 		} finally {
-			if (!lockAcquired && writeStamp != 0) {
-				stampedLock.unlockWrite(writeStamp);
-				writeStamp = 0;
+			if (!lockAcquired && writeLocked) {
+				unlockWrite(writeLocked);
+				writeLocked = false;
 			}
 		}
 
-		return new WriteLock(stampedLock, writeStamp);
+		return new WriteLock(this, writeLocked);
 	}
 
-	private long writeLockInterruptibly() throws InterruptedException {
+	void unlockWrite(boolean writeLocked) {
+		assert writeLocked;
+		assert this.writeLocked;
+		assert writeLock.get();
 
-		if (writeLockMonitoring.requiresManualCleanup()) {
-			long writeStamp;
-			do {
-				if (Thread.interrupted()) {
-					throw new InterruptedException();
-				}
+		this.writeLocked = false;
+		writeLock.set(false);
+	}
 
-				writeStamp = stampedLock.tryWriteLock(tryWriteLockMillis, TimeUnit.MILLISECONDS);
+	private boolean writeLockInterruptibly() throws InterruptedException {
 
-				if (writeStamp == 0) {
+		boolean writeLocked = false;
+		do {
+			if (Thread.interrupted()) {
+				throw new InterruptedException();
+			}
 
+			writeLocked = writeLock();
+
+			if (!writeLocked) {
+				Thread.onSpinWait();
+				if (writeLockMonitoring.requiresManualCleanup()) {
 					writeLockMonitoring.runCleanup();
 					readLockMonitoring.runCleanup();
 				}
-			} while (writeStamp == 0);
-			return writeStamp;
-		} else {
-			return stampedLock.writeLockInterruptibly();
-		}
+			}
 
+		} while (!writeLocked);
+
+		return writeLocked;
 	}
 
 	/**
@@ -318,7 +331,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 
 	private Lock tryReadLockInner() {
 		readersLocked.increment();
-		if (!stampedLock.isWriteLocked()) {
+		if (!writeLocked) {
 			// Everything is good! We have acquired a read-lock and there are no active writers.
 			return new ReadLock(readersUnlocked);
 		} else {
@@ -341,18 +354,18 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 
 	private Lock tryWriteLockInner() {
 		// Try to acquire a write-lock.
-		long writeStamp = stampedLock.tryWriteLock();
+		boolean writeLock = writeLock();
 
-		if (writeStamp != 0) {
+		if (writeLock) {
 
 			// The order is important here.
 			long unlockedSum = readersUnlocked.sum();
 			long lockedSum = readersLocked.sum();
 			if (unlockedSum == lockedSum) {
 				// No active readers.
-				return new WriteLock(stampedLock, writeStamp);
+				return new WriteLock(this, writeLock);
 			} else {
-				stampedLock.unlockWrite(writeStamp);
+				unlockWrite(writeLocked);
 
 				readLockMonitoring.runCleanup();
 				writeLockMonitoring.runCleanup();
@@ -360,6 +373,16 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 		}
 
 		return null;
+	}
+
+	private boolean writeLock() {
+		boolean success = writeLock.compareAndSet(false, true);
+		if (success) {
+			writeLocked = true;
+			return true;
+		}
+		return false;
+
 	}
 
 	void spinWait() throws InterruptedException {
@@ -397,30 +420,31 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 
 class WriteLock implements Lock {
 
-	private final StampedLock lock;
-	private long stamp;
+	private final AbstractReadWriteLockManager lock;
+	private boolean writeLocked;
 
-	public WriteLock(StampedLock lock, long stamp) {
-		assert stamp != 0;
+	public WriteLock(AbstractReadWriteLockManager lock, boolean writeLocked) {
+		this.writeLocked = writeLocked;
+		assert writeLocked;
+
 		this.lock = lock;
-		this.stamp = stamp;
 	}
 
 	@Override
 	public boolean isActive() {
-		return stamp != 0;
+		return writeLocked;
 	}
 
 	@Override
 	public void release() {
-		long temp = stamp;
-		stamp = 0;
+		boolean tempWriteLocked = writeLocked;
+		writeLocked = false;
 
-		if (temp == 0) {
+		if (!tempWriteLocked) {
 			throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
 		}
 
-		lock.unlockWrite(temp);
+		lock.unlockWrite(tempWriteLocked);
 	}
 }
 

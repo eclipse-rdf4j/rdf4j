@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.IRI;
  * A MemoryStore-specific implementation of URI that stores separated namespace and local name information to enable
  * reuse of namespace String objects (reducing memory usage) and that gives it node properties.
  */
-public class MemIRI implements IRI, MemResource {
+public class MemIRI extends MemResource implements IRI {
 
 	private static final long serialVersionUID = 9118488004995852467L;
 
@@ -44,11 +44,6 @@ public class MemIRI implements IRI, MemResource {
 	private volatile int hashCode = 0;
 
 	/**
-	 * The list of statements for which this MemURI is the subject.
-	 */
-	transient private final MemStatementList subjectStatements = new MemStatementList();
-
-	/**
 	 * The list of statements for which this MemURI is the predicate.
 	 */
 	transient private final MemStatementList predicateStatements = new MemStatementList();
@@ -57,11 +52,6 @@ public class MemIRI implements IRI, MemResource {
 	 * The list of statements for which this MemURI is the object.
 	 */
 	transient private final MemStatementList objectStatements = new MemStatementList();
-
-	/**
-	 * The list of statements for which this MemURI represents the context.
-	 */
-	transient private final MemStatementList contextStatements = new MemStatementList();
 
 	/*--------------*
 	 * Constructors *
@@ -160,31 +150,6 @@ public class MemIRI implements IRI, MemResource {
 				|| !contextStatements.isEmpty();
 	}
 
-	@Override
-	public MemStatementList getSubjectStatementList() {
-		return subjectStatements;
-	}
-
-	@Override
-	public int getSubjectStatementCount() {
-		return subjectStatements.size();
-	}
-
-	@Override
-	public void addSubjectStatement(MemStatement st) {
-		subjectStatements.add(st);
-	}
-
-	@Override
-	public void removeSubjectStatement(MemStatement st) {
-		subjectStatements.remove(st);
-	}
-
-	@Override
-	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) {
-		subjectStatements.cleanSnapshots(currentSnapshot);
-	}
-
 	/**
 	 * Gets the list of statements for which this MemURI is the predicate.
 	 *
@@ -253,11 +218,6 @@ public class MemIRI implements IRI, MemResource {
 	}
 
 	@Override
-	public boolean hasSubjectStatements() {
-		return !subjectStatements.isEmpty();
-	}
-
-	@Override
 	public boolean hasPredicateStatements() {
 		return !predicateStatements.isEmpty();
 	}
@@ -267,33 +227,4 @@ public class MemIRI implements IRI, MemResource {
 		return !objectStatements.isEmpty();
 	}
 
-	@Override
-	public boolean hasContextStatements() {
-		return !contextStatements.isEmpty();
-	}
-
-	@Override
-	public MemStatementList getContextStatementList() {
-		return contextStatements;
-	}
-
-	@Override
-	public int getContextStatementCount() {
-		return contextStatements.size();
-	}
-
-	@Override
-	public void addContextStatement(MemStatement st) {
-		contextStatements.add(st);
-	}
-
-	@Override
-	public void removeContextStatement(MemStatement st) {
-		contextStatements.remove(st);
-	}
-
-	@Override
-	public void cleanSnapshotsFromContextStatements(int currentSnapshot) {
-		contextStatements.cleanSnapshots(currentSnapshot);
-	}
 }
