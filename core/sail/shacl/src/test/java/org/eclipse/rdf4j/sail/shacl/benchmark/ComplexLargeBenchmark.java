@@ -90,9 +90,9 @@ public class ComplexLargeBenchmark {
 	public static void main(String[] args) throws RunnerException, InterruptedException {
 		ComplexLargeBenchmark complexLargeBenchmark = new ComplexLargeBenchmark();
 		complexLargeBenchmark.setUp();
-		for (int i = 0; i < 20; i++) {
+		for (int i = 0; i < 100; i++) {
 			System.out.println(i);
-			complexLargeBenchmark.noPreloadingNonEmptyParallel();
+			complexLargeBenchmark.bulkParallel();
 		}
 		complexLargeBenchmark.teardown();
 

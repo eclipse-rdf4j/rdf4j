@@ -53,11 +53,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
 //@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=20s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints" })
-@Measurement(iterations = 5, time = 10)
+@Measurement(iterations = 10, time = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ParallelQueryBenchmark {
 
