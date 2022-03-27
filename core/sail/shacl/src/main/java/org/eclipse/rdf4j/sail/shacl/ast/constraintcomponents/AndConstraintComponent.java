@@ -16,11 +16,9 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
 import org.eclipse.rdf4j.sail.shacl.ast.NodeShape;
 import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
@@ -37,21 +35,24 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	List<Shape> and;
 
-	public AndConstraintComponent(Resource id, RepositoryConnection connection,
+	public AndConstraintComponent(Resource id, ShapeSource shapeSource,
 			Cache cache, ShaclSail shaclSail) {
 		super(id);
-		and = ShaclAstLists.toList(connection, id, Resource.class)
+		and = ShaclAstLists.toList(shapeSource, id, Resource.class)
 				.stream()
-				.map(r -> new ShaclProperties(r, connection))
+				.map(r -> new ShaclProperties(r, shapeSource))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, connection, cache, false, shaclSail);
+						return NodeShape.getInstance(p, shapeSource, cache, false, shaclSail);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(p, connection, cache, shaclSail);
+						return PropertyShape.getInstance(p, shapeSource, cache, shaclSail);
 					}
 					throw new IllegalStateException("Unknown shape type for " + p.getId());
 				})
@@ -92,17 +93,19 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	}
 
 	@Override
-	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+			ValidationSettings validationSettings,
 			boolean negatePlan, boolean negateChildren, Scope scope) {
 		throw new ShaclUnsupportedException();
 	}
 
 	@Override
-	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+			ValidationSettings validationSettings,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 
 		PlanNode planNode = and.stream()
-				.map(a -> a.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans,
+				.map(a -> a.generateTransactionalValidationPlan(connectionsGroup, validationSettings,
 						overrideTargetNode, scope))
 				.reduce(UnionNode::getInstance)
 				.orElse(EmptyNode.getInstance());
@@ -112,9 +115,9 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
 		PlanNode planNode = and.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, scope))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, scope))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
@@ -136,8 +139,8 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	}
 
 	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
-		return and.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph) {
+		return and.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope, dataGraph));
 	}
 
 	@Override

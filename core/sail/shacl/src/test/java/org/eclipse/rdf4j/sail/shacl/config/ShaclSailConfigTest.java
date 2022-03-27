@@ -18,6 +18,7 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALID
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
+import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SHAPES_GRAPH;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT;
@@ -25,16 +26,23 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_RES
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.junit.jupiter.api.Test;
 
 public class ShaclSailConfigTest {
+
+	public static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Test
 	public void defaultsCorrectlySet() {
@@ -53,6 +61,7 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(1000000);
 		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(1000);
 		assertThat(shaclSailConfig.getTransactionalValidationLimit()).isEqualTo(500000);
+		assertThat(shaclSailConfig.getShapesGraphs()).isEqualTo(Set.of(RDF4J.SHACL_SHAPE_GRAPH));
 
 	}
 
@@ -60,7 +69,7 @@ public class ShaclSailConfigTest {
 	public void parseFromModelSetValuesCorrectly() {
 		ShaclSailConfig shaclSailConfig = new ShaclSailConfig();
 
-		BNode implNode = SimpleValueFactory.getInstance().createBNode();
+		BNode implNode = vf.createBNode();
 		ModelBuilder mb = new ModelBuilder().subject(implNode);
 
 		mb.add(PARALLEL_VALIDATION, true);
@@ -79,6 +88,11 @@ public class ShaclSailConfigTest {
 		mb.add(VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, 3);
 		mb.add(TRANSACTIONAL_VALIDATION_LIMIT, 9);
 
+		Set<IRI> shapesGraphs = Set.of(Values.iri("http://example.com/ex1"), Values.iri("http://example.com/ex2"));
+		for (IRI shapesGraph : shapesGraphs) {
+			mb.add(SHAPES_GRAPH, shapesGraph);
+		}
+
 		shaclSailConfig.parse(mb.build(), implNode);
 
 		assertThat(shaclSailConfig.isParallelValidation()).isTrue();
@@ -95,6 +109,7 @@ public class ShaclSailConfigTest {
 		assertThat(shaclSailConfig.getValidationResultsLimitTotal()).isEqualTo(100);
 		assertThat(shaclSailConfig.getValidationResultsLimitPerConstraint()).isEqualTo(3);
 		assertThat(shaclSailConfig.getTransactionalValidationLimit()).isEqualTo(9);
+		assertThat(shaclSailConfig.getShapesGraphs()).isEqualTo(shapesGraphs);
 
 	}
 
@@ -126,6 +141,19 @@ public class ShaclSailConfigTest {
 	}
 
 	@Test
+	public void parseInvalidModelGivesCorrectExceptionBnode() {
+		ShaclSailConfig shaclSailConfig = new ShaclSailConfig();
+		BNode implNode = SimpleValueFactory.getInstance().createBNode();
+		ModelBuilder mb = new ModelBuilder().subject(implNode);
+
+		mb.add(SHAPES_GRAPH, Values.bnode());
+
+		assertThrows(SailConfigException.class, () -> {
+			shaclSailConfig.parse(mb.build(), implNode);
+		});
+	}
+
+	@Test
 	public void exportAddsAllConfigData() {
 		ShaclSailConfig shaclSailConfig = new ShaclSailConfig();
 
@@ -145,6 +173,7 @@ public class ShaclSailConfigTest {
 		assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_TOTAL, null));
 		assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, null));
 		assertTrue(m.contains(node, TRANSACTIONAL_VALIDATION_LIMIT, null));
+		assertTrue(m.contains(node, SHAPES_GRAPH, null));
 
 	}
 

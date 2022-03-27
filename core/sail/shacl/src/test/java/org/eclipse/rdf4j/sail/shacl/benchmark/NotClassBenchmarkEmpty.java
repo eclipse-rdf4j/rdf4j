@@ -95,7 +95,7 @@ public class NotClassBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotClassBenchmark.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotClassBenchmark.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
@@ -112,7 +112,7 @@ public class NotClassBenchmarkEmpty {
 	@Benchmark
 	public void shaclBulk() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotClassBenchmark.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotClassBenchmark.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
@@ -128,7 +128,7 @@ public class NotClassBenchmarkEmpty {
 	@Benchmark
 	public void shaclWithoutAnimals() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotClassBenchmark.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotClassBenchmark.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatementsWithoutAnimals) {

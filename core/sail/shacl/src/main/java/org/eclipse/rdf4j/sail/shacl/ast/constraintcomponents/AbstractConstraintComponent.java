@@ -9,8 +9,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
@@ -20,6 +19,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,14 +57,14 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
 		logger.error("SPARQL based validation for {} has not been implemented", getConstraintComponent());
 		throw new ShaclUnsupportedException();
 	}
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
+			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode,
 			Scope scope) {
 		logger.error("Transactional validation for {} has not been implemented", getConstraintComponent());
 		return EmptyNode.getInstance();
@@ -80,13 +81,13 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 	}
 
 	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph) {
 		return getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-				.couldMatch(connectionsGroup);
+				.couldMatch(connectionsGroup, dataGraph);
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
 		throw new UnsupportedOperationException();
 	}
 

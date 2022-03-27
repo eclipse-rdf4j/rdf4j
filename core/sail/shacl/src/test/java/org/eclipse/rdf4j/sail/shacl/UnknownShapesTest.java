@@ -38,7 +38,7 @@ public class UnknownShapesTest {
 		MyAppender newAppender = new MyAppender();
 		root.addAppender(newAppender);
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("unknownProperties.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("unknownProperties.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -52,9 +52,10 @@ public class UnknownShapesTest {
 				.filter(m -> m.startsWith("Unsupported SHACL feature"))
 				.collect(Collectors.toSet());
 
-		Set<String> expected = new HashSet<>(Arrays.asList(
-				"Unsupported SHACL feature detected sh:unknownTarget in statement (http://example.com/ns#PersonShape, http://www.w3.org/ns/shacl#unknownTarget, http://www.w3.org/2000/01/rdf-schema#Class) [null]",
-				"Unsupported SHACL feature detected sh:unknownShaclProperty in statement (http://example.com/ns#PersonPropertyShape, http://www.w3.org/ns/shacl#unknownShaclProperty, \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) [null]"));
+		Set<String> expected = Set.of(
+				"Unsupported SHACL feature detected sh:unknownTarget in statement (http://example.com/ns#PersonShape, http://www.w3.org/ns/shacl#unknownTarget, http://www.w3.org/2000/01/rdf-schema#Class, http://rdf4j.org/schema/rdf4j#SHACLShapeGraph) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]",
+				"Unsupported SHACL feature detected sh:unknownShaclProperty in statement (http://example.com/ns#PersonPropertyShape, http://www.w3.org/ns/shacl#unknownShaclProperty, \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>, http://rdf4j.org/schema/rdf4j#SHACLShapeGraph) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]"
+		);
 
 		assertEquals(expected, relevantLog);
 
@@ -71,7 +72,7 @@ public class UnknownShapesTest {
 		MyAppender newAppender = new MyAppender();
 		root.addAppender(newAppender);
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("complexPath.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("complexPath.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();

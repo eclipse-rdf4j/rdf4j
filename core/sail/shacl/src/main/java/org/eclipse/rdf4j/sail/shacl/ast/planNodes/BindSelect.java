@@ -20,7 +20,9 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -51,6 +53,7 @@ public class BindSelect implements PlanNode {
 	private static final Logger logger = LoggerFactory.getLogger(BindSelect.class);
 
 	private final SailConnection connection;
+	private final Dataset dataset;
 	private final Function<BindingSet, ValidationTuple> mapper;
 
 	private final String query;
@@ -65,11 +68,13 @@ public class BindSelect implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public BindSelect(SailConnection connection, String query, List<StatementMatcher.Variable> vars, PlanNode source,
+	public BindSelect(SailConnection connection, Resource[] dataGraph, String query,
+			List<StatementMatcher.Variable> vars, PlanNode source,
 			List<String> varNames, ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction,
 			boolean includePropertyShapeValues) {
 		this.connection = connection;
-		this.mapper = (bindingSet) -> new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues);
+		this.mapper = (bindingSet) -> new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues,
+				dataGraph);
 		this.varNames = varNames;
 		this.scope = scope;
 		this.vars = vars;
@@ -84,6 +89,9 @@ public class BindSelect implements PlanNode {
 		this.query = query;
 		this.direction = direction;
 		this.includePropertyShapeValues = includePropertyShapeValues;
+
+		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+
 		// this.stackTrace = Thread.currentThread().getStackTrace();
 
 	}
@@ -213,7 +221,7 @@ public class BindSelect implements PlanNode {
 
 					updateQuery(parsedQuery, bindingSets, targetChainSize);
 
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
+					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset,
 							EmptyBindingSet.getInstance(), true);
 				}
 			}
@@ -355,6 +363,7 @@ public class BindSelect implements PlanNode {
 					query.equals(that.query) &&
 					vars.equals(that.vars) &&
 					source.equals(that.source) &&
+					Objects.equals(dataset, that.dataset) &&
 					direction == that.direction;
 		} else {
 			return bulkSize == that.bulkSize &&
@@ -365,6 +374,7 @@ public class BindSelect implements PlanNode {
 					query.equals(that.query) &&
 					vars.equals(that.vars) &&
 					source.equals(that.source) &&
+					Objects.equals(dataset, that.dataset) &&
 					direction == that.direction;
 		}
 
@@ -376,10 +386,10 @@ public class BindSelect implements PlanNode {
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			return Objects.hash(((MemoryStoreConnection) connection).getSail(), varNames, scope, query, vars, bulkSize,
-					source, direction, includePropertyShapeValues);
+					source, direction, includePropertyShapeValues, dataset);
 		} else {
 			return Objects.hash(connection, varNames, scope, query, vars, bulkSize, source, direction,
-					includePropertyShapeValues);
+					includePropertyShapeValues, dataset);
 		}
 	}
 

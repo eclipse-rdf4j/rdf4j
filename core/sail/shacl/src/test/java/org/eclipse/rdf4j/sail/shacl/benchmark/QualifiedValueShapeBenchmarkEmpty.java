@@ -89,7 +89,7 @@ public class QualifiedValueShapeBenchmarkEmpty {
 	public void shacl() throws Exception {
 
 		SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail("shaclQualifiedShapeBenchmark.ttl"));
+				Utils.getInitializedShaclSail("shaclQualifiedShapeBenchmark.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
@@ -106,7 +106,7 @@ public class QualifiedValueShapeBenchmarkEmpty {
 	public void shaclBulk() throws Exception {
 
 		SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail("shaclQualifiedShapeBenchmark.ttl"));
+				Utils.getInitializedShaclSail("shaclQualifiedShapeBenchmark.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);

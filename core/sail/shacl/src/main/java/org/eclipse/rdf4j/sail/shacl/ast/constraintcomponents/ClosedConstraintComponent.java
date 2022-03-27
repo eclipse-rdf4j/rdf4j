@@ -18,32 +18,29 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class ClosedConstraintComponent extends AbstractConstraintComponent {
 
 	private final List<Path> paths;
 	private final List<IRI> ignoredProperties;
 
-	public ClosedConstraintComponent(RepositoryConnection connection, List<Resource> property,
+	public ClosedConstraintComponent(ShapeSource shapeSource, List<Resource> property,
 			Resource ignoredProperties) {
 
 		paths = property.stream().flatMap(r -> {
-			return connection.getStatements(r, SHACL.PATH, null)
-					.stream()
-					.map(Statement::getObject)
+			return shapeSource.getObjects(r, ShapeSource.Predicates.PATH)
 					.map(o -> ((Resource) o))
-					.map(path -> Path.buildPath(connection, path));
+					.map(path -> Path.buildPath(shapeSource, path));
 
 		}).collect(Collectors.toList());
 
 		if (ignoredProperties != null) {
-			this.ignoredProperties = ShaclAstLists.toList(connection, ignoredProperties, IRI.class);
+			this.ignoredProperties = ShaclAstLists.toList(shapeSource, ignoredProperties, IRI.class);
 		} else {
 			this.ignoredProperties = Collections.emptyList();
 		}

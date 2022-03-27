@@ -13,12 +13,12 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public abstract class LogicalOperatorConstraintComponent extends AbstractConstraintComponent {
 	public LogicalOperatorConstraintComponent(Resource id) {

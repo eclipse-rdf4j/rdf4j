@@ -37,7 +37,7 @@ public class ShaclSailValidationReportHelper {
 	/**
 	 * Finds a validation report using {@link #getValidationReport(Throwable)} and returns a {@link String} containing
 	 * the pretty-printed report.
-	 * 
+	 *
 	 * @param t the {@link Throwable} to start searching for a validation report at
 	 * @return an Optional with the pretty-printed report if one is found, empty otherwise.
 	 */
@@ -54,7 +54,7 @@ public class ShaclSailValidationReportHelper {
 	/**
 	 * Finds a validation report using {@link #getValidationReport(Throwable)} and pretty-prints it to the specified
 	 * output stream.
-	 * 
+	 *
 	 * @param t   the {@link Throwable} to start searching for a validation report at
 	 * @param out the output stream to print to
 	 */
@@ -68,7 +68,7 @@ public class ShaclSailValidationReportHelper {
 	/**
 	 * Looks for a {@link ValidationException} starting with the specified throwable and working back through the cause
 	 * references, and returns the validation report as a {@link Model} if one is found.
-	 * 
+	 *
 	 * @param t the {@link Throwable} to start the search at
 	 * @return an optional with the validation report, or empty.
 	 */

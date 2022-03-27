@@ -7,9 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import static junit.framework.Assert.fail;
-import static junit.framework.TestCase.assertTrue;
-
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
@@ -26,8 +23,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.WriterConfig;
-import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class ValidationReportTest {
@@ -36,7 +32,7 @@ public class ValidationReportTest {
 
 	@Test
 	public void simpleFirstTest() throws IOException {
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.trig");
 
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
@@ -47,7 +43,7 @@ public class ValidationReportTest {
 			connection.add(RDF.SUBJECT, RDF.TYPE, RDFS.RESOURCE);
 
 			connection.commit();
-			fail();
+			Assertions.fail();
 
 		} catch (RepositoryException e) {
 			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
@@ -57,38 +53,38 @@ public class ValidationReportTest {
 			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 			actual.setNamespace("ex", "http://example.com/ns#");
 
-//			Rio.write(actual, System.out, RDFFormat.TURTLE);
+			ShaclSailValidationReportHelper.printValidationReport(e, System.out);
 
 			Model expected = Rio.parse(new StringReader("" +
+					"@prefix rsx: <http://rdf4j.org/shacl-extensions#> .\n" +
+					"@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .\n" +
 					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
-					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-					"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
-					"@prefix ex: <http://example.com/ns#> .\n" +
 					"\n" +
-					"_:node1ej7nbj15x28 a sh:ValidationReport;\n" +
+					"[] a sh:ValidationReport;\n" +
 					"  sh:conforms false;\n" +
-					"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
-					"  sh:result _:f6098745-5de1-43a8-9ffe-4fac65713654, _:08307a7a-dc7e-44c6-90cd-cf4f9f6318a3 .\n" +
+					"  rdf4j:truncated false;\n" +
+					"  sh:result [ a sh:ValidationResult;\n" +
+					"      sh:focusNode <http://www.w3.org/2000/01/rdf-schema#Class>;\n" +
+					"      rsx:shapesGraph rdf4j:SHACLShapeGraph;\n" +
+					"      sh:resultPath <http://www.w3.org/2000/01/rdf-schema#label>;\n" +
+					"      sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
+					"      sh:resultSeverity sh:Violation;\n" +
+					"      sh:sourceShape <http://example.com/ns#PersonShapeProperty>\n" +
+					"    ], [ a sh:ValidationResult;\n" +
+					"      sh:focusNode <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject>;\n" +
+					"      rsx:shapesGraph rdf4j:SHACLShapeGraph;\n" +
+					"      sh:resultPath <http://www.w3.org/2000/01/rdf-schema#label>;\n" +
+					"      sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
+					"      sh:resultSeverity sh:Violation;\n" +
+					"      sh:sourceShape <http://example.com/ns#PersonShapeProperty>\n" +
+					"    ] .\n" +
 					"\n" +
-					"_:f6098745-5de1-43a8-9ffe-4fac65713654 a sh:ValidationResult;\n" +
-					"  sh:focusNode rdf:subject;\n" +
-					"  sh:resultPath rdfs:label;\n" +
-					"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
-					"  sh:resultSeverity sh:Violation;\n" +
-					"  sh:sourceShape ex:PersonShapeProperty .\n" +
-					"\n" +
-					"ex:PersonShapeProperty a sh:PropertyShape;\n" +
-					"  sh:path rdfs:label;\n" +
-					"  sh:minCount 1 .\n" +
-					"\n" +
-					"_:08307a7a-dc7e-44c6-90cd-cf4f9f6318a3 a sh:ValidationResult;\n" +
-					"  sh:focusNode rdfs:Class;\n" +
-					"  sh:resultPath rdfs:label;\n" +
-					"  sh:sourceConstraintComponent sh:MinCountConstraintComponent;\n" +
-					"  sh:resultSeverity sh:Violation;\n" +
-					"  sh:sourceShape ex:PersonShapeProperty .\n" + ""), "", RDFFormat.TURTLE);
+					"<http://example.com/ns#PersonShapeProperty> a sh:PropertyShape;\n" +
+					"  sh:path <http://www.w3.org/2000/01/rdf-schema#label>;\n" +
+					"  sh:minCount 1 ." +
+					""), "", RDFFormat.TURTLE);
 
-			assertTrue(Models.isomorphic(expected, actual));
+			Assertions.assertTrue(Models.isomorphic(expected, actual));
 
 		} finally {
 			shaclSail.shutDown();
@@ -97,7 +93,7 @@ public class ValidationReportTest {
 
 	@Test
 	public void withoutPathTest() throws IOException {
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("shaclValidateTarget.ttl");
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("shaclValidateTarget.trig");
 
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
@@ -106,7 +102,7 @@ public class ValidationReportTest {
 					vf.createIRI("http://example.com/ns#", "SecondTarget"));
 			connection.commit();
 
-			fail();
+			Assertions.fail();
 
 		} catch (RepositoryException e) {
 			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
@@ -116,32 +112,31 @@ public class ValidationReportTest {
 			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 			actual.setNamespace("ex", "http://example.com/ns#");
 
-//			Rio.write(actual, System.out, RDFFormat.TURTLE);
+			ShaclSailValidationReportHelper.printValidationReport(e, System.out);
 
 			Model expected = Rio.parse(new StringReader("" +
+					"@prefix rsx: <http://rdf4j.org/shacl-extensions#> .\n" +
+					"@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .\n" +
 					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
-					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-					"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
-					"@prefix ex: <http://example.com/ns#> .\n" +
 					"\n" +
-					"_:node1ej7ncuuox109 a sh:ValidationReport;\n" +
+					"[] a sh:ValidationReport;\n" +
 					"  sh:conforms false;\n" +
-					"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
-					"  sh:result _:3693ccc6-009d-4e32-9822-430874b166a6 .\n" +
+					"  rdf4j:truncated false;\n" +
+					"  sh:result [ a sh:ValidationResult;\n" +
+					"      sh:focusNode <http://example.com/ns#node1>;\n" +
+					"      rsx:shapesGraph rdf4j:SHACLShapeGraph;\n" +
+					"      sh:value <http://example.com/ns#node1>;\n" +
+					"      sh:sourceConstraintComponent sh:ClassConstraintComponent;\n" +
+					"      sh:resultSeverity sh:Violation;\n" +
+					"      sh:sourceShape <http://example.com/ns#PersonShape>\n" +
+					"    ] .\n" +
 					"\n" +
-					"_:3693ccc6-009d-4e32-9822-430874b166a6 a sh:ValidationResult;\n" +
-					"  sh:focusNode ex:node1;\n" +
-					"  sh:value ex:node1;\n" +
-					"  sh:sourceConstraintComponent sh:ClassConstraintComponent;\n" +
-					"  sh:resultSeverity sh:Violation;\n" +
-					"  sh:sourceShape ex:PersonShape .\n" +
-					"\n" +
-					"ex:PersonShape a sh:NodeShape;\n" +
-					"  sh:targetClass ex:Person, ex:SecondTarget;\n" +
-					"  sh:class ex:Person ."
-					+ ""), "", RDFFormat.TURTLE);
+					"<http://example.com/ns#PersonShape> a sh:NodeShape;\n" +
+					"  sh:targetClass <http://example.com/ns#Person>, <http://example.com/ns#SecondTarget>;\n" +
+					"  sh:class <http://example.com/ns#Person> .\n" +
+					""), "", RDFFormat.TRIG);
 
-			assertTrue(Models.isomorphic(expected, actual));
+			Assertions.assertTrue(Models.isomorphic(expected, actual));
 
 		} finally {
 			shaclSail.shutDown();
@@ -151,7 +146,7 @@ public class ValidationReportTest {
 	@Test
 	public void nestedLogicalOrSupport() throws IOException {
 
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/or/datatype/shacl.ttl");
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/or/datatype/shacl.trig");
 
 		try (SailRepositoryConnection connection = shaclSail.getConnection()) {
 
@@ -160,7 +155,7 @@ public class ValidationReportTest {
 					.getResourceAsStream("test-cases/or/datatype/invalid/case1/query1.rq"), StandardCharsets.UTF_8))
 					.execute();
 			connection.commit();
-			fail();
+			Assertions.fail();
 
 		} catch (RepositoryException e) {
 			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
@@ -170,41 +165,39 @@ public class ValidationReportTest {
 			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 			actual.setNamespace("ex", "http://example.com/ns#");
 
-			WriterConfig writerConfig = new WriterConfig();
-			writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-			writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-
-//			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
+			ShaclSailValidationReportHelper.printValidationReport(e, System.out);
 
 			Model expected = Rio.parse(new StringReader("" +
+					"@prefix rsx: <http://rdf4j.org/shacl-extensions#> .\n" +
+					"@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .\n" +
 					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
-					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-					"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
-					"@prefix ex: <http://example.com/ns#> .\n" +
 					"\n" +
 					"[] a sh:ValidationReport;\n" +
 					"  sh:conforms false;\n" +
-					"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
+					"  rdf4j:truncated false;\n" +
 					"  sh:result [ a sh:ValidationResult;\n" +
-					"      sh:focusNode ex:validPerson1;\n" +
+					"      sh:focusNode <http://example.com/ns#validPerson1>;\n" +
+					"      rsx:shapesGraph rdf4j:SHACLShapeGraph;\n" +
 					"      sh:value \"abc\";\n" +
-					"      sh:resultPath ex:age;\n" +
+					"      sh:resultPath <http://example.com/ns#age>;\n" +
 					"      sh:sourceConstraintComponent sh:OrConstraintComponent;\n" +
 					"      sh:resultSeverity sh:Violation;\n" +
-					"      sh:sourceShape ex:personShapeOr\n" +
+					"      sh:sourceShape <http://example.com/ns#personShapeOr>\n" +
 					"    ] .\n" +
 					"\n" +
-					"ex:personShapeOr a sh:PropertyShape;\n" +
-					"  sh:path ex:age;\n" +
-					"  sh:or (ex:personShapeAgeInteger ex:personShapeAgeLong) .\n" +
+					"<http://example.com/ns#personShapeOr> a sh:PropertyShape;\n" +
+					"  sh:path <http://example.com/ns#age>;\n" +
+					"  sh:or (<http://example.com/ns#personShapeAgeInteger> <http://example.com/ns#personShapeAgeLong>) .\n"
+					+
 					"\n" +
-					"ex:personShapeAgeInteger a sh:NodeShape;\n" +
+					"<http://example.com/ns#personShapeAgeInteger> a sh:NodeShape;\n" +
 					"  sh:datatype <http://www.w3.org/2001/XMLSchema#integer> .\n" +
 					"\n" +
-					"ex:personShapeAgeLong a sh:NodeShape;\n" +
-					"  sh:datatype <http://www.w3.org/2001/XMLSchema#long> .\n" + ""), "", RDFFormat.TURTLE);
+					"<http://example.com/ns#personShapeAgeLong> a sh:NodeShape;\n" +
+					"  sh:datatype <http://www.w3.org/2001/XMLSchema#long> .\n" +
+					""), "", RDFFormat.TURTLE);
 
-			assertTrue(Models.isomorphic(expected, actual));
+			Assertions.assertTrue(Models.isomorphic(expected, actual));
 
 		} finally {
 			shaclSail.shutDown();
@@ -214,7 +207,7 @@ public class ValidationReportTest {
 	@Test
 	public void testHasValueIn() throws IOException {
 
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/hasValueIn/simple/shacl.ttl");
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/hasValueIn/simple/shacl.trig");
 
 		ShaclSail sail = (ShaclSail) shaclSail.getSail();
 		sail.setDashDataShapes(true);
@@ -227,7 +220,7 @@ public class ValidationReportTest {
 					StandardCharsets.UTF_8))
 					.execute();
 			connection.commit();
-			fail();
+			Assertions.fail();
 
 		} catch (RepositoryException e) {
 			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
@@ -237,33 +230,32 @@ public class ValidationReportTest {
 			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 			actual.setNamespace("ex", "http://example.com/ns#");
 
-			WriterConfig writerConfig = new WriterConfig();
-			writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-			writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-
-//			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
+			ShaclSailValidationReportHelper.printValidationReport(e, System.out);
 
 			Model expected = Rio.parse(new StringReader("" +
+					"@prefix rsx: <http://rdf4j.org/shacl-extensions#> .\n" +
+					"@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .\n" +
 					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
-					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-					"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
-					"@prefix ex: <http://example.com/ns#> .\n" +
 					"\n" +
 					"[] a sh:ValidationReport;\n" +
 					"  sh:conforms false;\n" +
-					"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
+					"  rdf4j:truncated false;\n" +
 					"  sh:result [ a sh:ValidationResult;\n" +
-					"      sh:focusNode ex:validPerson1;\n" +
-					"      sh:resultPath ex:knows;\n" +
+					"      sh:focusNode <http://example.com/ns#validPerson1>;\n" +
+					"      rsx:shapesGraph rdf4j:SHACLShapeGraph;\n" +
+					"      sh:resultPath <http://example.com/ns#knows>;\n" +
 					"      sh:sourceConstraintComponent sh:HasValueConstraintComponent;\n" +
 					"      sh:resultSeverity sh:Violation;\n" +
 					"      sh:sourceShape [ a sh:PropertyShape;\n" +
-					"          sh:path ex:knows;\n" +
-					"          <http://datashapes.org/dash#hasValueIn> (ex:peter ex:mary ex:kate)\n" +
+					"          sh:path <http://example.com/ns#knows>;\n" +
+					"          <http://datashapes.org/dash#hasValueIn> (<http://example.com/ns#peter> <http://example.com/ns#mary>\n"
+					+
+					"              <http://example.com/ns#kate>)\n" +
 					"        ]\n" +
-					"    ] .\n" + ""), "", RDFFormat.TURTLE);
+					"    ] ." +
+					""), "", RDFFormat.TRIG);
 
-			assertTrue(Models.isomorphic(expected, actual));
+			Assertions.assertTrue(Models.isomorphic(expected, actual));
 
 		} finally {
 			shaclSail.shutDown();
@@ -273,7 +265,7 @@ public class ValidationReportTest {
 	@Test
 	public void testHasValue() throws IOException {
 
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/hasValue/simple/shacl.ttl");
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("test-cases/hasValue/simple/shacl.trig");
 
 		ShaclSail sail = (ShaclSail) shaclSail.getSail();
 		sail.setDashDataShapes(true);
@@ -286,7 +278,7 @@ public class ValidationReportTest {
 					StandardCharsets.UTF_8))
 					.execute();
 			connection.commit();
-			fail();
+			Assertions.fail();
 
 		} catch (RepositoryException e) {
 			ShaclSailValidationException cause = (ShaclSailValidationException) e.getCause();
@@ -296,33 +288,29 @@ public class ValidationReportTest {
 			actual.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);
 			actual.setNamespace("ex", "http://example.com/ns#");
 
-			WriterConfig writerConfig = new WriterConfig();
-			writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-			writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-
-//			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
+			ShaclSailValidationReportHelper.printValidationReport(e, System.out);
 
 			Model expected = Rio.parse(new StringReader(""
-					+ "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
-					"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
-					"@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n" +
-					"@prefix ex: <http://example.com/ns#> .\n" +
+					+ "@prefix rsx: <http://rdf4j.org/shacl-extensions#> .\n" +
+					"@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .\n" +
+					"@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
 					"\n" +
 					"[] a sh:ValidationReport;\n" +
 					"  sh:conforms false;\n" +
-					"  <http://rdf4j.org/schema/rdf4j#truncated> false;\n" +
+					"  rdf4j:truncated false;\n" +
 					"  sh:result [ a sh:ValidationResult;\n" +
-					"      sh:focusNode ex:validPerson1;\n" +
-					"      sh:resultPath ex:knows;\n" +
+					"      sh:focusNode <http://example.com/ns#validPerson1>;\n" +
+					"      rsx:shapesGraph rdf4j:SHACLShapeGraph;\n" +
+					"      sh:resultPath <http://example.com/ns#knows>;\n" +
 					"      sh:sourceConstraintComponent sh:HasValueConstraintComponent;\n" +
 					"      sh:resultSeverity sh:Violation;\n" +
 					"      sh:sourceShape [ a sh:PropertyShape;\n" +
-					"          sh:path ex:knows;\n" +
-					"          sh:hasValue ex:peter\n" +
+					"          sh:path <http://example.com/ns#knows>;\n" +
+					"          sh:hasValue <http://example.com/ns#peter>\n" +
 					"        ]\n" +
-					"    ] .\n" + ""), "", RDFFormat.TURTLE);
+					"    ] ."), "", RDFFormat.TRIG);
 
-			assertTrue(Models.isomorphic(expected, actual));
+			Assertions.assertTrue(Models.isomorphic(expected, actual));
 
 		} finally {
 			shaclSail.shutDown();

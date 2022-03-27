@@ -61,7 +61,7 @@ public class TargetNodeMinCountEdgeCaseTests {
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
-			connection.add(new StringReader(shaclShapes), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(new StringReader(shaclShapes), "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			assertThrows(ShaclSailValidationException.class, () -> {
 				try {
 					connection.commit();
@@ -87,7 +87,7 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 
 			connection.begin();
-			connection.add(new StringReader(shaclShapes), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(new StringReader(shaclShapes), "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			assertThrows(ShaclSailValidationException.class, () -> {
 				try {
 					connection.commit();
@@ -113,7 +113,7 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 
 			connection.begin();
-			connection.add(new StringReader(shaclShapes), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(new StringReader(shaclShapes), "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			assertThrows(ShaclSailValidationException.class, () -> {
 				try {
 					connection.commit();
@@ -136,7 +136,7 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.begin();
 			connection.add(validPerson1, ssn, value1);
 			connection.add(validPerson1, ssn, value2);
-			connection.add(new StringReader(shaclShapes), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(new StringReader(shaclShapes), "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			assertThrows(ShaclSailValidationException.class, () -> {
 				try {
 					connection.commit();
@@ -164,7 +164,7 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 
 			connection.begin();
-			connection.add(new StringReader(shaclShapes), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(new StringReader(shaclShapes), "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 		} catch (Exception e) {
 			throw e.getCause();
@@ -187,7 +187,7 @@ public class TargetNodeMinCountEdgeCaseTests {
 			connection.commit();
 
 			connection.begin();
-			connection.add(new StringReader(shaclShapes), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(new StringReader(shaclShapes), "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.add(validPerson2, ssn, value1);
 			connection.add(validPerson2, ssn, value2);
 			connection.commit();

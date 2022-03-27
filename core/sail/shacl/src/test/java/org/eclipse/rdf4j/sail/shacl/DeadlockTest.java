@@ -38,7 +38,7 @@ public class DeadlockTest {
 
 			shaclSail.setParallelValidation(true);
 
-			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.ttl");
+			Utils.loadShapeData(shaclRepository, shaclPath + "shacl.trig");
 
 			try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 

@@ -85,7 +85,7 @@ public class ComplexLargeBenchmark {
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 
 		try {
-			repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 				connection.add(realData);
@@ -126,7 +126,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloading() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(false);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -152,7 +153,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloadingParallel() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -178,7 +180,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloadingParallelNoCache() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
@@ -204,7 +207,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloadingNonEmpty() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).disableValidation();
 			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
@@ -240,7 +244,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloadingNonEmptyParallel() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
@@ -273,7 +278,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloadingRevalidate() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -308,7 +314,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloadingRevalidateLowMem() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(false);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
@@ -343,7 +350,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloadingBulk() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -368,7 +376,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloadingBulkParallelCached() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(false);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
@@ -395,7 +404,8 @@ public class ComplexLargeBenchmark {
 	public void noPreloadingTransactionalValidationLimit() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(600000);
 
@@ -428,7 +438,7 @@ public class ComplexLargeBenchmark {
 		try {
 
 			SailRepository repository = new SailRepository(Utils
-					.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "complexBenchmark/shacl.ttl"));
+					.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "complexBenchmark/shacl.trig"));
 
 			((ShaclSail) repository.getSail()).setParallelValidation(true);
 			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
@@ -466,7 +476,8 @@ public class ComplexLargeBenchmark {
 	public void disabledValidationSail() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 			((ShaclSail) repository.getSail()).disableValidation();
 			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
@@ -491,7 +502,8 @@ public class ComplexLargeBenchmark {
 	public void disabledValidationTransaction() {
 
 		try {
-			SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			SailRepository repository = new SailRepository(
+					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {

@@ -101,7 +101,7 @@ public class OrDatatypeBenchmark {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclOrDatatype.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclOrDatatype.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
@@ -124,7 +124,7 @@ public class OrDatatypeBenchmark {
 	@Benchmark
 	public void shaclBulk() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclOrDatatype.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclOrDatatype.trig"));
 
 		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
 

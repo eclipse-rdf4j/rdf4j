@@ -32,6 +32,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 	private final On on;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
+	private final Resource[] dataGraph;
 
 	public enum On {
 		Subject,
@@ -39,7 +40,8 @@ public class ExternalFilterByPredicate implements PlanNode {
 	}
 
 	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent,
-			On on) {
+			On on, Resource[] dataGraph) {
+		this.dataGraph = dataGraph;
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
 		this.connection = connection;
@@ -76,14 +78,17 @@ public class ExternalFilterByPredicate implements PlanNode {
 				if (node.isResource() && on == On.Subject) {
 
 					return filterOnPredicates.stream()
-							.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true))
+							.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true,
+									dataGraph)
+							)
 							.findFirst()
 							.orElse(null);
 
 				} else if (on == On.Object) {
 
 					return filterOnPredicates.stream()
-							.filter(predicate -> connection.hasStatement(null, predicate, node, true))
+							.filter(predicate -> connection.hasStatement(null, predicate, node, true, dataGraph)
+							)
 							.findFirst()
 							.orElse(null);
 
@@ -182,22 +187,25 @@ public class ExternalFilterByPredicate implements PlanNode {
 		ExternalFilterByPredicate that = (ExternalFilterByPredicate) o;
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
 			return ((MemoryStoreConnection) connection).getSail()
-					.equals(((MemoryStoreConnection) that.connection).getSail())
+					.equals(((MemoryStoreConnection) that.connection).getSail()) &&
+					Arrays.equals(dataGraph, that.dataGraph)
 					&& filterOnPredicates.equals(that.filterOnPredicates) && parent.equals(that.parent)
 					&& on == that.on;
 
 		}
 
-		return connection.equals(that.connection) && filterOnPredicates.equals(that.filterOnPredicates)
+		return connection.equals(that.connection) && filterOnPredicates.equals(that.filterOnPredicates) &&
+				Arrays.equals(dataGraph, that.dataGraph)
 				&& parent.equals(that.parent) && on == that.on;
 	}
 
 	@Override
 	public int hashCode() {
 		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnPredicates, parent, on);
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnPredicates,
+					Arrays.hashCode(dataGraph), parent, on);
 
 		}
-		return Objects.hash(connection, filterOnPredicates, parent, on);
+		return Objects.hash(connection, filterOnPredicates, Arrays.hashCode(dataGraph), parent, on);
 	}
 }

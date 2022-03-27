@@ -61,6 +61,7 @@ public class ShaclTestWithoutRdfsReasoner extends AbstractShaclTest {
 		shaclSail.setDashDataShapes(true);
 		shaclSail.setPerformanceLogging(false);
 		shaclSail.setRdfsSubClassReasoning(false);
+		shaclSail.setShapesGraphs(SHAPE_GRAPHS);
 
 		repository.init();
 

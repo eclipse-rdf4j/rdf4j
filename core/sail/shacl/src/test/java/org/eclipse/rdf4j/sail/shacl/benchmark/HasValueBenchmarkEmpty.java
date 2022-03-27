@@ -86,7 +86,7 @@ public class HasValueBenchmarkEmpty {
 	public void shacl() throws Exception {
 
 		SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail("test-cases/hasValue/simple/shacl.ttl"));
+				Utils.getInitializedShaclSail("test-cases/hasValue/simple/shacl.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
@@ -109,7 +109,7 @@ public class HasValueBenchmarkEmpty {
 	public void shaclBulk() throws Exception {
 
 		SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail("test-cases/hasValue/simple/shacl.ttl"));
+				Utils.getInitializedShaclSail("test-cases/hasValue/simple/shacl.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);

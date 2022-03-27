@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
 import org.apache.commons.io.IOUtils;
@@ -21,6 +22,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -36,7 +38,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCountSnapshot() throws IOException, InterruptedException {
 		for (int i = 0; i < 10; i++) {
-			SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
+			SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.trig");
 
 			Sail sail = repo.getSail();
 //			((ShaclSail) sail).setGlobalLogValidationExecution(true);
@@ -47,7 +49,7 @@ public class SerializableTest {
 				connection.begin();
 
 				ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-//				Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+//				Rio.write(revalidate.asModel(), System.out, RDFFormat.TRIG);
 
 				assertTrue(revalidate.conforms());
 
@@ -62,7 +64,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCountSerializable() throws IOException, InterruptedException {
 
-		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
+		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.trig");
 
 		multithreadedMaxCountViolation(IsolationLevels.SERIALIZABLE, repo);
 
@@ -70,7 +72,7 @@ public class SerializableTest {
 			connection.begin();
 
 			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-//			Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+//			Rio.write(revalidate.asModel(), System.out, RDFFormat.TRIG);
 
 			assertTrue(revalidate.conforms());
 
@@ -83,7 +85,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCount2Serializable() throws IOException, InterruptedException {
 
-		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
+		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.trig");
 
 		multithreadedMaxCount2Violation(IsolationLevels.SERIALIZABLE, repo);
 
@@ -91,7 +93,7 @@ public class SerializableTest {
 			connection.begin();
 
 			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-//			Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+//			Rio.write(revalidate.asModel(), System.out, RDFFormat.TRIG);
 
 			assertTrue(revalidate.conforms());
 
@@ -104,7 +106,7 @@ public class SerializableTest {
 	@Test
 	public void testMaxCount2Snapshot() throws IOException, InterruptedException {
 
-		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.ttl");
+		SailRepository repo = Utils.getInitializedShaclRepository("shaclMax.trig");
 
 		multithreadedMaxCount2Violation(IsolationLevels.SNAPSHOT, repo);
 
@@ -112,7 +114,7 @@ public class SerializableTest {
 			connection.begin();
 
 			ValidationReport revalidate = ((ShaclSailConnection) connection.getSailConnection()).revalidate();
-//			Rio.write(revalidate.asModel(), System.out, RDFFormat.TURTLE);
+//			Rio.write(revalidate.asModel(), System.out, RDFFormat.TRIG);
 
 			assertTrue(revalidate.conforms());
 
@@ -126,9 +128,10 @@ public class SerializableTest {
 	public void serializableParallelValidation() throws Throwable {
 
 		SailRepository repo = Utils
-				.getInitializedShaclRepository("test-cases/complex/targetShapeAndQualifiedShape/shacl.ttl");
+				.getInitializedShaclRepository("test-cases/complex/targetShapeAndQualifiedShape/shacl.trig");
 
 		ShaclSail sail = (ShaclSail) repo.getSail();
+		sail.setShapesGraphs(Set.of(RDF4J.NIL));
 
 		sail.setParallelValidation(true);
 

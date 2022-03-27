@@ -19,11 +19,18 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
@@ -50,6 +57,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	public final static long VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT = 1_000_000;
 	public final static long VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT = 1_000;
 	public final static long TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT = 500_000;
+	public final static Set<IRI> SHAPES_GRAPHS_DEFAULT = Set.of(RDF4J.SHACL_SHAPE_GRAPH);
 
 	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;
 	private boolean logValidationPlans = LOG_VALIDATION_PLANS_DEFAULT;
@@ -65,6 +73,7 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 	private long validationResultsLimitTotal = VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT;
 	private long validationResultsLimitPerConstraint = VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT;
 	private long transactionalValidationLimit = TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT;
+	private Set<IRI> shapesGraphs = SHAPES_GRAPHS_DEFAULT;
 
 	public ShaclSailConfig() {
 		super(ShaclSailFactory.SAIL_TYPE);
@@ -190,6 +199,14 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 		this.transactionalValidationLimit = transactionalValidationLimit;
 	}
 
+	public Set<IRI> getShapesGraphs() {
+		return shapesGraphs;
+	}
+
+	public void setShapesGraphs(Set<IRI> shapesGraphs) {
+		this.shapesGraphs = shapesGraphs;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -215,6 +232,11 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 
 		m.add(implNode, ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT,
 				literal(getTransactionalValidationLimit()));
+
+		for (IRI shapesGraph : shapesGraphs) {
+			m.add(implNode, ShaclSailSchema.SHAPES_GRAPH, shapesGraph);
+		}
+
 		return implNode;
 	}
 
@@ -266,6 +288,20 @@ public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
 			Models.objectLiteral(
 					m.getStatements(implNode, ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT, null))
 					.ifPresent(l -> setTransactionalValidationLimit(l.longValue()));
+
+			if (m.contains(implNode, ShaclSailSchema.SHAPES_GRAPH, null)) {
+				setShapesGraphs(StreamSupport
+						.stream(m.getStatements(implNode, ShaclSailSchema.SHAPES_GRAPH, null).spliterator(), false)
+						.peek(statement -> {
+							if (!statement.getObject().isIRI()) {
+								throw new IllegalArgumentException("Expected IRI but found "
+										+ statement.getObject().getClass().getSimpleName() + " at " + statement);
+							}
+						})
+						.map(Statement::getObject)
+						.map(o -> ((IRI) o))
+						.collect(Collectors.toUnmodifiableSet()));
+			}
 
 		} catch (IllegalArgumentException e) {
 			throw new SailConfigException("error parsing Sail configuration", e);

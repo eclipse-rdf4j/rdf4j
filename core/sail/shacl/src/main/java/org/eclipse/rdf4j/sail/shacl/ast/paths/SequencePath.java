@@ -17,24 +17,24 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class SequencePath extends Path {
 
 	private final List<Path> sequence;
 
-	public SequencePath(Resource id, RepositoryConnection connection) {
+	public SequencePath(Resource id, ShapeSource shapeSource) {
 		super(id);
-		sequence = ShaclAstLists.toList(connection, id, Resource.class)
+		sequence = ShaclAstLists.toList(shapeSource, id, Resource.class)
 				.stream()
-				.map(p -> Path.buildPath(connection, p))
+				.map(p -> Path.buildPath(shapeSource, p))
 				.collect(Collectors.toList());
 
 	}
@@ -58,7 +58,8 @@ public class SequencePath extends Path {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNodeWrapper planNodeWrapper) {
 		throw new ShaclUnsupportedException();
 	}
 

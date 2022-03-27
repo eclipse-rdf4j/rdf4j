@@ -76,7 +76,7 @@ public class UniqueLangBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclUniqueLang.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclUniqueLang.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
@@ -93,7 +93,7 @@ public class UniqueLangBenchmarkEmpty {
 	@Benchmark
 	public void shacBulk() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclUniqueLang.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclUniqueLang.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);

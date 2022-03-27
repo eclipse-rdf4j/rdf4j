@@ -54,7 +54,7 @@ public class TargetShapeBenchmark {
 	public void shacl() throws Exception {
 
 		SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail("benchmark/targetShape/shapes.ttl"));
+				Utils.getInitializedShaclSail("benchmark/targetShape/shapes.trig"));
 
 		((ShaclSail) repository.getSail()).setDashDataShapes(true);
 		((ShaclSail) repository.getSail()).setEclipseRdf4jShaclExtensions(true);
@@ -63,7 +63,7 @@ public class TargetShapeBenchmark {
 
 			connection.begin(IsolationLevels.SNAPSHOT);
 			connection.add(TargetShapeBenchmark.class.getClassLoader().getResource("benchmark/targetShape/data.ttl"),
-					RDFFormat.TURTLE);
+					RDFFormat.TRIG);
 			connection.commit();
 		}
 

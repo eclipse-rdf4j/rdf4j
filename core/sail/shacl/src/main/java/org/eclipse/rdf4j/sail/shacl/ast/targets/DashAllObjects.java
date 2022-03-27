@@ -18,8 +18,6 @@ import org.eclipse.rdf4j.model.vocabulary.DASH;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterTargetIsObject;
@@ -27,6 +25,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class DashAllObjects extends Target {
 
@@ -50,15 +50,16 @@ public class DashAllObjects extends Target {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		return getAddedRemovedInner(connectionsGroup, scope, connectionsGroup.getAddedStatements());
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			ConstraintComponent.Scope scope) {
+		return getAddedRemovedInner(connectionsGroup.getAddedStatements(), dataGraph, scope);
 	}
 
-	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
-			SailConnection connection) {
+	private PlanNode getAddedRemovedInner(SailConnection connection, Resource[] dataGraph,
+			ConstraintComponent.Scope scope) {
 
 		return Unique.getInstance(new UnorderedSelect(connection, null,
-				null, null, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope)), false);
+				null, null, dataGraph, UnorderedSelect.Mapper.ObjectScopedMapper.getFunction(scope)), false);
 
 	}
 
@@ -78,8 +79,9 @@ public class DashAllObjects extends Target {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
-		return new ExternalFilterTargetIsObject(connectionsGroup.getBaseConnection(), parent)
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNode parent) {
+		return new ExternalFilterTargetIsObject(connectionsGroup.getBaseConnection(), dataGraph, parent)
 				.getTrueNode(UnBufferedPlanNode.class);
 	}
 

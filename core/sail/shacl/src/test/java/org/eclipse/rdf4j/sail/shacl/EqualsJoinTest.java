@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
@@ -31,6 +32,7 @@ import org.junit.jupiter.api.Test;
  * @author Håvard Ottestad
  */
 public class EqualsJoinTest {
+	public static final Resource[] CONTEXTS = { null };
 
 	@Test
 	public void testSimple01() {
@@ -130,9 +132,9 @@ public class EqualsJoinTest {
 						.collect(Collectors.toList()))
 				.map(v -> {
 					if (v.size() > 1) {
-						return new ValidationTuple(v, ConstraintComponent.Scope.propertyShape, true);
+						return new ValidationTuple(v, ConstraintComponent.Scope.propertyShape, true, CONTEXTS);
 					} else {
-						return new ValidationTuple(v, ConstraintComponent.Scope.propertyShape, false);
+						return new ValidationTuple(v, ConstraintComponent.Scope.propertyShape, false, CONTEXTS);
 					}
 				})
 				.collect(Collectors.toSet());

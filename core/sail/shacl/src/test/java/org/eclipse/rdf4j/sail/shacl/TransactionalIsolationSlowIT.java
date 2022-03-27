@@ -33,7 +33,7 @@ import org.junit.jupiter.api.parallel.Isolated;
 public class TransactionalIsolationSlowIT {
 
 	@Test
-	public void testIsolation2_multithreaded_READ_COMMITTED() throws Throwable {
+	public void testIsolationMultithreaded_READ_COMMITTED() throws Throwable {
 		for (int i = 0; i < 1000; i++) {
 			ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
@@ -117,7 +117,7 @@ public class TransactionalIsolationSlowIT {
 										" ."));
 
 						try {
-							connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+							connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 						} catch (IOException e) {
 							throw new IllegalStateException();
 						}
@@ -154,7 +154,7 @@ public class TransactionalIsolationSlowIT {
 						WriterConfig writerConfig = new WriterConfig();
 						writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
 						writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-						Rio.write(statements, System.out, RDFFormat.TURTLE, writerConfig);
+						Rio.write(statements, System.out, RDFFormat.TRIG, writerConfig);
 					}
 
 					assertTrue(validationReport.conforms());
@@ -169,7 +169,7 @@ public class TransactionalIsolationSlowIT {
 	}
 
 	@Test
-	public void testIsolation2_multithreaded_SNAPSHOT() throws Throwable {
+	public void testIsolationMultithreaded_SNAPSHOT() throws Throwable {
 		for (int i = 0; i < 1000; i++) {
 			ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
@@ -254,7 +254,7 @@ public class TransactionalIsolationSlowIT {
 										" ."));
 
 						try {
-							connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+							connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 						} catch (IOException e) {
 							throw new IllegalStateException();
 						}
@@ -291,7 +291,7 @@ public class TransactionalIsolationSlowIT {
 						WriterConfig writerConfig = new WriterConfig();
 						writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
 						writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-						Rio.write(statements, System.out, RDFFormat.TURTLE, writerConfig);
+						Rio.write(statements, System.out, RDFFormat.TRIG, writerConfig);
 					}
 
 					assertTrue(validationReport.conforms());
@@ -305,21 +305,6 @@ public class TransactionalIsolationSlowIT {
 		}
 	}
 
-	private void add(SailRepositoryConnection connection, String data) throws IOException {
-		data = String.join("\n", "",
-				"@prefix ex: <http://example.com/ns#> .",
-				"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-				"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-				data);
-
-		connection.begin();
-
-		StringReader stringReader = new StringReader(data);
-
-		connection.add(stringReader, "", RDFFormat.TURTLE);
-		connection.commit();
-	}
-
 	private void addInTransaction(SailRepositoryConnection connection, String data) {
 		data = String.join("\n", "",
 				"@prefix ex: <http://example.com/ns#> .",
@@ -330,7 +315,7 @@ public class TransactionalIsolationSlowIT {
 		StringReader stringReader = new StringReader(data);
 
 		try {
-			connection.add(stringReader, "", RDFFormat.TURTLE);
+			connection.add(stringReader, "", RDFFormat.TRIG);
 		} catch (IOException e) {
 			throw new IllegalStateException();
 		}

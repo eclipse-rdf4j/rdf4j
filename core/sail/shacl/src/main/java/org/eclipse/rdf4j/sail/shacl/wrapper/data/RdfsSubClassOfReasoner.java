@@ -1,12 +1,12 @@
 /*******************************************************************************
- * Copyright (c) 2018 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ ******************************************************************************/
 
-package org.eclipse.rdf4j.sail.shacl;
+package org.eclipse.rdf4j.sail.shacl.wrapper.data;
 
 import static org.eclipse.rdf4j.model.util.Statements.statement;
 
@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -145,7 +146,7 @@ public class RdfsSubClassOfReasoner {
 		return iris != null ? iris : Collections.emptySet();
 	}
 
-	static RdfsSubClassOfReasoner createReasoner(ShaclSailConnection shaclSailConnection) {
+	public static RdfsSubClassOfReasoner createReasoner(ShaclSailConnection shaclSailConnection) {
 		long before = 0;
 		if (shaclSailConnection.sail.isPerformanceLogging()) {
 			before = System.currentTimeMillis();

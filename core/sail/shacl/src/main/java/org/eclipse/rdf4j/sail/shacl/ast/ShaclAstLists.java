@@ -13,15 +13,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 /**
  * Internal utility methods for the SHACL AST to quickly convert between java collections and RDF collections. These
@@ -58,45 +56,34 @@ public class ShaclAstLists {
 		}
 	}
 
-	private static List<Value> toList(RepositoryConnection connection, Resource head) {
+	private static List<Value> toList(ShapeSource shapeSource, Resource head) {
 		List<Value> ret = new ArrayList<>();
-		while (!head.equals(RDF.NIL)) {
-			try (Stream<Statement> stream = connection.getStatements(head, RDF.FIRST, null).stream()) {
-				Value value = stream.map(Statement::getObject).findAny().get();
-				ret.add(value);
-			}
-
-			try (Stream<Statement> stream = connection.getStatements(head, RDF.REST, null).stream()) {
-				head = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
-			}
-
+		while (!RDF.NIL.equals(head)) {
+			Value value = shapeSource.getRdfFirst(head);
+			ret.add(value);
+			head = shapeSource.getRdfRest(head);
 		}
 
 		return ret;
 
 	}
 
-	public static <T extends Value> List<T> toList(RepositoryConnection connection, Resource head, Class<T> type) {
+	public static <T extends Value> List<T> toList(ShapeSource shapeSource, Resource head, Class<T> type) {
 		if (type == Value.class) {
-			return (List<T>) toList(connection, head);
+			return (List<T>) toList(shapeSource, head);
 		}
 
 		List<T> ret = new ArrayList<>();
-		while (!head.equals(RDF.NIL)) {
-			try (Stream<Statement> stream = connection.getStatements(head, RDF.FIRST, null).stream()) {
-				Value value = stream.map(Statement::getObject).findAny().get();
-				if (type.isInstance(value)) {
-					ret.add(((T) value));
-				} else {
-					throw new IllegalStateException("RDF list should contain only type " + type.getSimpleName()
-							+ ", but found " + value.getClass().getSimpleName());
-				}
+		while (!RDF.NIL.equals(head)) {
+			Value value = shapeSource.getRdfFirst(head);
+			if (type.isInstance(value)) {
+				ret.add(((T) value));
+			} else {
+				throw new IllegalStateException("RDF list should contain only type " + type.getSimpleName()
+						+ ", but found " + value.getClass().getSimpleName());
 			}
 
-			try (Stream<Statement> stream = connection.getStatements(head, RDF.REST, null).stream()) {
-				head = stream.map(Statement::getObject).map(v -> (Resource) v).findAny().get();
-			}
-
+			head = shapeSource.getRdfRest(head);
 		}
 
 		return ret;
