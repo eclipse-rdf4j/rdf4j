@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -251,7 +252,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			@Override
 			public void meet(Var node) throws QueryEvaluationException {
 				super.meet(node);
-				node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
+				if (!(node.isConstant() && node.getParentNode() instanceof StatementPattern)) {
+					node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
+				}
 			}
 
 			@Override
