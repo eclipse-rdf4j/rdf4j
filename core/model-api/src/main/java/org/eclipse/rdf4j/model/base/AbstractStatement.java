@@ -37,8 +37,14 @@ public abstract class AbstractStatement implements Statement {
 	}
 
 	@Override
-	public int hashCode() { // TODO inline Objects.hash() to avoid array creation?
-		return Objects.hash(getSubject(), getPredicate(), getObject(), getContext());
+	public int hashCode() {
+		// Inlined Objects.hash(getSubject(), getPredicate(), getObject(), getContext()) to avoid array creationg
+		int result = 1;
+		result = 31 * result + (getSubject() == null ? 0 : getSubject().hashCode());
+		result = 31 * result + (getPredicate() == null ? 0 : getPredicate().hashCode());
+		result = 31 * result + (getObject() == null ? 0 : getObject().hashCode());
+		result = 31 * result + (getContext() == null ? 0 : getContext().hashCode());
+		return result;
 	}
 
 	@Override
