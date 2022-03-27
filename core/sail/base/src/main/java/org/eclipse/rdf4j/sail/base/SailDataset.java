@@ -111,8 +111,14 @@ public interface SailDataset extends SailClosable {
 		throw new SailException("RDF-star triple retrieval not supported by this store");
 	}
 
-	default boolean isEmpty() {
-		return !hasStatement(null, null, null);
+	/**
+	 * Probabilistic method that returns true if the sail dataset is empty and false if it is not empty, but may also
+	 * return false when the sail dataset is empty.
+	 * 
+	 * @return
+	 */
+	default boolean isDefinitelyEmpty() {
+		return false;
 	}
 
 }

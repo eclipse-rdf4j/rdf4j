@@ -1079,6 +1079,10 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
+		@Override
+		public boolean isDefinitelyEmpty() {
+			return !explicit && snapshot >= 0 && !mayHaveInferred;
+		}
 	}
 
 	private SailException convertToSailException(InterruptedException e) {

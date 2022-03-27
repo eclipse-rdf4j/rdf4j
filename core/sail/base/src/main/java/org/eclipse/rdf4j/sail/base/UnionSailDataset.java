@@ -41,11 +41,11 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	public static SailDataset getInstance(SailDataset dataset1, SailDataset dataset2) {
-		if (dataset1.isEmpty()) {
+		if (dataset1.isDefinitelyEmpty()) {
 			dataset1.close();
 			return dataset2;
 		}
-		if (dataset2.isEmpty()) {
+		if (dataset2.isDefinitelyEmpty()) {
 			dataset2.close();
 			return dataset1;
 		}
@@ -104,8 +104,8 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
-	public boolean isEmpty() {
-		return dataset1.isEmpty() && dataset2.isEmpty();
+	public boolean isDefinitelyEmpty() {
+		return dataset1.isDefinitelyEmpty() && dataset2.isDefinitelyEmpty();
 	}
 
 }
