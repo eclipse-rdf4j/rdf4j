@@ -384,7 +384,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 		Changeset changeset = new Changeset() {
 			@Override
 			public void flush() throws SailException {
-
+				throw new UnsupportedOperationException();
 			}
 
 			@Override
