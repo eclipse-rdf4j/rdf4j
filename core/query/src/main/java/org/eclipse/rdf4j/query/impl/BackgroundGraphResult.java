@@ -69,15 +69,19 @@ public class BackgroundGraphResult
 		try {
 			super.handleClose();
 		} finally {
-			queue.done();
+			try {
+				queue.done();
+			} finally {
+				try {
+					finishedParsing.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				} finally {
+					queue.checkException();
+				}
+			}
 		}
-		try {
-			finishedParsing.await();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-		} finally {
-			queue.checkException();
-		}
+
 	}
 
 	@Override

@@ -213,26 +213,21 @@ public abstract class FedXBaseTest {
 	protected TupleQueryResult readExpectedTupleQueryResult(String resultFile) throws Exception {
 		QueryResultFormat tqrFormat = QueryResultIO.getParserFormatForFileName(resultFile).get();
 
-		if (tqrFormat != null) {
-			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
-			if (in == null) {
-				throw new IOException("File could not be opened: " + resultFile);
-			}
+		InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
+		if (in == null) {
+			throw new IOException("File could not be opened: " + resultFile);
+		}
 
-			try {
-				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat);
+		try {
+			TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat);
 
-				TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
-				parser.setQueryResultHandler(qrBuilder);
+			TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
+			parser.setQueryResultHandler(qrBuilder);
 
-				parser.parseQueryResult(in);
-				return qrBuilder.getQueryResult();
-			} finally {
-				in.close();
-			}
-		} else {
-			Set<Statement> resultGraph = readExpectedGraphQueryResult(resultFile);
-			return DAWGTestResultSetUtil.toTupleQueryResult(resultGraph);
+			parser.parseQueryResult(in);
+			return qrBuilder.getQueryResult();
+		} finally {
+			in.close();
 		}
 	}
 
@@ -246,25 +241,18 @@ public abstract class FedXBaseTest {
 	protected Set<Statement> readExpectedGraphQueryResult(String resultFile) throws Exception {
 		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFile).get();
 
-		if (rdfFormat != null) {
-			RDFParser parser = Rio.createParser(rdfFormat);
-			parser.setPreserveBNodeIDs(true);
-			parser.setValueFactory(SimpleValueFactory.getInstance());
+		RDFParser parser = Rio.createParser(rdfFormat);
+		parser.setPreserveBNodeIDs(true);
+		parser.setValueFactory(SimpleValueFactory.getInstance());
 
-			Set<Statement> result = new LinkedHashSet<>();
-			parser.setRDFHandler(new StatementCollector(result));
+		Set<Statement> result = new LinkedHashSet<>();
+		parser.setRDFHandler(new StatementCollector(result));
 
-			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
-			try {
-				parser.parse(in, resultFile);
-			} finally {
-				in.close();
-			}
-
-			return result;
-		} else {
-			throw new RuntimeException("Unable to determine file type of results file");
+		try (InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile)) {
+			parser.parse(in, resultFile);
 		}
+
+		return result;
 	}
 
 	protected boolean readExpectedBooleanQueryResult(String resultFile) throws Exception {
@@ -273,16 +261,8 @@ public abstract class FedXBaseTest {
 						resultFile)
 				.get();
 
-		if (bqrFormat != null) {
-			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
-			try {
-				return QueryResultIO.parseBoolean(in, bqrFormat);
-			} finally {
-				in.close();
-			}
-		} else {
-			Set<Statement> resultGraph = readExpectedGraphQueryResult(resultFile);
-			return DAWGTestResultSetUtil.toBooleanQueryResult(resultGraph);
+		try (InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile)) {
+			return QueryResultIO.parseBoolean(in, bqrFormat);
 		}
 	}
 
@@ -387,7 +367,7 @@ public abstract class FedXBaseTest {
 				}
 				message.append(" =======================\n");
 
-				System.out.print(message.toString());
+				System.out.print(message);
 			}
 
 			log.error(message.toString());

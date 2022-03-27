@@ -48,6 +48,7 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 		if (cancelled) {
 			throw new QueryEvaluationException("Evaluation has been cancelled");
 		}
+		assert closableIter == null;
 		closableIter = performTaskInternal();
 
 		if (cancelled) {

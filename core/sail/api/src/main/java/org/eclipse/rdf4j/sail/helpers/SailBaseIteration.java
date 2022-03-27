@@ -34,6 +34,9 @@ class SailBaseIteration<T, E extends Exception>
 
 	@Override
 	public boolean hasNext() throws E {
+		if (isClosed()) {
+			return false;
+		}
 		if (!connection.isOpen()) {
 			throw new IllegalStateException("Iteration in use after connection has been closed!");
 		}

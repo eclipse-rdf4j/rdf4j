@@ -74,7 +74,9 @@ public abstract class JoinExecutorBase<T> extends ParallelExecutorBase<T> {
 		try {
 			super.handleClose();
 		} finally {
-			leftIter.close();
+			if (leftIter != null) {
+				leftIter.close();
+			}
 		}
 	}
 

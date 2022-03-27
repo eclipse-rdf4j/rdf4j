@@ -91,9 +91,9 @@ public abstract class TimeLimitIteration<E, X extends Exception>
 	@Override
 	protected final void handleClose() throws X {
 		try {
-			interruptTask.cancel();
-		} finally {
 			super.handleClose();
+		} finally {
+			interruptTask.cancel();
 		}
 	}
 

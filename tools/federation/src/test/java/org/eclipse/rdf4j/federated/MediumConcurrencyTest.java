@@ -12,12 +12,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -44,9 +46,11 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	}
 
 	@AfterAll
-	public static void afterClass() {
+	public static void afterClass() throws InterruptedException {
 		if (executor != null) {
 			executor.shutdownNow();
+			executor.awaitTermination(30, TimeUnit.SECONDS);
+			executor = null;
 		}
 	}
 
@@ -54,17 +58,21 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	public void queryMix() throws Throwable {
 
 		/* test select query retrieving all persons (2 endpoints) */
-		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
+		prepareTest(List.of("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
 
 		final int MAX_QUERIES = 500;
 		final Random rand = new Random(12345);
 		final List<Future<String>> futures = new ArrayList<>();
 
+		CountDownLatch countDownLatch = new CountDownLatch(1);
+
 		for (int i = 0; i < MAX_QUERIES; i++) {
-			Future<String> f = submit(queries[rand.nextInt(queries.length)], i);
+			Future<String> f = submit(queries[rand.nextInt(queries.length)], i, countDownLatch);
 			futures.add(f);
 		}
+
+		countDownLatch.countDown();
 
 		try {
 			final String message = Assertions.assertTimeoutPreemptively(Duration.ofSeconds(30), () -> {
@@ -75,7 +83,7 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 			});
 			Assertions.assertEquals("OK", message);
 		} catch (Throwable t) {
-			futures.stream().forEach(future -> future.cancel(true));
+			futures.forEach(future -> future.cancel(true));
 			throw t;
 		}
 
@@ -107,9 +115,10 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 		System.out.println("Done");
 	}
 
-	protected Future<String> submit(final String query, final int queryId) {
+	protected Future<String> submit(final String query, final int queryId, CountDownLatch countDownLatch) {
 		return executor.submit(() -> {
-			log.info("Executing query " + queryId + ": " + query);
+			countDownLatch.await();
+//			log.info("Executing query " + queryId + ": " + query);
 			execute("/tests/medium/" + query + ".rq", "/tests/medium/" + query + ".srx", false);
 			// uncomment to simulate canceling case
 			// executeReadPartial("/tests/medium/" + query + ".rq");
@@ -122,8 +131,6 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	 * Execute a testcase, both queryFile and expectedResultFile must be files
 	 *
 	 * @param queryFile
-	 * @param expectedResultFile
-	 * @param checkOrder
 	 * @throws Exception
 	 */
 	protected void executeReadPartial(String queryFile)

@@ -13,7 +13,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
@@ -32,7 +31,7 @@ import com.google.common.collect.Lists;
 
 /**
  * Specialized {@link DescribeIteration} for evaluation of DESCRIBE queries in the federation. ‚
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -72,26 +71,36 @@ public class FederatedDescribeIteration extends DescribeIteration {
 		// Note: for DESCRIBE we currently do not perform any extra source selection,
 		// i.e. we assume all members to be relevant for describing the resource
 		StatementSourcePattern stmtSourcePattern = new StatementSourcePattern(pattern, queryInfo);
-		allSources.forEach(source -> stmtSourcePattern.addStatementSource(source));
+		allSources.forEach(stmtSourcePattern::addStatementSource);
+		CloseableIteration<BindingSet, QueryEvaluationException> res = null;
+		try {
+			res = stmtSourcePattern.evaluate(parentBindings);
 
-		CloseableIteration<BindingSet, QueryEvaluationException> res = stmtSourcePattern.evaluate(parentBindings);
+			// we need to make sure that subject or object are added to the binding set
+			// Note: FedX uses prepared SELECT queries to evaluate a statement pattern and
+			// thus does not add bound values to the result bindingset
+			return new ConvertingIteration<>(res) {
 
-		// we need to make sure that subject or object are added to the binding set
-		// Note: FedX uses prepared SELECT queries to evaluate a statement pattern and
-		// thus does not add bound values to the result bindingset
-		return new ConvertingIteration<>(res) {
-
-			@Override
-			protected BindingSet convert(BindingSet sourceObject) throws QueryEvaluationException {
-				QueryBindingSet bs = new QueryBindingSet(sourceObject);
-				if (subject != null && !bs.hasBinding(VARNAME_SUBJECT)) {
-					bs.addBinding(VARNAME_SUBJECT, subject);
+				@Override
+				protected BindingSet convert(BindingSet sourceObject) throws QueryEvaluationException {
+					QueryBindingSet bs = new QueryBindingSet(sourceObject);
+					if (subject != null && !bs.hasBinding(VARNAME_SUBJECT)) {
+						bs.addBinding(VARNAME_SUBJECT, subject);
+					}
+					if (object != null && !bs.hasBinding(VARNAME_OBJECT)) {
+						bs.addBinding(VARNAME_OBJECT, object);
+					}
+					return bs;
 				}
-				if (object != null && !bs.hasBinding(VARNAME_OBJECT)) {
-					bs.addBinding(VARNAME_OBJECT, object);
-				}
-				return bs;
+			};
+		} catch (Throwable t) {
+			if (res != null) {
+				res.close();
 			}
-		};
+			if (t instanceof RuntimeException) {
+				throw t;
+			}
+			throw t;
+		}
 	}
 }

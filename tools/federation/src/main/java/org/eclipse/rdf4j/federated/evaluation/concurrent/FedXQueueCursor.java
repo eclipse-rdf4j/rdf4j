@@ -61,6 +61,8 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 	protected void handleClose() throws QueryEvaluationException {
 
 		try {
+			super.handleClose();
+		} finally {
 			// consume all remaining elements from the queue and make sure to close them
 			// Note: unfortunately we cannot access "afterLast" of the super class
 			// => thus have to make a check whether the polled object is actually a
@@ -80,8 +82,6 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 				take = queueRef.poll();
 			}
 			done(); // re-add after-last
-		} finally {
-			super.handleClose();
 		}
 	}
 

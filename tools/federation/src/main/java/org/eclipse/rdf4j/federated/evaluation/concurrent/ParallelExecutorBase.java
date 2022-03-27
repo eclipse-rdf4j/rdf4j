@@ -170,7 +170,9 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	protected void handleClose() throws QueryEvaluationException {
 
 		try {
-			rightQueue.close();
+			if (rightQueue != null) {
+				rightQueue.close();
+			}
 		} finally {
 
 			if (rightIter != null) {
