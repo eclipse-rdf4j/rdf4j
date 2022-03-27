@@ -144,7 +144,9 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 						throw new UndeclaredThrowableException(collectedExceptions.get(0));
 					}
 				} finally {
-					currentIter.close();
+					if (currentIter != null) {
+						currentIter.close();
+					}
 				}
 			}
 		}
