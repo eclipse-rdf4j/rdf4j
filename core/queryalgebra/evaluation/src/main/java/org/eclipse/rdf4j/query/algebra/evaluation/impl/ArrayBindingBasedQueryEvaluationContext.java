@@ -251,9 +251,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			@Override
 			public void meet(Var node) throws QueryEvaluationException {
 				super.meet(node);
-				if (!node.isConstant()) {
-					node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
-				}
+				node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
 			}
 
 			@Override
