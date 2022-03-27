@@ -13,3 +13,19 @@ rsx:targetShape
 	rdfs:domain sh:Shape ;
 	rdfs:range sh:Shape ;
 	rdfs:isDefinedBy rsx: .
+
+
+rsx:dataGraph
+	a rdf:Property ;
+	rdfs:label "data graph"@en ;
+	rdfs:comment "The data graph(s) considered by the SHACL validator when it produced this validation result."@en ;
+	rdfs:domain sh:ValidationResult ;
+	rdfs:isDefinedBy rsx: .
+
+
+rsx:shapesGraph
+	a rdf:Property ;
+	rdfs:label "shapes graph"@en ;
+	rdfs:comment "The shape graph(s) used to retrieve the source shape."@en ;
+	rdfs:domain sh:ValidationResult ;
+	rdfs:isDefinedBy rsx: .
