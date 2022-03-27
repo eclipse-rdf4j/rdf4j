@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.extensiblestore.compliance;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleStoreImplForTests;
+import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
 import org.junit.runners.Parameterized;
 
 public class ExtensibleStoreConnectionTest extends RepositoryConnectionTest {

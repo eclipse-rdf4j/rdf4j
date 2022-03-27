@@ -15,13 +15,13 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 public interface InterceptingRepositoryConnection extends RepositoryConnection {
 
 	/**
-	 * Registers a <tt>RepositoryConnectionInterceptor</tt> that will receive notifications of operations that are
+	 * Registers a <var>RepositoryConnectionInterceptor</var> that will receive notifications of operations that are
 	 * performed on this connection.
 	 */
 	void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionInterceptor</tt> from this connection.
+	 * Removes a registered <var>RepositoryConnectionInterceptor</var> from this connection.
 	 */
 	void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
 

@@ -21,11 +21,11 @@ public class ProxyRepositorySchema {
 
 	/**
 	 * The {@link org.eclipse.rdf4j.repository.sail.ProxyRepository} schema namespace (
-	 * <tt>http://www.openrdf.org/config/repository/proxy#</tt>).
+	 * <var>http://www.openrdf.org/config/repository/proxy#</var>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/proxy#";
 
-	/** <tt>http://www.openrdf.org/config/repository/proxy#proxiedID</tt> */
+	/** <var>http://www.openrdf.org/config/repository/proxy#proxiedID</var> */
 	public final static IRI PROXIED_ID;
 
 	static {

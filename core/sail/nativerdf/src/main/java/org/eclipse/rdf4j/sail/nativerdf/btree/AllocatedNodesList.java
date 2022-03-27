@@ -109,7 +109,7 @@ class AllocatedNodesList implements Closeable {
 	/**
 	 * Deletes the allocated nodes file.
 	 *
-	 * @return <tt>true</tt> if the file was deleted.
+	 * @return <var>true</var> if the file was deleted.
 	 */
 	public synchronized boolean delete() throws IOException {
 		close(false);

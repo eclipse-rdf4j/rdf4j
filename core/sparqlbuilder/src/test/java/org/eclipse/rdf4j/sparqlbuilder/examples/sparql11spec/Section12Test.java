@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.SubSelect;
+import org.junit.Assert;
 import org.junit.Test;
 
 public class Section12Test extends BaseExamples {
@@ -26,15 +27,25 @@ public class Section12Test extends BaseExamples {
 
 		// using this method of variable creation, as ?y and ?minName will be
 		// used in both the outer and inner queries
-		Variable y = SparqlBuilder.var("y"), minName = SparqlBuilder.var("minName");
+		Variable y = SparqlBuilder.var("y"), minName = SparqlBuilder.var("minName"), name = SparqlBuilder.var("name");
 
 		SubSelect sub = GraphPatterns.select();
-		Variable name = sub.var();
 		sub.select(y, Expressions.min(name).as(minName)).where(y.has(base.iri("name"), name)).groupBy(y);
 
 		query.prefix(base, base) // SparqlBuilder even fixes typos for you ;)
 				.select(y, minName)
 				.where(base.iri("alice").has(base.iri("knows"), y), sub);
-		p();
+		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"PREFIX : <http://people.example/>\n"
+						+ "SELECT ?y ?minName\n"
+						+ "WHERE {\n"
+						+ "  :alice :knows ?y .\n"
+						+ "  {\n"
+						+ "    SELECT ?y (MIN(?name) AS ?minName)\n"
+						+ "    WHERE {\n"
+						+ "      ?y :name ?name .\n"
+						+ "    } GROUP BY ?y\n"
+						+ "  }\n"
+						+ "}"));
 	}
 }

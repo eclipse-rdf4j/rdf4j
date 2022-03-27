@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model;
 
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.testsuite.model.ModelTest;
 
 /**
  * @author Peter Ansell

@@ -1,81 +1,143 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Distribution License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
+ *  All rights reserved. This program and the accompanying materials
+ *  are made available under the terms of the Eclipse Distribution License v1.0
+ *  which accompanies this distribution, and is available at
+ *  http://www.eclipse.org/org/documents/edl-v10.php.
+ ******************************************************************************/
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.StampedLock;
+
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockCleaner;
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockMonitoring;
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockTracking;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
- * A lock manager for exclusive locks.
+ * A simple non-reentrant lock.
  *
- * @author Arjohn Kampman
- * @author James Leigh
+ * @author Håvard M. Ottestad
  */
 public class ExclusiveLockManager {
 
-	/*
-	 * ----------- Variables -----------
-	 */
+	private final static Logger logger = LoggerFactory.getLogger(ExclusiveLockManager.class);
 
-	private final LockManager lock;
+	// the underlying lock object
+	final StampedLock lock = new StampedLock();
 
-	/*
-	 * -------------- Constructors --------------
-	 */
+	private final int waitToCollect;
 
-	/**
-	 * Creates an ExclusiveLockManager.
-	 */
+	LockMonitoring lockMonitoring;
+
 	public ExclusiveLockManager() {
 		this(false);
 	}
 
-	/**
-	 * Creates an ExclusiveLockManager.
-	 *
-	 * @param trackLocks If create stack traces should be logged
-	 */
 	public ExclusiveLockManager(boolean trackLocks) {
-		this.lock = new LockManager(trackLocks || Properties.lockTrackingEnabled());
+		this(trackLocks, LockMonitoring.INITIAL_WAIT_TO_COLLECT);
 	}
 
-	/*
-	 * --------- Methods ---------
-	 */
+	public ExclusiveLockManager(boolean trackLocks, int collectionFrequency) {
 
-	/**
-	 * Gets the exclusive lock, if available. This method will return <tt>null</tt> if the exclusive lock is not
-	 * immediately available.
-	 */
-	public Lock tryExclusiveLock() {
-		if (lock.isActiveLock()) {
+		this.waitToCollect = collectionFrequency;
+
+		if (trackLocks || Properties.lockTrackingEnabled()) {
+
+			lockMonitoring = new LockTracking(
+					true,
+					"ExclusiveLockManager",
+					LoggerFactory.getLogger(this.getClass()),
+					waitToCollect,
+					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)
+			);
+
+		} else {
+			lockMonitoring = new LockCleaner(
+					false,
+					"ExclusiveLockManager",
+					LoggerFactory.getLogger(this.getClass()),
+					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)
+			);
+		}
+
+	}
+
+	private Lock tryExclusiveLockInner() {
+
+		long writeLock = lock.tryWriteLock();
+		if (writeLock != 0) {
+			return new ExclusiveLock(writeLock, lock);
+		} else {
+			lockMonitoring.runCleanup();
 			return null;
 		}
-		synchronized (this) {
-			if (lock.isActiveLock()) {
-				return null;
+
+	}
+
+	private Lock getExclusiveLockInner() throws InterruptedException {
+
+		long writeLock;
+
+		if (lockMonitoring.requiresManualCleanup()) {
+			do {
+				if (Thread.interrupted()) {
+					throw new InterruptedException();
+				}
+				writeLock = lock.tryWriteLock(waitToCollect, TimeUnit.MILLISECONDS);
+				if (writeLock == 0) {
+					lockMonitoring.runCleanup();
+				}
+			} while (writeLock == 0);
+		} else {
+			writeLock = lock.writeLockInterruptibly();
+		}
+
+		return new ExclusiveLock(writeLock, lock);
+	}
+
+	public Lock tryExclusiveLock() {
+		return lockMonitoring.tryLock();
+	}
+
+	public Lock getExclusiveLock() throws InterruptedException {
+		return lockMonitoring.getLock();
+	}
+
+	public boolean isActiveLock() {
+		return lock.isWriteLocked();
+	}
+
+	static class ExclusiveLock implements Lock {
+
+		private final StampedLock lock;
+		private long stamp;
+
+		public ExclusiveLock(long stamp, StampedLock lock) {
+			assert stamp != 0;
+			this.stamp = stamp;
+			this.lock = lock;
+		}
+
+		@Override
+		public boolean isActive() {
+			return stamp != 0;
+		}
+
+		@Override
+		public void release() {
+			long temp = stamp;
+			stamp = 0;
+
+			if (temp == 0) {
+				throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
 			}
 
-			return createLock();
+			lock.unlockWrite(temp);
 		}
 	}
 
-	/**
-	 * Gets the exclusive lock. This method blocks when the exclusive lock is currently in use until it is released.
-	 */
-	public synchronized Lock getExclusiveLock() throws InterruptedException {
-		while (lock.isActiveLock()) {
-			// Someone else currently has the lock
-			lock.waitForActiveLocks();
-		}
-
-		return createLock();
-	}
-
-	private Lock createLock() {
-		return lock.createLock("Exclusive");
-	}
 }

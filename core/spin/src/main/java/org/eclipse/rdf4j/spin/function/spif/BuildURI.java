@@ -41,7 +41,7 @@ public class BuildURI implements Function {
 		}
 		String newValue = StringSubstitutor.replace(tmpl, mappings, "{?", "}");
 		if (tmpl.charAt(0) == '<' && tmpl.charAt(tmpl.length() - 1) == '>') {
-			return valueFactory.createURI(newValue.substring(1, newValue.length() - 1));
+			return valueFactory.createIRI(newValue.substring(1, newValue.length() - 1));
 		}
 		throw new ValueExprEvaluationException("Invalid URI template: " + tmpl);
 	}

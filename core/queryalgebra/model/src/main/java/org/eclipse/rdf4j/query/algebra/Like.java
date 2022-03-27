@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra;
 /**
  * Compares the string representation of a value expression to a pattern.
  */
+@Deprecated(forRemoval = true)
 public class Like extends UnaryValueOperator {
 
 	/*-----------*

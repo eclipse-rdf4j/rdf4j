@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.common.webapp.views;
 
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
@@ -67,7 +68,7 @@ public class SimpleResponseView implements View {
 		try (OutputStream out = response.getOutputStream()) {
 			String content = (String) model.get(CONTENT_KEY);
 			if (content != null) {
-				byte[] contentBytes = content.getBytes("UTF-8");
+				byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
 				response.setContentLength(contentBytes.length);
 				out.write(contentBytes);
 			} else {

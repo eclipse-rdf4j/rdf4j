@@ -16,8 +16,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
@@ -267,6 +267,11 @@ class SailSourceBranch implements SailSource {
 					prepared = null;
 				}
 			}
+		} catch (SailException e) {
+			// clear changes if flush fails
+			changes.clear();
+			prepared = null;
+			throw e;
 		} finally {
 			semaphore.unlock();
 		}

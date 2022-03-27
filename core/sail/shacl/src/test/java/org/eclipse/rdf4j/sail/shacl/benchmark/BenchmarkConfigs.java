@@ -11,12 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
 public class BenchmarkConfigs {
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	public static final int NUMBER_OF_TRANSACTIONS = 30;
 	public static final int NUMBER_OF_EMPTY_TRANSACTIONS = 10;

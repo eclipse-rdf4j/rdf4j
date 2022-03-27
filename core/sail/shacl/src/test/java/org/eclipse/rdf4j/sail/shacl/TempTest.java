@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import java.io.IOException;
 import java.io.StringReader;
 
@@ -19,31 +21,18 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Håvard Ottestad
  */
 public class TempTest {
 
-	@BeforeClass
-	public static void beforeClass() {
-		// GlobalValidationExecutionLogging.loggingEnabled = true;
-
-	}
-
-	@AfterClass
-	public static void afterClass() {
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
-
 	@Test
 	public void a() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -81,7 +70,7 @@ public class TempTest {
 
 	@Test
 	public void b() throws Exception {
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -107,9 +96,9 @@ public class TempTest {
 		}
 	}
 
-	@Test(expected = RepositoryException.class)
+	@Test
 	public void maxCount() throws Exception {
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclMax.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclMax.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -133,8 +122,13 @@ public class TempTest {
 
 			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
 
-			connection.commit();
-
+			assertThrows(ShaclSailValidationException.class, () -> {
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
 		} finally {
 			shaclRepository.shutDown();
 		}
@@ -143,7 +137,7 @@ public class TempTest {
 	@Test
 	public void minCount() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -169,7 +163,7 @@ public class TempTest {
 	@Test
 	public void leftOuterJoin() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -203,195 +197,10 @@ public class TempTest {
 		}
 	}
 
-	@Ignore
-	@Test(expected = RepositoryException.class)
-	public void testShapeWithoutTargetClassRemove() throws Exception {
-
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
-
-		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-
-			connection.begin();
-			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
-			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-
-			connection.begin();
-			connection.remove(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
-			connection.commit();
-
-		} finally {
-			shaclRepository.shutDown();
-		}
-	}
-
-	@Ignore
-	@Test(expected = RepositoryException.class)
-	public void testShapeWithoutTargetClassAdd() throws Exception {
-
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
-
-		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-
-			connection.begin();
-			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
-			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-
-			connection.begin();
-			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-
-		} finally {
-			shaclRepository.shutDown();
-		}
-	}
-
-	@Test
-	public void testShapeWithoutTargetClassValid() throws Exception {
-
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
-
-		((ShaclSail) shaclRepository.getSail()).setUndefinedTargetValidatesAllSubjects(true);
-
-		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-
-			connection.begin();
-			connection.commit();
-
-			connection.begin();
-			connection.add(RDFS.CLASS, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
-			connection.add(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-
-			connection.begin();
-			connection.remove(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
-			connection.commit();
-
-			connection.begin();
-			connection.add(RDFS.RESOURCE, RDFS.LABEL, connection.getValueFactory().createLiteral("class1"));
-			connection.commit();
-
-		} finally {
-			shaclRepository.shutDown();
-		}
-
-	}
-
-	@Ignore
-	@Test(expected = ShaclSailValidationException.class)
-	public void testUndefinedTargetClassValidatesAllSubjects() throws Throwable {
-
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
-
-		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-
-			connection.begin();
-
-			StringReader shaclRules = new StringReader(String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-
-					"ex:PersonShape",
-					"	a sh:NodeShape  ;",
-					// " sh:targetClass foaf:Person ;",
-					"	sh:property ex:PersonShapeProperty .",
-
-					"ex:PersonShapeProperty ",
-					"	sh:path foaf:age ;",
-					"	sh:datatype xsd:int ;",
-					"  sh:maxCount 1 ;",
-					"  sh:minCount 1 ."));
-
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			connection.commit();
-
-			connection.begin();
-
-			StringReader invalidSampleData = new StringReader(String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-
-					"ex:peter a foaf:Person ;",
-					"	foaf:age 20, \"30\"^^xsd:int  ."
-
-			));
-			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
-
-			try {
-				connection.commit();
-			} catch (RepositoryException e) {
-				if (e.getCause() != null) {
-					throw e.getCause();
-				}
-				throw e;
-			}
-		} finally {
-			shaclRepository.shutDown();
-		}
-
-	}
-
-	@Ignore
-	@Test(expected = ShaclSailValidationException.class)
-	public void testUndefinedTargetClassValidatesAllSubjects2() throws Throwable {
-
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", true);
-
-		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-
-			connection.begin();
-
-			StringReader shaclRules = new StringReader(String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix sh: <http://www.w3.org/ns/shacl#> .",
-					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-
-					"ex:PersonShape",
-					"	a sh:NodeShape  ;",
-					// " sh:targetClass foaf:Person ;",
-					"	sh:property ex:PersonShapeProperty .",
-
-					"ex:PersonShapeProperty ",
-					"	sh:path foaf:age ;",
-					"	sh:datatype xsd:int ;",
-					"  sh:maxCount 1 ;",
-					"  sh:minCount 1 ."));
-
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-
-			StringReader invalidSampleData = new StringReader(String.join("\n", "",
-					"@prefix ex: <http://example.com/ns#> .",
-					"@prefix foaf: <http://xmlns.com/foaf/0.1/>.",
-					"@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
-
-					"ex:peter a foaf:Person ;",
-					"	foaf:age 20, \"30\"^^xsd:int  ."
-
-			));
-			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
-
-			try {
-				connection.commit();
-			} catch (RepositoryException e) {
-				if (e.getCause() != null) {
-					throw e.getCause();
-				}
-				throw e;
-			}
-		} finally {
-			shaclRepository.shutDown();
-		}
-	}
-
 	@Test
 	public void testUndefinedTargetClassValidatesAllSubjects3() throws Throwable {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -438,7 +247,7 @@ public class TempTest {
 	}
 
 	@Test
-	@Ignore // this method is used to produce the log examples in the documentation
+	@Disabled // this method is used to produce the log examples in the documentation
 	public void doc() throws IOException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 

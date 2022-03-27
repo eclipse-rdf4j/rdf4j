@@ -19,12 +19,12 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.RDFNotifyingStoreTest;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.testsuite.sail.RDFNotifyingStoreTest;
 import org.junit.Test;
 
 /**
- * An extension of RDFStoreTest for testing the class <tt>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</tt>.
+ * An extension of RDFStoreTest for testing the class <var>org.eclipse.rdf4j.sesame.sail.memory.MemoryStore</var>.
  */
 public class MemoryStoreTest extends RDFNotifyingStoreTest {
 

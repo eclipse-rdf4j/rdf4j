@@ -11,10 +11,10 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOBooleanTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
+import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOBooleanTest;
 import org.junit.Test;
 
 /**

@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
@@ -49,9 +48,6 @@ import ch.qos.logback.classic.Logger;
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class NotMaxCountBenchmarkEmpty {
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	private List<List<Statement>> allStatements;
 
@@ -59,7 +55,6 @@ public class NotMaxCountBenchmarkEmpty {
 	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
-		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -79,11 +74,6 @@ public class NotMaxCountBenchmarkEmpty {
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotMaxCountBenchmark.ttl"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
@@ -98,11 +88,6 @@ public class NotMaxCountBenchmarkEmpty {
 	public void shaclBulk() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotMaxCountBenchmark.ttl"));
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
@@ -122,10 +107,6 @@ public class NotMaxCountBenchmarkEmpty {
 
 		repository.init();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();

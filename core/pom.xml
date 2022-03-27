@@ -9,7 +9,7 @@
 	<artifactId>rdf4j-core</artifactId>
 	<packaging>pom</packaging>
 	<modules>
-		<module>util</module>
+		<module>common</module>
 		<module>model-api</module>
 		<module>model-vocabulary</module>
 		<module>model</module>
@@ -27,7 +27,7 @@
 		<module>client</module>
 		<module>storage</module>
 	</modules>
-	<name>RDF4J Core</name>
+	<name>RDF4J: Core</name>
 	<description>Core modules for RDF4J</description>
 	<profiles>
 		<profile>
@@ -54,8 +54,8 @@
 		<profile>
 			<id>skipSlowTests</id>
 			<activation>
-				<!-- active on all Java 8 and higher builds by default -->
-				<jdk>[1.8,)</jdk>
+				<!-- active on all Java 11 and higher builds by default -->
+				<jdk>[11,)</jdk>
 			</activation>
 			<build>
 				<plugins>

@@ -16,11 +16,11 @@ import org.eclipse.rdf4j.federated.structures.FedXGraphQuery;
 import org.eclipse.rdf4j.federated.structures.FedXTupleQuery;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
-import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
+import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailBooleanQuery;
 import org.eclipse.rdf4j.repository.sail.SailGraphQuery;
@@ -76,8 +76,8 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 		if (q instanceof SailTupleQuery) {
 			insertOriginalQueryString(q, queryString, baseURI, QueryType.SELECT);
 			q = new FedXTupleQuery((SailTupleQuery) q);
-		} else if (q instanceof GraphQuery) {
-			insertOriginalQueryString(q, queryString, baseURI, QueryType.CONSTRUCT);
+		} else if (q instanceof SailGraphQuery) {
+			insertOriginalQueryString(q, queryString, baseURI, determineGraphQueryType((SailGraphQuery) q));
 			q = new FedXGraphQuery((SailGraphQuery) q);
 		} else if (q instanceof SailBooleanQuery) {
 			insertOriginalQueryString(q, queryString, baseURI, QueryType.ASK);
@@ -100,7 +100,7 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 	public FedXGraphQuery prepareGraphQuery(QueryLanguage ql,
 			String queryString, String baseURI) throws MalformedQueryException {
 		SailGraphQuery q = super.prepareGraphQuery(ql, queryString, baseURI);
-		insertOriginalQueryString(q, queryString, baseURI, QueryType.CONSTRUCT);
+		insertOriginalQueryString(q, queryString, baseURI, determineGraphQueryType(q));
 		setIncludeInferredDefault(q);
 		return new FedXGraphQuery(q);
 	}
@@ -132,5 +132,12 @@ public class FedXRepositoryConnection extends SailRepositoryConnection {
 		}
 		query.setBinding(BINDING_ORIGINAL_QUERY, FedXUtil.literal(queryString));
 		query.setBinding(BINDING_ORIGINAL_QUERY_TYPE, FedXUtil.literal(qt.name()));
+	}
+
+	private QueryType determineGraphQueryType(SailGraphQuery q) {
+		if (q.getParsedQuery() instanceof ParsedDescribeQuery) {
+			return QueryType.DESCRIBE;
+		}
+		return QueryType.CONSTRUCT;
 	}
 }

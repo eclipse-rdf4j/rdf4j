@@ -7,14 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.IllformedLocaleException;
 import java.util.Optional;
 
 import javax.xml.datatype.DatatypeConfigurationException;
@@ -24,12 +27,13 @@ import javax.xml.datatype.Duration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for {@link Literals}.
@@ -43,11 +47,70 @@ public class LiteralsTest {
 	private static final IRI foo = vf.createIRI("http://example.org/foo");
 	private static final IRI bar = vf.createIRI("http://example.org/bar");
 
+	private static final String[][] expectedTagNormalizations = {
+			{ "en", "en" },
+			{ "EN", "en" },
+			{ "AR-Latn", "ar-Latn" },
+			{ "AZ-latn-x-LATN", "az-Latn-x-latn" },
+			{ "Az-latn-X-Latn", "az-Latn-x-latn" },
+			{ "BER-LATN-x-Dialect", "ber-Latn-x-dialect" },
+			{ "BNT", "bnt" },
+			{ "Egy-Latn", "egy-Latn" },
+			{ "en-ca-x-ca", "en-CA-x-ca" },
+			{ "EN-ca-X-Ca", "en-CA-x-ca" },
+			{ "En-Ca-X-Ca", "en-CA-x-ca" },
+			{ "en-GB", "en-GB" },
+			{ "EN-UK", "en-UK" },
+			{ "EN-US", "en-US" },
+			{ "FA-LATN-X-MIDDLE", "fa-Latn-x-middle" },
+			{ "FA-X-middle", "fa-x-middle" },
+			{ "Grc-latn-x-liturgic", "grc-Latn-x-liturgic" },
+			{ "Grc-x-liturgic", "grc-x-liturgic" },
+			{ "He-Latn", "he-Latn" },
+			{ "Ja-Latn", "ja-Latn" },
+			{ "Ko-Latn", "ko-Latn" },
+			{ "La-x-liturgic", "la-x-liturgic" },
+			{ "La-x-medieval", "la-x-medieval" },
+			{ "NN", "nn" },
+			{ "QQQ-002", "qqq-002" },
+			{ "qqq-142", "qqq-142" },
+			{ "QQQ-ET", "qqq-ET" },
+			{ "ru-Latn-UA", "ru-Latn-UA" },
+			{ "ru-Latn-ua", "ru-Latn-UA" },
+			{ "RU-LATN-UA", "ru-Latn-UA" },
+			{ "SGN-BE-FR", "sgn-BE-FR" },
+			{ "sgn-be-fr", "sgn-BE-FR" },
+			{ "UND", "und" },
+			{ "X-BYZANTIN-LATN", "x-byzantin-Latn" },
+			{ "X-Frisian", "x-frisian" },
+			{ "X-KHASIAN", "x-khasian" },
+			{ "x-local", "x-local" },
+			{ "zh-Hant", "zh-Hant" },
+			{ "zh-Latn-pinyin", "zh-Latn-pinyin" },
+			{ "Zh-latn-PINYIN-X-NoTone", "zh-Latn-pinyin-x-notone" },
+			{ "zh-Latn-wadegile", "zh-Latn-wadegile" }
+	};
+
+	/**
+	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#normalizeLanguageTag(String)} .
+	 */
+	@Test
+	public void testNormaliseBCP47Tag() throws Exception {
+
+		for (String[] expectedNormalization : expectedTagNormalizations) {
+			assertThat(Literals.normalizeLanguageTag(expectedNormalization[0])).isEqualTo(expectedNormalization[1]);
+		}
+
+		// invalid
+		assertThatExceptionOfType(IllformedLocaleException.class)
+				.isThrownBy(() -> Literals.normalizeLanguageTag("ru-ua-latn"));
+	}
+
 	/**
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getLabel(org.eclipse.rdf4j.model.Literal, java.lang.String)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetLabelLiteralString() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -57,7 +120,7 @@ public class LiteralsTest {
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getLabel(org.eclipse.rdf4j.model.Value, java.lang.String)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetLabelValueString() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -67,7 +130,7 @@ public class LiteralsTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getByteValue(org.eclipse.rdf4j.model.Literal, byte)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetByteValueLiteralByte() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -76,7 +139,7 @@ public class LiteralsTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getByteValue(org.eclipse.rdf4j.model.Value, byte)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetByteValueValueByte() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -86,7 +149,7 @@ public class LiteralsTest {
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getShortValue(org.eclipse.rdf4j.model.Literal, short)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetShortValueLiteralShort() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -96,7 +159,7 @@ public class LiteralsTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getShortValue(org.eclipse.rdf4j.model.Value, short)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetShortValueValueShort() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -105,7 +168,7 @@ public class LiteralsTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getIntValue(org.eclipse.rdf4j.model.Literal, int)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetIntValueLiteralInt() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -114,7 +177,7 @@ public class LiteralsTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getIntValue(org.eclipse.rdf4j.model.Value, int)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetIntValueValueInt() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -124,7 +187,7 @@ public class LiteralsTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getLongValue(org.eclipse.rdf4j.model.Literal, long)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetLongValueLiteralLong() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -133,7 +196,7 @@ public class LiteralsTest {
 	/**
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getLongValue(org.eclipse.rdf4j.model.Value, long)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetLongValueValueLong() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -144,7 +207,7 @@ public class LiteralsTest {
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getIntegerValue(org.eclipse.rdf4j.model.Literal, java.math.BigInteger)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetIntegerValueLiteralBigInteger() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -155,7 +218,7 @@ public class LiteralsTest {
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getIntegerValue(org.eclipse.rdf4j.model.Value, java.math.BigInteger)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetIntegerValueValueBigInteger() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -166,7 +229,7 @@ public class LiteralsTest {
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getDecimalValue(org.eclipse.rdf4j.model.Literal, java.math.BigDecimal)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetDecimalValueLiteralBigDecimal() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -177,7 +240,7 @@ public class LiteralsTest {
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getDecimalValue(org.eclipse.rdf4j.model.Value, java.math.BigDecimal)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetDecimalValueValueBigDecimal() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -187,7 +250,7 @@ public class LiteralsTest {
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getFloatValue(org.eclipse.rdf4j.model.Literal, float)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetFloatValueLiteralFloat() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -197,7 +260,7 @@ public class LiteralsTest {
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getFloatValue(org.eclipse.rdf4j.model.Value, float)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetFloatValueValueFloat() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -207,7 +270,7 @@ public class LiteralsTest {
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getDoubleValue(org.eclipse.rdf4j.model.Literal, double)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetDoubleValueLiteralDouble() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -217,7 +280,7 @@ public class LiteralsTest {
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getDoubleValue(org.eclipse.rdf4j.model.Value, double)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetDoubleValueValueDouble() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -227,7 +290,7 @@ public class LiteralsTest {
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getBooleanValue(org.eclipse.rdf4j.model.Literal, boolean)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetBooleanValueLiteralBoolean() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -237,7 +300,7 @@ public class LiteralsTest {
 	 * Test method for
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getBooleanValue(org.eclipse.rdf4j.model.Value, boolean)} .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetBooleanValueValueBoolean() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -248,7 +311,7 @@ public class LiteralsTest {
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getCalendarValue(org.eclipse.rdf4j.model.Literal, javax.xml.datatype.XMLGregorianCalendar)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetCalendarValueLiteralXMLGregorianCalendar() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -259,7 +322,7 @@ public class LiteralsTest {
 	 * {@link org.eclipse.rdf4j.model.util.Literals#getCalendarValue(org.eclipse.rdf4j.model.Value, javax.xml.datatype.XMLGregorianCalendar)}
 	 * .
 	 */
-	@Ignore
+	@Disabled
 	@Test
 	public final void testGetCalendarValueValueXMLGregorianCalendar() throws Exception {
 		fail("Not yet implemented"); // TODO
@@ -812,22 +875,6 @@ public class LiteralsTest {
 	}
 
 	/**
-	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#normalizeLanguageTag(String)} .
-	 */
-	@Test
-	public void testNormaliseBCP47Tag() throws Exception {
-		assertEquals("en", Literals.normalizeLanguageTag("en"));
-		assertEquals("en-AU", Literals.normalizeLanguageTag("en-AU"));
-		assertEquals("en-AU", Literals.normalizeLanguageTag("en-au"));
-		assertEquals("en-AU", Literals.normalizeLanguageTag("EN-AU"));
-		assertEquals("en-AU", Literals.normalizeLanguageTag("EN-au"));
-		assertEquals("fr-FR", Literals.normalizeLanguageTag("fr-FR"));
-		assertEquals("fr-FR", Literals.normalizeLanguageTag("fr-fr"));
-		assertEquals("fr-FR", Literals.normalizeLanguageTag("FR-FR"));
-		assertEquals("fr-FR", Literals.normalizeLanguageTag("FR-fr"));
-	}
-
-	/**
 	 * Test method for {@link org.eclipse.rdf4j.model.util.Literals#getLabel(Optional, String)}} .
 	 */
 	@Test
@@ -836,7 +883,7 @@ public class LiteralsTest {
 		Literal lit = vf.createLiteral(1.0);
 		model.add(foo, bar, lit);
 
-		Optional result = Models.object(model);
+		Optional<Value> result = Models.object(model);
 		String label = Literals.getLabel(result, "fallback");
 		assertNotNull(label);
 		assertTrue(label.equals("1.0"));
@@ -851,8 +898,8 @@ public class LiteralsTest {
 		Literal lit = vf.createLiteral(1.0);
 		model.add(foo, bar, lit);
 
-		Optional result = Models.object(model);
-		String label = Literals.getLabel((Optional) null, "fallback");
+		Optional<Value> result = Models.object(model);
+		String label = Literals.getLabel((Optional<Value>) null, "fallback");
 		assertNotNull(label);
 		assertTrue(label.equals("fallback"));
 	}

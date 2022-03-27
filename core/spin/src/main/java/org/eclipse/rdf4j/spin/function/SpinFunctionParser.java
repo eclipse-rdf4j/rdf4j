@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.spin.function;
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;

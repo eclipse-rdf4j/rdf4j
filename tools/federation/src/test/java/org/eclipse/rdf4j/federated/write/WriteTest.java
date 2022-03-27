@@ -173,7 +173,7 @@ public class WriteTest extends SPARQLBaseTest {
 		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
 
 		// configure the test write strategy factory
-		fedxRule.getFederationContext().getConfig().withWriteStrategyFactory(TestWriteStrategyFactory.class);
+		fedxRule.getFederationContext().getFederation().setWriteStrategyFactory(new TestWriteStrategyFactory());
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 			Update update = conn.prepareUpdate(QueryLanguage.SPARQL,

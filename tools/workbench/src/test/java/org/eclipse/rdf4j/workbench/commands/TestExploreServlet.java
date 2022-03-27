@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -54,7 +54,6 @@ public class TestExploreServlet {
 	@Before
 	public void setUp() throws RepositoryException, MalformedQueryException, UpdateExecutionException {
 		Repository repo = new SailRepository(new MemoryStore());
-		repo.initialize();
 		connection = repo.getConnection();
 		servlet = new ExploreServlet();
 		ValueFactory factory = connection.getValueFactory();

@@ -75,7 +75,7 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	/**
-	 * FedX schema namespace (<tt>http://rdf4j.org/config/federation#</tt>).
+	 * FedX schema namespace (<var>http://rdf4j.org/config/federation#</var>).
 	 */
 	public static final String NAMESPACE = FEDX.NAMESPACE;
 
@@ -88,12 +88,6 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 	 * IRI of the property pointing to a federation member node
 	 */
 	public static final IRI MEMBER = vf.createIRI(NAMESPACE, "member");
-
-	/**
-	 * the location of the fedx configuration
-	 */
-	@Deprecated
-	private String fedxConfig;
 
 	/**
 	 * the location of the data configuration
@@ -119,25 +113,6 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	public FedXRepositoryConfig() {
 		super(FedXRepositoryFactory.REPOSITORY_TYPE);
-	}
-
-	/**
-	 * @return the location of the FedX configuration
-	 * @deprecated use {@link #getConfig()}, scheduled for removal in 4.0
-	 */
-	@Deprecated
-	public String getFedxConfig() {
-		return fedxConfig;
-	}
-
-	/**
-	 * Set the location of the FedX configuration
-	 * 
-	 * @deprecated use {@link #setConfig(FedXConfig)}, scheduled for removal in 4.0
-	 */
-	@Deprecated
-	public void setFedxConfig(String fedxConfig) {
-		this.fedxConfig = fedxConfig;
 	}
 
 	public String getDataConfig() {
@@ -192,9 +167,9 @@ public class FedXRepositoryConfig extends AbstractRepositoryImplConfig {
 		super.validate();
 
 		if (getMembers() == null) {
-			if (getDataConfig() == null && getFedxConfig() == null) {
+			if (getDataConfig() == null) {
 				throw new RepositoryConfigException(
-						"At least one of fedxConfig or dataConfig needs to be "
+						"DataConfig needs to be "
 								+ "provided to initialize the federation, if no explicit members are defined");
 			}
 		}

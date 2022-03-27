@@ -16,14 +16,10 @@ import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
-import org.eclipse.rdf4j.repository.http.HTTPRepository;
-import org.eclipse.rdf4j.repository.manager.SystemRepository;
+import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.inferencer.fc.config.SchemaCachingRDFSInferencerConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
@@ -50,8 +46,9 @@ public class TestServer {
 	private static final String RDF4J_CONTEXT = "/rdf4j";
 
 	public static final String SERVER_URL = "http://" + HOST + ":" + PORT + RDF4J_CONTEXT;
-
 	public static String REPOSITORY_URL = Protocol.getRepositoryLocation(SERVER_URL, TEST_REPO_ID);
+
+	private final RemoteRepositoryManager manager;
 
 	private final Server jetty;
 
@@ -75,6 +72,8 @@ public class TestServer {
 		// warPath configured in pom.xml maven-war-plugin configuration
 		webapp.setWar("./target/rdf4j-server");
 		jetty.setHandler(webapp);
+
+		manager = RemoteRepositoryManager.getInstance(SERVER_URL);
 	}
 
 	public void start() throws Exception {
@@ -83,45 +82,38 @@ public class TestServer {
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
 
 		jetty.start();
-
 		createTestRepositories();
 	}
 
 	public void stop() throws Exception {
-		Repository systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
-		try (RepositoryConnection con = systemRepo.getConnection()) {
-			con.clear();
+		try {
+			manager.getAllRepositoryInfos().forEach(ri -> manager.removeRepository(ri.getId()));
+			manager.shutDown();
+		} finally {
+			jetty.stop();
+			System.clearProperty("org.mortbay.log.class");
 		}
-
-		jetty.stop();
-		System.clearProperty("org.mortbay.log.class");
 	}
 
 	private void createTestRepositories() throws RepositoryException, RepositoryConfigException {
-		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
-
 		// create a (non-inferencing) memory store
 		MemoryStoreConfig memStoreConfig = new MemoryStoreConfig();
 		SailRepositoryConfig sailRepConfig = new SailRepositoryConfig(memStoreConfig);
 		RepositoryConfig repConfig = new RepositoryConfig(TEST_REPO_ID, sailRepConfig);
-
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
+		manager.addRepositoryConfig(repConfig);
 
 		// create an inferencing memory store
 		SchemaCachingRDFSInferencerConfig inferMemStoreConfig = new SchemaCachingRDFSInferencerConfig(
 				new MemoryStoreConfig());
 		sailRepConfig = new SailRepositoryConfig(inferMemStoreConfig);
 		repConfig = new RepositoryConfig(TEST_INFERENCE_REPO_ID, sailRepConfig);
-
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
+		manager.addRepositoryConfig(repConfig);
 
 		// create memory store with shacl support
 		ShaclSailConfig shaclConfig = new ShaclSailConfig(new MemoryStoreConfig());
 		sailRepConfig = new SailRepositoryConfig(shaclConfig);
 		repConfig = new RepositoryConfig(TEST_SHACL_REPO_ID, sailRepConfig);
-
-		RepositoryConfigUtil.updateRepositoryConfigs(systemRep, repConfig);
-
+		manager.addRepositoryConfig(repConfig);
 	}
 
 	static class PropertiesReader {

@@ -41,9 +41,6 @@ public class N3ParserTest {
 
 	private SimpleParseLocationListener locationListener = new SimpleParseLocationListener();
 
-	/**
-	 * @throws java.lang.Exception
-	 */
 	@Before
 	public void setUp() {
 		parser = new N3Parser();

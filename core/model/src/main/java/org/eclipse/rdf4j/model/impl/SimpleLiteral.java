@@ -17,9 +17,9 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -49,17 +49,14 @@ public class SimpleLiteral extends AbstractLiteral {
 	 * The literal's language tag.
 	 */
 	private String language;
+	transient private Optional<String> optionalLanguageCache = null;
 
 	/**
 	 * The literal's datatype.
 	 */
 	private IRI datatype;
 
-	// The XSD.Datatype enum that matches the datatype IRI for this literal. This value is calculated on the fly and
-	// cached in this variable. `null` means we have not calculated and cached this value yet. We are not worried about
-	// race conditions, since calculating this value multiple times must lead to the same effective result. Transient is
-	// only used to stop this field from be serialised.
-	transient private Optional<XSD.Datatype> xsdDatatype = null;
+	private CoreDatatype coreDatatype = null;
 
 	/*--------------*
 	 * Constructors *
@@ -71,18 +68,19 @@ public class SimpleLiteral extends AbstractLiteral {
 	/**
 	 * Creates a new plain literal with the supplied label.
 	 *
-	 * @param label The label for the literal, must not be <tt>null</tt>.
+	 * @param label The label for the literal, must not be <var>null</var>.
 	 */
 	protected SimpleLiteral(String label) {
 		setLabel(label);
-		setDatatype(XSD.STRING);
+		setDatatype(org.eclipse.rdf4j.model.vocabulary.XSD.STRING);
+		optionalLanguageCache = Optional.empty();
 	}
 
 	/**
 	 * Creates a new plain literal with the supplied label and language tag.
 	 *
-	 * @param label    The label for the literal, must not be <tt>null</tt>.
-	 * @param language The language tag for the literal, must not be <tt>null</tt> and not be empty.
+	 * @param label    The label for the literal, must not be <var>null</var>.
+	 * @param language The language tag for the literal, must not be <var>null</var> and not be empty.
 	 */
 	protected SimpleLiteral(String label, String language) {
 		setLabel(label);
@@ -92,29 +90,63 @@ public class SimpleLiteral extends AbstractLiteral {
 	/**
 	 * Creates a new datatyped literal with the supplied label and datatype.
 	 *
-	 * @param label    The label for the literal, must not be <tt>null</tt>.
+	 * @param label    The label for the literal, must not be <var>null</var>.
 	 * @param datatype The datatype for the literal.
 	 */
 	protected SimpleLiteral(String label, IRI datatype) {
 		setLabel(label);
-		if (RDF.LANGSTRING.equals(datatype)) {
+		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype)) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(XSD.Datatype.STRING);
+			setDatatype(CoreDatatype.XSD.STRING);
 		} else {
 			setDatatype(datatype);
 		}
+		optionalLanguageCache = Optional.empty();
+
 	}
 
+	/**
+	 * Creates a new datatyped literal with the supplied label and datatype.
+	 *
+	 * @param label    The label for the literal, must not be <var>null</var>.
+	 * @param datatype The datatype for the literal.
+	 */
+	protected SimpleLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {
+		assert coreDatatype != null;
+		assert datatype != null;
+		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
+
+		if (CoreDatatype.RDF.LANGSTRING == coreDatatype) {
+			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
+		}
+
+		setLabel(label);
+		setDatatype(datatype, coreDatatype);
+		optionalLanguageCache = Optional.empty();
+	}
+
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected SimpleLiteral(String label, XSD.Datatype datatype) {
 		setLabel(label);
-		if (RDF.LANGSTRING.equals(datatype.getIri())) {
+		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype.getIri())) {
 			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else if (datatype == null) {
-			setDatatype(XSD.Datatype.STRING);
+			setDatatype(CoreDatatype.XSD.STRING);
+		} else {
+			setDatatype(datatype.getCoreDatatype());
+		}
+
+	}
+
+	protected SimpleLiteral(String label, CoreDatatype datatype) {
+		setLabel(label);
+		if (datatype == CoreDatatype.RDF.LANGSTRING) {
+			throw new IllegalArgumentException("datatype rdf:langString requires a language tag");
 		} else {
 			setDatatype(datatype);
 		}
+		optionalLanguageCache = Optional.empty();
 
 	}
 
@@ -138,21 +170,43 @@ public class SimpleLiteral extends AbstractLiteral {
 			throw new IllegalArgumentException("Language tag cannot be empty");
 		}
 		this.language = language;
-		setDatatype(RDF.LANGSTRING);
+		optionalLanguageCache = Optional.of(language);
+		setDatatype(CoreDatatype.RDF.LANGSTRING);
 	}
 
 	@Override
 	public Optional<String> getLanguage() {
-		return Optional.ofNullable(language);
+		if (optionalLanguageCache == null) {
+			optionalLanguageCache = Optional.ofNullable(language);
+		}
+		return optionalLanguageCache;
 	}
 
 	protected void setDatatype(IRI datatype) {
 		this.datatype = datatype;
+		coreDatatype = CoreDatatype.from(datatype);
 	}
 
+	protected void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
+		assert datatype != null;
+		assert coreDatatype != null;
+		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();
+
+		this.datatype = datatype;
+		this.coreDatatype = coreDatatype;
+
+	}
+
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected void setDatatype(XSD.Datatype datatype) {
 		this.datatype = datatype.getIri();
-		this.xsdDatatype = Optional.of(datatype);
+		coreDatatype = datatype.getCoreDatatype();
+	}
+
+	protected void setDatatype(CoreDatatype datatype) {
+		Objects.requireNonNull(datatype);
+		this.datatype = datatype.getIri();
+		this.coreDatatype = datatype;
 	}
 
 	@Override
@@ -160,12 +214,15 @@ public class SimpleLiteral extends AbstractLiteral {
 		return datatype;
 	}
 
+	/**
+	 * @deprecated Use {@link #getCoreDatatype()} instead.
+	 * @return
+	 */
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public Optional<XSD.Datatype> getXsdDatatype() {
-		// we are caching the optional value, so null means that we haven't cached anything yet
-		if (xsdDatatype == null) {
-			xsdDatatype = XSD.Datatype.from(datatype);
-		}
-		return xsdDatatype;
+		CoreDatatype coreDatatype = getCoreDatatype();
+
+		return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.asXSDDatatype().orElse(null));
 	}
 
 	// Overrides Object.equals(Object), implements Literal.equals(Object)
@@ -178,22 +235,32 @@ public class SimpleLiteral extends AbstractLiteral {
 		if (o instanceof Literal) {
 			Literal other = (Literal) o;
 
+			CoreDatatype coreDatatype = getCoreDatatype();
+
+			// Compare core datatypes
+			if (coreDatatype != ((Literal) o).getCoreDatatype()) {
+				return false;
+			} else if (coreDatatype == CoreDatatype.NONE) {
+				// Compare other datatypes
+				if (!datatype.equals(other.getDatatype())) {
+					return false;
+				}
+			}
+
 			// Compare labels
 			if (!label.equals(other.getLabel())) {
 				return false;
 			}
 
-			// Compare datatypes
-			if (!datatype.equals(other.getDatatype())) {
-				return false;
-			}
+			Optional<String> language = getLanguage();
+			Optional<String> otherLanguage = other.getLanguage();
 
-			if (getLanguage().isPresent() && other.getLanguage().isPresent()) {
-				return getLanguage().get().equalsIgnoreCase(other.getLanguage().get());
+			if (language.isPresent() && otherLanguage.isPresent()) {
+				return language.get().equalsIgnoreCase(otherLanguage.get());
 			}
 			// If only one has a language, then return false
 			else {
-				return !getLanguage().isPresent() && !other.getLanguage().isPresent();
+				return language.isEmpty() && otherLanguage.isEmpty();
 			}
 		}
 
@@ -219,7 +286,7 @@ public class SimpleLiteral extends AbstractLiteral {
 			sb.append('"').append(label).append('"');
 			sb.append('@').append(language);
 			return sb.toString();
-		} else if (XSD.STRING.equals(datatype) || datatype == null) {
+		} else if (org.eclipse.rdf4j.model.vocabulary.XSD.STRING.equals(datatype) || datatype == null) {
 			StringBuilder sb = new StringBuilder(label.length() + 2);
 			sb.append('"').append(label).append('"');
 			return sb.toString();
@@ -284,6 +351,14 @@ public class SimpleLiteral extends AbstractLiteral {
 	@Override
 	public XMLGregorianCalendar calendarValue() {
 		return XMLDatatypeUtil.parseCalendar(label);
+	}
+
+	@Override
+	public CoreDatatype getCoreDatatype() {
+		if (coreDatatype == null) {
+			coreDatatype = CoreDatatype.from(datatype);
+		}
+		return coreDatatype;
 	}
 
 }

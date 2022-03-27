@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.http.protocol.transaction.operations;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.common.lang.ObjectUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -63,7 +64,7 @@ public class SetNamespaceOperation implements TransactionOperation, Serializable
 	public boolean equals(Object other) {
 		if (other instanceof SetNamespaceOperation) {
 			SetNamespaceOperation o = (SetNamespaceOperation) other;
-			return ObjectUtil.nullEquals(getPrefix(), o.getPrefix()) && ObjectUtil.nullEquals(getName(), o.getName());
+			return Objects.equals(getPrefix(), o.getPrefix()) && Objects.equals(getName(), o.getName());
 		}
 
 		return false;

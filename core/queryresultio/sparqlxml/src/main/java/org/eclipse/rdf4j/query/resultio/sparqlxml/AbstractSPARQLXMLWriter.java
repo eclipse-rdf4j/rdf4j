@@ -121,7 +121,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 
 	/**
 	 * Enables/disables addition of indentation characters and newlines in the XML document. By default, pretty-printing
-	 * is set to <tt>true</tt>. If set to <tt>false</tt>, no indentation and newlines are added to the XML document.
+	 * is set to <var>true</var>. If set to <var>false</var>, no indentation and newlines are added to the XML document.
 	 * This method has to be used before writing starts (that is, before {@link #startDocument} is called).
 	 *
 	 * @deprecated Use {@link #getWriterConfig()} .set(BasicWriterSettings.PRETTY_PRINT, prettyPrint) instead.

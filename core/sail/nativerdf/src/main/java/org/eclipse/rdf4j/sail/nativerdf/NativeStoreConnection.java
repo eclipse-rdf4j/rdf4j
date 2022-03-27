@@ -9,20 +9,21 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
+import org.eclipse.rdf4j.sail.features.ThreadSafetyAware;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 
 /**
  * @author Arjohn Kampman
  */
-public class NativeStoreConnection extends SailSourceConnection {
+public class NativeStoreConnection extends SailSourceConnection implements ThreadSafetyAware {
 
 	/*-----------*
 	 * Constants *
@@ -39,7 +40,7 @@ public class NativeStoreConnection extends SailSourceConnection {
 	/**
 	 * The transaction lock held by this connection during transactions.
 	 */
-	private volatile Lock txnLock;
+	private Lock txnLock;
 
 	private int addedCount;
 
@@ -63,21 +64,10 @@ public class NativeStoreConnection extends SailSourceConnection {
 		if (!nativeStore.isWritable()) {
 			throw new SailReadOnlyException("Unable to start transaction: data file is locked or read-only");
 		}
-		boolean releaseLock = true;
-		try {
-			if (txnLock == null || !txnLock.isActive()) {
-				txnLock = nativeStore.getTransactionLock(getTransactionIsolation());
-				if (nativeStore.isIsolationDisabled()) {
-					// if the transaction isn't isolated then we need to keep holding our exclusive lock until commit
-					releaseLock = false;
-				}
-			}
-			super.startTransactionInternal();
-		} finally {
-			if (releaseLock && txnLock != null) {
-				txnLock.release();
-			}
-		}
+
+		assert txnLock == null : "Can not start another transaction before the previous one finishes!";
+		txnLock = nativeStore.getTransactionLock(getTransactionIsolation());
+		super.startTransactionInternal();
 	}
 
 	@Override
@@ -85,9 +75,8 @@ public class NativeStoreConnection extends SailSourceConnection {
 		try {
 			super.commitInternal();
 		} finally {
-			if (txnLock != null) {
-				txnLock.release();
-			}
+			txnLock.release();
+			txnLock = null;
 		}
 
 		nativeStore.notifySailChanged(sailChangedEvent);
@@ -101,9 +90,8 @@ public class NativeStoreConnection extends SailSourceConnection {
 		try {
 			super.rollbackInternal();
 		} finally {
-			if (txnLock != null) {
-				txnLock.release();
-			}
+			txnLock.release();
+			txnLock = null;
 		}
 		// create a fresh event object.
 		sailChangedEvent = new DefaultSailChangedEvent(nativeStore);
@@ -155,6 +143,11 @@ public class NativeStoreConnection extends SailSourceConnection {
 	public void clearInferred(Resource... contexts) throws SailException {
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
+	}
+
+	@Override
+	public boolean supportsConcurrentReads() {
+		return getTransactionIsolation() != null && getTransactionIsolation() != IsolationLevels.SERIALIZABLE;
 	}
 
 }

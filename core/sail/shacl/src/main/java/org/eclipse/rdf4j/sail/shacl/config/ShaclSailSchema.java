@@ -26,17 +26,11 @@ public class ShaclSailSchema {
 	/** <code>http://rdf4j.org/config/sail/shacl#parallelValidation</code> */
 	public final static IRI PARALLEL_VALIDATION = create("parallelValidation");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#undefinedTargetValidatesAllSubjects</code> */
-	public final static IRI UNDEFINED_TARGET_VALIDATES_ALL_SUBJECTS = create("undefinedTargetValidatesAllSubjects");
-
 	/** <code>http://rdf4j.org/config/sail/shacl#logValidationPlans</code> */
 	public final static IRI LOG_VALIDATION_PLANS = create("logValidationPlans");
 
 	/** <code>http://rdf4j.org/config/sail/shacl#logValidationViolations</code> */
 	public final static IRI LOG_VALIDATION_VIOLATIONS = create("logValidationViolations");
-
-	/** <code>http://rdf4j.org/config/sail/shacl#ignoreNoShapesLoadedException</code> */
-	public final static IRI IGNORE_NO_SHAPES_LOADED_EXCEPTION = create("ignoreNoShapesLoadedException");
 
 	/** <code>http://rdf4j.org/config/sail/shacl#validationEnabled</code> */
 	public final static IRI VALIDATION_ENABLED = create("validationEnabled");
@@ -62,6 +56,7 @@ public class ShaclSailSchema {
 
 	public final static IRI VALIDATION_RESULTS_LIMIT_TOTAL = create("validationResultsLimitTotal");
 	public final static IRI VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT = create("validationResultsLimitPerConstraint");
+	public final static IRI TRANSACTIONAL_VALIDATION_LIMIT = create("transactionalValidationLimit");
 
 	private static IRI create(String localName) {
 		return iri(NAMESPACE, localName);

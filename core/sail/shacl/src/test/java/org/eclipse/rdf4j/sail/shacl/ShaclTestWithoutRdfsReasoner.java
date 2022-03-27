@@ -8,13 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Test;
 import org.junit.jupiter.api.Tag;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * When the RDFS reasoner is disabled it makes ConnectionsGroup.getRdfsSubClassOfReasoner() return null. This could lead
@@ -22,52 +21,33 @@ import org.junit.runners.Parameterized;
  *
  * @author Håvard Ottestad
  */
-@RunWith(Parameterized.class)
 @Tag("slow")
 public class ShaclTestWithoutRdfsReasoner extends AbstractShaclTest {
 
-	public ShaclTestWithoutRdfsReasoner(String testCasePath, String path, ExpectedResult expectedResult,
-			IsolationLevel isolationLevel) {
-		super(testCasePath, path, expectedResult, isolationLevel);
-	}
-
-	@Test
-	public void test() {
-		if (ignoredTest(testCasePath)) {
+	@ParameterizedTest
+	@MethodSource("testsToRunWithIsolationLevel")
+	public void test(TestCase testCase, IsolationLevel isolationLevel) {
+		if (ignoredTest(testCase)) {
 			return;
 		}
-		runWithAutomaticLogging(() -> runTestCase(testCasePath, path, expectedResult, isolationLevel, false));
+		runWithAutomaticLogging(() -> runTestCase(testCase, isolationLevel, false));
 	}
 
-	@Test
-	public void testRevalidation() {
-		if (ignoredTest(testCasePath)) {
+	@ParameterizedTest
+	@MethodSource("testsToRunWithIsolationLevel")
+	public void testRevalidation(TestCase testCase, IsolationLevel isolationLevel) {
+		if (ignoredTest(testCase)) {
 			return;
 		}
-		runWithAutomaticLogging(() -> runTestCaseRevalidate(testCasePath, path, expectedResult, isolationLevel));
+		runWithAutomaticLogging(() -> runTestCaseRevalidate(testCase, isolationLevel));
 	}
 
 	// Since we have disabled the RDFS reasoner we can't run the tests that require reasoning
-	private static boolean ignoredTest(String testCasePath) {
-		return testCasePath.contains("/subclass");
+	private static boolean ignoredTest(TestCase testCase) {
+		return testCase.getTestCasePath().contains("/subclass");
 	}
 
-	private void runWithAutomaticLogging(Runnable r) {
-		try {
-			r.run();
-		} catch (Throwable t) {
-			fullLogging = true;
-			System.out.println("\n##############################################");
-			System.out.println("###### Re-running test with full logging #####");
-			System.out.println("##############################################\n");
-
-			r.run();
-		} finally {
-			fullLogging = false;
-		}
-	}
-
-	SailRepository getShaclSail() {
+	SailRepository getShaclSail(TestCase testCase, boolean loadInitialData) {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository repository = new SailRepository(shaclSail);
@@ -79,11 +59,20 @@ public class ShaclTestWithoutRdfsReasoner extends AbstractShaclTest {
 		shaclSail.setGlobalLogValidationExecution(fullLogging);
 		shaclSail.setEclipseRdf4jShaclExtensions(true);
 		shaclSail.setDashDataShapes(true);
+		shaclSail.setPerformanceLogging(false);
 		shaclSail.setRdfsSubClassReasoning(false);
 
-		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
-
 		repository.init();
+
+		try {
+			Utils.loadShapeData(repository, testCase.getShacl());
+			if (loadInitialData && testCase.hasInitialData()) {
+				Utils.loadInitialData(repository, testCase.getInitialData());
+			}
+		} catch (Exception e) {
+			repository.shutDown();
+			throw new RuntimeException(e);
+		}
 
 		return repository;
 	}

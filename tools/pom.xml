@@ -8,7 +8,7 @@
 	</parent>
 	<artifactId>rdf4j-tools</artifactId>
 	<packaging>pom</packaging>
-	<name>RDF4J Tools</name>
+	<name>RDF4J: Tools</name>
 	<description>Server, Workbench, Console and other end-user tools for RDF4J.</description>
 	<modules>
 		<module>config</module>
@@ -24,8 +24,8 @@
 		<profile>
 			<id>skipSlowTests</id>
 			<activation>
-				<!-- active on all Java 8 and higher builds by default -->
-				<jdk>[1.8,)</jdk>
+				<!-- active on all Java 11 and higher builds by default -->
+				<jdk>[11,)</jdk>
 			</activation>
 			<build>
 				<plugins>
@@ -182,6 +182,12 @@
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-junit-jupiter</artifactId>
 			<scope>test</scope>
+			<exclusions>
+				<exclusion>
+					<groupId>org.junit.jupiter</groupId>
+					<artifactId>junit-jupiter-api</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>

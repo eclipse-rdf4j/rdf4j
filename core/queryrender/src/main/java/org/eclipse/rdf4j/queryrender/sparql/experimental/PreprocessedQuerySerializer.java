@@ -291,8 +291,10 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 		renderedExtensionElements.put(query, Sets.newHashSet());
 		this.currentQueryProfile = query;
 		builder.append("CONSTRUCT { \n");
+
 		this.meet(query.projection);
 		builder.append("} ");
+
 		processDatasetClause(query.dataset);
 
 		builder.append("WHERE { \n");
@@ -824,12 +826,6 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 			builder.append(")");
 		}
 		builder.append("} ");
-
-	}
-
-	@Override
-	public void meet(Like node) throws RuntimeException {
-		super.meet(node);
 
 	}
 

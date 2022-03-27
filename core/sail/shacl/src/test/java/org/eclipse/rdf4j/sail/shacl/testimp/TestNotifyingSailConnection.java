@@ -11,7 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.testimp;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.eclipse.rdf4j.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;

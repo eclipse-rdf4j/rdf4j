@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
- * <tt>xsd:byte</tt> .
+ * <var>xsd:byte</var> .
  *
  * @author Jeen Broekstra
  * @see XSD#BYTE

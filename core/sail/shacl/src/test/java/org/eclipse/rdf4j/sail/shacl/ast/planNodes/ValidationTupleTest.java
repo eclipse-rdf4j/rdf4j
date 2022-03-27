@@ -15,7 +15,7 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class ValidationTupleTest {
 

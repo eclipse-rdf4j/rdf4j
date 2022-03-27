@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -15,8 +17,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.junit.AfterClass;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Håvard Ottestad
@@ -27,16 +28,11 @@ public class ExtendedFeaturesetTest {
 	IRI ex_knows = vf.createIRI("http://example.com/ns#knows");
 	IRI ex_Person = vf.createIRI("http://example.com/ns#Person");
 
-	@AfterClass
-	public static void afterClass() {
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
-
 	@Test
 	public void testDashIsDisabledByDefault() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl",
-				false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl"
+		);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -46,21 +42,24 @@ public class ExtendedFeaturesetTest {
 
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void testThatDashCanBeEnabled() throws Throwable {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl",
-				false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("test-cases/class/allSubjects/shacl.ttl"
+		);
 		((ShaclSail) shaclRepository.getSail()).setDashDataShapes(true);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
 			connection.add(vf.createBNode(), ex_knows, vf.createBNode());
-			try {
-				connection.commit();
-			} catch (RepositoryException e) {
-				throw e.getCause();
-			}
+
+			assertThrows(ShaclSailValidationException.class, () -> {
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
 		}
 
 	}
@@ -69,7 +68,7 @@ public class ExtendedFeaturesetTest {
 	public void testTargetShapeIsDisabledByDefault() throws Exception {
 
 		SailRepository shaclRepository = Utils
-				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl", false);
+				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -81,11 +80,11 @@ public class ExtendedFeaturesetTest {
 
 	}
 
-	@Test(expected = ShaclSailValidationException.class)
+	@Test
 	public void testThatTargetShapesCanBeEnabled() throws Throwable {
 
 		SailRepository shaclRepository = Utils
-				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl", false);
+				.getInitializedShaclRepository("test-cases/class/simpleTargetShape/shacl.ttl");
 
 		((ShaclSail) shaclRepository.getSail()).setDashDataShapes(true);
 		((ShaclSail) shaclRepository.getSail()).setEclipseRdf4jShaclExtensions(true);
@@ -95,11 +94,14 @@ public class ExtendedFeaturesetTest {
 			BNode bNode = vf.createBNode();
 			connection.add(bNode, RDF.TYPE, ex_Person);
 			connection.add(bNode, ex_knows, vf.createBNode());
-			try {
-				connection.commit();
-			} catch (RepositoryException e) {
-				throw e.getCause();
-			}
+
+			assertThrows(ShaclSailValidationException.class, () -> {
+				try {
+					connection.commit();
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
 		}
 
 	}

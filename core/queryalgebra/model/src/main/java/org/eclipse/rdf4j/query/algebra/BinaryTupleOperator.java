@@ -44,8 +44,8 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	/**
 	 * Creates a new binary tuple operator.
 	 *
-	 * @param leftArg  The operator's left argument, must not be <tt>null</tt>.
-	 * @param rightArg The operator's right argument, must not be <tt>null</tt>.
+	 * @param leftArg  The operator's left argument, must not be <var>null</var>.
+	 * @param rightArg The operator's right argument, must not be <var>null</var>.
 	 */
 	protected BinaryTupleOperator(TupleExpr leftArg, TupleExpr rightArg) {
 		setLeftArg(leftArg);
@@ -68,7 +68,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	/**
 	 * Sets the left argument of this binary tuple operator.
 	 *
-	 * @param leftArg The (new) left argument for this operator, must not be <tt>null</tt>.
+	 * @param leftArg The (new) left argument for this operator, must not be <var>null</var>.
 	 */
 	public void setLeftArg(TupleExpr leftArg) {
 		assert leftArg != null : "leftArg must not be null";
@@ -89,7 +89,7 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	/**
 	 * Sets the right argument of this binary tuple operator.
 	 *
-	 * @param rightArg The (new) right argument for this operator, must not be <tt>null</tt>.
+	 * @param rightArg The (new) right argument for this operator, must not be <var>null</var>.
 	 */
 	public void setRightArg(TupleExpr rightArg) {
 		assert rightArg != null : "rightArg must not be null";
@@ -141,6 +141,11 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	@Experimental
 	public void setAlgorithm(Iteration<BindingSet, QueryEvaluationException> iteration) {
 		this.algorithmName = iteration.getClass().getSimpleName();
+	}
+
+	@Experimental
+	public void setAlgorithm(String classSimpleName) {
+		this.algorithmName = classSimpleName;
 	}
 
 	@Experimental

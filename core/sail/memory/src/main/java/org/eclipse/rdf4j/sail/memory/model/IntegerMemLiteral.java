@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -33,14 +34,23 @@ public class IntegerMemLiteral extends MemLiteral {
 	 *--------------*/
 
 	public IntegerMemLiteral(Object creator, BigInteger value) {
-		this(creator, value, XSD.INTEGER);
+		this(creator, value, CoreDatatype.XSD.INTEGER);
 	}
 
 	public IntegerMemLiteral(Object creator, BigInteger value, IRI datatype) {
 		this(creator, value.toString(), value, datatype);
 	}
 
+	public IntegerMemLiteral(Object creator, BigInteger value, CoreDatatype datatype) {
+		this(creator, value.toString(), value, datatype);
+	}
+
 	public IntegerMemLiteral(Object creator, String label, BigInteger value, IRI datatype) {
+		super(creator, label, datatype);
+		this.value = value;
+	}
+
+	public IntegerMemLiteral(Object creator, String label, BigInteger value, CoreDatatype datatype) {
 		super(creator, label, datatype);
 		this.value = value;
 	}

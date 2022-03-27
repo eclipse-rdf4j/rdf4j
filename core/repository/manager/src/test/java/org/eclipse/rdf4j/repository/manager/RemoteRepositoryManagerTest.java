@@ -22,6 +22,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -106,7 +107,7 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 		wireMockRule.verify(getRequestedFor(urlEqualTo("/rdf4j-server/repositories/test/config")));
 	}
 
-	@Test
+	@Test(expected = RepositoryException.class)
 	public void testAddRepositoryConfigLegacy() {
 		wireMockRule.stubFor(
 				get(urlEqualTo("/rdf4j-server/protocol")).willReturn(aResponse().withStatus(200).withBody("8")));
@@ -120,9 +121,5 @@ public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 		RepositoryConfig config = new RepositoryConfig("test");
 
 		subject.addRepositoryConfig(config);
-
-		wireMockRule.verify(postRequestedFor(urlPathEqualTo("/rdf4j-server/repositories/SYSTEM/statements"))
-				.withRequestBody(matching("^BRDF.*"))
-				.withHeader("Content-Type", equalTo("application/x-binary-rdf")));
 	}
 }

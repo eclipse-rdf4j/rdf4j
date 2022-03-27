@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
 import java.util.Optional;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.core.QueryPattern;
 import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.TriplesTemplate;
@@ -56,6 +59,17 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 		with = Optional.ofNullable(iri);
 
 		return this;
+	}
+
+	/**
+	 * Define the graph that will be modified or matched against in the absence of more explicit graph definitions
+	 *
+	 * @param iri the IRI identifying the desired graph
+	 *
+	 * @return this modify query instance
+	 */
+	public ModifyQuery with(IRI iri) {
+		return with(iri(iri));
 	}
 
 	/**
@@ -128,6 +142,17 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	}
 
 	/**
+	 * Specify the graph used when evaluating the WHERE clause
+	 *
+	 * @param iri the IRI identifying the desired graph
+	 *
+	 * @return this modify query instance
+	 */
+	public ModifyQuery using(IRI iri) {
+		return using(iri(iri));
+	}
+
+	/**
 	 * Specify a named graph to use to when evaluating the WHERE clause
 	 *
 	 * @param iri the IRI identifying the desired graph
@@ -138,6 +163,17 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 		usingNamed = true;
 
 		return using(iri);
+	}
+
+	/**
+	 * Specify a named graph to use to when evaluating the WHERE clause
+	 *
+	 * @param iri the IRI identifying the desired graph
+	 *
+	 * @return this modify query instance
+	 */
+	public ModifyQuery usingNamed(IRI iri) {
+		return usingNamed(iri(iri));
 	}
 
 	/**

@@ -1,3 +1,0 @@
-# Output file for SeRQL CfwQuery test
-# description: query reified statement
-<http://www.answer.org/reified-statement> <http://www.foo.com/predicate2> <http://www.foo.com/object2> . 

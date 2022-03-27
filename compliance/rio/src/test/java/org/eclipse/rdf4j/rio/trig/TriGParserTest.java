@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.rio.trig;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.nquads.NQuadsParser;
+import org.eclipse.rdf4j.testsuite.rio.trig.TriGParserTestCase;
 
 /**
  * JUnit test for the TriG parser.

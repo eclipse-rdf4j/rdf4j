@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
+import java.util.function.Consumer;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.StandardQueryElementCollection;
 
 /**
@@ -16,10 +20,44 @@ import org.eclipse.rdf4j.sparqlbuilder.core.StandardQueryElementCollection;
  * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#predObjLists"> SPARQL Predicate-Object List</a>
  */
 public class RdfPredicateObjectList extends StandardQueryElementCollection<RdfObject> {
+	/**
+	 * Build a predicate-object list.
+	 *
+	 * @param predicate
+	 * @param objects
+	 */
 	RdfPredicateObjectList(RdfPredicate predicate, RdfObject... objects) {
 		super(predicate.getQueryString(), ", ");
 		printNameIfEmpty(false);
 		and(objects);
+	}
+
+	/**
+	 * Build a predicate-object list.
+	 *
+	 * @param predicate
+	 * @param objects
+	 */
+	RdfPredicateObjectList(IRI predicate, RdfObject... objects) {
+		this(Rdf.iri(predicate), objects);
+	}
+
+	/**
+	 * Build a predicate path with an object list.
+	 *
+	 * @param propertyPathConfigurer
+	 * @param objects
+	 */
+	RdfPredicateObjectList(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer, RdfObject... objects) {
+		super(buildPath(propertyPathConfigurer), ", ");
+		printNameIfEmpty(false);
+		and(objects);
+	}
+
+	private static String buildPath(Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer) {
+		EmptyPropertyPathBuilder pathBuilder = new EmptyPropertyPathBuilder();
+		propertyPathConfigurer.accept(pathBuilder);
+		return pathBuilder.build().getQueryString();
 	}
 
 	/**

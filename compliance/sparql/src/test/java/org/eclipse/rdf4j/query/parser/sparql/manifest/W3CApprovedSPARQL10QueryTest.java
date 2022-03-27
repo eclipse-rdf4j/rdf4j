@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL10QueryComplianceTest;
 
 /**
  * Checks conformance of SPARQL query evaluation against the W3C-approved SPARQL 1.0 query test cases

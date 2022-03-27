@@ -1,8 +1,0 @@
-SELECT
-  *
-FROM
-  {A} B {C};
-      D {E}
-UNION
-  ( {U} V {W},
-    {X} Y {Z} )

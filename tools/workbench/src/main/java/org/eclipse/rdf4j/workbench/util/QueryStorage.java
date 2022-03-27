@@ -11,8 +11,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
 
-import org.eclipse.rdf4j.RDF4JException;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -118,9 +118,9 @@ public class QueryStorage {
 	 * @throws RepositoryException if there is an issue creating the object to access the repository
 	 * @throws IOException
 	 */
-	protected QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
+	private QueryStorage(final AppConfiguration appConfig) throws RepositoryException, IOException {
 		queries = new SailRepository(new NativeStore(new File(appConfig.getDataDir(), "queries")));
-		queries.initialize();
+		queries.init();
 	}
 
 	public void shutdown() {
@@ -161,7 +161,7 @@ public class QueryStorage {
 	 * @param queryName     the name for the query
 	 * @param userName      the user saving the query
 	 * @param shared        whether the query is to be shared with other users
-	 * @param queryLanguage the language, SeRQL or SPARQL, of the query
+	 * @param queryLanguage the language of the query (only SPARQL is currently supported)
 	 * @param queryText     the actual query text
 	 * @param infer
 	 * @param rowsPerPage   rows to display per page, may be 0 (all), 10, 50, 100, or 200)
@@ -170,8 +170,8 @@ public class QueryStorage {
 	public void saveQuery(final HTTPRepository repository, final String queryName, final String userName,
 			final boolean shared, final QueryLanguage queryLanguage, final String queryText, final boolean infer,
 			final int rowsPerPage) throws RDF4JException {
-		if (QueryLanguage.SPARQL != queryLanguage && QueryLanguage.SERQL != queryLanguage) {
-			throw new RepositoryException("May only save SPARQL or SeRQL queries, not" + queryLanguage.toString());
+		if (QueryLanguage.SPARQL != queryLanguage) {
+			throw new RepositoryException("May only save SPARQL queries, not" + queryLanguage.toString());
 		}
 		if (0 != rowsPerPage && 10 != rowsPerPage && 20 != rowsPerPage && 50 != rowsPerPage && 100 != rowsPerPage
 				&& 200 != rowsPerPage) {
@@ -191,7 +191,7 @@ public class QueryStorage {
 	 *
 	 * @param query       the node identifying the query of interest
 	 * @param currentUser the user to check access for
-	 * @return <tt>true</tt> if the given query was saved by the given user or the anonymous user
+	 * @return <var>true</var> if the given query was saved by the given user or the anonymous user
 	 */
 	public boolean canChange(final IRI query, final String currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
@@ -203,7 +203,7 @@ public class QueryStorage {
 	 *
 	 * @param query       the node identifying the query of interest
 	 * @param currentUser the user to check access for
-	 * @return <tt>true</tt> if the given query was saved by either the given user or the anonymous user, or is shared
+	 * @return <var>true</var> if the given query was saved by either the given user or the anonymous user, or is shared
 	 */
 	public boolean canRead(IRI query, String currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
@@ -213,7 +213,7 @@ public class QueryStorage {
 	private boolean performAccessQuery(String accessSPARQL, IRI query, String currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
 		final QueryStringBuilder canDelete = new QueryStringBuilder(accessSPARQL);
-		canDelete.replaceURI(QUERY, query.toString());
+		canDelete.replaceURI(QUERY, query.stringValue());
 		canDelete.replaceQuote(USER_NAME, currentUser);
 		LOGGER.info("{}", canDelete);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
@@ -247,7 +247,7 @@ public class QueryStorage {
 			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
 		final QueryStringBuilder delete = new QueryStringBuilder(DELETE);
 		delete.replaceQuote(QueryStorage.USER_NAME, userName);
-		delete.replaceURI(QUERY, query.toString());
+		delete.replaceURI(QUERY, query.stringValue());
 		updateQueryRepository(delete.toString());
 	}
 

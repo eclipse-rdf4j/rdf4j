@@ -224,6 +224,19 @@ public class SPARQLQueryRenderTest {
 	}
 
 	@Test
+	public void renderConstruct() throws Exception {
+		StringBuffer sb = new StringBuffer();
+		sb.append("construct  {").append(lineSeparator);
+		sb.append("  ?s ?p ?o.").append(lineSeparator);
+		sb.append("}").append(lineSeparator);
+		sb.append("where {").append(lineSeparator);
+		sb.append("  ?s ?p ?o.").append(lineSeparator);
+		sb.append("}");
+		String query = sb.toString();
+		executeRenderTest(query, query);
+	}
+
+	@Test
 	public void renderFunctionsOnRdfTermsTest() throws Exception {
 		StringBuffer sb = new StringBuffer();
 		sb.append("select ?b2").append(lineSeparator);

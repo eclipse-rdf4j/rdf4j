@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.numeric;
 
-import java.util.Random;
-
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -34,10 +32,7 @@ public class Rand implements Function {
 			throw new ValueExprEvaluationException("RAND requires 0 arguments, got " + args.length);
 		}
 
-		Random randomGenerator = new Random();
-		double randomValue = randomGenerator.nextDouble();
-
-		return valueFactory.createLiteral(randomValue);
+		return valueFactory.createLiteral(Math.random());
 	}
 
 }

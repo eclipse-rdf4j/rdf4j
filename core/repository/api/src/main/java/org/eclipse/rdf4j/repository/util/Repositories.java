@@ -210,7 +210,7 @@ public final class Repositories {
 	 * @param repository       The {@link Repository} to open a connection to.
 	 * @param processFunction  A {@link Function} that performs an action on the connection and returns a result.
 	 * @param exceptionHandler A {@link Consumer} that handles an exception if one was generated.
-	 * @return The result of applying the function, or <tt>null</tt> if an exception occurs and the exception handler
+	 * @return The result of applying the function, or <var>null</var> if an exception occurs and the exception handler
 	 *         does not rethrow the exception.
 	 * @throws RepositoryException              If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException If the transaction state was not properly recognised. (Optional specific
@@ -235,7 +235,7 @@ public final class Repositories {
 	 * @param repository       The {@link Repository} to open a connection to.
 	 * @param processFunction  A {@link Function} that performs an action on the connection and returns a result.
 	 * @param exceptionHandler A {@link Consumer} that handles an exception if one was generated.
-	 * @return The result of applying the function, or <tt>null</tt> if an exception occurs and the exception handler
+	 * @return The result of applying the function, or <var>null</var> if an exception occurs and the exception handler
 	 *         does not rethrow the exception.
 	 * @throws RepositoryException              If there was an exception dealing with the Repository.
 	 * @throws UnknownTransactionStateException If the transaction state was not properly recognised. (Optional specific
@@ -260,7 +260,7 @@ public final class Repositories {
 	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
-	 * @return The result of applying the function, or <tt>null</tt> if an exception is thrown.
+	 * @return The result of applying the function, or <var>null</var> if an exception is thrown.
 	 */
 	public static <T> T getSilent(Repository repository, Function<RepositoryConnection, T> processFunction) {
 		return get(repository, processFunction, e -> {
@@ -274,7 +274,7 @@ public final class Repositories {
 	 * @param <T>             The type of the return value.
 	 * @param repository      The {@link Repository} to open a connection to.
 	 * @param processFunction A {@link Function} that performs an action on the connection and returns a result.
-	 * @return The result of applying the function, or <tt>null</tt> if an exception is thrown.
+	 * @return The result of applying the function, or <var>null</var> if an exception is thrown.
 	 */
 	public static <T> T getSilentNoTransaction(Repository repository,
 			Function<RepositoryConnection, T> processFunction) {

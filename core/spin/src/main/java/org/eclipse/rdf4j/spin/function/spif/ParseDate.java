@@ -89,7 +89,7 @@ public class ParseDate extends BinaryFunction {
 			}
 		}
 
-		return valueFactory.createLiteral(dateValue, XMLDatatypeUtil.qnameToURI(dateType));
+		return valueFactory.createLiteral(dateValue, XMLDatatypeUtil.qnameToCoreDatatype(dateType));
 	}
 
 	static final class FieldAwareGregorianCalendar extends GregorianCalendar {

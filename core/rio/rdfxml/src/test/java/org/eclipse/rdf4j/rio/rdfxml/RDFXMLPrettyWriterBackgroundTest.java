@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -51,7 +52,8 @@ public class RDFXMLPrettyWriterBackgroundTest extends AbstractRDFXMLWriterTest {
 	protected Model parse(InputStream reader, String baseURI)
 			throws RDFParseException, RDFHandlerException, IOException {
 		return QueryResults
-				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat()));
+				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat(),
+						new WeakReference<>(this)));
 	}
 
 	/**

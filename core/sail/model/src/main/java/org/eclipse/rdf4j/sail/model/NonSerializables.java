@@ -35,7 +35,7 @@ public class NonSerializables {
 	 * @param key the key.
 	 * @return the registered object, or <code>null</code> if no matching EvaluationStrategy can be found.
 	 */
-	public static final Object get(UUID key) {
+	public static Object get(UUID key) {
 		return registry.getIfPresent(key);
 	}
 
@@ -46,8 +46,8 @@ public class NonSerializables {
 	 * @return the registry key with which the supplied object can be retrieved, or <code>null</code> if the supplied
 	 *         object is not in the registry.
 	 */
-	public static final UUID getKey(Object obj) {
-		final Map<UUID, Object> map = registry.asMap();
+	public static UUID getKey(Object obj) {
+		Map<UUID, Object> map = registry.asMap();
 
 		// we could make this lookup more efficient with a WeakHashMap-based
 		// reverse index, but we currently prefer this slower but more robust
@@ -70,7 +70,7 @@ public class NonSerializables {
 	 * @param obj the object to register
 	 * @return the key with which the object is registered.
 	 */
-	public static final UUID register(Object obj) {
+	public static UUID register(Object obj) {
 		UUID key;
 		if (obj instanceof UUIDable) {
 			key = ((UUIDable) obj).getUUID();

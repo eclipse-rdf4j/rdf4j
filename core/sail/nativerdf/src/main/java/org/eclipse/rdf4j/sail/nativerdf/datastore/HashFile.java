@@ -544,7 +544,7 @@ public class HashFile implements Closeable {
 		}
 
 		/**
-		 * Returns the next ID that has been mapped to the specified hash code, or <tt>-1</tt> if no more IDs were
+		 * Returns the next ID that has been mapped to the specified hash code, or <var>-1</var> if no more IDs were
 		 * found.
 		 */
 		public int next() throws IOException {

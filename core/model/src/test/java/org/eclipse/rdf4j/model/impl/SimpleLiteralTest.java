@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.model.impl;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.LiteralTest;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 
 /**
  * Unit tests for {@link SimpleLiteral}.
@@ -28,6 +29,11 @@ public class SimpleLiteralTest extends LiteralTest {
 
 	@Override
 	protected Literal literal(String label, IRI datatype) {
+		return new SimpleLiteral(label, datatype);
+	}
+
+	@Override
+	protected Literal literal(String label, CoreDatatype datatype) {
 		return new SimpleLiteral(label, datatype);
 	}
 

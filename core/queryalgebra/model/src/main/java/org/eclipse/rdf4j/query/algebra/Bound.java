@@ -51,7 +51,7 @@ public class Bound extends AbstractQueryModelNode implements ValueExpr {
 	/**
 	 * Sets the argument of this unary value operator.
 	 *
-	 * @param arg The (new) argument for this operator, must not be <tt>null</tt>.
+	 * @param arg The (new) argument for this operator, must not be <var>null</var>.
 	 */
 	public void setArg(Var arg) {
 		assert arg != null : "arg must not be null";

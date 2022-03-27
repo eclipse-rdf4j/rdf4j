@@ -14,9 +14,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
+import java.util.Objects;
 
 import org.apache.http.client.HttpClient;
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -519,7 +519,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		// to preserve bnode identity, we need to make sure all statements are
 		// processed in a single INSERT DATA command
@@ -549,7 +550,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		// to preserve bnode identity, we need to make sure all statements are
 		// processed in a single INSERT DATA command
@@ -578,7 +580,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		// to preserve bnode identity, we need to make sure all statements are
 		// processed in a single INSERT DATA command
@@ -608,7 +611,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	@Override
 	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		// to preserve bnode identity, we need to make sure all statements are
 		// processed in a single INSERT DATA command
@@ -664,7 +668,8 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	@Override
 	public void clear(Resource... contexts) throws RepositoryException {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 		boolean localTransaction = startLocalTransaction();
 
 		String clearMode = "CLEAR";

@@ -47,7 +47,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 
 		private final File file;
 
-		private ObjectOutputStream output;
+		private final ObjectOutputStream output;
 
 		private ObjectInputStream input;
 
@@ -134,9 +134,9 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		@Override
 		public int size() {
 			if (next == null) {
-				return (int) size;
+				return size;
 			} else {
-				return (int) size + 1;
+				return size + 1;
 			}
 		}
 
@@ -277,17 +277,17 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 			while (iter.hasNext()) {
 				if (list.size() >= syncThreshold && list.size() < limit) {
 					SerializedQueue<BindingSet> queue = new SerializedQueue<>("orderiter");
-					sort(list).forEach(bs -> queue.add(bs));
+					sort(list).forEach(queue::add);
 					serialized.add(queue);
 					decrement(list.size() - queue.size());
 					list = new ArrayList<>(list.size());
-					if (threshold == null && serialized.stream().mapToLong(q -> q.size()).sum() >= limit) {
-						Stream<BindingSet> stream = serialized.stream().map(q -> q.peekLast());
-						threshold = stream.sorted(comparator).skip(serialized.size() - 1).findFirst().get();
+					if (threshold == null && serialized.stream().mapToLong(SerializedQueue::size).sum() >= limit) {
+						Stream<BindingSet> stream = serialized.stream().map(SerializedQueue::peekLast);
+						threshold = stream.sorted(comparator).skip(serialized.size() - 1).findFirst().orElseThrow();
 					}
 				} else if (list.size() >= limit2 || !distinct && threshold == null && list.size() >= limit) {
 					List<BindingSet> sorted = new ArrayList<>(limit2);
-					sort(list).forEach(bs -> sorted.add(bs));
+					sort(list).forEach(sorted::add);
 					decrement(list.size() - sorted.size());
 					list = sorted;
 					if (sorted.size() >= limit) {
@@ -305,11 +305,17 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		} finally {
 			iter.close();
 		}
-		SortedIterators<BindingSet> iterator;
+
 		List<Iterator<BindingSet>> iterators = new ArrayList<>(serialized.size() + 1);
-		serialized.forEach(queue -> iterators.add(queue.iterator()));
+		serialized
+				.stream()
+				.map(SerializedQueue::iterator)
+				.forEach(iterators::add);
+
 		iterators.add(sort(list).iterator());
-		iterator = new SortedIterators<>(comparator, distinct, iterators);
+
+		SortedIterators<BindingSet> iterator = new SortedIterators<>(comparator, distinct, iterators);
+
 		return new LimitIteration<>(new CloseableIteratorIteration<>(iterator), limit);
 	}
 

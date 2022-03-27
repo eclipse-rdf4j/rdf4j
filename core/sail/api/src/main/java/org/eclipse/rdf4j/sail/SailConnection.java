@@ -9,15 +9,14 @@ package org.eclipse.rdf4j.sail;
 
 import java.util.Optional;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.URI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -76,7 +75,7 @@ public interface SailConnection extends AutoCloseable {
 	 * supplied bindings as input parameters.
 	 *
 	 * @param tupleExpr       The tuple expression to evaluate.
-	 * @param dataset         The dataset to use for evaluating the query, <tt>null</tt> to use the Sail's default
+	 * @param dataset         The dataset to use for evaluating the query, <var>null</var> to use the Sail's default
 	 *                        dataset.
 	 * @param bindings        A set of input parameters for the query evaluation. The keys reference variable names that
 	 *                        should be bound to the value they map to.
@@ -99,17 +98,17 @@ public interface SailConnection extends AutoCloseable {
 
 	/**
 	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
-	 * parameters may be null to indicate wildcards. The <tt>includeInferred</tt> parameter can be used to control which
-	 * statements are fetched: all statements or only the statements that have been added explicitly.
+	 * parameters may be null to indicate wildcards. The <var>includeInferred</var> parameter can be used to control
+	 * which statements are fetched: all statements or only the statements that have been added explicitly.
 	 *
-	 * @param subj            A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred            A URI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj             A Value specifying the object, or <tt>null</tt> for a wildcard.
+	 * @param subj            A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred            A URI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj             A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @param includeInferred if false, no inferred statements are returned; if true, inferred statements are returned
 	 *                        if available
 	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
 	 *                        optional. If no contexts are specified the method operates on the entire repository. A
-	 *                        <tt>null</tt> value can be used to match context-less statements.
+	 *                        <var>null</var> value can be used to match context-less statements.
 	 * @return The statements matching the specified pattern.
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
 	 * @throws IllegalStateException If the connection has been closed.
@@ -118,28 +117,19 @@ public interface SailConnection extends AutoCloseable {
 			boolean includeInferred, Resource... contexts) throws SailException;
 
 	/**
-	 * @deprecated since 4.0. Use {@link #getStatements(Resource, IRI, Value, boolean, Resource...)} instead.
-	 */
-	@Deprecated
-	default CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, URI pred, Value obj,
-			boolean includeInferred, Resource... contexts) throws SailException {
-		return getStatements(subj, (IRI) pred, obj, includeInferred, contexts);
-	}
-
-	/**
 	 * Determines if the store contains any statements from the specified contexts that have a specific subject,
-	 * predicate and/or object. All three parameters may be null to indicate wildcards. The <tt>includeInferred</tt>
+	 * predicate and/or object. All three parameters may be null to indicate wildcards. The <var>includeInferred</var>
 	 * parameter can be used to control which statements are checked: all statements or only the statements that have
 	 * been added explicitly.
 	 *
-	 * @param subj            A Resource specifying the subject, or <tt>null</tt> for a wildcard.
-	 * @param pred            An IRI specifying the predicate, or <tt>null</tt> for a wildcard.
-	 * @param obj             A Value specifying the object, or <tt>null</tt> for a wildcard.
+	 * @param subj            A Resource specifying the subject, or <var>null</var> for a wildcard.
+	 * @param pred            An IRI specifying the predicate, or <var>null</var> for a wildcard.
+	 * @param obj             A Value specifying the object, or <var>null</var> for a wildcard.
 	 * @param includeInferred if false, no inferred statements are returned; if true, inferred statements are returned
 	 *                        if available
 	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
 	 *                        optional. If no contexts are specified the method operates on the entire repository. A
-	 *                        <tt>null</tt> value can be used to match context-less statements.
+	 *                        <var>null</var> value can be used to match context-less statements.
 	 * @return <code>true</code> iff the store contains any statements matching the supplied criteria,
 	 *         <code>false</code> otherwise.
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
@@ -160,7 +150,7 @@ public interface SailConnection extends AutoCloseable {
 	 *
 	 * @param contexts The context(s) to determine the size of. Note that this parameter is a vararg and as such is
 	 *                 optional. If no contexts are specified the method operates on the entire repository. A
-	 *                 <tt>null</tt> value can be used to match context-less statements.
+	 *                 <var>null</var> value can be used to match context-less statements.
 	 * @return The number of explicit statements in this store, or in the specified context(s).
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
@@ -285,36 +275,20 @@ public interface SailConnection extends AutoCloseable {
 	void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
 
 	/**
-	 * @deprecated since 4.0. Use {@link #addStatement(Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void addStatement(Resource subj, URI pred, Value obj, Resource... contexts) throws SailException {
-		addStatement(subj, (IRI) pred, obj, contexts);
-	}
-
-	/**
 	 * Removes all statements matching the specified subject, predicate and object from the repository. All three
 	 * parameters may be null to indicate wildcards.
 	 *
-	 * @param subj     The subject of the statement that should be removed, or <tt>null</tt> to indicate a wildcard.
-	 * @param pred     The predicate of the statement that should be removed, or <tt>null</tt> to indicate a wildcard.
-	 * @param obj      The object of the statement that should be removed , or <tt>null</tt> to indicate a wildcard. *
+	 * @param subj     The subject of the statement that should be removed, or <var>null</var> to indicate a wildcard.
+	 * @param pred     The predicate of the statement that should be removed, or <var>null</var> to indicate a wildcard.
+	 * @param obj      The object of the statement that should be removed , or <var>null</var> to indicate a wildcard. *
 	 * @param contexts The context(s) from which to remove the statement. Note that this parameter is a vararg and as
 	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
-	 *                 <tt>null</tt> value can be used to match context-less statements.
+	 *                 <var>null</var> value can be used to match context-less statements.
 	 * @throws SailException         If the statement could not be removed, for example because no transaction is
 	 *                               active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
-
-	/**
-	 * @deprecated since 4.0. Use {@link #removeStatements(Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void removeStatements(Resource subj, URI pred, Value obj, Resource... contexts) throws SailException {
-		removeStatements(subj, (IRI) pred, obj, contexts);
-	}
 
 	/**
 	 * Signals the start of an update operation. The given <code>op</code> maybe passed to subsequent
@@ -342,15 +316,6 @@ public interface SailConnection extends AutoCloseable {
 			throws SailException;
 
 	/**
-	 * @deprecated since 4.0. Use {@link #addStatement(UpdateContext, Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void addStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
-			throws SailException {
-		addStatement(op, subj, (IRI) pred, obj, contexts);
-	}
-
-	/**
 	 * Removes all statements matching the specified subject, predicate and object from the repository. All three
 	 * parameters may be null to indicate wildcards. Called when removing statements through a {@link UpdateExpr}
 	 * operation.
@@ -361,22 +326,13 @@ public interface SailConnection extends AutoCloseable {
 	 * @param obj      The object of the statement that should be removed.
 	 * @param contexts The context(s) from which to remove the statement. Note that this parameter is a vararg and as
 	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
-	 *                 <tt>null</tt> value can be used to match context-less statements.
+	 *                 <var>null</var> value can be used to match context-less statements.
 	 * @throws SailException         If the statement could not be removed, for example because no transaction is
 	 *                               active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
-
-	/**
-	 * @deprecated since 4.0. USe {@link #removeStatement(UpdateContext, Resource, IRI, Value, Resource...)} instead.
-	 */
-	@Deprecated
-	default void removeStatement(UpdateContext op, Resource subj, URI pred, Value obj, Resource... contexts)
-			throws SailException {
-		removeStatement(op, subj, (IRI) pred, obj, contexts);
-	}
 
 	/**
 	 * Indicates that the given <code>op</code> will not be used in any call again. Implementations should use this to
@@ -393,7 +349,7 @@ public interface SailConnection extends AutoCloseable {
 	 *
 	 * @param contexts The context(s) from which to remove the statements. Note that this parameter is a vararg and as
 	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
-	 *                 <tt>null</tt> value can be used to match context-less statements.
+	 *                 <var>null</var> value can be used to match context-less statements.
 	 * @throws SailException         If the statements could not be removed.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
@@ -412,10 +368,10 @@ public interface SailConnection extends AutoCloseable {
 	 * Gets the namespace that is associated with the specified prefix, if any.
 	 *
 	 * @param prefix A namespace prefix, or an empty string in case of the default namespace.
-	 * @return The namespace name that is associated with the specified prefix, or <tt>null</tt> if there is no such
+	 * @return The namespace name that is associated with the specified prefix, or <var>null</var> if there is no such
 	 *         namespace.
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
-	 * @throws NullPointerException  In case <tt>prefix</tt> is <tt>null</tt>.
+	 * @throws NullPointerException  In case <var>prefix</var> is <var>null</var>.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	String getNamespace(String prefix) throws SailException;
@@ -426,7 +382,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @param prefix The new prefix, or an empty string in case of the default namespace.
 	 * @param name   The namespace name that the prefix maps to.
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
-	 * @throws NullPointerException  In case <tt>prefix</tt> or <tt>name</tt> is <tt>null</tt>.
+	 * @throws NullPointerException  In case <var>prefix</var> or <var>name</var> is <var>null</var>.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void setNamespace(String prefix, String name) throws SailException;
@@ -436,7 +392,7 @@ public interface SailConnection extends AutoCloseable {
 	 *
 	 * @param prefix The namespace prefix, or an empty string in case of the default namespace.
 	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
-	 * @throws NullPointerException  In case <tt>prefix</tt> is <tt>null</tt>.
+	 * @throws NullPointerException  In case <var>prefix</var> is <var>null</var>.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
 	void removeNamespace(String prefix) throws SailException;
@@ -479,7 +435,7 @@ public interface SailConnection extends AutoCloseable {
 	 *
 	 * @param level           the explanation level, eg. OPTIMIZED
 	 * @param tupleExpr       The tuple expression to evaluate. Mutable.
-	 * @param dataset         The dataset to use for evaluating the query, <tt>null</tt> to use the Sail's default
+	 * @param dataset         The dataset to use for evaluating the query, <var>null</var> to use the Sail's default
 	 *                        dataset.
 	 * @param bindings        A set of input parameters for the query evaluation. The keys reference variable names that
 	 *                        should be bound to the value they map to.

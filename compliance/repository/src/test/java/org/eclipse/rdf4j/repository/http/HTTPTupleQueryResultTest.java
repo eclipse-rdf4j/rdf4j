@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.repository.http;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.TupleQueryResultTest;
+import org.eclipse.rdf4j.testsuite.repository.TupleQueryResultTest;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 

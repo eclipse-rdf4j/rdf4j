@@ -13,7 +13,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.util.concurrent.CountDownLatch;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -26,15 +26,15 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 @Tag("slow")
+@Isolated
 public class TransactionalIsolationSlowIT {
 
 	@Test
 	public void testIsolation2_multithreaded_READ_COMMITTED() throws Throwable {
-
 		for (int i = 0; i < 1000; i++) {
-
 			ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
 			SailRepository sailRepository = new SailRepository(shaclSail);
@@ -170,9 +170,7 @@ public class TransactionalIsolationSlowIT {
 
 	@Test
 	public void testIsolation2_multithreaded_SNAPSHOT() throws Throwable {
-
 		for (int i = 0; i < 1000; i++) {
-
 			ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
 			SailRepository sailRepository = new SailRepository(shaclSail);

@@ -61,7 +61,7 @@ public class SyntaxTreeBuilder
 	}
 
 	/**
-	 * Trims <tt>n</tt> character from the start and end of the supplied string.
+	 * Trims <var>n</var> character from the start and end of the supplied string.
 	 */
 	private static String _trimString(String s, int n) {
 		if (s.length() >= 2 * n) {
@@ -11018,7 +11018,7 @@ public class SyntaxTreeBuilder
 	static private final class LookaheadSuccess extends java.lang.Error {
 	}
 
-	final private LookaheadSuccess jj_ls = new LookaheadSuccess();
+	final static private LookaheadSuccess jj_ls = new LookaheadSuccess();
 
 	private boolean jj_scan_token(int kind) {
 		if (jj_scanpos == jj_lastpos) {

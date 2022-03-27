@@ -8,8 +8,17 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
+import java.util.Arrays;
+import java.util.stream.Collectors;
+
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 
+/**
+ * Use the {@link org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder} instead.
+ */
+@Deprecated(since = "4.0")
 public class PropertyPaths {
 	/**
 	 * Construct property paths for use with the {@link SparqlBuilder}
@@ -34,11 +43,23 @@ public class PropertyPaths {
 		};
 	}
 
+	public static RdfPredicate path(IRI... aElements) {
+		return path(Arrays.stream(aElements).map(Rdf::iri).collect(Collectors.toList()).toArray(new RdfPredicate[0]));
+	}
+
 	public static RdfPredicate zeroOrMore(RdfPredicate aElement) {
 		return () -> aElement.getQueryString() + "*";
 	}
 
+	public static RdfPredicate zeroOrMore(IRI aElement) {
+		return zeroOrMore(Rdf.iri(aElement));
+	}
+
 	public static RdfPredicate oneOrMore(RdfPredicate aElement) {
 		return () -> aElement.getQueryString() + "+";
+	}
+
+	public static RdfPredicate oneOrMore(IRI aElement) {
+		return oneOrMore(Rdf.iri(aElement));
 	}
 }

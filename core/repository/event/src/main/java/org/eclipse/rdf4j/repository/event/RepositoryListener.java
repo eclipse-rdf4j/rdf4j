@@ -19,7 +19,7 @@ public interface RepositoryListener extends EventListener {
 
 	void getConnection(NotifyingRepository repo, NotifyingRepositoryConnection conn);
 
-	void initialize(NotifyingRepository repo);
+	void init(NotifyingRepository repo);
 
 	void setDataDir(NotifyingRepository repo, File dataDir);
 

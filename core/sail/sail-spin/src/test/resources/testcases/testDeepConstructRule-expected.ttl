@@ -1,5 +1,0 @@
-@prefix sp: <http://spinrdf.org/sp#>.
-@prefix spin: <http://spinrdf.org/spin#>.
-@prefix ex: <http://example.org/>.
-
-ex:ex1 ex:newProp ex:ex4.

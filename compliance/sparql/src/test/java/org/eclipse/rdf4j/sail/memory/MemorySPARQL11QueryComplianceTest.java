@@ -8,10 +8,10 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11QueryComplianceTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11QueryComplianceTest;
 
 /**
  * Run {@link SPARQL11QueryComplianceTest} on an in-memory store

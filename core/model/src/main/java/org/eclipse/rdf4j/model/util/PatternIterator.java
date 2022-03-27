@@ -86,7 +86,7 @@ public class PatternIterator<S extends Statement> implements Iterator<S> {
 	 * iterator pass through this method in the same order as they are coming from the wrapped iterator.
 	 *
 	 * @param st The statement to be tested.
-	 * @return <tt>true</tt> if the object should be returned, <tt>false</tt> otherwise.
+	 * @return <var>true</var> if the object should be returned, <var>false</var> otherwise.
 	 */
 	protected boolean accept(S st) {
 		if (subj != null && !subj.equals(st.getSubject())) {

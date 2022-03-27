@@ -8,10 +8,13 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
 
+import java.util.function.Consumer;
+
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Projectable;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
@@ -134,6 +137,23 @@ public class GraphPatterns {
 	 */
 	public static TriplePattern tp(PropertiesBlankNode bnode) {
 		return new BNodeTriplePattern(bnode);
+	}
+
+	/**
+	 * Create a triple pattern from a property path and a list of objects.
+	 *
+	 * @param subject                the subject
+	 * @param propertyPathConfigurer an object that accepts an {@link EmptyPropertyPathBuilder} and uses it to create a
+	 *                               property path
+	 * @param objects                the object(s) of the triple(s)
+	 *
+	 * @return the triple pattern
+	 */
+	public static TriplePattern tp(RdfSubject subject, Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer,
+			RdfObject... objects) {
+		EmptyPropertyPathBuilder builder = new EmptyPropertyPathBuilder();
+		propertyPathConfigurer.accept(builder);
+		return new TriplesSameSubject(subject, builder.build(), objects);
 	}
 
 	/**

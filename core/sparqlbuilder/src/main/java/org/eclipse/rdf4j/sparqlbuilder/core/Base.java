@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 /**
@@ -22,6 +25,10 @@ public class Base implements QueryElement {
 
 	Base(Iri iri) {
 		this.iri = iri;
+	}
+
+	Base(IRI iri) {
+		this(iri(iri));
 	}
 
 	@Override

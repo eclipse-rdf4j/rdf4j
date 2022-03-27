@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.repository.sparql.query;
 
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
@@ -41,7 +42,7 @@ public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			return client.sendTupleQuery(QueryLanguage.SPARQL, getQueryString(), baseURI, dataset, getIncludeInferred(),
-					getMaxExecutionTime(), getBindingsArray());
+					getMaxExecutionTime(), new WeakReference<>(this), getBindingsArray());
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}

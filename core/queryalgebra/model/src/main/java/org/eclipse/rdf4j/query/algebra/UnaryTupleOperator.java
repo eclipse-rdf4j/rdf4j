@@ -33,7 +33,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	/**
 	 * Creates a new unary tuple operator.
 	 *
-	 * @param arg The operator's argument, must not be <tt>null</tt>.
+	 * @param arg The operator's argument, must not be <var>null</var>.
 	 */
 	protected UnaryTupleOperator(TupleExpr arg) {
 		setArg(arg);
@@ -55,7 +55,7 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	/**
 	 * Sets the argument of this unary tuple operator.
 	 *
-	 * @param arg The (new) argument for this operator, must not be <tt>null</tt>.
+	 * @param arg The (new) argument for this operator, must not be <var>null</var>.
 	 */
 	public void setArg(TupleExpr arg) {
 		assert arg != null : "arg must not be null";

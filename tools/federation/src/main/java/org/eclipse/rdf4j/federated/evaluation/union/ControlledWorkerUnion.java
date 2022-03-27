@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated.evaluation.union;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 
@@ -31,9 +30,9 @@ public class ControlledWorkerUnion<T> extends WorkerUnionBase<T> {
 
 	protected final Phaser phaser = new Phaser(1);
 
-	public ControlledWorkerUnion(FederationEvalStrategy strategy, ControlledWorkerScheduler<T> scheduler,
+	public ControlledWorkerUnion(ControlledWorkerScheduler<T> scheduler,
 			QueryInfo queryInfo) {
-		super(strategy, queryInfo);
+		super(queryInfo);
 		this.scheduler = scheduler;
 	}
 

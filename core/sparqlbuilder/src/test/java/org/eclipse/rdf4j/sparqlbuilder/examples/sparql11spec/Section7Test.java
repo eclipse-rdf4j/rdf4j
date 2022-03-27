@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
@@ -17,6 +18,7 @@ import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
+import org.junit.Assert;
 import org.junit.Test;
 
 public class Section7Test extends BaseExamples {
@@ -24,7 +26,7 @@ public class Section7Test extends BaseExamples {
 	public void example_7() {
 		String DC_10_NS = "http://purl.org/dc/elements/1.0/";
 		Prefix dc10 = SparqlBuilder.prefix("dc10", iri(DC_10_NS)), dc11 = SparqlBuilder.prefix("dc11", iri(DC_NS));
-		Variable title = SparqlBuilder.var("title"), book = SparqlBuilder.var("book");
+		Variable title = var("title"), book = var("book");
 
 		Iri dc10TitleIri = dc10.iri("title");
 		Iri dc11TitleIri = dc11.iri("title");
@@ -32,13 +34,25 @@ public class Section7Test extends BaseExamples {
 		GraphPattern titlePattern = GraphPatterns.union(book.has(dc10TitleIri, title), book.has(dc11TitleIri, title));
 
 		query.prefix(dc10).prefix(dc11).select(title).where(titlePattern);
-		p();
+		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"PREFIX dc10:  <http://purl.org/dc/elements/1.0/>\n"
+						+ "PREFIX dc11:  <http://purl.org/dc/elements/1.1/>\n"
+						+ "\n"
+						+ "SELECT ?title\n"
+						+ "WHERE  { { ?book dc10:title  ?title . } UNION { ?book dc11:title  ?title . } }"
+		));
 
 		resetQuery();
-		Variable x = query.var(), y = query.var(), author = SparqlBuilder.var("author");
+		Variable x = var("x"), y = var("y"), author = var("author");
 		GraphPattern dc10Title = book.has(dc10TitleIri, x), dc11Title = book.has(dc11TitleIri, y);
 		query.prefix(dc10, dc11).select(x, y).where(GraphPatterns.union(dc10Title, dc11Title));
-		p();
+		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"PREFIX dc10:  <http://purl.org/dc/elements/1.0/>\n"
+						+ "PREFIX dc11:  <http://purl.org/dc/elements/1.1/>\n"
+						+ "\n"
+						+ "SELECT ?x ?y\n"
+						+ "WHERE  { { ?book dc10:title ?x . } UNION { ?book dc11:title  ?y . } }"
+		));
 
 		resetQuery();
 		GraphPattern dc10Author = book.has(dc10.iri("creator"), author),
@@ -48,6 +62,15 @@ public class Section7Test extends BaseExamples {
 		query.prefix(dc10, dc11)
 				.select(title, author)
 				.where(GraphPatterns.and(dc10Title, dc10Author).union(GraphPatterns.and(dc11Title, dc11Author)));
-		p();
+		Assert.assertThat(query.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"PREFIX dc10:  <http://purl.org/dc/elements/1.0/>\n"
+						+ "PREFIX dc11:  <http://purl.org/dc/elements/1.1/>\n"
+						+ "\n"
+						+ "SELECT ?title ?author\n"
+						+ "WHERE  { { ?book dc10:title ?title .  ?book dc10:creator ?author .}\n"
+						+ "         UNION\n"
+						+ "         { ?book dc11:title ?title .  ?book dc11:creator ?author .}\n"
+						+ "       }"
+		));
 	}
 }

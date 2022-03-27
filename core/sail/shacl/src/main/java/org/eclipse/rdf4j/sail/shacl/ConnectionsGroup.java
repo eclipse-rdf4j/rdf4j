@@ -41,7 +41,7 @@ public class ConnectionsGroup implements Closeable {
 	private final Stats stats;
 
 	private final RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider;
-	private final boolean experimentalSparqlValidation;
+	private final boolean sparqlValidation;
 
 	private final ConcurrentLinkedQueue<SailConnection> connectionsToClose = new ConcurrentLinkedQueue<>();
 
@@ -51,7 +51,7 @@ public class ConnectionsGroup implements Closeable {
 	ConnectionsGroup(SailConnection baseConnection,
 			SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
 			Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider,
-			ShaclSailConnection.Settings transactionSettings, boolean experimentalSparqlValidation) {
+			ShaclSailConnection.Settings transactionSettings, boolean sparqlValidation) {
 		this.baseConnection = baseConnection;
 		this.previousStateConnection = previousStateConnection;
 		this.addedStatements = addedStatements;
@@ -59,7 +59,7 @@ public class ConnectionsGroup implements Closeable {
 		this.stats = stats;
 		this.rdfsSubClassOfReasonerProvider = rdfsSubClassOfReasonerProvider;
 		this.transactionSettings = transactionSettings;
-		this.experimentalSparqlValidation = experimentalSparqlValidation;
+		this.sparqlValidation = sparqlValidation;
 	}
 
 	public SailConnection getPreviousStateConnection() {
@@ -118,8 +118,8 @@ public class ConnectionsGroup implements Closeable {
 		return transactionSettings;
 	}
 
-	public boolean isExperimentalSparqlValidation() {
-		return experimentalSparqlValidation;
+	public boolean isSparqlValidation() {
+		return sparqlValidation;
 	}
 
 	interface RdfsSubClassOfReasonerProvider {

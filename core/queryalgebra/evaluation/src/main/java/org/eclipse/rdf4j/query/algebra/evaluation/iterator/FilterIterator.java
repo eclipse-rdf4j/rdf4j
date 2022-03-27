@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 
 public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationException> {
@@ -36,15 +37,18 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	 */
 	private final Set<String> scopeBindingNames;
 
+	private final QueryValueEvaluationStep condition;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			EvaluationStrategy strategy) throws QueryEvaluationException {
+			QueryValueEvaluationStep ves, EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
 		this.filter = filter;
 		this.strategy = strategy;
+		this.condition = ves;
 		this.scopeBindingNames = filter.getBindingNames();
 
 	}
@@ -79,7 +83,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 				scopeBindings.retainAll(scopeBindingNames);
 			}
 
-			return strategy.isTrue(filter.getCondition(), scopeBindings);
+			return strategy.isTrue(condition, scopeBindings);
 		} catch (ValueExprEvaluationException e) {
 			// failed to evaluate condition
 			return false;

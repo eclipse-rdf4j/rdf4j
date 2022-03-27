@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
@@ -52,9 +51,6 @@ import ch.qos.logback.classic.Logger;
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class NotClassBenchmarkEmpty {
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	private List<List<Statement>> allStatements;
 	private List<List<Statement>> allStatementsWithoutAnimals;
@@ -67,7 +63,6 @@ public class NotClassBenchmarkEmpty {
 	public void setUp() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
-		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 
 		allStatements = BenchmarkConfigs.generateStatements(((statements, i, j) -> {
 			IRI person = vf.createIRI("http://example.com/" + i + "_" + j);
@@ -103,11 +98,6 @@ public class NotClassBenchmarkEmpty {
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotClassBenchmark.ttl"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
@@ -125,11 +115,6 @@ public class NotClassBenchmarkEmpty {
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotClassBenchmark.ttl"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
 			for (List<Statement> statements : allStatements) {
 				connection.add(statements);
@@ -144,11 +129,6 @@ public class NotClassBenchmarkEmpty {
 	public void shaclWithoutAnimals() throws Exception {
 
 		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclNotClassBenchmark.ttl"));
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatementsWithoutAnimals) {
@@ -169,10 +149,6 @@ public class NotClassBenchmarkEmpty {
 		repository.init();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
 				connection.add(statements);
@@ -190,10 +166,6 @@ public class NotClassBenchmarkEmpty {
 
 		repository.init();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
 				connection.begin();
@@ -219,10 +191,6 @@ public class NotClassBenchmarkEmpty {
 
 		repository.init();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatementsWithoutAnimals) {
 				connection.begin();

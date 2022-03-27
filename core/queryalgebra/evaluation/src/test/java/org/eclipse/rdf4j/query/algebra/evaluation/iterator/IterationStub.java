@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.io.Serializable;
-import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -26,11 +25,6 @@ class IterationStub extends CloseableIteratorIteration<BindingSet, QueryEvaluati
 	int nextCount = 0;
 
 	int removeCount = 0;
-
-	@Override
-	public void setIterator(Iterator<? extends BindingSet> iter) {
-		super.setIterator(iter);
-	}
 
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
