@@ -6,7 +6,6 @@ PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-
 [] a <http://example.com/ontology#LangStringUniq>;
         <http://example.com/ontology#uniqStrOrLangstrEnDeAllDialects> "a", "b".
 

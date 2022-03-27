@@ -1,0 +1,96 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+ex:peopleKnowPeopleShapes {
+  ex:PersonShapeKnowsPerson a sh:NodeShape;
+    sh:targetClass foaf:Person;
+    sh:property [
+        sh:path foaf:knows;
+        sh:class foaf:Person;
+      ] .
+
+  rdf4j:nil sh:shapesGraph ex:peopleKnowPeopleShapes.
+  ex:data1 sh:shapesGraph ex:peopleKnowPeopleShapes.
+}
+
+ex:peopleKnowHumansShapes {
+  ex:PersonShapeKnowsHuman a sh:NodeShape;
+    sh:targetClass foaf:Person;
+    sh:property [
+        sh:path foaf:knows;
+        sh:class ex:Human;
+      ] .
+
+  ex:data2 sh:shapesGraph ex:peopleKnowHumansShapes.
+}
+
+
+ex:mustHaveNameShapes {
+  ex:PersonShapeMustHaveName a sh:NodeShape;
+    sh:targetClass foaf:Person;
+    sh:property [
+        sh:path foaf:name;
+        sh:minCount 1;
+      ] .
+
+  rdf4j:nil sh:shapesGraph ex:mustHaveNameShapes.
+  ex:data1 sh:shapesGraph ex:mustHaveNameShapes.
+  ex:data2 sh:shapesGraph ex:mustHaveNameShapes.
+}
+
+rdf4j:SHACLShapeGraph {
+  ex:PersonShapeMustHaveName a sh:NodeShape;
+    sh:targetClass foaf:Person;
+    sh:property [
+        sh:path foaf:phone;
+        sh:maxCount 2;
+      ] .
+}
+
+
+ex:maxFiveAcquaintances {
+  ex:PersonShapeMaxFiveAcquaintances a sh:NodeShape;
+    sh:targetClass foaf:Person;
+    sh:property [
+        sh:path foaf:knows;
+        sh:maxCount 5;
+      ] .
+
+  ex:data1 sh:shapesGraph ex:maxFiveAcquaintances.
+  ex:data2 sh:shapesGraph ex:maxFiveAcquaintances.
+}
+
+ex:nestedKnowsShouldHaveAge {
+  ex:PersonShapeNestedKnowsShouldHaveAge a sh:NodeShape;
+    sh:targetClass foaf:Person;
+    sh:property [
+      sh:path foaf:knows;
+      sh:property [
+        sh:path foaf:knows;
+        sh:property [
+          sh:path foaf:age;
+          sh:minCount 1;
+        ] ;
+      ] ;
+    ] .
+
+  ex:data1 sh:shapesGraph ex:nestedKnowsShouldHaveAge.
+  ex:data2 sh:shapesGraph ex:nestedKnowsShouldHaveAge.
+}
+
+ex:ignored {
+  ex:PersonShapeIgnored a sh:NodeShape;
+    sh:targetClass foaf:Person;
+    sh:property [
+        sh:path foaf:knows;
+        sh:maxCount 1;
+      ] .
+
+  ex:data1 sh:shapesGraph ex:ignored.
+  ex:data2 sh:shapesGraph ex:ignored.
+}
