@@ -377,6 +377,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 		this.statementCleared = from.statementCleared;
 	}
 
+	/**
+	 * Create a shallow clone of this Changeset. The shallow clone does not clone the underlying data structures, this
+	 * means that any changes made to the original will potentially be reflected in the clone and vice versa.
+	 *
+	 * @return a new Changeset that is a shallow clone of the current Changeset.
+	 */
 	public Changeset shallowClone() {
 
 		assert !closed;
