@@ -252,9 +252,13 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			@Override
 			public void meet(Var node) throws QueryEvaluationException {
 				super.meet(node);
-				if (!(node.isConstant() && node.getParentNode() instanceof StatementPattern)) {
+				if (node.isConstant() && node.getParentNode() instanceof StatementPattern) {
+					// we skip constants that are only used in StatementPatterns since these are never added to the
+					// BindingSet anyway
+				} else {
 					node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
 				}
+
 			}
 
 			@Override
