@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.Lock;
  * @author Håvard M. Ottestad
  */
 @InternalUseOnly
-public interface LockMonitoring {
+public interface LockMonitoring<T extends Lock> {
 	int INITIAL_WAIT_TO_COLLECT = 10000;
 
 	Lock getLock() throws InterruptedException;
@@ -28,6 +28,8 @@ public interface LockMonitoring {
 		return getLock();
 	}
 
+	T unsafeInnerLock(Lock lock);
+
 	default void runCleanup() {
 		// no-op
 	}
@@ -36,14 +38,18 @@ public interface LockMonitoring {
 		return false;
 	}
 
-	static LockMonitoring wrap(Lock.ExtendedSupplier supplier) {
-		return new Wrapper(supplier);
+	static <T extends Lock> LockMonitoring<T> wrap(Lock.ExtendedSupplier<T> supplier) {
+		return new Wrapper<>(supplier);
 	}
 
-	class Wrapper implements LockMonitoring {
-		private final Lock.ExtendedSupplier supplier;
+	Lock register(T lock);
 
-		public Wrapper(Lock.ExtendedSupplier supplier) {
+	void unregister(Lock lock);
+
+	class Wrapper<T extends Lock> implements LockMonitoring<T> {
+		private final Lock.ExtendedSupplier<T> supplier;
+
+		public Wrapper(Lock.ExtendedSupplier<T> supplier) {
 			this.supplier = supplier;
 		}
 
@@ -55,6 +61,22 @@ public interface LockMonitoring {
 		@Override
 		public Lock tryLock() {
 			return supplier.tryLock();
+		}
+
+		@Override
+		public T unsafeInnerLock(Lock lock) {
+			return (T) lock;
+		}
+
+		@Override
+		public void unregister(Lock lock) {
+			// no-op
+		}
+
+		@Override
+		public Lock register(Lock lock) {
+			// no-op;
+			return lock;
 		}
 	}
 }

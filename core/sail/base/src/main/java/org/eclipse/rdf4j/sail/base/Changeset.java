@@ -19,8 +19,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -128,28 +128,9 @@ abstract class Changeset implements SailSink, ModelFactory {
 		removedPrefixes = null;
 	}
 
-	public static Changeset simpleClone(Changeset from) {
-		assert !from.closed;
-
-		Changeset changeset = new Changeset() {
-			@Override
-			public void flush() throws SailException {
-
-			}
-
-			@Override
-			public Model createEmptyModel() {
-				return from.createEmptyModel();
-			}
-		};
-
-		changeset.setChangeset(from);
-
-		return changeset;
-	}
-
 	@Override
 	public void prepare() throws SailException {
+		assert !closed;
 		if (prepend != null && observed != null) {
 			for (SimpleStatementPattern p : observed) {
 				Resource subj = p.getSubject();
@@ -173,6 +154,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		assert !closed;
 		if (approved == null) {
 			return false;
 		}
@@ -186,6 +168,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		assert !closed;
 		if (deprecated == null) {
 			return false;
 		}
@@ -199,8 +182,9 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public void addRefback(SailDatasetImpl dataset) {
+		assert !closed;
 
-		long writeLock = refBacksReadWriteLock.writeLock();
+		boolean writeLock = refBacksReadWriteLock.writeLock();
 		try {
 			if (refbacks == null) {
 				refbacks = new ArrayList<>();
@@ -209,11 +193,11 @@ abstract class Changeset implements SailSink, ModelFactory {
 		} finally {
 			refBacksReadWriteLock.unlockWriter(writeLock);
 		}
-
 	}
 
 	public void removeRefback(SailDatasetImpl dataset) {
-		long writeLock = refBacksReadWriteLock.writeLock();
+		assert !closed;
+		boolean writeLock = refBacksReadWriteLock.writeLock();
 		try {
 			if (refbacks != null) {
 				refbacks.removeIf(d -> d == dataset);
@@ -225,6 +209,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public boolean isRefback() {
+		assert !closed;
 		boolean readLock = refBacksReadWriteLock.readLock();
 		try {
 			return refbacks != null && !refbacks.isEmpty();
@@ -232,10 +217,11 @@ abstract class Changeset implements SailSink, ModelFactory {
 		} finally {
 			refBacksReadWriteLock.unlockReader(readLock);
 		}
-
 	}
 
 	public void prepend(Changeset changeset) {
+		assert !closed;
+
 		prependLock.acquireUninterruptibly();
 
 		try {
@@ -246,13 +232,13 @@ abstract class Changeset implements SailSink, ModelFactory {
 		} finally {
 			prependLock.release();
 		}
-
 	}
 
 	@Override
 	public void setNamespace(String prefix, String name) {
+		assert !closed;
 
-		long writeLock = readWriteLock.writeLock();
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 			if (removedPrefixes == null) {
 				removedPrefixes = new HashSet<>();
@@ -270,7 +256,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void removeNamespace(String prefix) {
-		long writeLock = readWriteLock.writeLock();
+		assert !closed;
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 			if (addedNamespaces != null) {
 				addedNamespaces.remove(prefix);
@@ -287,9 +274,10 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void clearNamespaces() {
+		assert !closed;
 		namespaceCleared = true;
 
-		long writeLock = readWriteLock.writeLock();
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 
 			if (removedPrefixes != null) {
@@ -307,8 +295,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailConflictException {
-
-		long writeLock = readWriteLock.writeLock();
+		assert !closed;
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 			if (observed == null) {
 				observed = new HashSet<>();
@@ -332,7 +320,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 	public void observe(Resource subj, IRI pred, Value obj, Resource context)
 			throws SailConflictException {
 
-		long writeLock = readWriteLock.writeLock();
+		assert !closed;
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 			if (observed == null) {
 				observed = new HashSet<>();
@@ -348,7 +337,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void clear(Resource... contexts) {
-		long writeLock = readWriteLock.writeLock();
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 			if (contexts != null && contexts.length == 0) {
 				statementCleared = true;
@@ -384,7 +373,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public void approve(Statement statement) {
 
-		long writeLock = readWriteLock.writeLock();
+		assert !closed;
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 
 			if (deprecated != null) {
@@ -413,7 +403,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void deprecate(Statement statement) {
-		long writeLock = readWriteLock.writeLock();
+		assert !closed;
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 			if (approved != null) {
 				approved.remove(statement);
@@ -474,6 +465,9 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	protected void setChangeset(Changeset from) {
+		assert !closed;
+		assert !from.closed;
+
 		this.observed = from.observed;
 		this.approved = from.approved;
 		this.deprecated = from.deprecated;
@@ -485,7 +479,35 @@ abstract class Changeset implements SailSink, ModelFactory {
 		this.statementCleared = from.statementCleared;
 	}
 
+	/**
+	 * Create a shallow clone of this Changeset. The shallow clone does not clone the underlying data structures, this
+	 * means that any changes made to the original will potentially be reflected in the clone and vice versa.
+	 *
+	 * @return a new Changeset that is a shallow clone of the current Changeset.
+	 */
+	public Changeset shallowClone() {
+
+		assert !closed;
+
+		Changeset changeset = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return Changeset.this.createEmptyModel();
+			}
+		};
+
+		changeset.setChangeset(this);
+
+		return changeset;
+	}
+
 	public Set<SimpleStatementPattern> getObserved() {
+		assert !closed;
 		boolean readLock = readWriteLock.readLock();
 		try {
 
@@ -500,6 +522,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	 */
 	@Deprecated
 	public Set<StatementPattern> getObservations() {
+		assert !closed;
 		boolean readLock = readWriteLock.readLock();
 		try {
 			if (observed == null) {
@@ -522,6 +545,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public Set<Resource> getApprovedContexts() {
+		assert !closed;
 
 		boolean readLock = readWriteLock.readLock();
 		try {
@@ -534,6 +558,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public Set<Resource> getDeprecatedContexts() {
+		assert !closed;
 		if (deprecatedContexts == null) {
 			return null;
 		}
@@ -548,10 +573,12 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public boolean isStatementCleared() {
+		assert !closed;
 		return statementCleared;
 	}
 
 	public Map<String, String> getAddedNamespaces() {
+		assert !closed;
 		boolean readLock = readWriteLock.readLock();
 		try {
 			return addedNamespaces;
@@ -563,6 +590,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public Set<String> getRemovedPrefixes() {
+		assert !closed;
 		boolean readLock = readWriteLock.readLock();
 		try {
 			return cloneSet(removedPrefixes);
@@ -574,14 +602,17 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public boolean isNamespaceCleared() {
+		assert !closed;
 		return namespaceCleared;
 	}
 
 	public boolean hasDeprecated() {
+		assert !closed;
 		return deprecated != null && !deprecated.isEmpty();
 	}
 
 	boolean isChanged() {
+		assert !closed;
 		return approved != null || deprecated != null || approvedContexts != null
 				|| deprecatedContexts != null || addedNamespaces != null
 				|| removedPrefixes != null || statementCleared || namespaceCleared
@@ -589,6 +620,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	List<Statement> getDeprecatedStatements() {
+		assert !closed;
 		if (deprecated == null) {
 			return Collections.emptyList();
 		}
@@ -603,6 +635,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	List<Statement> getApprovedStatements() {
+		assert !closed;
 		if (approved == null) {
 			return Collections.emptyList();
 		}
@@ -617,6 +650,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	boolean hasDeprecated(Statement statement) {
+		assert !closed;
 		if (deprecated == null) {
 			return false;
 		}
@@ -631,11 +665,14 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	boolean hasApproved() {
+		assert !closed;
 		return approved != null && !approved.isEmpty();
 	}
 
 	Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
 			Resource[] contexts) {
+		assert !closed;
+
 		if (approved == null) {
 			return Collections.emptyList();
 		}
@@ -662,6 +699,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	Iterable<Triple> getApprovedTriples(Resource subj, IRI pred, Value obj) {
+		assert !closed;
 		if (approved == null) {
 			return Collections.emptyList();
 		}
@@ -703,7 +741,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	void removeApproved(Statement next) {
-		long writeLock = readWriteLock.writeLock();
+		assert !closed;
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 			if (approved != null) {
 				approved.remove(next);
@@ -715,6 +754,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	private <T> Set<T> cloneSet(Set<T> set) {
+		assert !closed;
 		if (set == null) {
 			return null;
 		}
@@ -745,7 +785,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
-		long writeLock = readWriteLock.writeLock();
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 
 			if (deprecated != null) {
@@ -770,7 +810,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void deprecateAll(Set<Statement> deprecated) {
-		long writeLock = readWriteLock.writeLock();
+		boolean writeLock = readWriteLock.writeLock();
 		try {
 
 			if (approved != null) {
@@ -863,7 +903,8 @@ abstract class Changeset implements SailSink, ModelFactory {
 	private static class AdderBasedReadWriteLock {
 
 		// StampedLock for handling writers.
-		private final StampedLock lock = new StampedLock();
+		private volatile boolean writeLocked;
+		private final AtomicBoolean writeLock = new AtomicBoolean();
 
 		// LongAdder for handling readers. When the count is equal then there are no active readers.
 		private final LongAdder readersLocked = new LongAdder();
@@ -872,13 +913,13 @@ abstract class Changeset implements SailSink, ModelFactory {
 		public boolean readLock() {
 			while (true) {
 				readersLocked.increment();
-				if (!lock.isWriteLocked()) {
+				if (!writeLocked) {
 					// Everything is good! We have acquired a read-lock and there are no active writers.
 					return true;
 				} else {
 					// Release our read lock so we don't block any writers.
 					readersUnlocked.increment();
-					while (lock.isWriteLocked()) {
+					while (writeLocked) {
 						Thread.onSpinWait();
 					}
 				}
@@ -893,9 +934,15 @@ abstract class Changeset implements SailSink, ModelFactory {
 			}
 		}
 
-		public long writeLock() {
+		public boolean writeLock() {
 			// Acquire a write-lock.
-			long writeStamp = lock.writeLock();
+			boolean writeLocked;
+			do {
+				writeLocked = writeLock.compareAndSet(false, true);
+				if (writeLocked) {
+					this.writeLocked = true;
+				}
+			} while (!writeLocked);
 
 			// Wait for active readers to finish.
 			while (true) {
@@ -904,7 +951,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 				long lockedSum = readersLocked.sum();
 				if (unlockedSum == lockedSum) {
 					// No active readers.
-					return writeStamp;
+					return writeLocked;
 				} else {
 					Thread.onSpinWait();
 				}
@@ -912,9 +959,10 @@ abstract class Changeset implements SailSink, ModelFactory {
 			}
 		}
 
-		public void unlockWriter(long stamp) {
-			if (stamp != 0) {
-				lock.unlockWrite(stamp);
+		public void unlockWriter(boolean writeLocked) {
+			if (writeLocked) {
+				this.writeLocked = false;
+				writeLock.set(false);
 			} else {
 				throw new IllegalMonitorStateException();
 			}

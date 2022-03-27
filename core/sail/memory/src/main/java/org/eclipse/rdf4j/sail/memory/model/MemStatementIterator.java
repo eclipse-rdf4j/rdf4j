@@ -233,15 +233,15 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	public int hashCode() {
 		if (cachedHashCode == 0) {
 
-			// Inlined Objects.hash(subject, predicate, object, explicit, explicitNotSpecified, snapshot, noIsolation);
-			// to stop the need to
+			// Inlined Objects.hash(subject, predicate, object, explicit, explicitNotSpecified, snapshot, noIsolation)
+			// to avoid array creation.
 			int cachedHashCode = 1;
 			cachedHashCode = 31 * cachedHashCode + (subject == null ? 0 : subject.hashCode());
 			cachedHashCode = 31 * cachedHashCode + (predicate == null ? 0 : predicate.hashCode());
 			cachedHashCode = 31 * cachedHashCode + (object == null ? 0 : object.hashCode());
 			cachedHashCode = 31 * cachedHashCode + Boolean.hashCode(explicit);
 			cachedHashCode = 31 * cachedHashCode + Boolean.hashCode(explicitNotSpecified);
-			cachedHashCode = 31 * cachedHashCode + Integer.hashCode(snapshot);
+			cachedHashCode = 31 * cachedHashCode + snapshot;
 			cachedHashCode = 31 * cachedHashCode + Boolean.hashCode(noIsolation);
 
 			if (contexts != null) {

@@ -296,7 +296,7 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public String toString() {
-		return backingSource.toString() + "\n" + changes.toString();
+		return backingSource.toString() + "\n" + changes;
 	}
 
 	void preparedChangeset(Changeset changeset) {
@@ -309,7 +309,7 @@ class SailSourceBranch implements SailSource {
 			pending.remove(change);
 			if (isChanged(change)) {
 				Changeset merged;
-				changes.add(Changeset.simpleClone(change));
+				changes.add(change.shallowClone());
 				compressChanges();
 				merged = changes.getLast();
 				for (Changeset c : pending) {
