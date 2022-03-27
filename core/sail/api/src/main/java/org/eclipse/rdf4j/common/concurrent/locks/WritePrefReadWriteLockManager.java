@@ -43,7 +43,7 @@ public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager 
 	}
 
 	@Override
-	Lock createReadLockInner() throws InterruptedException {
+	ReadLock createReadLockInner() throws InterruptedException {
 		while (stampedLock.isWriteLocked()) {
 			spinWaitAtReadLock();
 		}

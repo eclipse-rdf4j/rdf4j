@@ -29,7 +29,7 @@ import org.slf4j.Logger;
  * @author Håvard M. Ottestad
  */
 @InternalUseOnly
-public class LockTracking implements LockMonitoring {
+public class LockTracking<T extends Lock> implements LockMonitoring<T> {
 
 	public static final int LOGGED_STALLED_LOCKS_MINIMUM_WAIT_TO_COLLECT = 1000;
 
@@ -41,9 +41,10 @@ public class LockTracking implements LockMonitoring {
 	private final ReentrantLock staleLoggingLock = new ReentrantLock();
 
 	// locks that have not been GCed yet
-	private final Map<SimpleLock, WeakReference<SimpleLock>> locks = Collections.synchronizedMap(new WeakHashMap<>());
+	private final Map<SimpleLock<T>, WeakReference<SimpleLock<T>>> locks = Collections
+			.synchronizedMap(new WeakHashMap<>());
 
-	private final Lock.ExtendedSupplier supplier;
+	private final Lock.ExtendedSupplier<T> supplier;
 	private final boolean stacktrace;
 	private final int waitToCollect;
 	private final String alias;
@@ -52,7 +53,7 @@ public class LockTracking implements LockMonitoring {
 	private long previousActiveLocksSignature = 0;
 
 	public LockTracking(boolean stacktrace, String alias, Logger logger, int waitToCollect,
-			Lock.ExtendedSupplier supplier) {
+			Lock.ExtendedSupplier<T> supplier) {
 		this.stacktrace = stacktrace;
 		this.supplier = supplier;
 		this.waitToCollect = waitToCollect;
@@ -139,9 +140,18 @@ public class LockTracking implements LockMonitoring {
 	}
 
 	@Override
+	public T unsafeInnerLock(Lock lock) {
+		if (lock instanceof SimpleLock) {
+			return ((SimpleLock<T>) lock).state.lock;
+		} else {
+			throw new IllegalArgumentException("Supplied lock is not instanceof SimpleLock");
+		}
+	}
+
+	@Override
 	public Lock tryLock() {
 
-		Lock lock = supplier.tryLock();
+		T lock = supplier.tryLock();
 		if (lock != null) {
 			return getLockInner(lock, alias);
 		}
@@ -149,7 +159,7 @@ public class LockTracking implements LockMonitoring {
 		return null;
 	}
 
-	private SimpleLock getLockInner(Lock lock, String alias) {
+	private SimpleLock<T> getLockInner(T lock, String alias) {
 		Thread thread = Thread.currentThread();
 
 		long sequenceNumber = seq.incrementAndGet();
@@ -161,7 +171,7 @@ public class LockTracking implements LockMonitoring {
 			stack = null;
 		}
 
-		SimpleLock simpleLock = new SimpleLock(lock, alias, sequenceNumber, stack, thread, logger);
+		SimpleLock<T> simpleLock = new SimpleLock<>(lock, alias, sequenceNumber, stack, thread, logger);
 
 		locks.put(simpleLock, new WeakReference<>(simpleLock));
 
@@ -173,13 +183,28 @@ public class LockTracking implements LockMonitoring {
 		return true;
 	}
 
-	public static class SimpleLock implements Lock {
+	@Override
+	public Lock register(T lock) {
+		return getLockInner(lock, alias);
+	}
 
-		private final State state;
+	@Override
+	public void unregister(Lock lock) {
+		assert !lock.isActive();
+		if (lock instanceof SimpleLock) {
+			((SimpleLock<?>) lock).cleanable.clean();
+		} else {
+			throw new IllegalArgumentException("Supplied lock is not instanceof SimpleLock");
+		}
+	}
+
+	public static class SimpleLock<T extends Lock> implements Lock {
+
+		private final State<T> state;
 		private final Cleaner.Cleanable cleanable;
 
-		public SimpleLock(Lock lock, String alias, long acquiredId, Throwable stack, Thread thread, Logger logger) {
-			this.state = new State(lock, alias, acquiredId, stack, thread, logger);
+		public SimpleLock(T lock, String alias, long acquiredId, Throwable stack, Thread thread, Logger logger) {
+			this.state = new State<>(lock, alias, acquiredId, stack, thread, logger);
 			this.cleanable = cleaner.register(this, state);
 		}
 
@@ -211,16 +236,16 @@ public class LockTracking implements LockMonitoring {
 			return Long.hashCode(state.acquiredId);
 		}
 
-		static class State implements Runnable {
+		static class State<T extends Lock> implements Runnable {
 
-			private final Lock lock;
+			private final T lock;
 			private final String alias;
 			private final long acquiredId;
 			private final Throwable stack;
 			private final Thread thread;
 			private final Logger logger;
 
-			public State(Lock lock, String alias, long acquiredId, Throwable stack, Thread thread, Logger logger) {
+			public State(T lock, String alias, long acquiredId, Throwable stack, Thread thread, Logger logger) {
 				this.lock = lock;
 				this.alias = alias;
 				this.acquiredId = acquiredId;

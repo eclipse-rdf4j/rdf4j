@@ -21,15 +21,15 @@ import org.slf4j.Logger;
  * @author Håvard M. Ottestad
  */
 @InternalUseOnly
-public class LockCleaner implements LockMonitoring {
+public class LockCleaner<T extends Lock> implements LockMonitoring<T> {
 
 	private final static ConcurrentCleaner cleaner = new ConcurrentCleaner();
 	private final Logger logger;
-	private final Lock.ExtendedSupplier supplier;
+	private final Lock.ExtendedSupplier<T> supplier;
 	private final String alias;
 	private final boolean stacktrace;
 
-	public LockCleaner(boolean stacktrace, String alias, Logger logger, Lock.ExtendedSupplier supplier) {
+	public LockCleaner(boolean stacktrace, String alias, Logger logger, Lock.ExtendedSupplier<T> supplier) {
 		this.stacktrace = stacktrace;
 		this.supplier = supplier;
 		this.logger = logger;
@@ -43,7 +43,7 @@ public class LockCleaner implements LockMonitoring {
 	@Override
 	public Lock tryLock() {
 
-		Lock lock = supplier.tryLock();
+		T lock = supplier.tryLock();
 		if (lock != null) {
 			return getLockInner(lock);
 		}
@@ -51,23 +51,48 @@ public class LockCleaner implements LockMonitoring {
 		return null;
 	}
 
-	private CleanableLock getLockInner(Lock lock) {
-		if (stacktrace) {
-			return new CleanableLock(cleaner, lock, alias, logger, Thread.currentThread(),
-					new Throwable("\"" + alias + "\" lock acquired in " + Thread.currentThread().getName()));
+	@Override
+	public T unsafeInnerLock(Lock lock) {
+		if (lock instanceof CleanableLock) {
+			return ((CleanableLock<T>) lock).state.lock;
 		} else {
-			return new CleanableLock(cleaner, lock, alias, logger, null, null);
+			throw new IllegalArgumentException("Supplied lock is not instanceof CleanableLock");
 		}
 	}
 
-	public static class CleanableLock implements Lock {
+	@Override
+	public Lock register(T lock) {
+		return getLockInner(lock);
+	}
+
+	@Override
+	public void unregister(Lock lock) {
+		assert !lock.isActive();
+		if (lock instanceof CleanableLock) {
+			((CleanableLock<T>) lock).cleanable.clean();
+		} else {
+			throw new IllegalArgumentException("Supplied lock is not instanceof CleanableLock");
+		}
+
+	}
+
+	private CleanableLock<T> getLockInner(T lock) {
+		if (stacktrace) {
+			return new CleanableLock<>(cleaner, lock, alias, logger, Thread.currentThread(),
+					new Throwable("\"" + alias + "\" lock acquired in " + Thread.currentThread().getName()));
+		} else {
+			return new CleanableLock<>(cleaner, lock, alias, logger, null, null);
+		}
+	}
+
+	public static class CleanableLock<T extends Lock> implements Lock {
 
 		private final Cleaner.Cleanable cleanable;
-		private final State state;
+		private final State<T> state;
 
-		public CleanableLock(ConcurrentCleaner cleaner, Lock lock, String alias, Logger logger, Thread thread,
+		public CleanableLock(ConcurrentCleaner cleaner, T lock, String alias, Logger logger, Thread thread,
 				Throwable throwable) {
-			this.state = new State(lock, alias, logger, thread, throwable);
+			this.state = new State<>(lock, alias, logger, thread, throwable);
 			this.cleanable = cleaner.register(this, state);
 		}
 
@@ -82,15 +107,15 @@ public class LockCleaner implements LockMonitoring {
 			cleanable.clean();
 		}
 
-		static class State implements Runnable {
+		static class State<T extends Lock> implements Runnable {
 
-			private final Lock lock;
+			private final T lock;
 			private final String alias;
 			private final Logger logger;
 			private final Thread thread;
 			private final Throwable stack;
 
-			public State(Lock lock, String alias, Logger logger, Thread thread, Throwable stack) {
+			public State(T lock, String alias, Logger logger, Thread thread, Throwable stack) {
 				this.lock = lock;
 				this.alias = alias;
 				this.logger = logger;

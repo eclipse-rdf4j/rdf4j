@@ -26,31 +26,31 @@ public interface Lock {
 	/**
 	 * Functional interface for supplying a lock with support for InterruptedException.
 	 */
-	interface Supplier {
-		Lock getLock() throws InterruptedException;
+	interface Supplier<T extends Lock> {
+		T getLock() throws InterruptedException;
 	}
 
 	/**
 	 * Extension of the Lock.Supplier interface to support tryLock().
 	 */
-	interface ExtendedSupplier extends Supplier {
-		Lock tryLock();
+	interface ExtendedSupplier<T extends Lock> extends Supplier<T> {
+		T tryLock();
 
-		static Wrapper wrap(Supplier getLockSupplier, Supplier tryLockSupplier) {
-			return new Wrapper(getLockSupplier, tryLockSupplier);
+		static <T extends Lock> Wrapper<T> wrap(Supplier<T> getLockSupplier, Supplier<T> tryLockSupplier) {
+			return new Wrapper<>(getLockSupplier, tryLockSupplier);
 		}
 
-		class Wrapper implements ExtendedSupplier {
-			Supplier getLockSupplier;
-			Supplier tryLockSupplier;
+		class Wrapper<T extends Lock> implements ExtendedSupplier<T> {
+			Supplier<T> getLockSupplier;
+			Supplier<T> tryLockSupplier;
 
-			private Wrapper(Supplier getLockSupplier, Supplier tryLockSupplier) {
+			private Wrapper(Supplier<T> getLockSupplier, Supplier<T> tryLockSupplier) {
 				this.getLockSupplier = getLockSupplier;
 				this.tryLockSupplier = tryLockSupplier;
 			}
 
 			@Override
-			public Lock tryLock() {
+			public T tryLock() {
 				try {
 					return tryLockSupplier.getLock();
 				} catch (InterruptedException e) {
@@ -60,7 +60,7 @@ public interface Lock {
 			}
 
 			@Override
-			public Lock getLock() throws InterruptedException {
+			public T getLock() throws InterruptedException {
 				return getLockSupplier.getLock();
 			}
 		}
