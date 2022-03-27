@@ -97,15 +97,6 @@ public abstract class LookAheadIterator<E> extends AbstractCloseableIterator<E> 
 	}
 
 	@Override
-	protected void handleClose() throws IOException {
-		try {
-			super.handleClose();
-		} finally {
-			nextElement = null;
-		}
-	}
-
-	@Override
 	protected void handleAlreadyClosed() throws IOException {
 		IOException toThrowException = closeException;
 		if (toThrowException != null) {

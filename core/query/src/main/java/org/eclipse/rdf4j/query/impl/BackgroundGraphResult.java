@@ -65,7 +65,7 @@ public class BackgroundGraphResult
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

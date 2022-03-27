@@ -127,7 +127,7 @@ public class SPARQLMinusIteration<X extends Exception>
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		try {
 			super.handleClose();
 		} finally {

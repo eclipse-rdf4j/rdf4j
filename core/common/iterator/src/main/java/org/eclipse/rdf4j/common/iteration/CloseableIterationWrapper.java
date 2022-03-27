@@ -8,13 +8,10 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Objects;
-import java.util.Set;
 
-public class CloseableIterationWrapper<T extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
+public abstract class CloseableIterationWrapper<T extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
 		extends AbstractCloseableIteration<E, X> {
 
 	protected final T wrappedIter;

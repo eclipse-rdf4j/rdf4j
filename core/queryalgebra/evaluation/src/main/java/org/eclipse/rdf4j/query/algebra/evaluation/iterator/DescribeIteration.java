@@ -55,7 +55,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	private CloseableIteration<? extends BindingSet, QueryEvaluationException> currentDescribeExprIter;
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		// no-op
 	}
 

@@ -254,7 +254,7 @@ public class QueryResultsTest {
 		}
 
 		@Override
-		protected void handleClose() throws QueryEvaluationException {
+		protected final void handleClose() throws QueryEvaluationException {
 			// no-ip
 		}
 	}

@@ -24,6 +24,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.stream.Stream;
 
@@ -348,7 +349,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {
@@ -362,7 +363,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 					} catch (IOException e) {
 						return e;
 					}
-				}).filter(exec -> exec != null).findFirst().ifPresent(exec -> {
+				}).filter(Objects::nonNull).findFirst().ifPresent(exec -> {
 					throw new QueryEvaluationException(exec);
 				});
 			}

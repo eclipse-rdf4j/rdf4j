@@ -220,7 +220,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 
 		try {
 			if (leftIter != null) {

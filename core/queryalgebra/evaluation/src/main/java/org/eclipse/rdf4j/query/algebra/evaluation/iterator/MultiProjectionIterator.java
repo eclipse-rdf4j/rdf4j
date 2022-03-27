@@ -92,7 +92,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet, Quer
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		try {
 			iter.close();
 		} finally {

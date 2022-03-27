@@ -40,6 +40,13 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	private final String[] allVariables;
 	private final LinkedHashSet<String> allVariablesSet;
 	private final ArrayBindingSet defaultArrayBindingSet;
+	private final Predicate<BindingSet>[] hasBinding;
+	private final Function<BindingSet, Binding>[] getBinding;
+	private final Function<BindingSet, Value>[] getValue;
+	private final BiConsumer<Value, MutableBindingSet>[] setBinding;
+	private final BiConsumer<Value, MutableBindingSet>[] addBinding;
+
+	boolean initialized = false;
 
 	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables) {
 		this.context = context;
@@ -47,6 +54,23 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		this.allVariablesSet = new LinkedHashSet<>();
 		this.allVariablesSet.addAll(Arrays.asList(allVariables));
 		this.defaultArrayBindingSet = new ArrayBindingSet(allVariables);
+
+		hasBinding = new Predicate[allVariables.length];
+		getBinding = new Function[allVariables.length];
+		getValue = new Function[allVariables.length];
+		setBinding = new BiConsumer[allVariables.length];
+		addBinding = new BiConsumer[allVariables.length];
+
+		for (int i = 0; i < allVariables.length; i++) {
+			hasBinding[i] = hasBinding(allVariables[i]);
+			getBinding[i] = getBinding(allVariables[i]);
+			getValue[i] = getValue(allVariables[i]);
+			setBinding[i] = setBinding(allVariables[i]);
+			addBinding[i] = addBinding(allVariables[i]);
+		}
+
+		initialized = true;
+
 	}
 
 	@Override
@@ -66,6 +90,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public Predicate<BindingSet> hasBinding(String variableName) {
+		if (initialized) {
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i] == variableName) {
+					return hasBinding[i];
+				}
+			}
+		}
+
 		assert variableName != null && !variableName.isEmpty();
 		Function<ArrayBindingSet, Boolean> directHasVariable = defaultArrayBindingSet
 				.getDirectHasBinding(variableName);
@@ -83,20 +115,6 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		}
 
 		@Override
-		public Predicate<BindingSet> negate() {
-			return (bs) -> {
-				if (!bs.isEmpty()) {
-					if (bs instanceof ArrayBindingSet) {
-						return !directHasVariable.apply((ArrayBindingSet) bs);
-					} else {
-						return !bs.hasBinding(variableName);
-					}
-				}
-				return true;
-			};
-		}
-
-		@Override
 		public boolean test(BindingSet bs) {
 			if (bs.isEmpty()) {
 				return false;
@@ -111,6 +129,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public Function<BindingSet, Binding> getBinding(String variableName) {
+		if (initialized) {
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i] == variableName) {
+					return getBinding[i];
+				}
+			}
+		}
+
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetBinding(variableName);
 		return (bs) -> {
@@ -127,6 +153,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public Function<BindingSet, Value> getValue(String variableName) {
+		if (initialized) {
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i] == variableName) {
+					return getValue[i];
+				}
+			}
+		}
+
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetValue(variableName);
 		return new ValueGetter(variableName, directAccessForVariable);
@@ -158,6 +192,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
+		if (initialized) {
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i] == variableName) {
+					return setBinding[i];
+				}
+			}
+		}
+
 		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = defaultArrayBindingSet
 				.getDirectSetBinding(variableName);
 		return (val, bs) -> {
@@ -171,6 +213,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public BiConsumer<Value, MutableBindingSet> addBinding(String variableName) {
+		if (initialized) {
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i] == variableName) {
+					return addBinding[i];
+				}
+			}
+		}
+
 		BiConsumer<Value, ArrayBindingSet> wrapped = defaultArrayBindingSet
 				.getDirectAddBinding(variableName);
 		return (val, bs) -> {

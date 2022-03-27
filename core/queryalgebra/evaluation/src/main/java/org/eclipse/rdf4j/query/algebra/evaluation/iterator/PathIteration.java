@@ -201,7 +201,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		if (currentIter != null) {
 			currentIter.close();
 		}

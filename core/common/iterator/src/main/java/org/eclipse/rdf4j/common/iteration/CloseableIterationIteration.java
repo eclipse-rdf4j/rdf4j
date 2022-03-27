@@ -66,7 +66,7 @@ public class CloseableIterationIteration<K extends Iteration<E, X>, E, X extends
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		// no-op
 	}
 }

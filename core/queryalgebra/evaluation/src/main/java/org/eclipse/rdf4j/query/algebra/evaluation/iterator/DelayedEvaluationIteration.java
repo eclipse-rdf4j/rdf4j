@@ -91,7 +91,7 @@ public class DelayedEvaluationIteration extends AbstractCloseableIteration<Bindi
 	 * {@link CloseableIteration}.
 	 */
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		if (iter != null) {
 			iter.close();
 		}

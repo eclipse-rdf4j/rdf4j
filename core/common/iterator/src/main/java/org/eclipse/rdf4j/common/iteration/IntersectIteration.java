@@ -124,11 +124,6 @@ public class IntersectIteration<K extends CloseableIteration<E, X>, E, X extends
 		return false;
 	}
 
-	// this method does not seem to "addSecondSet" since the second set seems to be ignored
-	public Set<E> addSecondSet(Iteration<E, X> arg2, Set<E> set) throws X {
-		return Iterations.addAll(arg2, setMaker.get());
-	}
-
 	protected boolean removeFromIncludeSet(E object) {
 		return includeSet.remove(object);
 	}
@@ -142,7 +137,7 @@ public class IntersectIteration<K extends CloseableIteration<E, X>, E, X extends
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		try {
 			super.handleClose();
 		} finally {

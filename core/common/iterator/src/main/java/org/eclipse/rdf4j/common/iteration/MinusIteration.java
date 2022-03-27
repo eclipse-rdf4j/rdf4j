@@ -118,11 +118,11 @@ public class MinusIteration<K extends CloseableIteration<E, X>, E, X extends Exc
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(rightArg);
+			rightArg.close();
 		}
 	}
 }

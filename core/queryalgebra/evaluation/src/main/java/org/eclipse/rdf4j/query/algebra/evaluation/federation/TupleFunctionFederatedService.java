@@ -137,7 +137,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 			}
 
 			@Override
-			public void handleClose() throws QueryEvaluationException {
+			protected final void handleClose() throws QueryEvaluationException {
 				iter.close();
 			}
 		};

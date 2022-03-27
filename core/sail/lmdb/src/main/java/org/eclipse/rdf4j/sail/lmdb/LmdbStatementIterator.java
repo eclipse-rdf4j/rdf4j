@@ -76,7 +76,7 @@ class LmdbStatementIterator extends LookAheadIteration<Statement, SailException>
 	}
 
 	@Override
-	protected void handleClose() throws SailException {
+	protected final void handleClose() throws SailException {
 		try {
 			recordIt.close();
 		} catch (IOException e) {

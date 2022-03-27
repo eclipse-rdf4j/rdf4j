@@ -144,7 +144,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		try {
 			leftIter.close();
 		} finally {

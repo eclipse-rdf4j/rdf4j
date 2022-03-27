@@ -95,7 +95,7 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		try {
 			leftIter.close();
 		} finally {

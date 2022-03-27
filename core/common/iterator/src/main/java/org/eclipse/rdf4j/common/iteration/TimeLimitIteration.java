@@ -17,7 +17,8 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Arjohn Kampman
  */
-public abstract class TimeLimitIteration<E, X extends Exception> extends IterationWrapper<E, X> {
+public abstract class TimeLimitIteration<E, X extends Exception>
+		extends CloseableIterationWrapper<CloseableIteration<? extends E, ? extends X>, E, X> {
 
 	private static final Timer timer = new Timer("TimeLimitIteration", true);
 
@@ -27,7 +28,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 
 	private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
 
-	protected TimeLimitIteration(Iteration<? extends E, ? extends X> iter, long timeLimit) {
+	protected TimeLimitIteration(CloseableIteration<? extends E, ? extends X> iter, long timeLimit) {
 		super(iter);
 
 		assert timeLimit > 0 : "time limit must be a positive number, is: " + timeLimit;
@@ -88,7 +89,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		try {
 			interruptTask.cancel();
 		} finally {

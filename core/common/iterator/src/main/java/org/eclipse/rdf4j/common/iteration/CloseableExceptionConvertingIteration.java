@@ -51,7 +51,7 @@ public class CloseableExceptionConvertingIteration<E, X extends Exception, T ext
 	 * @throws X
 	 */
 	@Override
-	public boolean hasNext() throws X {
+	public final boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
 		}
@@ -74,7 +74,7 @@ public class CloseableExceptionConvertingIteration<E, X extends Exception, T ext
 	 * @throws IllegalStateException            If the Iteration has been closed.
 	 */
 	@Override
-	public E next() throws X {
+	public final E next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -96,7 +96,7 @@ public class CloseableExceptionConvertingIteration<E, X extends Exception, T ext
 	 *                                       {@link #next}.
 	 */
 	@Override
-	public void remove() throws X {
+	public final void remove() throws X {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
@@ -113,7 +113,7 @@ public class CloseableExceptionConvertingIteration<E, X extends Exception, T ext
 	 * Closes this Iteration as well as the wrapped Iteration if it happens to be a {@link CloseableIteration} .
 	 */
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		try {
 			iter.close();
 		} catch (Exception e) {

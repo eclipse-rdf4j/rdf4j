@@ -74,7 +74,7 @@ public class CloseableIteratorIteration<K extends Iterator<? extends E>, E, X ex
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		// no-op
 	}
 }

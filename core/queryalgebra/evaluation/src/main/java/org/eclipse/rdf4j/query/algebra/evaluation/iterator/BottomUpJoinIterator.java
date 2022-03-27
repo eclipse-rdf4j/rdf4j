@@ -130,7 +130,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 
 		try {
 			leftIter.close();

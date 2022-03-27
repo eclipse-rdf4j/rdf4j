@@ -169,7 +169,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		// no-op
 	}
 }

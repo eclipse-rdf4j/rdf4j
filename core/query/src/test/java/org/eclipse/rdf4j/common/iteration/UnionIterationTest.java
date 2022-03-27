@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.common.iteration;
 
 import static org.junit.Assert.assertTrue;
 
+import java.util.List;
+
 import org.junit.Test;
 
 public class UnionIterationTest extends CloseableIterationTest {
@@ -28,7 +30,8 @@ public class UnionIterationTest extends CloseableIterationTest {
 		SingletonIteration<String, Exception> iter1 = new SingletonIteration<>("1");
 		SingletonIteration<String, Exception> iter2 = new SingletonIteration<>("2");
 		SingletonIteration<String, Exception> iter3 = new SingletonIteration<>("3");
-		try (UnionIteration<String, Exception> unionIter = new UnionIteration<>(iter1, iter2, iter3)) {
+		try (CloseableIteration<String, Exception> unionIter = UnionIteration
+				.getInstance(List.of(iter1, iter2, iter3))) {
 			unionIter.next();
 		}
 

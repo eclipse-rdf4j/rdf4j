@@ -63,9 +63,10 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 		return parsedQuery.toString();
 	}
 
-	protected class QueryInterruptIteration extends TimeLimitIteration<BindingSet, QueryEvaluationException> {
+	protected static class QueryInterruptIteration extends TimeLimitIteration<BindingSet, QueryEvaluationException> {
 
-		public QueryInterruptIteration(Iteration<? extends BindingSet, ? extends QueryEvaluationException> iter,
+		public QueryInterruptIteration(
+				CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> iter,
 				long timeLimit) {
 			super(iter, timeLimit);
 		}

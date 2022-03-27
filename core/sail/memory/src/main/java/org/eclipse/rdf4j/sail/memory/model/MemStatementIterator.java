@@ -185,7 +185,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		statementList = null;
 	}
 
@@ -349,7 +349,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 		}
 
 		@Override
-		protected void handleClose() throws X {
+		protected final void handleClose() throws X {
 			if (memStatementIterator != null) {
 				if (memStatementIterator.isCandidateForCache()) {
 					iteratorCache.incrementIteratorFrequencyMap(memStatementIterator);

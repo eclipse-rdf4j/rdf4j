@@ -154,7 +154,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 	}
 
 	@Override
-	public void handleClose() throws T {
+	protected void handleClose() throws T {
 		done.set(true);
 		do {
 			queue.clear(); // ensure extra room is available

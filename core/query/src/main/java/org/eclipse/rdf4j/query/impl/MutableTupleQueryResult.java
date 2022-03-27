@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -70,7 +71,7 @@ public class MutableTupleQueryResult implements TupleQueryResult, Cloneable {
 	}
 
 	public <E extends Exception> MutableTupleQueryResult(Collection<String> bindingNames,
-			Iteration<? extends BindingSet, E> bindingSetIter) throws E {
+			CloseableIteration<? extends BindingSet, E> bindingSetIter) throws E {
 		this.bindingNames.addAll(bindingNames);
 		Iterations.addAll(bindingSetIter, this.bindingSets);
 	}

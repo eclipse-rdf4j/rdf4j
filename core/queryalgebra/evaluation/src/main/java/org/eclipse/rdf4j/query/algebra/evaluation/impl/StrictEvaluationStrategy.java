@@ -1980,7 +1980,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		@Override
-		protected void handleClose() throws QueryEvaluationException {
+		protected final void handleClose() throws QueryEvaluationException {
 			try {
 				queryModelNode.setTotalTimeNanosActual(
 						queryModelNode.getTotalTimeNanosActual() + stopwatch.elapsed(TimeUnit.NANOSECONDS));

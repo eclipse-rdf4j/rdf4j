@@ -70,8 +70,7 @@ public abstract class JoinExecutorBase<T> extends ParallelExecutorBase<T> {
 	protected abstract void handleBindings() throws Exception;
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
-
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

@@ -58,7 +58,7 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 
 		try {
 			// consume all remaining elements from the queue and make sure to close them

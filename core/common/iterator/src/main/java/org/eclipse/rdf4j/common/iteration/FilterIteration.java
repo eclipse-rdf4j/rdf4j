@@ -9,13 +9,16 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 /**
  * A CloseableIteration that wraps another Iteration, applying a filter on the objects that are returned. Subclasses
  * must implement the <var>accept</var> method to indicate which objects should be returned.
  */
 public abstract class FilterIteration<K extends CloseableIteration<? extends E, X>, E, X extends Exception>
-		extends CloseableIterationWrapper<K, E, X> {
+		extends AbstractCloseableIteration<E, X> {
+
+	protected final K wrappedIter;
 
 	/*-----------*
 	 * Variables *
@@ -31,7 +34,7 @@ public abstract class FilterIteration<K extends CloseableIteration<? extends E, 
 	 * @param iter
 	 */
 	protected FilterIteration(K iter) {
-		super(iter);
+		wrappedIter = Objects.requireNonNull(iter);
 	}
 
 	/*---------*
@@ -42,7 +45,11 @@ public abstract class FilterIteration<K extends CloseableIteration<? extends E, 
 	public boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
+		} else if (Thread.currentThread().isInterrupted()) {
+			close();
+			return false;
 		}
+
 		findNextElement();
 
 		boolean result = nextElement != null;
@@ -72,8 +79,8 @@ public abstract class FilterIteration<K extends CloseableIteration<? extends E, 
 
 	private void findNextElement() throws X {
 		try {
-			while (!isClosed() && nextElement == null && super.hasNext()) {
-				E candidate = super.next();
+			while (!isClosed() && nextElement == null && wrappedIter.hasNext()) {
+				E candidate = wrappedIter.next();
 
 				if (accept(candidate)) {
 					nextElement = candidate;
@@ -96,12 +103,35 @@ public abstract class FilterIteration<K extends CloseableIteration<? extends E, 
 	 */
 	protected abstract boolean accept(E object) throws X;
 
+	/**
+	 * Removes the last element that has been returned from the wrapped Iteration.
+	 *
+	 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <var>remove</var> operation.
+	 * @throws IllegalStateException         if the Iteration has been closed, or if {@link #next} has not yet been
+	 *                                       called, or {@link #remove} has already been called after the last call to
+	 *                                       {@link #next}.
+	 */
+	@Override
+	public final void remove() throws X {
+		if (isClosed()) {
+			throw new IllegalStateException("The iteration has been closed.");
+		} else if (Thread.currentThread().isInterrupted()) {
+			close();
+			throw new IllegalStateException("The iteration has been interrupted.");
+		}
+		try {
+			wrappedIter.remove();
+		} catch (IllegalStateException e) {
+			close();
+			throw e;
+		}
+	}
+
+	/**
+	 * Closes this Iteration and also closes the wrapped Iteration if it is a {@link CloseableIteration}.
+	 */
 	@Override
 	protected void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			nextElement = null;
-		}
+		wrappedIter.close();
 	}
 }

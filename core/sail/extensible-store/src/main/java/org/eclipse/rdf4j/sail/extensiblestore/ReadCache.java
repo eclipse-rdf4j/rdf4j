@@ -127,7 +127,7 @@ public class ReadCache implements DataStructureInterface {
 
 			return new LookAheadIteration<>() {
 				@Override
-				protected void handleClose() throws SailException {
+				protected final void handleClose() throws SailException {
 					// no-op
 				}
 

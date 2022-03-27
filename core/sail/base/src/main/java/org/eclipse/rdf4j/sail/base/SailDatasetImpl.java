@@ -161,7 +161,7 @@ class SailDatasetImpl implements SailDataset {
 			}
 
 			@Override
-			public void handleClose() throws SailException {
+			protected final void handleClose() throws SailException {
 				namespaces.close();
 			}
 		};
@@ -239,7 +239,7 @@ class SailDatasetImpl implements SailDataset {
 			}
 
 			@Override
-			public void handleClose() throws SailException {
+			protected final void handleClose() throws SailException {
 				contextIDs.close();
 			}
 		};

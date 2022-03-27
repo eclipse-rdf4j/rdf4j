@@ -58,7 +58,7 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		value = null;
 	}
 }

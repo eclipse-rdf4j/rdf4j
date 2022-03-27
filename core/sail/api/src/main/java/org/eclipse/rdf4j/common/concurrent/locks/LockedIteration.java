@@ -48,7 +48,7 @@ public class LockedIteration<E, X extends Exception>
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		try {
 			super.handleClose();
 		} finally {

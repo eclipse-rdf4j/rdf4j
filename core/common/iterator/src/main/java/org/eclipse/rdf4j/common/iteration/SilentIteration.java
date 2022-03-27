@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Jeen Broekstra
  */
-public class SilentIteration<T, E extends Exception> extends IterationWrapper<T, E> {
+public class SilentIteration<T, E extends Exception> extends CloseableIterationWrapper<CloseableIteration<T, E>, T, E> {
 
 	private static final Logger logger = LoggerFactory.getLogger(SilentIteration.class);
 
@@ -53,7 +53,7 @@ public class SilentIteration<T, E extends Exception> extends IterationWrapper<T,
 	}
 
 	@Override
-	protected void handleClose() throws E {
+	protected final void handleClose() throws E {
 		try {
 			super.handleClose();
 		} catch (Exception e) {

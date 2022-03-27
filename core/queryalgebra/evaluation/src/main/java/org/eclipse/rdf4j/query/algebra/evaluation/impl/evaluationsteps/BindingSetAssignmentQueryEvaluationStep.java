@@ -44,7 +44,7 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 		result = new LookAheadIteration<>() {
 
 			@Override
-			protected void handleClose() throws QueryEvaluationException {
+			protected final void handleClose() throws QueryEvaluationException {
 				// no-op
 			}
 

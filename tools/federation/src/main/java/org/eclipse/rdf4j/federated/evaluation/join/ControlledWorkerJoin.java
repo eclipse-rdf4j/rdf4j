@@ -80,7 +80,7 @@ public class ControlledWorkerJoin extends JoinExecutorBase<BindingSet> {
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

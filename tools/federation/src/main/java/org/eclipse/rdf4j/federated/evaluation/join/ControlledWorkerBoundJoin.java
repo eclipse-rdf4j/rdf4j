@@ -145,7 +145,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

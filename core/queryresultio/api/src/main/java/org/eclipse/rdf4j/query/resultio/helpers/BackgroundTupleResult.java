@@ -54,7 +54,7 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult implements 
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();
 		} finally {

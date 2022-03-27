@@ -133,7 +133,7 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		// no-op
 	}
 }

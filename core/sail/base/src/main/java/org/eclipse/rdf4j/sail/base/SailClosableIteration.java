@@ -40,7 +40,7 @@ class SailClosableIteration<T, X extends Exception>
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		try {
 			super.handleClose();
 		} finally {

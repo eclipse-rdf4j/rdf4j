@@ -50,7 +50,7 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 			if (statements instanceof EmptyIteration) {
 				return EMPTY_ITERATION;
 			}
-			return new Eval(statements);
+			return new CloseableExceptionConvertingIteration<>(statements, QueryEvaluationException::new);
 		} catch (SailException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -59,22 +59,6 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 	@Override
 	public ValueFactory getValueFactory() {
 		return vf;
-	}
-
-	public static class Eval extends
-			CloseableExceptionConvertingIteration<Statement, QueryEvaluationException, CloseableIteration<? extends Statement, SailException>> {
-		public Eval(CloseableIteration<? extends Statement, SailException> iter) {
-			super(iter, QueryEvaluationException::new);
-		}
-	}
-
-	static class TriplesIteration extends
-			CloseableExceptionConvertingIteration<Triple, QueryEvaluationException, CloseableIteration<? extends Triple, ? extends Exception>> {
-
-		public TriplesIteration(CloseableIteration<? extends Triple, ? extends Exception> iter) {
-			super(iter, QueryEvaluationException::new);
-		}
-
 	}
 
 	@Override
@@ -86,7 +70,8 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 			CloseableIteration<? extends Triple, SailException> triples = dataset.getTriples(subj, pred, obj);
 			if (triples instanceof EmptyIteration)
 				return EMPTY_TRIPLE_ITERATION;
-			return new DistinctIteration<>(new TriplesIteration(triples));
+			return new DistinctIteration<>(
+					new CloseableExceptionConvertingIteration<>(triples, QueryEvaluationException::new));
 		} catch (SailException e) {
 			throw new QueryEvaluationException(e);
 		}

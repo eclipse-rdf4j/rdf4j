@@ -55,7 +55,7 @@ public class CollectionIteration<E, X extends Exception> extends AbstractCloseab
 	}
 
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		// no-op
 	}
 }

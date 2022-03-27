@@ -27,6 +27,9 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 */
 	protected IterationWrapper(Iteration<? extends E, ? extends X> iter) {
 		wrappedIter = Objects.requireNonNull(iter);
+		if (wrappedIter instanceof CloseableIteration) {
+			throw new IllegalStateException();
+		}
 	}
 
 	/*---------*
@@ -98,11 +101,8 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 		}
 	}
 
-	/**
-	 * Closes this Iteration and also closes the wrapped Iteration if it is a {@link CloseableIteration}.
-	 */
 	@Override
 	protected void handleClose() throws X {
-		Iterations.closeCloseable(wrappedIter);
+
 	}
 }

@@ -72,23 +72,40 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		} else {
 			emptyGraph = false;
 		}
+
 		contextSup = extractContextsFromDatasets(statementPattern.getContextVar(), emptyGraph, graphs);
 		converter = makeConverter(context, statementPattern);
+
 		final Var subjVar = statementPattern.getSubjectVar();
 		final Var predVar = statementPattern.getPredicateVar();
 		final Var objVar = statementPattern.getObjectVar();
 		final Var conVar = statementPattern.getContextVar();
-		Predicate<BindingSet> isSubjBound = unbound(subjVar, context);
-		Predicate<BindingSet> isPredBound = unbound(predVar, context);
-		Predicate<BindingSet> isObjBound = unbound(objVar, context);
-		Predicate<BindingSet> isConBound = unbound(conVar, context);
-		Predicate<BindingSet> isNotEmpty = Predicate.not(BindingSet::isEmpty);
-		unboundTest = isNotEmpty.and(isSubjBound.or(isPredBound).or(isObjBound).or(isConBound));
+
+		unboundTest = getUnboundTest(context, subjVar, predVar, objVar, conVar);
+
 		getContextVar = makeGetVarValue(conVar, context);
 		getSubjectVar = makeGetVarValue(subjVar, context);
 		getPredicateVar = makeGetVarValue(predVar, context);
 		getObjectVar = makeGetVarValue(objVar, context);
 
+	}
+
+	private static Predicate<BindingSet> getUnboundTest(QueryEvaluationContext context, Var subjVar, Var predVar,
+			Var objVar, Var conVar) {
+		Predicate<BindingSet> isSubjBound = unbound(subjVar, context);
+		Predicate<BindingSet> isPredBound = unbound(predVar, context);
+		Predicate<BindingSet> isObjBound = unbound(objVar, context);
+		Predicate<BindingSet> isConBound = unbound(conVar, context);
+
+		return (bs) -> {
+			if (!bs.isEmpty()) {
+				return ((isSubjBound != null) && isSubjBound.test(bs)) ||
+						((isPredBound != null) && isPredBound.test(bs)) ||
+						((isObjBound != null) && isObjBound.test(bs)) ||
+						((isConBound != null) && isConBound.test(bs));
+			}
+			return false;
+		};
 	}
 
 	private static Function<BindingSet, Value> makeGetVarValue(Var var, QueryEvaluationContext context) {
@@ -102,11 +119,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 	}
 
-	private static Predicate<BindingSet> unbound(final Var var, QueryEvaluationContext context) {
-		if (var == null) {
-			return (bindings) -> false;
-		} else if (var.isConstant()) {
-			return (bindings) -> false;
+	private static Predicate<BindingSet> unbound(Var var, QueryEvaluationContext context) {
+		if (var == null || var.isConstant()) {
+			return null;
 		} else {
 			Predicate<BindingSet> hasBinding = context.hasBinding(var.getName());
 			Function<BindingSet, Value> getValue = context.getValue(var.getName());

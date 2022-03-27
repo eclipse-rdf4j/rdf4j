@@ -67,7 +67,7 @@ public class CrossProductIteration extends LookAheadIteration<BindingSet, QueryE
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
+	protected final void handleClose() throws QueryEvaluationException {
 		resultIteration.close();
 	}
 }

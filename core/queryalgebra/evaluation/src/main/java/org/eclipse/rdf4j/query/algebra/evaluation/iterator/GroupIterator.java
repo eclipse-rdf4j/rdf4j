@@ -18,6 +18,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
@@ -27,8 +28,8 @@ import java.util.function.LongFunction;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -68,8 +69,7 @@ import org.mapdb.DBMaker;
  * @author James Leigh
  * @author Jerven Bolleman
  */
-public class GroupIterator
-		extends CloseableIteratorIteration<Iterator<BindingSet>, BindingSet, QueryEvaluationException> {
+public class GroupIterator extends AbstractCloseableIteration<BindingSet, QueryEvaluationException> {
 
 	/*-----------*
 	 * Constants *
@@ -91,6 +91,7 @@ public class GroupIterator
 	private final long iterationCacheSyncThreshold;
 
 	private final QueryEvaluationContext context;
+	private Iterator<BindingSet> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -131,28 +132,36 @@ public class GroupIterator
 
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
-		if (!super.hasIterator()) {
-			super.setIterator(createIterator());
+		if (!hasIterator()) {
+			setIterator(createIterator());
 		}
-		return super.hasNext();
+		if (isClosed()) {
+			return false;
+		}
+
+		boolean result = iter.hasNext();
+		if (!result) {
+			close();
+		}
+		return result;
 	}
 
 	@Override
 	public BindingSet next() throws QueryEvaluationException {
-		if (!super.hasIterator()) {
-			super.setIterator(createIterator());
+		if (!hasIterator()) {
+			setIterator(createIterator());
 		}
-		return super.next();
+		if (isClosed()) {
+			throw new NoSuchElementException("Iteration has been closed");
+		}
+
+		return iter.next();
 	}
 
 	@Override
-	protected void handleClose() throws QueryEvaluationException {
-		try {
-			super.handleClose();
-		} finally {
-			if (db != null) {
-				db.close();
-			}
+	protected final void handleClose() throws QueryEvaluationException {
+		if (db != null) {
+			db.close();
 		}
 	}
 
@@ -167,6 +176,24 @@ public class GroupIterator
 	// The size 16 seems like a nice starting value but others could well
 	// be better.
 	private static final int SWITCH_TO_DISK_BASED_SET_AT_SIZE = 16;
+
+	protected void setIterator(Iterator<BindingSet> iter) {
+		assert !(iter instanceof CloseableIteration);
+		this.iter = Objects.requireNonNull(iter, "Iterator was null");
+	}
+
+	protected boolean hasIterator() {
+		return iter != null;
+	}
+
+	@Override
+	public void remove() throws org.eclipse.rdf4j.query.QueryEvaluationException {
+		if (isClosed()) {
+			throw new IllegalStateException("Iteration has been closed");
+		}
+
+		iter.remove();
+	}
 
 	/**
 	 * Only create a disk based set once the contents are large enough that it starts to pay off.
@@ -649,7 +676,7 @@ public class GroupIterator
 	}
 
 	private interface AggregateCollector {
-		public Value getFinalValue();
+		Value getFinalValue();
 	}
 
 	private class CountCollector implements AggregateCollector {

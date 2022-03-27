@@ -167,7 +167,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	}
 
 	@Override
-	public void handleClose() throws QueryEvaluationException {
+	protected void handleClose() throws QueryEvaluationException {
 
 		try {
 			rightQueue.close();

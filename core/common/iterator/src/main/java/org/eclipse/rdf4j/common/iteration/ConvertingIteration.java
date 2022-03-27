@@ -89,7 +89,7 @@ public abstract class ConvertingIteration<K extends CloseableIteration<? extends
 	 * Closes this iteration as well as the wrapped iteration if it is a {@link CloseableIteration}.
 	 */
 	@Override
-	protected void handleClose() throws X {
+	protected final void handleClose() throws X {
 		iter.close();
 	}
 }
