@@ -103,13 +103,25 @@ abstract class Changeset implements SailSink, ModelFactory {
 	 */
 	private boolean statementCleared;
 
+	private boolean closed;
+
 	@Override
 	public void close() throws SailException {
-		// no-op
+		closed = true;
+		refbacks = null;
+		prepend = null;
+		observed = null;
+		approved = null;
+		deprecated = null;
+		approvedContexts = null;
+		deprecatedContexts = null;
+		addedNamespaces = null;
+		removedPrefixes = null;
 	}
 
 	@Override
 	public void prepare() throws SailException {
+		assert !closed;
 		if (prepend != null && observed != null) {
 			for (SimpleStatementPattern p : observed) {
 				Resource subj = p.getSubject();
@@ -133,6 +145,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	synchronized boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		assert !closed;
 		if (approved == null) {
 			return false;
 		}
@@ -141,6 +154,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	synchronized boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		assert !closed;
 		if (deprecated == null) {
 			return false;
 		}
@@ -149,6 +163,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public synchronized void addRefback(SailDatasetImpl dataset) {
+		assert !closed;
 		if (refbacks == null) {
 			refbacks = new HashSet<>();
 		}
@@ -156,16 +171,19 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public synchronized void removeRefback(SailDatasetImpl dataset) {
+		assert !closed;
 		if (refbacks != null) {
 			refbacks.remove(dataset);
 		}
 	}
 
 	public synchronized boolean isRefback() {
+		assert !closed;
 		return refbacks != null && !refbacks.isEmpty();
 	}
 
 	public synchronized void prepend(Changeset changeset) {
+		assert !closed;
 		if (prepend == null) {
 			prepend = new HashSet<>();
 		}
@@ -174,6 +192,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public synchronized void setNamespace(String prefix, String name) {
+		assert !closed;
 		if (removedPrefixes == null) {
 			removedPrefixes = new HashSet<>();
 		}
@@ -186,6 +205,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public synchronized void removeNamespace(String prefix) {
+		assert !closed;
 		if (addedNamespaces != null) {
 			addedNamespaces.remove(prefix);
 		}
@@ -197,6 +217,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public synchronized void clearNamespaces() {
+		assert !closed;
 		if (removedPrefixes != null) {
 			removedPrefixes.clear();
 		}
@@ -209,6 +230,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public synchronized void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailConflictException {
+		assert !closed;
 		if (observed == null) {
 			observed = new HashSet<>();
 		}
@@ -225,6 +247,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public synchronized void clear(Resource... contexts) {
+		assert !closed;
 		if (contexts != null && contexts.length == 0) {
 			if (approved != null) {
 				approved.clear();
@@ -249,6 +272,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public synchronized void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
+		assert !closed;
 		if (deprecated != null) {
 			deprecated.remove(subj, pred, obj, ctx);
 		}
@@ -266,6 +290,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public synchronized void approve(Statement statement) {
+		assert !closed;
 		if (deprecated != null) {
 			deprecated.remove(statement);
 		}
@@ -283,6 +308,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public synchronized void deprecate(Statement statement) {
+		assert !closed;
 		if (approved != null) {
 			approved.remove(statement);
 		}
@@ -337,6 +363,9 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	protected void setChangeset(Changeset from) {
+		assert !closed;
+		assert !from.closed;
+
 		this.observed = from.observed;
 		this.approved = from.approved;
 		this.deprecated = from.deprecated;
@@ -348,7 +377,28 @@ abstract class Changeset implements SailSink, ModelFactory {
 		this.statementCleared = from.statementCleared;
 	}
 
+	public static Changeset simpleClone(Changeset from) {
+		assert !from.closed;
+
+		Changeset changeset = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return from.createEmptyModel();
+			}
+		};
+
+		changeset.setChangeset(from);
+
+		return changeset;
+	}
+
 	public synchronized Set<SimpleStatementPattern> getObserved() {
+		assert !closed;
 		return observed == null ? null : Collections.unmodifiableSet(observed);
 	}
 
@@ -357,9 +407,11 @@ abstract class Changeset implements SailSink, ModelFactory {
 	 */
 	@Deprecated
 	public synchronized Set<StatementPattern> getObservations() {
+		assert !closed;
 
-		if (observed == null)
+		if (observed == null) {
 			return null;
+		}
 
 		return observed.stream()
 				.map(simpleStatementPattern -> new StatementPattern(
@@ -374,34 +426,42 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public synchronized Set<Resource> getApprovedContexts() {
+		assert !closed;
 		return cloneSet(approvedContexts);
 	}
 
 	public synchronized Set<Resource> getDeprecatedContexts() {
+		assert !closed;
 		return cloneSet(deprecatedContexts);
 	}
 
 	public synchronized boolean isStatementCleared() {
+		assert !closed;
 		return statementCleared;
 	}
 
 	public synchronized Map<String, String> getAddedNamespaces() {
+		assert !closed;
 		return addedNamespaces;
 	}
 
 	public synchronized Set<String> getRemovedPrefixes() {
+		assert !closed;
 		return cloneSet(removedPrefixes);
 	}
 
 	public synchronized boolean isNamespaceCleared() {
+		assert !closed;
 		return namespaceCleared;
 	}
 
 	public synchronized boolean hasDeprecated() {
+		assert !closed;
 		return deprecated != null && !deprecated.isEmpty();
 	}
 
 	boolean isChanged() {
+		assert !closed;
 		return approved != null || deprecated != null || approvedContexts != null
 				|| deprecatedContexts != null || addedNamespaces != null
 				|| removedPrefixes != null || statementCleared || namespaceCleared
@@ -409,6 +469,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	synchronized List<Statement> getDeprecatedStatements() {
+		assert !closed;
 		if (deprecated == null) {
 			return Collections.emptyList();
 		}
@@ -416,6 +477,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	synchronized List<Statement> getApprovedStatements() {
+		assert !closed;
 		if (approved == null) {
 			return Collections.emptyList();
 		}
@@ -423,6 +485,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	synchronized boolean hasDeprecated(Statement statement) {
+		assert !closed;
 		if (deprecated == null) {
 			return false;
 		}
@@ -430,11 +493,13 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	synchronized boolean hasApproved() {
+		assert !closed;
 		return approved != null && !approved.isEmpty();
 	}
 
 	synchronized Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
 			Resource[] contexts) {
+		assert !closed;
 
 		if (approved == null) {
 			return Collections.emptyList();
@@ -454,6 +519,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	synchronized Iterable<Triple> getApprovedTriples(Resource subj, IRI pred, Value obj) {
+		assert !closed;
 		if (approved == null) {
 			return Collections.emptyList();
 		}
@@ -470,10 +536,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 					if (pred != null && !pred.equals(t.getPredicate())) {
 						return false;
 					}
-					if (obj != null && !obj.equals(t.getObject())) {
-						return false;
-					}
-					return true;
+					return obj == null || obj.equals(t.getObject());
 				});
 
 		Stream<Triple> approvedObjectTriples = approved.parallelStream()
@@ -486,22 +549,21 @@ abstract class Changeset implements SailSink, ModelFactory {
 					if (pred != null && !pred.equals(t.getPredicate())) {
 						return false;
 					}
-					if (obj != null && !obj.equals(t.getObject())) {
-						return false;
-					}
-					return true;
+					return obj == null || obj.equals(t.getObject());
 				});
 
 		return Stream.concat(approvedSubjectTriples, approvedObjectTriples).collect(Collectors.toList());
 	}
 
 	synchronized void removeApproved(Statement next) {
+		assert !closed;
 		if (approved != null) {
 			approved.remove(next);
 		}
 	}
 
 	private <T> Set<T> cloneSet(Set<T> set) {
+		assert !closed;
 		if (set == null) {
 			return null;
 		}

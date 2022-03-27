@@ -176,13 +176,21 @@ class SailSourceBranch implements SailSource {
 			@Override
 			public void close() throws SailException {
 				try {
-					super.close();
+					semaphore.lock();
+					// This ChangeSet should have been removed from `pending` already, unless we are rolling back a
+					// transaction in which case we need to remove it when closing the ChangeSet.
+					pending.remove(this);
 				} finally {
-					if (prepared) {
-						closeChangeset(this);
-						prepared = false;
+					semaphore.unlock();
+					try {
+						super.close();
+					} finally {
+						if (prepared) {
+							closeChangeset(this);
+							prepared = false;
+						}
+						autoFlush();
 					}
-					autoFlush();
 				}
 			}
 
@@ -288,7 +296,7 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public String toString() {
-		return backingSource.toString() + "\n" + changes.toString();
+		return backingSource.toString() + "\n" + changes;
 	}
 
 	void preparedChangeset(Changeset changeset) {
@@ -301,7 +309,7 @@ class SailSourceBranch implements SailSource {
 			pending.remove(change);
 			if (isChanged(change)) {
 				Changeset merged;
-				changes.add(change);
+				changes.add(Changeset.simpleClone(change));
 				compressChanges();
 				merged = changes.getLast();
 				for (Changeset c : pending) {
@@ -414,9 +422,8 @@ class SailSourceBranch implements SailSource {
 	private void prepare(SailSink sink) throws SailException {
 		try {
 			semaphore.lock();
-			Iterator<Changeset> iter = changes.iterator();
-			while (iter.hasNext()) {
-				prepare(iter.next(), sink);
+			for (Changeset change : changes) {
+				prepare(change, sink);
 			}
 		} finally {
 			semaphore.unlock();

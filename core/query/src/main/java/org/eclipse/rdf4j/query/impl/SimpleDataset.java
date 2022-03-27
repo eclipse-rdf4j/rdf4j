@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.impl;
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -25,13 +26,13 @@ public class SimpleDataset implements Dataset, Serializable {
 
 	private static final long serialVersionUID = 7841576172053060417L;
 
-	private Set<IRI> defaultRemoveGraphs = new LinkedHashSet<>();
+	private final Set<IRI> defaultRemoveGraphs = new LinkedHashSet<>();
 
 	private IRI defaultInsertGraph;
 
-	private Set<IRI> defaultGraphs = new LinkedHashSet<>();
+	private final Set<IRI> defaultGraphs = new LinkedHashSet<>();
 
-	private Set<IRI> namedGraphs = new LinkedHashSet<>();
+	private final Set<IRI> namedGraphs = new LinkedHashSet<>();
 
 	public SimpleDataset() {
 	}
@@ -160,5 +161,24 @@ public class SimpleDataset implements Dataset, Serializable {
 		} else {
 			sb.append("<").append(uri).append(">\n");
 		}
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		SimpleDataset that = (SimpleDataset) o;
+		return defaultRemoveGraphs.equals(that.defaultRemoveGraphs)
+				&& Objects.equals(defaultInsertGraph, that.defaultInsertGraph)
+				&& defaultGraphs.equals(that.defaultGraphs) && namedGraphs.equals(that.namedGraphs);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(defaultRemoveGraphs, defaultInsertGraph, defaultGraphs, namedGraphs);
 	}
 }
