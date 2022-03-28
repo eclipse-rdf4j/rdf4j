@@ -138,22 +138,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 	}
 
-	private static BiConsumer<Value, MutableBindingSet> makeSetVariable(Var var, QueryEvaluationContext context) {
-		if (var == null) {
-			return null;
-		} else {
-			return context.addBinding(var.getName());
-		}
-	}
-
-	private static Predicate<BindingSet> makeIsVariableNotSet(Var var, QueryEvaluationContext context) {
-		if (var == null) {
-			return (bindings) -> true;
-		} else {
-			return Predicate.not(context.hasBinding(var.getName()));
-		}
-	}
-
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
@@ -357,7 +341,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			} else {
 				return (contextValue) -> {
 					if (contextValue != null) {
-						if (graphs.contains(contextValue)) {
+						if (contextValue.isIRI() && graphs.contains(((IRI) contextValue))) {
 							return new Resource[] { (Resource) contextValue };
 						} else {
 							// Statement pattern specifies a context that is not part of
@@ -475,8 +459,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				.filter(var -> !var.isConstant())
 				.distinct()
 				.map(var -> {
-					BiConsumer<Value, MutableBindingSet> setVar = makeSetVariable(var, context);
-					Predicate<BindingSet> varIsNotSet = makeIsVariableNotSet(var, context);
+					BiConsumer<Value, MutableBindingSet> setVar = context.addBinding(var.getName());
+					Predicate<BindingSet> varIsNotSet = Predicate.not(context.hasBinding(var.getName()));
 
 					if (var == subjVar) {
 						return (BiConsumer<MutableBindingSet, Statement>) (result, st) -> {
