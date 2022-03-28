@@ -1922,25 +1922,23 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	private static class ResultSizeCountingIterator extends
 			CloseableIterationWrapper<CloseableIteration<BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException> {
 
-		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
-		QueryModelNode queryModelNode;
+		private final QueryModelNode queryModelNode;
 
 		public ResultSizeCountingIterator(CloseableIteration<BindingSet, QueryEvaluationException> iterator,
 				QueryModelNode queryModelNode) {
 			super(iterator);
-			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
 		}
 
 		@Override
-		public boolean hasNext() throws QueryEvaluationException {
-			return iterator.hasNext();
+		protected void preHasNext() {
+
 		}
 
 		@Override
-		public BindingSet next() throws QueryEvaluationException {
+		protected void preNext() {
 			queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);
-			return iterator.next();
+
 		}
 
 	}
@@ -1972,11 +1970,21 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		@Override
+		protected void preNext() {
+
+		}
+
+		@Override
 		public boolean hasNext() throws QueryEvaluationException {
 			stopwatch.start();
 			boolean hasNext = super.hasNext();
 			stopwatch.stop();
 			return hasNext;
+		}
+
+		@Override
+		protected void preHasNext() {
+
 		}
 
 		@Override

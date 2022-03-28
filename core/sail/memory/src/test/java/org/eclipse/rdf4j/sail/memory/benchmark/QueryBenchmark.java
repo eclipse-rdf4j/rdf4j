@@ -40,11 +40,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 2)
+@Warmup(iterations = 3)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
 //@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 2)
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmark {
 
@@ -99,14 +99,30 @@ public class QueryBenchmark {
 		}
 	}
 
-	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark") // adapt to run other benchmark tests
-				// .addProfiler("stack", "lines=20;period=1;top=20")
-				.forks(1)
-				.build();
+	public static void main(String[] args) throws RunnerException, IOException, InterruptedException {
+//		Options opt = new OptionsBuilder()
+//				.include("QueryBenchmark") // adapt to run other benchmark tests
+//				// .addProfiler("stack", "lines=20;period=1;top=20")
+//				.forks(1)
+//				.build();
+//
+//		new Runner(opt).run();
 
-		new Runner(opt).run();
+		QueryBenchmark queryBenchmark = new QueryBenchmark();
+		queryBenchmark.beforeClass();
+		for (int i = 0; i < 100; i++) {
+			System.out.println(i);
+			queryBenchmark.pathExpressionQuery1();
+			queryBenchmark.groupByQuery();
+			queryBenchmark.different_datasets_with_similar_distributions();
+			queryBenchmark.long_chain();
+			queryBenchmark.simple_filter_not();
+			queryBenchmark.complexQuery();
+			queryBenchmark.lots_of_optional();
+			queryBenchmark.nested_optionals();
+		}
+		queryBenchmark.afterClass();
+
 	}
 
 	@Setup(Level.Trial)

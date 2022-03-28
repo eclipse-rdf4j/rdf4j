@@ -65,6 +65,16 @@ public class BackgroundGraphResult
 	}
 
 	@Override
+	protected void preHasNext() {
+
+	}
+
+	@Override
+	protected void preNext() {
+
+	}
+
+	@Override
 	protected final void handleClose() throws QueryEvaluationException {
 		try {
 			super.handleClose();

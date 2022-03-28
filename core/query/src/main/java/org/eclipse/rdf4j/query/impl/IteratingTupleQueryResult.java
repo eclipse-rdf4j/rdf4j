@@ -82,4 +82,14 @@ public class IteratingTupleQueryResult extends
 	public Stream<BindingSet> stream() {
 		return Iterations.stream(this);
 	}
+
+	@Override
+	protected void preHasNext() {
+
+	}
+
+	@Override
+	protected void preNext() {
+
+	}
 }

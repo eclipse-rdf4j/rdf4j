@@ -42,12 +42,15 @@ public abstract class CloseableIterationWrapper<T extends CloseableIteration<? e
 			close();
 			return false;
 		}
+		preHasNext();
 		boolean result = wrappedIter.hasNext();
 		if (!result) {
 			close();
 		}
 		return result;
 	}
+
+	protected abstract void preHasNext();
 
 	/**
 	 * Returns the next element from the wrapped Iteration.
@@ -60,8 +63,12 @@ public abstract class CloseableIterationWrapper<T extends CloseableIteration<? e
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
 
+		preNext();
+
 		return wrappedIter.next();
 	}
+
+	protected abstract void preNext();
 
 	/**
 	 * Removes the last element that has been returned from the wrapped Iteration.

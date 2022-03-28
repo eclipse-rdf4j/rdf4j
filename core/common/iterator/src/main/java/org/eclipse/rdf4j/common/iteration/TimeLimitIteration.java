@@ -39,6 +39,16 @@ public abstract class TimeLimitIteration<E, X extends Exception>
 	}
 
 	@Override
+	protected void preHasNext() {
+
+	}
+
+	@Override
+	protected void preNext() {
+
+	}
+
+	@Override
 	public boolean hasNext() throws X {
 		checkInterrupted();
 		if (isClosed()) {

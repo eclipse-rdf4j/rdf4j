@@ -69,6 +69,11 @@ public class LimitIteration<K extends CloseableIteration<? extends E, X>, E, X e
 	}
 
 	@Override
+	protected void preHasNext() {
+
+	}
+
+	@Override
 	public E next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
@@ -80,5 +85,10 @@ public class LimitIteration<K extends CloseableIteration<? extends E, X>, E, X e
 
 		returnCount++;
 		return super.next();
+	}
+
+	@Override
+	protected void preNext() {
+
 	}
 }

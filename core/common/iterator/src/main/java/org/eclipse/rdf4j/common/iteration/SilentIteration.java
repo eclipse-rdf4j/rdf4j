@@ -38,6 +38,11 @@ public class SilentIteration<T, E extends Exception> extends CloseableIterationW
 	}
 
 	@Override
+	protected void preHasNext() {
+
+	}
+
+	@Override
 	public T next() throws E {
 		try {
 			return super.next();
@@ -50,6 +55,11 @@ public class SilentIteration<T, E extends Exception> extends CloseableIterationW
 			}
 			throw new NoSuchElementException(e.getMessage());
 		}
+	}
+
+	@Override
+	protected void preNext() {
+
 	}
 
 	@Override

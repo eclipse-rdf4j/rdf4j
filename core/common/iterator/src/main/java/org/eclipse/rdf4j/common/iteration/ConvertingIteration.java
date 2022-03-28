@@ -56,7 +56,7 @@ public abstract class ConvertingIteration<K extends CloseableIteration<? extends
 	 * @throws X
 	 */
 	@Override
-	public boolean hasNext() throws X {
+	public final boolean hasNext() throws X {
 		return iter.hasNext();
 	}
 

@@ -60,4 +60,14 @@ public class IteratingGraphQueryResult extends
 	public Map<String, String> getNamespaces() {
 		return namespaces;
 	}
+
+	@Override
+	protected void preHasNext() {
+
+	}
+
+	@Override
+	protected void preNext() {
+
+	}
 }

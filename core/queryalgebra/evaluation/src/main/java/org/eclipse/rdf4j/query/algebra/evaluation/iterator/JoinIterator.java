@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -35,11 +34,11 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	 * Variables *
 	 *-----------*/
 
-	private final CloseableIteration<? extends BindingSet, QueryEvaluationException> leftIter;
+	private CloseableIteration<? extends BindingSet, QueryEvaluationException> leftIter;
 
 	private CloseableIteration<? extends BindingSet, QueryEvaluationException> rightIter;
 
-	private final QueryEvaluationStep preparedRight;
+	private QueryEvaluationStep preparedRight;
 
 	/*--------------*
 	 * Constructors *
@@ -49,6 +48,15 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 			throws QueryEvaluationException {
 		leftIter = leftPrepared.evaluate(bindings);
 
+		// Initialize with empty iteration so that var is never null
+		rightIter = QueryEvaluationStep.EMPTY_ITERATION;
+		this.preparedRight = rightPrepared;
+	}
+
+	public JoinIterator(CloseableIteration<? extends BindingSet, QueryEvaluationException> leftIter,
+			QueryEvaluationStep rightPrepared)
+			throws QueryEvaluationException {
+		this.leftIter = leftIter;
 		// Initialize with empty iteration so that var is never null
 		rightIter = QueryEvaluationStep.EMPTY_ITERATION;
 		this.preparedRight = rightPrepared;
@@ -71,17 +79,23 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		try {
-			while (leftIter.hasNext() || rightIter.hasNext()) {
-				if (rightIter != QueryEvaluationStep.EMPTY_ITERATION) {
-					if (rightIter.hasNext()) {
-						return rightIter.next();
-					}
-					// Right iteration exhausted
-					rightIter.close();
+			while (leftIter != null && leftIter.hasNext() || rightIter != null && rightIter.hasNext()) {
+				if (rightIter != null && rightIter.hasNext()) {
+					return rightIter.next();
 				}
 
-				if (leftIter.hasNext()) {
+				// Right iteration exhausted
+				if (rightIter != null) {
+					rightIter.close();
+					rightIter = null;
+				}
+
+				while (leftIter != null && leftIter.hasNext() && rightIter == null) {
 					rightIter = preparedRight.evaluate(leftIter.next());
+					if (!rightIter.hasNext()) {
+						rightIter.close();
+						rightIter = null;
+					}
 				}
 			}
 		} catch (NoSuchElementException ignore) {
@@ -89,7 +103,10 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 			// handleClose()
 		}
 
-		leftIter.close();
+		if (leftIter != null) {
+			leftIter.close();
+			leftIter = null;
+		}
 
 		return null;
 	}
@@ -97,9 +114,14 @@ public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluation
 	@Override
 	protected final void handleClose() throws QueryEvaluationException {
 		try {
-			leftIter.close();
+			if (leftIter != null) {
+				leftIter.close();
+			}
 		} finally {
-			rightIter.close();
+			if (rightIter != null) {
+				rightIter.close();
+			}
+			preparedRight = null;
 		}
 	}
 }

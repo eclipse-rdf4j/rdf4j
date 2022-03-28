@@ -7,7 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -41,8 +44,31 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					joinAttributes, context);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else {
-			eval = (bindings) -> new JoinIterator(leftPrepared, rightPrepared, bindings);
+			eval = new JoinIteratorGenerator(leftPrepared, rightPrepared);
 			join.setAlgorithm(JoinIterator.class.getSimpleName());
+		}
+	}
+
+	private static class JoinIteratorGenerator
+			implements Function<BindingSet, CloseableIteration<BindingSet, QueryEvaluationException>> {
+
+		QueryEvaluationStep leftPrepared;
+		QueryEvaluationStep rightPrepared;
+
+		public JoinIteratorGenerator(QueryEvaluationStep leftPrepared, QueryEvaluationStep rightPrepared) {
+			this.leftPrepared = leftPrepared;
+			this.rightPrepared = rightPrepared;
+		}
+
+		@Override
+		public CloseableIteration<BindingSet, QueryEvaluationException> apply(BindingSet bindings) {
+			CloseableIteration<BindingSet, QueryEvaluationException> evaluate = leftPrepared.evaluate(bindings);
+			if (!evaluate.hasNext()) {
+				evaluate.close();
+				return EMPTY_ITERATION;
+			}
+
+			return new JoinIterator(evaluate, rightPrepared);
 		}
 	}
 

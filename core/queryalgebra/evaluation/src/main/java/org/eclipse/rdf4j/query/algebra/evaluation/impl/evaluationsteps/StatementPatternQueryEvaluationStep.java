@@ -7,10 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -39,13 +41,18 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  */
 public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
 
+	public static final Resource[] DEFAULT_CONTEXT = { null };
+	public static final Resource[] ALL_CONTEXT = new Resource[0];
+
 	private final StatementPattern statementPattern;
 	private final TripleSource tripleSource;
 	private final boolean emptyGraph;
 	private final Function<Value, Resource[]> contextSup;
 	private final BiConsumer<MutableBindingSet, Statement> converter;
 	private final QueryEvaluationContext context;
+
 	private final Predicate<BindingSet> unboundTest;
+
 	private final Function<BindingSet, Value> getContextVar;
 	private final Function<BindingSet, Value> getSubjectVar;
 	private final Function<BindingSet, Value> getPredicateVar;
@@ -74,12 +81,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 
 		contextSup = extractContextsFromDatasets(statementPattern.getContextVar(), emptyGraph, graphs);
-		converter = makeConverter(context, statementPattern);
 
-		final Var subjVar = statementPattern.getSubjectVar();
-		final Var predVar = statementPattern.getPredicateVar();
-		final Var objVar = statementPattern.getObjectVar();
-		final Var conVar = statementPattern.getContextVar();
+		Var subjVar = statementPattern.getSubjectVar();
+		Var predVar = statementPattern.getPredicateVar();
+		Var objVar = statementPattern.getObjectVar();
+		Var conVar = statementPattern.getContextVar();
+
+		converter = makeConverter(context, subjVar, predVar, objVar, conVar);
 
 		unboundTest = getUnboundTest(context, subjVar, predVar, objVar, conVar);
 
@@ -367,7 +375,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private static Resource[] contextsGivenContextVal(final Value contextValue) {
 		if (contextValue != null) {
 			if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
-				return new Resource[] { null };
+				return DEFAULT_CONTEXT;
 			} else {
 				return new Resource[] { (Resource) contextValue };
 			}
@@ -378,7 +386,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		 * (Resource)null }; }
 		 */
 		else {
-			return new Resource[0];
+			return ALL_CONTEXT;
 		}
 	}
 
@@ -460,54 +468,99 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * @return a converter from statement into MutableBindingSet
 	 */
 	private static BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context,
-			StatementPattern statementPattern) {
-		final Var subjVar = statementPattern.getSubjectVar();
-		final Var predVar = statementPattern.getPredicateVar();
-		final Var objVar = statementPattern.getObjectVar();
-		final Var conVar = statementPattern.getContextVar();
-		BiConsumer<MutableBindingSet, Statement> co = null;
+			Var subjVar, Var predVar, Var objVar, Var conVar) {
 
-		if (subjVar != null && !subjVar.isConstant()) {
-			BiConsumer<Value, MutableBindingSet> setSubject = makeSetVariable(subjVar, context);
-			Predicate<BindingSet> subjectIsNotSet = makeIsVariableNotSet(subjVar, context);
-			co = andThen(co, (result, st) -> addValueToBinding(result, st.getSubject(), subjectIsNotSet, setSubject));
-		}
-		// We should not overwrite previous set values so if pred == subj we don't need
-		// to call this again.
-		// etc.
-		if (predVar != null && !predVar.isConstant() && !predVar.equals(subjVar)) {
-			BiConsumer<Value, MutableBindingSet> setPredicate = makeSetVariable(predVar, context);
-			Predicate<BindingSet> predicateIsNotSet = makeIsVariableNotSet(predVar, context);
-			co = andThen(co,
-					(result, st) -> addValueToBinding(result, st.getPredicate(), predicateIsNotSet, setPredicate));
-		}
-		if (objVar != null && !objVar.isConstant() && !objVar.equals(subjVar) && !objVar.equals(predVar)) {
-			BiConsumer<Value, MutableBindingSet> setObject = makeSetVariable(objVar, context);
-			Predicate<BindingSet> objectIsNotSet = makeIsVariableNotSet(objVar, context);
-			co = andThen(co, (result, st) -> addValueToBinding(result, st.getObject(), objectIsNotSet, setObject));
-		}
-		if (conVar != null && !conVar.isConstant() && !conVar.equals(subjVar) && !conVar.equals(predVar)
-				&& !conVar.equals(objVar)) {
-			BiConsumer<Value, MutableBindingSet> setContext = makeSetVariable(conVar, context);
-			Predicate<BindingSet> contextIsNotSet = makeIsVariableNotSet(conVar, context);
-			co = andThen(co, (result, st) -> {
-				if (st.getContext() != null) {
-					addValueToBinding(result, st.getContext(), contextIsNotSet, setContext);
-				}
-			});
-		}
-		if (co == null) {
-			return (result, st) -> {
-			};
-		}
-		return co;
-	}
+		return Stream.of(subjVar, predVar, objVar, conVar)
+				.filter(Objects::nonNull)
+				.filter(var -> !var.isConstant())
+				.distinct()
+				.map(var -> {
+					BiConsumer<Value, MutableBindingSet> setVar = makeSetVariable(var, context);
+					Predicate<BindingSet> varIsNotSet = makeIsVariableNotSet(var, context);
 
-	private static void addValueToBinding(MutableBindingSet result, Value value, Predicate<BindingSet> varIsNotSet,
-			BiConsumer<Value, MutableBindingSet> setVal) {
-		if (varIsNotSet.test(result)) {
-			setVal.accept(value, result);
-		}
+					if (var == subjVar) {
+						return (BiConsumer<MutableBindingSet, Statement>) (result, st) -> {
+							if (result.isEmpty() || varIsNotSet.test(result)) {
+								setVar.accept(st.getSubject(), result);
+							}
+						};
+					} else if (var == predVar) {
+						return (BiConsumer<MutableBindingSet, Statement>) (result, st) -> {
+							if (result.isEmpty() || varIsNotSet.test(result)) {
+								setVar.accept(st.getPredicate(), result);
+							}
+						};
+					} else if (var == objVar) {
+						return (BiConsumer<MutableBindingSet, Statement>) (result, st) -> {
+							if (result.isEmpty() || varIsNotSet.test(result)) {
+								setVar.accept(st.getObject(), result);
+							}
+						};
+					} else {
+						return (BiConsumer<MutableBindingSet, Statement>) (result, st) -> {
+							if (result.isEmpty() || varIsNotSet.test(result)) {
+								setVar.accept(st.getContext(), result);
+							}
+						};
+					}
+
+				})
+				.reduce(BiConsumer::andThen)
+				.orElse((a, b) -> {
+				});
+
+//
+//		BiConsumer<MutableBindingSet, Statement> co = null;
+//
+//		if (subjVar != null && !subjVar.isConstant()) {
+//
+//			BiConsumer<Value, MutableBindingSet> setSubject = makeSetVariable(subjVar, context);
+//			Predicate<BindingSet> subjectIsNotSet = makeIsVariableNotSet(subjVar, context);
+//			co = andThen(co, (result, st) -> {
+//				if (result.isEmpty() || subjectIsNotSet.test(result)) {
+//					setSubject.accept(st.getSubject(), result);
+//				}
+//			});
+//		}
+//		// We should not overwrite previous set values so if pred == subj we don't need
+//		// to call this again.
+//		// etc.
+//		if (predVar != null && !predVar.isConstant() && !predVar.equals(subjVar)) {
+//			BiConsumer<Value, MutableBindingSet> setPredicate = makeSetVariable(predVar, context);
+//			Predicate<BindingSet> predicateIsNotSet = makeIsVariableNotSet(predVar, context);
+//			co = andThen(co,
+//				(result, st) -> {
+//					if (result.isEmpty() || predicateIsNotSet.test(result)) {
+//						setPredicate.accept(st.getPredicate(), result);
+//					}
+//				});
+//		}
+//		if (objVar != null && !objVar.isConstant() && !objVar.equals(subjVar) && !objVar.equals(predVar)) {
+//			BiConsumer<Value, MutableBindingSet> setObject = makeSetVariable(objVar, context);
+//			Predicate<BindingSet> objectIsNotSet = makeIsVariableNotSet(objVar, context);
+//			co = andThen(co, (result, st) -> {
+//				if (result.isEmpty() || objectIsNotSet.test(result)) {
+//					setObject.accept(st.getObject(), result);
+//				}
+//			});
+//		}
+//		if (conVar != null && !conVar.isConstant() && !conVar.equals(subjVar) && !conVar.equals(predVar)
+//				&& !conVar.equals(objVar)) {
+//			BiConsumer<Value, MutableBindingSet> setContext = makeSetVariable(conVar, context);
+//			Predicate<BindingSet> contextIsNotSet = makeIsVariableNotSet(conVar, context);
+//			co = andThen(co, (result, st) -> {
+//				if (st.getContext() != null) {
+//					if (result.isEmpty() || contextIsNotSet.test(result)) {
+//						setContext.accept(st.getContext(), result);
+//					}
+//				}
+//			});
+//		}
+//		if (co == null) {
+//			return (result, st) -> {
+//			};
+//		}
+//		return co;
 	}
 
 	private static Predicate<Statement> andThen(Predicate<Statement> pred, Predicate<Statement> and) {
@@ -517,18 +570,4 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return pred.and(and);
 	}
 
-	/**
-	 * A convience function to chain the consumers together if one exists otherwise returns the new one.
-	 *
-	 * @param co  an earlier chain
-	 * @param and the consumer to add to the chain
-	 * @return a chain or the new (and) one
-	 */
-	private static BiConsumer<MutableBindingSet, Statement> andThen(BiConsumer<MutableBindingSet, Statement> co,
-			BiConsumer<MutableBindingSet, Statement> and) {
-		if (co == null) {
-			return and;
-		}
-		return co.andThen(and);
-	}
 }

@@ -40,6 +40,16 @@ class SailClosableIteration<T, X extends Exception>
 	}
 
 	@Override
+	protected void preHasNext() {
+
+	}
+
+	@Override
+	protected void preNext() {
+
+	}
+
+	@Override
 	protected final void handleClose() throws X {
 		try {
 			super.handleClose();

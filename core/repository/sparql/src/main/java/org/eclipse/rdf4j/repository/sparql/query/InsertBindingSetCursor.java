@@ -30,6 +30,11 @@ public class InsertBindingSetCursor extends
 	}
 
 	@Override
+	protected void preHasNext() {
+
+	}
+
+	@Override
 	public BindingSet next() throws QueryEvaluationException {
 		BindingSet next = super.next();
 		if (next == null) {
@@ -42,6 +47,11 @@ public class InsertBindingSetCursor extends
 			set.setBinding(binding);
 		}
 		return set;
+	}
+
+	@Override
+	protected void preNext() {
+
 	}
 
 }
