@@ -434,8 +434,6 @@ While the following data is invalid.
 ```
 
 
-TODO: Write about the two new predicates in the validation report.
-
 ## RSX - Eclipse RDF4J SHACL Extensions
 RDF4J has seen a need to develop its own extension the W3C SHACL Recommendation in order to support new
 and innovative features. We always strive to collaborate with the community when developing these features.
