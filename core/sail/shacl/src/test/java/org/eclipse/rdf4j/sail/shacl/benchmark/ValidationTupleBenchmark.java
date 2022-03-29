@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -53,6 +54,7 @@ public class ValidationTupleBenchmark {
 	private static final String NS1 = "http://example.com/fkewjfowejiofiew/fjewifoweifjwe/jfiewjifjewofiwe/";
 	private static final String NS2 = "http://example.com/jiu98u89/fjewifoweifjwe/jfiewjifjewofiwe/";
 	private static final String NS3 = "http://example.com/fkewjfowejiofiew/556r6fuig7t87/jfiewjifjewofiwe/";
+	public static final Resource[] CONTEXTS = { null };
 
 	@Setup(Level.Trial)
 	public void setUp() throws InterruptedException {
@@ -84,7 +86,7 @@ public class ValidationTupleBenchmark {
 			);
 
 			ValidationTuple validationTuple = new ValidationTuple(values, ConstraintComponent.Scope.propertyShape,
-					true);
+					true, CONTEXTS);
 			objects.add(validationTuple);
 
 		}

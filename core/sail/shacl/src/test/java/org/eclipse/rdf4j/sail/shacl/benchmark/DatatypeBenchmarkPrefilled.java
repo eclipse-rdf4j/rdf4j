@@ -91,7 +91,7 @@ public class DatatypeBenchmarkPrefilled {
 					vf.createLiteral(i)));
 		}
 
-		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shaclDatatype.ttl");
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shaclDatatype.trig");
 		this.shaclRepo = new SailRepository(shaclRepo);
 
 		memoryStoreRepo = new SailRepository(new MemoryStore());

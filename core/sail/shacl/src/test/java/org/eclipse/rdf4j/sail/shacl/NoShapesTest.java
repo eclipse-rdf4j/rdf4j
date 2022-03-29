@@ -21,7 +21,7 @@ import org.mockito.Mockito;
 public class NoShapesTest {
 
 	@Test
-	public void testSkippingValidationWhenThereAreNoShapes() {
+	public void testSkippingValidationWhenThereAreNoShapes() throws InterruptedException {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 

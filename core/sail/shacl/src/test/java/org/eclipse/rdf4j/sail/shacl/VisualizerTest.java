@@ -24,7 +24,7 @@ public class VisualizerTest {
 	@Test
 	public void datatype() throws Exception {
 
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclDatatype.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclDatatype.trig");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -52,7 +52,7 @@ public class VisualizerTest {
 	@Test
 	public void maxCount() throws Exception {
 
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclMax.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclMax.trig");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -79,7 +79,7 @@ public class VisualizerTest {
 	@Test
 	public void minCount() throws Exception {
 
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();

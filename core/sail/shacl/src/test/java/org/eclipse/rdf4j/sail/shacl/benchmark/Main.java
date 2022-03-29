@@ -19,9 +19,32 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class Main {
 
 	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder().include("TargetBenchmarkInitialData.*")
-
-				// .addProfiler("stack", "lines=20;period=1;top=20")
+		Options opt = new OptionsBuilder()
+				.include("AddRemoveBenchmarkEmpty.*")
+				.include("ClassBenchmarkEmpty.*")
+				.include("ComplexBenchmark.*")
+				.include("DatatypeBenchmarkEmpty.*")
+				.include("DatatypeBenchmarkLinear.*")
+				.include("DatatypeBenchmarkPrefilled.*")
+				.include("DatatypeBenchmarkSerializableEmpty.*")
+				.include("HasValueBenchmarkEmpty.*")
+				.include("LanguageInBenchmarkEmpty.*")
+				.include("MaxCountBenchmarkEmpty.*")
+				.include("MinCountBenchmarkEmpty.*")
+				.include("MinCountBenchmarkPrefilled.*")
+				.include("MinCountPrefilledVsEmptyBenchmark.*")
+				.include("NotClassBenchmarkEmpty.*")
+				.include("NotMaxCountBenchmarkEmpty.*")
+				.include("NotUniqueLangBenchmarkEmpty.*")
+				.include("OrDatatypeBenchmark.*")
+				.include("QualifiedValueShapeBenchmarkEmpty.*")
+				.include("ShaclLoadingBenchmark.*")
+				.include("TargetBenchmarkInitialData.*")
+				.include("TargetShapeBenchmark.*")
+				.include("UniqueLangBenchmarkEmpty.*")
+				.include("ValueInBenchmarkEmpty.*")
+				.warmupIterations(5)
+				.measurementIterations(5)
 				.build();
 
 		new Runner(opt).run();

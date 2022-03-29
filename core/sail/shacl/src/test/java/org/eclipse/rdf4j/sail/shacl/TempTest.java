@@ -32,7 +32,7 @@ public class TempTest {
 	@Test
 	public void a() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -70,7 +70,7 @@ public class TempTest {
 
 	@Test
 	public void b() throws Exception {
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -98,7 +98,7 @@ public class TempTest {
 
 	@Test
 	public void maxCount() throws Exception {
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclMax.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclMax.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -137,7 +137,7 @@ public class TempTest {
 	@Test
 	public void minCount() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -163,7 +163,7 @@ public class TempTest {
 	@Test
 	public void leftOuterJoin() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -200,7 +200,7 @@ public class TempTest {
 	@Test
 	public void testUndefinedTargetClassValidatesAllSubjects3() throws Throwable {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacleNoTargetClass.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclNoTargetClass.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 
@@ -223,7 +223,7 @@ public class TempTest {
 					"  sh:maxCount 1 ;",
 					"  sh:minCount 1 ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
 			connection.begin();
@@ -237,7 +237,7 @@ public class TempTest {
 					"	foaf:age 20, \"30\"^^xsd:int  ."
 
 			));
-			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+			connection.add(invalidSampleData, "", RDFFormat.TRIG);
 
 			connection.commit();
 
@@ -282,7 +282,7 @@ public class TempTest {
 
 			));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
 			add(connection, String.join("\n", "",
@@ -317,7 +317,7 @@ public class TempTest {
 
 		StringReader invalidSampleData = new StringReader(data);
 
-		connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+		connection.add(invalidSampleData, "", RDFFormat.TRIG);
 		connection.commit();
 	}
 

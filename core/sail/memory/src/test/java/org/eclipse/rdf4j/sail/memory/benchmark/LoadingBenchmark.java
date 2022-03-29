@@ -88,6 +88,43 @@ public class LoadingBenchmark {
 	}
 
 	@Benchmark
+	public void loadSyntheticOneStatementPerTransaction() {
+
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.init();
+
+		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+
+			for (Statement statement : statementList) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
+				getStatementConsumer(connection).accept(statement);
+				connection.commit();
+			}
+
+		}
+
+	}
+
+	@Benchmark
+	public void loadSyntheticOneStatementPerTransactionClearPrevious() {
+
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.init();
+
+		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+
+			for (Statement statement : statementList) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
+				connection.clear();
+				getStatementConsumer(connection).accept(statement);
+				connection.commit();
+			}
+
+		}
+
+	}
+
+	@Benchmark
 	public void loadRealData() {
 
 		MemoryStore memoryStore = new MemoryStore();

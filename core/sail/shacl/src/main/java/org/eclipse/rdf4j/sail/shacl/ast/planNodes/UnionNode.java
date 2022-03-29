@@ -49,10 +49,12 @@ public class UnionNode implements PlanNode {
 				.map(n -> PlanNodeHelper.handleSorting(true, n))
 				.toArray(PlanNode[]::new);
 
-		if (planNodes.length == 1)
+		if (planNodes.length == 1) {
 			return planNodes[0];
-		if (planNodes.length == 0)
+		}
+		if (planNodes.length == 0) {
 			return EmptyNode.getInstance();
+		}
 
 		return new UnionNode(planNodes);
 
@@ -71,10 +73,12 @@ public class UnionNode implements PlanNode {
 				.map(n -> PlanNodeHelper.handleSorting(true, n))
 				.toArray(PlanNode[]::new);
 
-		if (planNodes.length == 1)
+		if (planNodes.length == 1) {
 			return planNodes[0];
-		if (planNodes.length == 0)
+		}
+		if (planNodes.length == 0) {
 			return EmptyNode.getInstance();
+		}
 
 		return new UnionNode(planNodes);
 

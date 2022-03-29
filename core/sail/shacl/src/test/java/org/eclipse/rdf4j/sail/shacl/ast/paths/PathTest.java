@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.util.HashSet;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.RepositoryConnectionShapeSource;
 import org.junit.jupiter.api.Test;
 
 public class PathTest {
@@ -134,7 +136,7 @@ public class PathTest {
 		Model expected = Rio.parse(new StringReader("" +
 				"@prefix sh: <http://www.w3.org/ns/shacl#>.\n" +
 				"@prefix ex: <http://example.org/>.\n" +
-				pathString), "", RDFFormat.TURTLE);
+				pathString), "", RDFFormat.TRIG);
 
 		DynamicModel actual = convertToPathAndBackToModel(expected);
 
@@ -151,10 +153,10 @@ public class PathTest {
 			actual.setNamespace("ex", "http://example.org/");
 
 			System.out.println("Expected:");
-			Rio.write(expected, System.out, RDFFormat.TURTLE, writerConfig);
+			Rio.write(expected, System.out, RDFFormat.TRIG, writerConfig);
 
 			System.out.println("Actual:");
-			Rio.write(actual, System.out, RDFFormat.TURTLE, writerConfig);
+			Rio.write(actual, System.out, RDFFormat.TRIG, writerConfig);
 
 		}
 
@@ -162,23 +164,37 @@ public class PathTest {
 	}
 
 	private DynamicModel convertToPathAndBackToModel(Model expected) {
+		Resource[] defaultContext = { null };
+
 		DynamicModel actual;
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
 			connection.add(expected);
 
-			actual = connection.getStatements(null, SHACL.PATH, null).stream().map(s -> {
-				Path path = Path.buildPath(connection, (Resource) s.getObject());
-				DynamicModel model = new DynamicModelFactory().createEmptyModel();
-				path.toModel((Resource) s.getObject(), null, model, new HashSet<>());
+			actual = connection.getStatements(null, SHACL.PATH, null)
+					.stream()
+					.map(s -> {
+						try (RepositoryConnectionShapeSource shapeSource = new RepositoryConnectionShapeSource(
+								connection).withContext(defaultContext)) {
+							Path path = Path.buildPath(
+									new RepositoryConnectionShapeSource(connection).withContext(defaultContext),
+									(Resource) s.getObject());
 
-				model.add(s.getSubject(), SHACL.PATH, s.getObject());
+							DynamicModel model = new DynamicModelFactory().createEmptyModel();
+							path.toModel((Resource) s.getObject(), null, model, new HashSet<>());
 
-				return model;
-			}).reduce((m1, m2) -> {
-				m1.addAll(m2);
-				return m1;
-			}).orElse(new DynamicModelFactory().createEmptyModel());
+							model.add(s.getSubject(), SHACL.PATH, s.getObject());
+
+							return model;
+						}
+					})
+					.reduce((m1, m2) -> {
+						m1.addAll(m2);
+						return m1;
+					})
+					.orElse(new DynamicModelFactory().createEmptyModel());
+			connection.commit();
 		} finally {
 			sailRepository.shutDown();
 		}

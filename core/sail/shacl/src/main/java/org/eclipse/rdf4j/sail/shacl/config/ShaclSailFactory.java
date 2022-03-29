@@ -66,6 +66,8 @@ public class ShaclSailFactory implements SailFactory {
 			sail.setDashDataShapes(shaclSailConfig.isDashDataShapes());
 			sail.setValidationResultsLimitTotal(shaclSailConfig.getValidationResultsLimitTotal());
 			sail.setValidationResultsLimitPerConstraint(shaclSailConfig.getValidationResultsLimitPerConstraint());
+			sail.setShapesGraphs(shaclSailConfig.getShapesGraphs());
+
 		}
 
 		return sail;

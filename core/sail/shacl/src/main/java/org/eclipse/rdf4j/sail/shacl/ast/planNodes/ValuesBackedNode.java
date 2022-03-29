@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
@@ -35,10 +36,10 @@ public class ValuesBackedNode implements PlanNode {
 	boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValuesBackedNode(SortedSet<Value> values, ConstraintComponent.Scope scope) {
+	public ValuesBackedNode(SortedSet<Value> values, ConstraintComponent.Scope scope, Resource[] contexts) {
 
 		this.tuples = values.stream()
-				.map(c -> new ValidationTuple(c, scope, false))
+				.map(c -> new ValidationTuple(c, scope, false, contexts))
 				.collect(Collectors.toList());
 
 		this.values = values;

@@ -5,62 +5,70 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  rdf4j:truncated false;
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson6;
-      sh:resultPath ex:knows;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:node1evk0s305x1;
-      sh:value ex:e
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
-      sh:resultPath ex:knows;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:node1evk0s305x1;
-      sh:value ex:a
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson7;
-      sh:resultPath ex:knows;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:node1evk0s305x1;
-      sh:value ex:f
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson7;
-      sh:resultPath ex:knows;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:node1evk0s305x1;
-      sh:value ex:g
-    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson3;
       sh:resultPath ex:knows;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:node1evk0s305x1;
+      sh:sourceShape _:node1ftskin5gx27217;
       sh:value ex:c
     ], [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson2;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson7;
       sh:resultPath ex:knows;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:node1evk0s305x1;
-      sh:value ex:b
+      sh:sourceShape _:node1ftskin5gx27217;
+      sh:value ex:g
     ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson6;
+      sh:resultPath ex:knows;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx27217;
+      sh:value ex:e
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath ex:knows;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx27217;
+      sh:value ex:a
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson5;
       sh:resultPath ex:knows;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeConstraintComponent;
-      sh:sourceShape _:node1evk0s305x1;
+      sh:sourceShape _:node1ftskin5gx27217;
       sh:value ex:d
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson2;
+      sh:resultPath ex:knows;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx27217;
+      sh:value ex:b
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:validPerson7;
+      sh:resultPath ex:knows;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:NodeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx27217;
+      sh:value ex:f
     ] .
 
-_:node1evk0s305x1 a sh:PropertyShape;
+_:node1ftskin5gx27217 a sh:PropertyShape;
   sh:node ex:node;
   sh:path ex:knows .
 

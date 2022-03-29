@@ -13,7 +13,9 @@ import java.util.function.Function;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -39,12 +41,13 @@ public class Select implements PlanNode {
 
 	private final String query;
 	private final boolean sorted;
+	private final Dataset dataset;
 	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public Select(SailConnection connection, String query, String orderBy,
-			Function<BindingSet, ValidationTuple> mapper) {
+			Function<BindingSet, ValidationTuple> mapper, Resource[] dataGraph) {
 		this.connection = connection;
 		this.mapper = mapper;
 		if (query.trim().equals("")) {
@@ -58,6 +61,7 @@ public class Select implements PlanNode {
 		sorted = orderBy != null;
 
 		this.query = "select * where {\n" + query + "\n} " + (orderBy != null ? "order by " + orderBy : "");
+		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 
 	}
 
@@ -79,7 +83,7 @@ public class Select implements PlanNode {
 
 				try {
 					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
+					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset,
 							new MapBindingSet(), true);
 				} catch (MalformedQueryException e) {
 					logger.error("Malformed query: \n{}", query);
@@ -177,11 +181,13 @@ public class Select implements PlanNode {
 							.equals(((MemoryStoreConnection) select.connection).getSail())
 					&&
 					mapper.equals(select.mapper) &&
+					dataset.equals(select.dataset) &&
 					query.equals(select.query);
 		} else {
 			return sorted == select.sorted &&
 					connection.equals(select.connection) &&
 					mapper.equals(select.mapper) &&
+					dataset.equals(select.dataset) &&
 					query.equals(select.query);
 		}
 	}
@@ -191,9 +197,9 @@ public class Select implements PlanNode {
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(((MemoryStoreConnection) connection).getSail(), mapper, query, sorted);
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), mapper, query, sorted, dataset);
 		} else {
-			return Objects.hash(connection, mapper, query, sorted);
+			return Objects.hash(connection, mapper, query, sorted, dataset);
 		}
 
 	}

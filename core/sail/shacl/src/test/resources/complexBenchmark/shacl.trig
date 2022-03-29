@@ -1,0 +1,638 @@
+@prefix sh: <http://www.w3.org/ns/shacl#>.
+@prefix schema: <http://schema.org/> .
+@prefix spdx:  <http://spdx.org/rdf/terms#> .
+@prefix dct:   <http://purl.org/dc/terms/> .
+@prefix adms:  <http://www.w3.org/ns/adms#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix vcard: <http://www.w3.org/2006/vcard/ns#> .
+@prefix dcat:  <http://www.w3.org/ns/dcat#> .
+@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+@prefix ex: <http://example.com/ns#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+rdf4j:SHACLShapeGraph {
+
+ex:DcatCatalogNodeShape
+                   a              sh:NodeShape ;
+                   sh:targetClass  dcat:Catalog ;
+                   sh:property
+                   [
+                           sh:minCount   1 ;
+                           sh:path  dct:description ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:minCount   1 ;
+                           sh:path  dct:title ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:maxCount   1 ;
+                           sh:path  dct:issued ;
+                           sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:minCount   1 ;
+                           sh:path  dct:issued ;
+                           # sh:severity   sh:Warning
+                   ],
+                    [
+                           sh:maxCount   1 ;
+                           sh:path  dct:modified ;
+                           sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                           # sh:severity   sh:Violation
+                   ],
+                    [
+                           sh:minCount   1 ;
+                           sh:path  dct:modified ;
+                           # sh:severity   sh:Warning
+                   ],
+                   [
+                           sh:maxCount   1 ;
+                           sh:path  dct:publisher ;
+                           sh:class foaf:Agent ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:minCount   1 ;
+                           sh:path  dcat:dataset ;
+                           sh:class dcat:Dataset ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dcat:themeTaxonomy ;
+                           sh:class skos:ConceptScheme ;
+                           # sh:severity   sh:Violation
+                   ]      ,
+
+                   [
+                           sh:path  dct:hasPart ;
+                           sh:class dcat:Catalog ;
+                           # sh:severity   sh:Violation
+                   ]  ,
+                   [
+                           sh:path  dct:isPartOf ;
+                           sh:maxCount 1;
+                           sh:class dcat:Catalog ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:spatial ;
+                           sh:class dct:Location ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                            sh:maxCount 1;
+                           sh:path  foaf:homepage ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                            sh:minCount 1;
+                           sh:path  foaf:homepage ;
+                           # sh:severity   sh:Warning
+                   ],
+                   [
+                           sh:path  dcat:record ;
+                           sh:class dcat:CatalogRecord ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:license ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ] ,
+                   [
+                           sh:path  dct:rights ;
+                           sh:maxCount 1;
+                           sh:class dct:RightsStatement ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:language ;
+                           sh:minCount 1 ;
+                           # sh:severity   sh:Warning
+                   ]
+                    .
+
+ex:FoafAgentNodeShape
+                   a              sh:NodeShape ;
+                   sh:targetClass  foaf:Agent ;
+                   sh:property
+                   [
+                           sh:minCount   1 ;
+                           sh:path  foaf:name ;
+                           sh:nodeKind sh:Literal ;
+                           sh:minLength 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   skos:Concept ;
+                           sh:path  dct:type ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ]
+                   #,
+                   #[
+                   #         sh:path  dct:type ;
+                   #        sh:minCount 1;
+                   #        # sh:severity   sh:Warning
+                   #]
+                   .
+
+ex:DcatCatalogRecordNodeShape
+                   a              sh:NodeShape ;
+                   sh:targetClass  dcat:CatalogRecord ;
+                   sh:property
+                   [
+                           sh:minCount   1 ;
+                           sh:path  dct:modified ;
+                           sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:maxCount   1 ;
+                           sh:path  dct:issued ;
+                           sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:minCount   1 ;
+                           sh:path  dct:issued ;
+                           # sh:severity   sh:Warning
+                   ] ,
+                   [
+                           sh:minCount   1 ;
+                           sh:maxCount   1 ;
+                           sh:path  foaf:primaryTopic ;
+                           sh:class dcat:Dataset ;
+                           # sh:severity   sh:Violation
+                   ] ,
+                   [
+                           sh:path  dct:source ;
+                           sh:class dcat:CatalogRecord ;
+                           # sh:severity   sh:Violation
+                   ] ,
+                   [
+                           sh:path  adms:status ;
+                           sh:class skos:Concept ;
+                           # sh:severity   sh:Violation
+                   ] ,
+                   [
+                           sh:path  adms:status ;
+                           sh:class skos:Concept ;
+                           sh:minCount 1;
+                           # sh:severity   sh:Warning
+                   ],
+                   [
+                           sh:path  dct:conformsTo ;
+                           sh:nodeKind sh:BlankNodeOrIRI ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:description ;
+                           sh:minLength 10;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:title ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ].
+
+ex:DcatDatasetNodeShape
+                   a              sh:NodeShape ;
+                   sh:targetClass  dcat:Dataset ;
+                   sh:or (
+                                [
+                                        sh:path  dct:accessRights ;
+                                        sh:class dct:RightsStatement ;
+                                ]
+
+                                [
+                                        sh:path  dct:accessRights ;
+                                        sh:nodeKind sh:Literal ;
+                                        sh:minLength 1;
+                                ]
+                   ) ;
+                   sh:property
+                   [
+                           sh:minCount   1 ;
+                           sh:minLength 2;
+                           sh:path  dct:description ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:minCount   1 ;
+                           sh:minLength 1;
+                           sh:maxLength 256;
+                           sh:path  dct:title ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:minCount   1 ;
+                           sh:minLength 1;
+
+                           sh:path  dct:identifier ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  adms:versionNotes ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:maxCount   1 ;
+                           sh:minLength 1;
+                           sh:path  owl:versionInfo ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:maxCount   1 ;
+                           sh:path  dct:issued ;
+                           sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:maxCount   1 ;
+                           sh:path  dct:modified ;
+                           sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dcat:Dataset ;
+                           sh:path  dct:hasVersion ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dcat:Dataset ;
+                           sh:path  dct:versionOf ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dcat:Dataset ;
+                           sh:path  dct:hasPart ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dcat:Dataset ;
+                           sh:path  dct:isPartOf ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dct:Location ;
+                           sh:path  dct:spatial ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dcat:Dataset ;
+                           sh:path  dct:isRequiredBy ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dcat:Dataset ;
+                           sh:path  dct:requires ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   foaf:Document ;
+                           sh:path  dct:landingPage ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   foaf:Document ;
+                           sh:path  dct:page ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dct:Frequency ;
+                           sh:path  dct:accurialPeriodicity ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   adms:Identifier ;
+                           sh:path  adms:identifier ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   vcard:Kind ;
+                           sh:path  dcat:contactPoint ;
+                           # sh:severity   sh:Violation
+                   ],
+
+                   [
+                           sh:path  dct:temporal ;
+                           sh:class dct:PeriodeOfTime ;
+                           # sh:severity   sh:Violation
+                   ] ,
+                   [
+                           sh:path  dct:provenance ;
+                           sh:maxCount 1;
+                           sh:class dct:ProvenanceStatement ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:accessRights ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dcat:Dataset ;
+                           sh:path  dct:references ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dcat:Dataset ;
+                           sh:path  dct:isReferencedBy ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dct:Standard ;
+                           sh:path  dct:conformsTo ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dcat:keyword ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:minCount 1;
+                           sh:path  dcat:keyword ;
+                           # sh:severity   sh:Warning
+                   ],
+                   [
+                           sh:class dcat:Dataset;
+                           sh:path  dct:source ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class dcat:Dataset;
+                           sh:path  dct:replaces ;
+                           # sh:severity   sh:Violation
+                   ] ,
+                   [
+                           sh:class dcat:Dataset;
+                           sh:path  dct:isReplacedBy ;
+                           # sh:severity   sh:Violation
+                   ]   ,
+                   [
+                           sh:class dcat:Distribution;
+                           sh:path  dcat:distribution ;
+                           # sh:severity   sh:Violation
+                   ]   ,
+                   [
+                           # sh:minCount 1;
+                           sh:path  dcat:distribution ;
+                           # sh:severity   sh:Warning
+                   ]    ,
+                   [
+                           sh:class dcat:Distribution;
+                           sh:path  adms:sample ;
+                           # sh:severity   sh:Violation
+                   ]   ,
+                   [
+                           sh:nodeKind sh:BlankNodeOrIRI;
+                           sh:path  dct:relation ;
+                           # sh:severity   sh:Violation
+                   ]   ,
+                   [
+                           sh:nodeKind sh:BlankNodeOrIRI;
+                           sh:path  dct:creator ;
+                           # sh:severity   sh:Violation
+                   ]   ,
+                  #[
+                  #        sh:class skos:Concept;
+                  #        sh:path  dcatno:accessRightsComment ;
+                  #        # sh:severity   sh:Violation
+                  #]   ,
+                   [
+                           sh:class skos:Concept;
+                           sh:path  dcat:theme ;
+                           # sh:severity   sh:Violation
+                   ]   ,
+                   [
+                           sh:class skos:Concept;
+                           sh:maxCount 1;
+                           sh:path  dct:type ;
+                           # sh:severity   sh:Violation
+                   ]
+                   #,
+                   #[
+                   #        sh:path  dct:subject ;
+                   #        sh:minCount 1 ;
+                   #        # sh:severity   sh:Warning
+                   #]
+                   .
+
+ex:AdmsIdentifierNodeShape
+                  a              sh:NodeShape ;
+                  sh:targetClass  adms:Identifier ;
+                  sh:property
+                  [
+                          sh:minCount   1 ;
+                          sh:maxCount   1 ;
+                          sh:path  skos:notation ;
+                          sh:nodeKind sh:Literal;
+                          # sh:severity   sh:Violation
+                  ].
+
+ex:DctPeriodOfTimeNodeShape
+                  a              sh:NodeShape ;
+                  sh:targetClass  dct:PeriodOfTime ;
+                  sh:property
+                  [
+                          sh:maxCount   1 ;
+                          sh:path schema:endDate ;
+                          sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                          # sh:severity   sh:Violation
+                  ],
+                  [
+                          sh:maxCount   1 ;
+                          sh:path schema:startDate ;
+                          sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                          # sh:severity   sh:Violation
+                  ].
+
+ex:DcatDistributionNodeShape
+                   a              sh:NodeShape ;
+                   sh:targetClass  dcat:Distribution ;
+                                       sh:or (
+                                               [ sh:path  dcat:accessURL ; sh:minCount 1 ]
+                                               [ sh:path  dcat:downloadURL ; sh:minCount 1 ]
+                                                ) ;
+                   sh:property
+                   [
+                           sh:class   dct:Standard ;
+                           sh:path  dct:conformsTo ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dct:RightsStatement ;
+                           sh:path  dct:rights ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   dct:Standard ;
+                           sh:path  dct:conformsTo ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   foaf:Document ;
+                           sh:path  foaf:page ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   spdx:Checksum ;
+                           sh:path  spdx:checksum ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+
+                           sh:path  dct:license ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:class   skos:Concept ;
+                           sh:path  adms:status ;
+                           sh:maxCount 1;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                                sh:path  dcat:accessURL ;
+                           sh:nodeKind sh:IRI ;
+
+                           # sh:severity   sh:Violation
+
+
+                   ],
+                   [
+                           sh:nodeKind sh:IRI ;
+                           sh:path  dcat:downloadURL ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:byteSize ;
+                           sh:datatype xsd:decimal;
+                           sh:maxCount 1 ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:issued ;
+                           sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                           sh:maxCount 1 ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:modified ;
+                           sh:or ([sh:datatype xsd:date;] [sh:datatype xsd:dateTime;]) ;
+                           sh:maxCount 1 ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:title ;
+                           sh:nodeKind sh:Literal;
+                           sh:uniqueLang true ;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:description ;
+                           sh:nodeKind sh:Literal;
+                           # sh:severity   sh:Violation
+                   ],
+                   [
+                           sh:path  dct:description ;
+                           # sh:minCount 1 ;
+                           # sh:severity   sh:Warning
+                   ].
+
+ex:SpdcChecksumNodeShape
+                  a              sh:NodeShape ;
+                  sh:targetClass  spdx:Checksum ;
+                  sh:property
+                  [
+                          sh:maxCount   1 ;
+                          sh:minCount   1 ;
+                          sh:path spdx:algorithm ;
+                          # sh:in (spdx:checksumAlgorithm_md5 spdx:checksumAlgorithm_sha1 spdx:checksumAlgorithm_sha256) ;
+                          # sh:severity   sh:Violation
+                  ],
+                  [
+                          sh:maxCount   1 ;
+                          sh:minCount   1 ;
+                          sh:path spdx:checksumValue ;
+                          sh:datatype xsd:hexBinary ;
+                          # sh:severity   sh:Violation
+                  ].
+
+ex:DctLicenseDocumentNodeShape
+                  a              sh:NodeShape ;
+                  sh:targetClass  dct:LicenseDocument ;
+                  sh:property
+                  [
+                          sh:maxCount   1 ;
+                          sh:path dct:type ;
+                          sh:class skos:Concept ;
+                          # sh:severity   sh:Violation
+                  ] ,
+                  [
+                          # sh:minCount   1 ;
+                          sh:path dct:type ;
+                          # sh:severity   sh:Warning
+                  ]   .
+
+ex:SkosConceptNodeShape
+                  a              sh:NodeShape ;
+                  sh:targetClass  skos:Concept ;
+                  sh:property
+                  [
+                          # sh:minCount   1 ;
+                          sh:path skos:prefLabel ;
+                          sh:nodeKind sh:Literal;
+                          # sh:severity   sh:Violation
+                  ]    ,
+                  [
+                          sh:uniqueLang   true ;
+                          sh:path skos:prefLabel ;
+                          # sh:severity   sh:Violation
+                  ]    ,
+                  [
+                          sh:path skos:inScheme ;
+                          sh:class skos:ConceptScheme ;
+                          # sh:severity   sh:Violation
+                  ]
+                 # ,
+                 #[
+                 #        sh:minCount   1 ;
+                 #        sh:path skos:inScheme ;
+                 #        # sh:severity   sh:Warning
+                 #]
+                  .
+
+ex:SkosConceptSchemeNodeShape
+                  a              sh:NodeShape ;
+                  sh:targetClass  skos:ConceptScheme ;
+                  sh:property
+                  [
+                          sh:path dct:title ;
+                          sh:nodeKind sh:Literal;
+                          # sh:severity   sh:Violation
+                  ] .
+}

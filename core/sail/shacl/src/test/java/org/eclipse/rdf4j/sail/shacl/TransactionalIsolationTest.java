@@ -18,9 +18,11 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -60,7 +62,7 @@ public class TransactionalIsolationTest {
 					"                sh:datatype xsd:integer ;",
 					"        ] ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
 			add(connection, "ex:pete a ex:Person .");
@@ -79,7 +81,7 @@ public class TransactionalIsolationTest {
 					"                sh:datatype xsd:integer ;",
 					"        ] ."));
 
-			connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(extraShaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 
 		} finally {
 			sailRepository.shutDown();
@@ -111,7 +113,7 @@ public class TransactionalIsolationTest {
 					"                sh:datatype xsd:integer ;",
 					"        ] ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
 			add(connection, "ex:pete a ex:Person .");
@@ -131,7 +133,7 @@ public class TransactionalIsolationTest {
 					"        ] ."));
 
 			try {
-				connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+				connection.add(extraShaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			} catch (RepositoryException e) {
 				assertThat(e.getCause()).isInstanceOf(ShaclSailValidationException.class);
 			}
@@ -165,7 +167,7 @@ public class TransactionalIsolationTest {
 					"                sh:minCount 1 ;",
 					"        ] ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 
 			try {
 				connection.commit();
@@ -206,7 +208,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 
 		try {
 			connection2.commit();
@@ -251,7 +253,7 @@ public class TransactionalIsolationTest {
 					"                sh:minCount 1 ;",
 					"        ] ."));
 
-			connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection2.commit();
 
 			try {
@@ -297,7 +299,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 		connection1.begin();
 		connection2.commit();
 
@@ -353,7 +355,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 		connection1.begin(IsolationLevels.SERIALIZABLE);
 		connection2.commit();
 
@@ -412,7 +414,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 
 		connection1.commit();
 
@@ -460,7 +462,7 @@ public class TransactionalIsolationTest {
 					"                sh:minCount 1 ;",
 					"        ] ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			add(connection, "ex:steve ex:age 1 .");
 		}
 
@@ -528,7 +530,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 
 		connection1.commit();
 
@@ -584,7 +586,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 
 		connection1.commit();
 
@@ -641,7 +643,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 
 		try {
 			connection2.commit();
@@ -692,7 +694,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 		connection1.begin();
 
 		addInTransaction(connection1, "ex:steve a ex:Person .");
@@ -746,7 +748,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 		connection2.getSailConnection().prepare();
 		connection2.rollback();
 
@@ -798,7 +800,7 @@ public class TransactionalIsolationTest {
 					"                sh:minCount 1 ;",
 					"        ] ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
 			connection.begin();
@@ -819,7 +821,7 @@ public class TransactionalIsolationTest {
 					"                sh:datatype xsd:integer ;",
 					"        ] ."));
 
-			connection.add(extraShaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(extraShaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 
 			add(connection, "ex:pete a ex:Person .");
 
@@ -828,13 +830,13 @@ public class TransactionalIsolationTest {
 		}
 	}
 
-	@Disabled // we don't support updating shapes through SPARQL at the moment
 	@Test
 	public void testUpdateShapesSparql() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
 		SailRepository sailRepository = new SailRepository(shaclSail);
-		sailRepository.init();
+
+		IRI g1 = Values.iri("http://example.com/g1");
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
@@ -854,7 +856,7 @@ public class TransactionalIsolationTest {
 					"                sh:minCount 1 ;",
 					"        ] ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TURTLE, g1);
 			connection.commit();
 
 			connection.begin();
@@ -906,7 +908,7 @@ public class TransactionalIsolationTest {
 					"ex:prop    sh:path ex:age ;",
 					"                sh:minCount 1 ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
 			List<Statement> shapesStatements = Iterations
@@ -957,7 +959,7 @@ public class TransactionalIsolationTest {
 				"                sh:minCount 1 ;",
 				"        ] ."));
 
-		connection2.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+		connection2.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 		addInTransaction(connection2, "ex:steve ex:age 1 .");
 
 		connection1.begin(IsolationLevels.SNAPSHOT);
@@ -994,7 +996,7 @@ public class TransactionalIsolationTest {
 
 		StringReader stringReader = new StringReader(data);
 
-		connection.add(stringReader, "", RDFFormat.TURTLE);
+		connection.add(stringReader, "", RDFFormat.TRIG);
 		connection.commit();
 	}
 
@@ -1008,7 +1010,7 @@ public class TransactionalIsolationTest {
 		StringReader stringReader = new StringReader(data);
 
 		try {
-			connection.add(stringReader, "", RDFFormat.TURTLE);
+			connection.add(stringReader, "", RDFFormat.TRIG);
 		} catch (IOException e) {
 			throw new IllegalStateException();
 		}
@@ -1024,7 +1026,7 @@ public class TransactionalIsolationTest {
 		StringReader stringReader = new StringReader(data);
 
 		try {
-			Model parse = Rio.parse(stringReader, RDFFormat.TURTLE);
+			Model parse = Rio.parse(stringReader, RDFFormat.TRIG);
 			connection.remove(parse);
 		} catch (IOException e) {
 			throw new IllegalStateException();

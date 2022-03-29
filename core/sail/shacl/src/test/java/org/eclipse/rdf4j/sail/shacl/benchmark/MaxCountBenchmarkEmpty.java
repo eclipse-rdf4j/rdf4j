@@ -73,7 +73,7 @@ public class MaxCountBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMaxCountBenchmark.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMaxCountBenchmark.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
@@ -89,7 +89,7 @@ public class MaxCountBenchmarkEmpty {
 	@Benchmark
 	public void shaclBulk() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMaxCountBenchmark.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMaxCountBenchmark.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);

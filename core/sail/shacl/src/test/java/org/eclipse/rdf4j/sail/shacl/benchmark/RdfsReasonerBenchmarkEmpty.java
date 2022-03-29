@@ -88,7 +88,7 @@ public class RdfsReasonerBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclRdfsBenchmark.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclRdfsBenchmark.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
@@ -104,7 +104,7 @@ public class RdfsReasonerBenchmarkEmpty {
 	@Benchmark
 	public void shaclBulk() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclRdfsBenchmark.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclRdfsBenchmark.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);

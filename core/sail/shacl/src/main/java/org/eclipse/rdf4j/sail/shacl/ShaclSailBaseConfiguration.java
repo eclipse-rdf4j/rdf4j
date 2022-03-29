@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
@@ -38,6 +41,7 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	private long validationResultsLimitPerConstraint = ShaclSailConfig.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT;
 	private long transactionalValidationLimit = ShaclSailConfig.TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT;
 	private boolean logValidationExecution = false;
+	private Set<IRI> shapesGraphs = ShaclSailConfig.SHAPES_GRAPHS_DEFAULT;
 
 	public ShaclSailBaseConfiguration(NotifyingSail baseSail) {
 		super(baseSail);
@@ -363,4 +367,11 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 		this.transactionalValidationLimit = transactionalValidationLimit;
 	}
 
+	public Set<IRI> getShapesGraphs() {
+		return shapesGraphs;
+	}
+
+	public void setShapesGraphs(Set<IRI> shapesGraphs) {
+		this.shapesGraphs = shapesGraphs;
+	}
 }

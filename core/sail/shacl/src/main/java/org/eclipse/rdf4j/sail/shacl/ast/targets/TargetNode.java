@@ -19,20 +19,22 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValuesBackedNode;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class TargetNode extends Target {
 	private final TreeSet<Value> targetNodes;
+	private final Resource[] sourceContexts;
 
-	public TargetNode(TreeSet<Value> targetNodes) {
+	public TargetNode(TreeSet<Value> targetNodes, Resource[] sourceContexts) {
 		this.targetNodes = targetNodes;
 		assert !this.targetNodes.isEmpty();
+		this.sourceContexts = sourceContexts;
 
 	}
 
@@ -42,8 +44,9 @@ public class TargetNode extends Target {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		return new ValuesBackedNode(targetNodes, scope);
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			ConstraintComponent.Scope scope) {
+		return new ValuesBackedNode(targetNodes, scope, sourceContexts);
 	}
 
 	@Override
@@ -80,7 +83,8 @@ public class TargetNode extends Target {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNode parent) {
 		return new SetFilterNode(targetNodes, parent, 0, true);
 	}
 

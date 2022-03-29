@@ -46,8 +46,10 @@ is type `ex:Person`.
 
 ## How to load and update SHACL shapes
 
-The ShaclSail uses a reserved graph (`http://rdf4j.org/schema/rdf4j#SHACLShapeGraph`) for storing the SHACL shapes.
+By default, the ShaclSail uses a reserved graph (`http://rdf4j.org/schema/rdf4j#SHACLShapeGraph`) for storing the SHACL shapes.
 Utilize a normal connection to load your shapes into this graph. SPARQL is not supported.
+
+The [Shapes Graph](#shapes-graph) section explains how to store your shapes in a different named graph.  
 
 ```java
 ShaclSail shaclSail = new ShaclSail(new MemoryStore());
@@ -133,10 +135,10 @@ As of writing this documentation the following features are supported.
 - `sh:qualifiedMaxCount`
 - `sh:qualifiedMinCount`
 - `sh:qualifiedValueShape`
+- 'sh:shapesGraph'
 - `dash:hasValueIn`
 - `sh:target` for use with DASH targets
 - `rsx:targetShape`
-
 
 DASH and RSX features need to be explicitly enabled, for instance with `setDashDataShapes(true)` and
 `setEclipseRdf4jShaclExtensions(true)`. These are currently experimental features. For more information
@@ -145,7 +147,7 @@ about the RSX features, see the [RSX section](#rsx---eclipse-rdf4j-shacl-extensi
 Implicit `sh:targetClass` is supported for nodes that are `rdfs:Class` and either of `sh:PropertyShape` or `sh:NodeShape`. Validation for all nodes,
 equivalent to `owl:Thing` or `rdfs:Resource` in an environment with a reasoner, can be enabled by setting `setUndefinedTargetValidatesAllSubjects(true)`.
 
-`sh:path` is limited to single predicate paths, eg. `ex:age` or a single inverse path. Sequence paths, alternative paths and the like are not supported.
+`sh:path` is limited to single predicate paths, e.g. `ex:age` or a single inverse path. Sequence paths, alternative paths and the like are not supported.
 
 Nested `sh:property` is not supported.
 
@@ -267,7 +269,7 @@ ex:pete ex:age "eighteen".
 
 Neither of these transactions will by themselves cause the validation to fail, but together they will.
 
-Typically in order to handle this scenario a user would need to use SERIALIZABLE transactions, which are slow and
+Typically, in order to handle this scenario a user would need to use SERIALIZABLE transactions, which are slow and
 prone to failure. The ShaclSail instead uses locking to run transactions one-after-the-other if the isolation level is set to
 SNAPSHOT. This is typically 2-4x faster than using SERIALIZABLE.
 
@@ -295,7 +297,7 @@ As of 3.6.0 there are also a set of experimental transaction settings for hintin
 - `ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled`: Enable the cache that stores intermediate results so these only need to be computed once.
 - `ShaclSail.TransactionSettings.PerformanceHint.CacheDisabled`: Disable the cache.
 - `ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation`: Run validation in parallel (multithreaded).
-- `ShaclSail.TransactionSettings.PerformanceHint.SerialValidation`:  Run validation in serial (singlethreaded).
+- `ShaclSail.TransactionSettings.PerformanceHint.SerialValidation`:  Run validation in serial (single threaded).
 
 
 ```java
@@ -352,8 +354,85 @@ As of 4.0.0 transactions can automatically be switched to bulk validation if the
 Automatic bulk validation is not compatible with serializable validation.
 
 ## Reasoning
-By default the ShaclSail supports the simple rdfs:subClassOf reasoning required by the W3C recommendation. There is no
+By default, the ShaclSail supports the simple rdfs:subClassOf reasoning required by the W3C recommendation. There is no
 support for `sh:entailment`, however the entire reasoner can be disabled with `setRdfsSubClassReasoning(false)`.
+
+## Shapes graph
+
+When shapes are used to validate the contents of a database it makes sense to consider them part of the database schema and as such 
+keep them seperated from each other. This separation is achieved by storing shapes in a reserved graph 
+(`http://rdf4j.org/schema/rdf4j#SHACLShapeGraph`) which is hidden unless specifically named when loading or removing data.
+
+As of 4.0.0 the ShaclSail can be configured to load shapes from other graphs (both named graphs and the default graph).
+- `setShapesGraphs(Set.of(RDF4J.SHACL_SHAPE_GRAPH, Values.iri("http://example.org/myShapeGraph"))` will read shapes from both the normal reserved graph and the named graph `http://example.org/myShapeGraph`.
+    - `<http://rdf4j.org/config/sail/shacl#shapesGraph>`
+
+    
+Shapes stored in the reserved graph (`http://rdf4j.org/schema/rdf4j#SHACLShapeGraph`) are used to validate the union of all triples
+in the default graph and any other named graph. The ShaclSail relies on `sh:shapesGraph` statements to understand how shapes stored
+in other graphs should be used for validation.
+
+SHACL uses the term shapes graph to refer to an RDF graph where the shapes are defined, and the term data graph to refer to an RDF
+graph where the data to be validated is stored. Data graphs and shapes graphs are linked together using `sh:shapesGraph` statements
+which are used by the ShaclSail to decide which shapes should be used to validate which graphs.
+
+For security and performance the ShaclSail ignores `sh:shapesGraph` statements that are not in a graph that has been configured for 
+shapes, as explained above. This means that you can always trust data you load into your database to not tamper with your shapes or
+with which shapes are used for validation, as long as you limit which graphs your load the data into.
+
+### Example
+
+```trig
+ex:shapesGraph1 {
+    ex:PersonShape
+        a sh:NodeShape  ;
+        sh:targetClass ex:Person ;       
+}  
+
+ex:shapesGraph2 {
+    ex:PersonShape       
+        sh:property [
+            sh:path ex:age ;
+            sh:datatype xsd:integer ;
+        ] .
+
+    rdf4j:nil sh:shapesGraph ex:shapesGraph1, ex:shapesGraph2.         
+}
+
+ex:shapesGraph3 {
+    ex:PersonShape       
+        sh:property [
+            sh:path ex:age ;
+            sh:minCount 1;
+        ] .
+
+}
+```
+
+The above shapes will result in all the data in the default graph (unnamed graph) being validated against the shapes defined in the union
+of both `ex:shapesGraph1` and `ex:shapesGraph2`. The shape defined in `ex:shapesGraph3` is effectively ignored. The resource `rdf4j:nil` is used to refer to the default graph.
+
+The following data is valid.
+
+```trig
+{
+    ex:steve a ex:Person.
+    
+    ex:jane a ex:Person;
+        ex:age 40.
+}  
+```
+
+While the following data is invalid.
+
+
+```trig
+{    
+    ex:john a ex:Person;
+        ex:age "seventy two".
+}  
+```
+
 
 ## RSX - Eclipse RDF4J SHACL Extensions
 RDF4J has seen a need to develop its own extension the W3C SHACL Recommendation in order to support new
@@ -368,7 +447,7 @@ The RSX specification will be published soon together with the limited support f
 
 ## Logging and debugging
 
-By default there is no logging enabled in the ShaclSail. There are four methods for enabling logging:
+By default, there is no logging enabled in the ShaclSail. There are four methods for enabling logging:
 
 - `shaclSail.setLogValidationPlans(true);`
 - `shaclSail.setGlobalLogValidationExecution(true);`
@@ -389,7 +468,7 @@ The structure of this log and its contents may change in the future, without war
 
 ### Log validation execution
 
-The execution of the validation plan shows what data was requested during the exeuction and how that data was joined together and filtered.
+The execution of the validation plan shows what data was requested during the execution and how that data was joined together and filtered.
 
 Enabling this logging will enable it for all ShaclSails on all threads.
 

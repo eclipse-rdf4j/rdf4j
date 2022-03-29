@@ -27,10 +27,4 @@ public class ShaclConcurrencyTest extends SailConcurrencyTest {
 		return new ShaclSail(new MemoryStore());
 	}
 
-	@Ignore
-	@Test
-	@Override
-	public void testConcurrentAddLargeTxnRollback() throws Exception {
-		// empty since this test is ignored
-	}
 }

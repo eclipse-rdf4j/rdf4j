@@ -17,8 +17,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
@@ -27,6 +25,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class TargetSubjectsOf extends Target {
 
@@ -51,16 +51,17 @@ public class TargetSubjectsOf extends Target {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		return getAddedRemovedInner(connectionsGroup, scope, connectionsGroup.getAddedStatements());
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			ConstraintComponent.Scope scope) {
+		return getAddedRemovedInner(connectionsGroup.getAddedStatements(), dataGraph, scope);
 	}
 
-	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
-			SailConnection connection) {
+	private PlanNode getAddedRemovedInner(SailConnection connection, Resource[] dataGraph,
+			ConstraintComponent.Scope scope) {
 
 		PlanNode planNode = targetSubjectsOf.stream()
 				.map(predicate -> (PlanNode) new UnorderedSelect(connection, null,
-						predicate, null, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope)))
+						predicate, null, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope)))
 				.reduce(UnionNode::getInstance)
 				.orElse(EmptyNode.getInstance());
 
@@ -82,9 +83,10 @@ public class TargetSubjectsOf extends Target {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNode parent) {
 		return new ExternalFilterByPredicate(connectionsGroup.getBaseConnection(), targetSubjectsOf, parent,
-				ExternalFilterByPredicate.On.Subject);
+				ExternalFilterByPredicate.On.Subject, dataGraph);
 	}
 
 	@Override

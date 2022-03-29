@@ -4,18 +4,21 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
+  rdf4j:truncated false;
   sh:conforms false;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson2;
-      sh:value ex:validPerson2;
-      sh:sourceConstraintComponent sh:ClassConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
+      sh:sourceConstraintComponent sh:ClassConstraintComponent;
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:validPerson2
     ] .
 
 ex:PersonShape a sh:NodeShape;
-  sh:targetClass ex:Person, ex:SecondTarget;
-  sh:class ex:Person .
+  sh:class ex:Person;
+  sh:targetClass ex:Person, ex:SecondTarget .

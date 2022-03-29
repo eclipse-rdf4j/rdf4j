@@ -1,0 +1,40 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+rdf4j:SHACLShapeGraph {
+  ex:PersonShape a sh:NodeShape;
+    sh:targetClass foaf:Person;
+    sh:property [
+        sh:path foaf:age;
+        sh:or ([
+              sh:datatype xsd:integer
+            ] [
+              sh:datatype xsd:int
+            ]);
+        sh:minCount 1;
+        sh:maxCount 1;
+        sh:minInclusive 1
+      ], [
+        sh:path foaf:name;
+        sh:maxCount 5;
+        sh:nodeKind sh:Literal;
+        sh:minLength 1
+      ], [
+        sh:path foaf:interest;
+        sh:nodeKind sh:BlankNodeOrIRI
+      ], [
+        sh:path foaf:knows;
+        sh:nodeKind sh:BlankNodeOrIRI
+      ], [
+        sh:path foaf:mbox;
+        sh:nodeKind sh:IRI;
+        sh:flags "i";
+        sh:pattern "(mailto)(:).*?(@).*?"
+      ] .
+}
