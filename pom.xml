@@ -327,6 +327,9 @@
 		</profile>
 	</profiles>
 	<properties>
+		<java.version>11</java.version>
+		<maven.compiler.release>${java.version}</maven.compiler.release>
+		<maven.compiler.source>${java.version}</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<slf4j.version>1.7.32</slf4j.version>
@@ -639,7 +642,6 @@
 					<version>3.8.1</version>
 					<configuration>
 						<fork>true</fork>
-						<release>11</release>
 						<encoding>utf8</encoding>
 					</configuration>
 				</plugin>
