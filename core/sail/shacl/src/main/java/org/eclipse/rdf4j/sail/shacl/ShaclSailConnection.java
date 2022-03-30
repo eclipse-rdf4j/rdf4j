@@ -71,7 +71,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private final SailConnection previousStateSerializableConnection;
 
 	private final boolean useDefaultShapesGraph;
-	private final IRI[] shapesGraphs;
+	private IRI[] shapesGraphs;
 
 	Sail addedStatements;
 	Sail removedStatements;
@@ -105,6 +105,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private Settings transactionSettings;
 	private TransactionSetting[] transactionSettingsRaw = new TransactionSetting[0];
+	private volatile boolean closed;
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
 			SailConnection previousStateConnection, SailConnection serializableConnection,
@@ -118,12 +119,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		this.sail = sail;
 		this.transactionSettings = getDefaultSettings(sail);
 		this.useDefaultShapesGraph = sail.getShapesGraphs().contains(RDF4J.SHACL_SHAPE_GRAPH);
-		this.shapesGraphs = sail.getShapesGraphs().stream().map(g -> {
-			if (g.equals(RDF4J.NIL)) {
-				return null;
-			}
-			return g;
-		}).toArray(IRI[]::new);
 	}
 
 	private Settings getDefaultSettings(ShaclSail sail) {
@@ -144,6 +139,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void begin(IsolationLevel level) throws SailException {
+		if (closed) {
+			throw new SailException("Connection is closed");
+		}
 
 		currentIsolationLevel = level;
 
@@ -153,6 +151,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		assert writableShapesCache == null;
 		assert nonExclusiveSerializableValidationLock == null;
 		assert exclusiveSerializableValidationLock == null;
+		assert shapesGraphs == null;
+
+		shapesGraphs = sail.getShapesGraphs().stream().map(g -> {
+			if (g.equals(RDF4J.NIL)) {
+				return null;
+			}
+			return g;
+		}).toArray(IRI[]::new);
 
 		stats = new Stats();
 
@@ -225,6 +231,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void commit() throws SailException {
+		if (closed) {
+			throw new SailException("Connection is closed");
+		}
 
 		if (!prepareHasBeenCalled) {
 			prepare();
@@ -297,6 +306,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void rollback() throws SailException {
+		if (closed) {
+			throw new SailException("Connection is closed");
+		}
+
 		try {
 
 			if (readableShapesCache != null) {
@@ -364,6 +377,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			shapesModifiedInCurrentTransaction = false;
 
 			currentIsolationLevel = null;
+
+			shapesGraphs = null;
 
 		} finally {
 			try {
@@ -675,6 +690,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	synchronized public void close() throws SailException {
+		if (closed) {
+			return;
+		}
+
 		try {
 			if (isActive()) {
 				rollback();
@@ -694,18 +713,21 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					} finally {
 						try {
 							previousStateSerializableConnection.close();
-
 						} finally {
 							try {
 								super.close();
 							} finally {
 								try {
-									sail.closeConnection(this);
+									sail.closeConnection();
 								} finally {
 									try {
 										cleanupShapesReadWriteLock();
 									} finally {
-										cleanupReadWriteLock();
+										try {
+											cleanupReadWriteLock();
+										} finally {
+											closed = true;
+										}
 									}
 								}
 							}
@@ -718,6 +740,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	@Override
 	public void prepare() throws SailException {
+		if (closed) {
+			throw new SailException("Connection is closed");
+		}
+
 		prepareHasBeenCalled = true;
 
 		long before = 0;
@@ -731,10 +757,14 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			boolean useSerializableValidation = shouldUseSerializableValidation() && !isBulkValidation();
 
-			if (useSerializableValidation) {
-				exclusiveSerializableValidationLock = sail.serializableValidationLock.getWriteLock();
+			if (sail.isSerializableValidation()) {
+				if (useSerializableValidation) {
+					exclusiveSerializableValidationLock = sail.serializableValidationLock.getWriteLock();
+				} else {
+					nonExclusiveSerializableValidationLock = sail.serializableValidationLock.getReadLock();
+				}
 			} else {
-				nonExclusiveSerializableValidationLock = sail.serializableValidationLock.getReadLock();
+				assert !useSerializableValidation : "ShaclSail does not have serializable validation enabled but ShaclSailConnection still attempted to use serializable validation!";
 			}
 
 			if (!isValidationEnabled()) {
@@ -791,7 +821,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			ValidationReport invalidTuples = null;
 			if (useSerializableValidation) {
-				synchronized (sail) {
+				synchronized (sail.singleConnectionMonitor) {
 					if (!sail.usesSingleConnection()) {
 						invalidTuples = serializableValidation(
 								shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes);
@@ -812,8 +842,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new SailException(e);
+			throw ShaclSail.convertToSailException(e);
 		} finally {
 
 			if (sail.isPerformanceLogging()) {
@@ -993,8 +1022,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		try {
 			return validate(sail.getShapes(shapesRepoConnection, this, shapesGraphs), true);
 		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new RuntimeException(e);
+			throw ShaclSail.convertToSailException(e);
 		}
 	}
 

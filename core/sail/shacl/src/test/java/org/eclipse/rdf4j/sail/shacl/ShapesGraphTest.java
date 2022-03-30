@@ -160,33 +160,6 @@ public class ShapesGraphTest {
 
 	}
 
-	private void test(Consumer<Repository> testCase) throws Throwable {
-
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		SailRepository repository = new SailRepository(shaclSail);
-
-		shaclSail.setShapesGraphs(Set.of(
-				RDF4J.SHACL_SHAPE_GRAPH,
-				Values.iri(EX, "peopleKnowPeopleShapes"),
-				Values.iri(EX, "peopleKnowHumansShapes"),
-				Values.iri(EX, "mustHaveNameShapes"),
-				Values.iri(EX, "maxFiveAcquaintances"),
-				Values.iri(EX, "nestedKnowsShouldHaveAge")
-		));
-
-		loadShapes(repository);
-
-		try {
-			testCase.accept(repository);
-		} catch (RepositoryException e) {
-			ShaclSailValidationReportHelper.printValidationReport(e.getCause(), System.err);
-			throw e;
-		}
-
-		shaclSail.shutDown();
-
-	}
-
 	@Test
 	public void testValidationRequired() throws IOException, InterruptedException {
 
@@ -224,12 +197,67 @@ public class ShapesGraphTest {
 
 	}
 
+	@Test
+	public void testDefaultShapesGraph() throws IOException {
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		SailRepository repository = new SailRepository(shaclSail);
+
+		loadShapes(repository);
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(laura, RDF.TYPE, FOAF.PERSON, Values.iri("http://example.org/differentGraph"));
+			connection.add(laura, FOAF.PHONE, Values.literal(12345678));
+			connection.add(laura, FOAF.PHONE, Values.literal(12345678), data2);
+			connection.commit();
+		}
+
+		assertThrows(RepositoryException.class, () -> {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(laura, FOAF.PHONE, Values.literal(12345678), data1);
+				connection.commit();
+			}
+		});
+
+		repository.shutDown();
+
+	}
+
 	private void loadShapes(SailRepository repository) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 			connection.add(ShapesGraphTest.class.getClassLoader().getResource("multipleShapesGraphs.trig"));
 			connection.commit();
 		}
+	}
+
+	private void test(Consumer<Repository> testCase) throws Throwable {
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		SailRepository repository = new SailRepository(shaclSail);
+
+		shaclSail.setShapesGraphs(Set.of(
+				RDF4J.SHACL_SHAPE_GRAPH,
+				Values.iri(EX, "peopleKnowPeopleShapes"),
+				Values.iri(EX, "peopleKnowHumansShapes"),
+				Values.iri(EX, "mustHaveNameShapes"),
+				Values.iri(EX, "maxFiveAcquaintances"),
+				Values.iri(EX, "nestedKnowsShouldHaveAge")
+		));
+
+		loadShapes(repository);
+
+		try {
+			testCase.accept(repository);
+		} catch (RepositoryException e) {
+			ShaclSailValidationReportHelper.printValidationReport(e.getCause(), System.err);
+			throw e;
+		}
+
+		shaclSail.shutDown();
+
 	}
 
 }
