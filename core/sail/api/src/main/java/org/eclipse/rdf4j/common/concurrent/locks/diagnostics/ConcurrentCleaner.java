@@ -32,9 +32,6 @@ public class ConcurrentCleaner {
 		int concurrency = powerOfTwoSize(Runtime.getRuntime().availableProcessors() * 2);
 		mask = concurrency - 1;
 		cleaner = new Cleaner[concurrency];
-		for (int i = 0; i < cleaner.length; i++) {
-			cleaner[i] = Cleaner.create();
-		}
 	}
 
 	private static int powerOfTwoSize(int initialSize) {
@@ -43,13 +40,25 @@ public class ConcurrentCleaner {
 	}
 
 	static int getIndex(Thread key) {
-		if (key == null)
+		if (key == null) {
 			return 0;
+		}
 		return mask & ((int) key.getId());
 	}
 
 	public Cleaner.Cleanable register(Object obj, Runnable action) {
-		return cleaner[getIndex(Thread.currentThread())].register(obj, action);
+		Cleaner cleaner = ConcurrentCleaner.cleaner[getIndex(Thread.currentThread())];
+		if (cleaner == null) {
+			cleaner = instantiateCleaner(getIndex(Thread.currentThread()));
+		}
+		return cleaner.register(obj, action);
+	}
+
+	private synchronized static Cleaner instantiateCleaner(int index) {
+		if (ConcurrentCleaner.cleaner[index] == null) {
+			ConcurrentCleaner.cleaner[index] = Cleaner.create();
+		}
+		return ConcurrentCleaner.cleaner[index];
 	}
 
 }

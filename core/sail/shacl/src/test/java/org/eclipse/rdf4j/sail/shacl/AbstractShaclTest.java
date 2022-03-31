@@ -76,6 +76,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationAppr
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.params.provider.Arguments;
 import org.slf4j.Logger;
@@ -408,6 +409,15 @@ abstract public class AbstractShaclTest {
 		printTestCase(testCase);
 
 		SailRepository shaclRepository = getShaclSail(testCase, true);
+
+		boolean containsShapesGraphStatements = testCase.getShacl().contains(null, SHACL.SHAPES_GRAPH, null);
+		boolean onlyContainsRdf4jShapesGraph = testCase.getShacl().contexts().equals(Set.of(RDF4J.SHACL_SHAPE_GRAPH));
+
+		if (!containsShapesGraphStatements) {
+			Assertions.assertTrue(onlyContainsRdf4jShapesGraph);
+			((ShaclSail) shaclRepository.getSail()).setShapesGraphs(Set.of(RDF4J.SHACL_SHAPE_GRAPH));
+		}
+
 		try {
 
 			boolean exception = false;
@@ -458,8 +468,6 @@ abstract public class AbstractShaclTest {
 						validationReportActual = ((ShaclSailValidationException) sailException.getCause())
 								.validationReportAsModel();
 						printResults(sailException);
-					} catch (Exception e) {
-						throw e;
 					}
 				} catch (IOException e) {
 					e.printStackTrace();
@@ -470,9 +478,9 @@ abstract public class AbstractShaclTest {
 			if (ran) {
 
 				if (testCase.expectedResult == ExpectedResult.valid) {
-					assertFalse("Expected transaction to succeed", exception);
+					Assertions.assertFalse(exception, "Expected transaction to succeed");
 				} else {
-					assertTrue("Expected transaction to fail", exception);
+					Assertions.assertTrue(exception, "Expected transaction to fail");
 				}
 			}
 		} finally {
@@ -502,8 +510,8 @@ abstract public class AbstractShaclTest {
 			if (resourceAsStream == null) {
 				logger.error(dataPath + "report.ttl did not exist. Creating an empty file!");
 
-				String file = AbstractShaclTest.class.getClassLoader()
-						.getResource(dataPath)
+				String file = Objects.requireNonNull(AbstractShaclTest.class.getClassLoader()
+						.getResource(dataPath))
 						.getFile()
 						.replace("/target/test-classes/", "/src/test/resources/");
 				boolean newFile = new File(file + "report.ttl").createNewFile();
@@ -516,7 +524,7 @@ abstract public class AbstractShaclTest {
 
 				String validationReportExpectedString = modelToString(validationReportExpected, RDFFormat.TURTLE);
 				String validationReportActualString = modelToString(validationReportActual, RDFFormat.TURTLE);
-				assertEquals(validationReportExpectedString, validationReportActualString);
+				Assertions.assertEquals(validationReportExpectedString, validationReportActualString);
 			}
 
 		} catch (IOException e) {
@@ -526,8 +534,8 @@ abstract public class AbstractShaclTest {
 
 	private static void writeActualModelToExpectedModelForDevPurposes(String dataPath, Model report)
 			throws IOException {
-		String file = AbstractShaclTest.class.getClassLoader()
-				.getResource(dataPath)
+		String file = Objects.requireNonNull(AbstractShaclTest.class.getClassLoader()
+				.getResource(dataPath))
 				.getFile()
 				.replace("/target/test-classes/", "/src/test/resources/");
 		File file1 = new File(file + "report.ttl");
@@ -650,9 +658,9 @@ abstract public class AbstractShaclTest {
 		boolean conforms = report.getProperty(SH.conforms).getBoolean();
 
 		if (testCase.expectedResult == ExpectedResult.valid) {
-			assertTrue("Expected test case to conform", conforms);
+			Assertions.assertTrue(conforms, "Expected test case to conform");
 		} else {
-			assertFalse("Expected test case to not conform", conforms);
+			Assertions.assertFalse(conforms, "Expected test case to not conform");
 
 			try {
 				Model validationReportExpected = Rio.parse(new StringReader(ModelPrinter.get().print(model)), "",
@@ -681,7 +689,7 @@ abstract public class AbstractShaclTest {
 						String validationReportExpectedString = modelToString(validationReportExpected,
 								RDFFormat.TURTLE);
 						String validationReportActualString = modelToString(validationReportActual, RDFFormat.TURTLE);
-						assertEquals(validationReportExpectedString, validationReportActualString);
+						Assertions.assertEquals(validationReportExpectedString, validationReportActualString);
 					}
 				} catch (IOException e) {
 					throw new RuntimeException(e);
@@ -725,7 +733,7 @@ abstract public class AbstractShaclTest {
 
 			System.out.println(ModelPrinter.get().print(model));
 
-			fail("SHACL does not conform to the W3C SHACL Recommendation");
+			Assertions.fail("SHACL does not conform to the W3C SHACL Recommendation");
 		}
 	}
 
@@ -860,7 +868,8 @@ abstract public class AbstractShaclTest {
 
 		try {
 			System.out.println("### " + filename + " ###");
-			String s = IOUtils.toString(AbstractShaclTest.class.getClassLoader().getResourceAsStream(filename),
+			String s = IOUtils.toString(
+					Objects.requireNonNull(AbstractShaclTest.class.getClassLoader().getResourceAsStream(filename)),
 					StandardCharsets.UTF_8);
 
 			s = removeLeadingPrefixStatements(s);
@@ -939,9 +948,9 @@ abstract public class AbstractShaclTest {
 
 			if (ran) {
 				if (testCase.expectedResult == ExpectedResult.valid) {
-					assertFalse("Expected validation to succeed", exception);
+					Assertions.assertFalse(exception, "Expected validation to succeed");
 				} else {
-					assertTrue("Expected validation to fail", exception);
+					Assertions.assertTrue(exception, "Expected validation to fail");
 				}
 
 				testValidationReport(testCase.testCasePath, validationReportActual);
@@ -994,9 +1003,9 @@ abstract public class AbstractShaclTest {
 			}
 
 			if (testCase.getExpectedResult() == ExpectedResult.valid) {
-				assertTrue(report.conforms());
+				Assertions.assertTrue(report.conforms());
 			} else {
-				assertFalse(report.conforms());
+				Assertions.assertFalse(report.conforms());
 			}
 		} finally {
 			shaclRepository.shutDown();
@@ -1017,44 +1026,41 @@ abstract public class AbstractShaclTest {
 			List<ContextWithShapes> shapes = ((ShaclSail) shaclRepository.getSail()).getCachedShapes()
 					.getDataAndRelease();
 
-			Model shapesModel = new DynamicModelFactory().createEmptyModel();
+			Model actual = new DynamicModelFactory().createEmptyModel();
 			HashSet<Resource> dedupe = new HashSet<>();
-			shapes.forEach(shape -> shape.toModel(shapesModel));
+			shapes.forEach(shape -> shape.toModel(actual));
 
-			Model parse = new LinkedHashModel(testCase.getShacl());
+			Model expected = new LinkedHashModel(testCase.getShacl());
 
 			// handle implicit targets in SHACL
-			parse.filter(null, RDF.TYPE, RDFS.CLASS).forEach(s -> {
-				if (parse.contains(s.getSubject(), RDF.TYPE, SHACL.PROPERTY_SHAPE)
-						|| parse.contains(s.getSubject(), RDF.TYPE, SHACL.NODE_SHAPE)) {
-					parse.add(s.getSubject(), SHACL.TARGET_CLASS, s.getSubject(), s.getContext());
+			expected.filter(null, RDF.TYPE, RDFS.CLASS).forEach(s -> {
+				if (expected.contains(s.getSubject(), RDF.TYPE, SHACL.PROPERTY_SHAPE)
+						|| expected.contains(s.getSubject(), RDF.TYPE, SHACL.NODE_SHAPE)) {
+					expected.add(s.getSubject(), SHACL.TARGET_CLASS, s.getSubject(), s.getContext());
 				}
 			});
-			parse.remove(null, RDF.TYPE, RDFS.CLASS);
+			expected.remove(null, RDF.TYPE, RDFS.CLASS);
 
 			// this helps with one test where the schema is in the shacl file
-			parse.remove(null, RDFS.SUBCLASSOF, null);
+			expected.remove(null, RDFS.SUBCLASSOF, null);
 
-			parse.remove(null, SHACL.SHAPES_GRAPH, null);
+			expected.remove(null, SHACL.SHAPES_GRAPH, null);
 
 			// we add inferred NodeShape and PropertyShape, easier to remove when comparing
-			parse.remove(null, RDF.TYPE, SHACL.NODE_SHAPE);
-			parse.remove(null, RDF.TYPE, SHACL.SHAPE);
-			parse.remove(null, RDF.TYPE, SHACL.PROPERTY_SHAPE);
-			shapesModel.remove(null, RDF.TYPE, SHACL.NODE_SHAPE);
-			shapesModel.remove(null, RDF.TYPE, SHACL.SHAPE);
-			shapesModel.remove(null, RDF.TYPE, SHACL.PROPERTY_SHAPE);
+			expected.remove(null, RDF.TYPE, SHACL.NODE_SHAPE);
+			expected.remove(null, RDF.TYPE, SHACL.SHAPE);
+			expected.remove(null, RDF.TYPE, SHACL.PROPERTY_SHAPE);
+			actual.remove(null, RDF.TYPE, SHACL.NODE_SHAPE);
+			actual.remove(null, RDF.TYPE, SHACL.SHAPE);
+			actual.remove(null, RDF.TYPE, SHACL.PROPERTY_SHAPE);
 
-			parse.remove(null, RDF.TYPE, DASH.AllObjectsTarget);
-			parse.remove(null, RDF.TYPE, DASH.AllSubjectsTarget);
-			shapesModel.remove(null, RDF.TYPE, DASH.AllObjectsTarget);
-			shapesModel.remove(null, RDF.TYPE, DASH.AllSubjectsTarget);
-
-			Model expected = parse;
-			Model actual = shapesModel;
+			expected.remove(null, RDF.TYPE, DASH.AllObjectsTarget);
+			expected.remove(null, RDF.TYPE, DASH.AllSubjectsTarget);
+			actual.remove(null, RDF.TYPE, DASH.AllObjectsTarget);
+			actual.remove(null, RDF.TYPE, DASH.AllSubjectsTarget);
 
 			if (!Models.isomorphic(expected, actual)) {
-				assertEquals(modelToString(expected, RDFFormat.TRIG), modelToString(actual, RDFFormat.TRIG));
+				Assertions.assertEquals(modelToString(expected, RDFFormat.TRIG), modelToString(actual, RDFFormat.TRIG));
 			}
 
 		} catch (InterruptedException e) {
@@ -1171,16 +1177,6 @@ abstract public class AbstractShaclTest {
 				"\t\t.distinct()\n" +
 				"\t\t.sorted()\n" +
 				"\t\t.collect(Collectors.toList());");
-	}
-
-	String getShaclPath(String testCasePath) {
-		String shaclPath = testCasePath;
-
-		if (!shaclPath.endsWith("/")) {
-			shaclPath = shaclPath + "/";
-		}
-
-		return shaclPath + "shacl.trig";
 	}
 
 	enum ExpectedResult {

@@ -8,7 +8,20 @@
 package org.eclipse.rdf4j.sail.shacl.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreFactory;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.junit.jupiter.api.Test;
 
@@ -33,8 +46,65 @@ public class ShaclSailFactoryTest {
 		ShaclSailFactory subject = new ShaclSailFactory();
 
 		ShaclSailConfig config = new ShaclSailConfig();
+
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
+		sail.setBaseSail(new MemoryStore());
+
 		assertMatchesConfig(sail, config);
+
+		sail.shutDown();
+	}
+
+	/**
+	 * Verify that the created sail is configured according to the supplied default configuration.
+	 */
+	@Test
+	public void serializableValidationLimitedBySupportIsolationLevelsTest() {
+		ShaclSailFactory subject = new ShaclSailFactory();
+
+		ShaclSailConfig config = new ShaclSailConfig();
+		config.setSerializableValidation(true);
+
+		ShaclSail sail = (ShaclSail) subject.getSail(config);
+
+		assertFalse(sail.isSerializableValidation());
+
+		AbstractNotifyingSail sailThatDoesntSupportSnapshotIsolation = new AbstractNotifyingSail() {
+			@Override
+			protected void shutDownInternal() throws SailException {
+
+			}
+
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				return null;
+			}
+
+			@Override
+			public boolean isWritable() throws SailException {
+				return false;
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return null;
+			}
+
+			@Override
+			public List<IsolationLevel> getSupportedIsolationLevels() {
+				return List.of(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
+						IsolationLevels.SERIALIZABLE);
+			}
+		};
+
+		sail.setBaseSail(sailThatDoesntSupportSnapshotIsolation);
+		assertFalse(sail.isSerializableValidation());
+
+		sail.setBaseSail(new MemoryStore());
+		assertTrue(sail.isSerializableValidation());
+
+		sail.shutDown();
+
 	}
 
 	/**
@@ -64,6 +134,7 @@ public class ShaclSailFactoryTest {
 
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
+
 	}
 
 	private void assertMatchesConfig(ShaclSail sail, ShaclSailConfig config) {

@@ -171,7 +171,7 @@ public class StampedLockManager implements ReadWriteLockManager {
 	 * Gets an optimistic read lock, if available. This method will return <var>null</var> if the optimistic read lock
 	 * is not immediately available.
 	 */
-	public OptimisticReadLock getOptimisticReadLock() throws InterruptedException {
+	public OptimisticReadLock getOptimisticReadLock() {
 		long optimisticReadStamp = stampedLock.tryOptimisticRead();
 		if (optimisticReadStamp != 0) {
 			return new OptimisticReadLock(stampedLock, optimisticReadStamp);
@@ -401,26 +401,52 @@ public class StampedLockManager implements ReadWriteLockManager {
 			return readLock;
 		}
 
+		private void refreshCacheIfNeeded() throws InterruptedException {
+			if (data == null) {
+				Lock writeLock = null;
+				try {
+					writeLock = stampedLockManager.getWriteLock();
+
+					if (data == null) {
+						data = dataSupplier.get();
+					}
+
+				} finally {
+					if (writeLock != null) {
+						writeLock.release();
+					}
+				}
+			}
+		}
+
 		public WritableState getWriteState() throws InterruptedException {
 			Lock writeLock = stampedLockManager.getWriteLock();
 			return new WritableState(writeLock);
 		}
 
-		public OptimisticState<T> getOptimisticState() throws InterruptedException {
-			Lock readLock = refreshCacheIfNeeded(stampedLockManager.getReadLock());
-			try {
-				OptimisticReadLock optimisticReadLock = stampedLockManager.getOptimisticReadLock();
-				if (optimisticReadLock == null) {
-					throw new IllegalMonitorStateException(
-							"StampedLockManager is read locked and all optimistic reads should succeed");
-				}
-				return new OptimisticState<>(this.data, stampedLockManager, optimisticReadLock);
-			} finally {
-				readLock.release();
+		public OptimisticState getOptimisticState() throws InterruptedException {
+			refreshCacheIfNeeded();
+
+			OptimisticReadLock optimisticReadLock = stampedLockManager.getOptimisticReadLock();
+			if (optimisticReadLock == null) {
+				return new OptimisticState();
 			}
+			return new OptimisticState(this.data, stampedLockManager, optimisticReadLock);
+
 		}
 
-		public static class OptimisticState<T> {
+		public void warmUp() throws InterruptedException {
+			assert this.data == null;
+
+			try (WritableState writeState = getWriteState()) {
+				T data = writeState.getData();
+				assert this.data != null;
+				assert this.data == data;
+			}
+
+		}
+
+		public class OptimisticState {
 			T data;
 			StampedLockManager stampedLockManager;
 			OptimisticReadLock lock;
@@ -432,11 +458,18 @@ public class StampedLockManager implements ReadWriteLockManager {
 				this.lock = lock;
 			}
 
+			public OptimisticState() {
+				this.data = null;
+				this.stampedLockManager = null;
+				this.lock = null;
+			}
+
 			public boolean isValid() {
-				return lock.isActive();
+				return lock != null && lock.isActive();
 			}
 
 			public T getData() {
+				assert isValid();
 				return data;
 			}
 
