@@ -271,16 +271,22 @@ public class DefaultQueryRequestHandler implements QueryRequestHandler {
 		if (requestMethod == RequestMethod.POST) {
 			String mimeType = HttpServerUtil.getMIMEType(request.getContentType());
 
-			if (Protocol.SPARQL_QUERY_MIME_TYPE.equals(mimeType)) {
+			switch (mimeType) {
+			case Protocol.SPARQL_QUERY_MIME_TYPE:
 				// The query should be the entire body
 				try {
 					queryString = IOUtils.toString(request.getReader());
 				} catch (IOException e) {
 					throw new HTTPException(HttpStatus.SC_BAD_REQUEST, "Error reading request message body", e);
 				}
-			} else {
+				break;
+			case Protocol.FORM_MIME_TYPE:
+				queryString = request.getParameter(QUERY_PARAM_NAME);
+				break;
+			default:
 				throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type: " + mimeType);
 			}
+
 		} else {
 			queryString = request.getParameter(QUERY_PARAM_NAME);
 		}
