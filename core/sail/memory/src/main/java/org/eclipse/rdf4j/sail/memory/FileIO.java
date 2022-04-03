@@ -32,9 +32,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
@@ -60,7 +62,8 @@ class FileIO {
 	// Version 1: initial version
 	// Version 2: don't use read/writeUTF() to remove 64k limit on strings,
 	// removed dummy "up-to-date status" boolean for namespace records
-	private static final int BMSF_VERSION = 2;
+	// Version 3: introduced RDF-star triple record type
+	private static final int BMSF_VERSION = 3;
 
 	/* RECORD TYPES */
 	public static final int NAMESPACE_MARKER = 1;
@@ -82,6 +85,8 @@ class FileIO {
 	public static final int LANG_LITERAL_MARKER = 9;
 
 	public static final int DATATYPE_LITERAL_MARKER = 10;
+
+	public static final int RDFSTAR_TRIPLE_MARKER = 11;
 
 	public static final int EOF_MARKER = 127;
 
@@ -260,13 +265,13 @@ class FileIO {
 	}
 
 	private void writeValue(Value value, DataOutputStream dataOut) throws IOException {
-		if (value instanceof IRI) {
+		if (value.isIRI()) {
 			dataOut.writeByte(URI_MARKER);
-			writeString(((IRI) value).toString(), dataOut);
-		} else if (value instanceof BNode) {
+			writeString(((IRI) value).stringValue(), dataOut);
+		} else if (value.isBNode()) {
 			dataOut.writeByte(BNODE_MARKER);
 			writeString(((BNode) value).getID(), dataOut);
-		} else if (value instanceof Literal) {
+		} else if (value.isLiteral()) {
 			Literal lit = (Literal) value;
 
 			String label = lit.getLabel();
@@ -281,6 +286,9 @@ class FileIO {
 				writeString(label, dataOut);
 				writeValue(datatype, dataOut);
 			}
+		} else if (value.isTriple()) {
+			dataOut.writeByte(RDFSTAR_TRIPLE_MARKER);
+			writeValue(RDFStarUtil.toRDFEncodedValue(value), dataOut);
 		} else {
 			throw new IllegalArgumentException("unexpected value type: " + value.getClass());
 		}
@@ -306,6 +314,9 @@ class FileIO {
 			String label = readString(dataIn);
 			IRI datatype = (IRI) readValue(dataIn);
 			return vf.createLiteral(label, datatype);
+		} else if (valueTypeMarker == RDFSTAR_TRIPLE_MARKER) {
+			IRI rdfStarEncodedTriple = (IRI) readValue(dataIn);
+			return RDFStarUtil.fromRDFEncodedValue(rdfStarEncodedTriple);
 		} else {
 			throw new IOException("Invalid value type marker: " + valueTypeMarker);
 		}

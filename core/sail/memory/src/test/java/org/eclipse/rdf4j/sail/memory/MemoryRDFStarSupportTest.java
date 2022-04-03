@@ -7,9 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import java.io.File;
+
 import org.eclipse.rdf4j.repository.RDFStarSupportTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * @author jeen
@@ -17,9 +20,12 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
  */
 public class MemoryRDFStarSupportTest extends RDFStarSupportTest {
 
+	@TempDir
+	File tempDir;
+
 	@Override
 	protected Repository createRepository() {
-		return new SailRepository(new MemoryStore());
+		return new SailRepository(new MemoryStore(tempDir));
 	}
 
 }
