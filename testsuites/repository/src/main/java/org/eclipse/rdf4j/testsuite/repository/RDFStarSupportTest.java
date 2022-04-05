@@ -27,11 +27,10 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Test cases for RDF-star support in the Repository.
@@ -39,12 +38,8 @@ import org.junit.rules.Timeout;
  * @author Jeen Broekstra
  *
  */
+@Timeout(value = 10, unit = TimeUnit.MINUTES)
 public abstract class RDFStarSupportTest {
-	/**
-	 * Timeout all individual tests after 10 minutes.
-	 */
-	@Rule
-	public Timeout to = new Timeout(10, TimeUnit.MINUTES);
 
 	private Repository testRepository;
 
@@ -70,7 +65,7 @@ public abstract class RDFStarSupportTest {
 
 	private IRI context2;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		testRepository = createRepository();
 
@@ -95,7 +90,7 @@ public abstract class RDFStarSupportTest {
 		context2 = vf.createIRI("urn:x-local:graph2");
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		try {
 			testCon.close();
