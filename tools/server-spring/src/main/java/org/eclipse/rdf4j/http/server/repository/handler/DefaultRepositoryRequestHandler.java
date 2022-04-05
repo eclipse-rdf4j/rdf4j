@@ -67,7 +67,8 @@ public class DefaultRepositoryRequestHandler implements RepositoryRequestHandler
 		}
 	}
 
-	public ModelAndView handleCreateNewRepositoryRequest(HttpServletRequest request) throws IOException, HTTPException {
+	public ModelAndView handleCreateOrUpdateRepositoryRequest(HttpServletRequest request)
+			throws IOException, HTTPException {
 		// create new repo
 		String repId = repositoryResolver.getRepositoryID(request);
 		logger.info("PUT request invoked for repository '" + repId + "'");

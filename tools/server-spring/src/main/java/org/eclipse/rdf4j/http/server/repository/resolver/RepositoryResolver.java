@@ -16,6 +16,11 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 
+/**
+ * An adapter interface to allow the {@link org.eclipse.rdf4j.http.server.repository.handler.QueryRequestHandler},
+ * {@link org.eclipse.rdf4j.http.server.repository.handler.RepositoryRequestHandler} and
+ * {@link org.eclipse.rdf4j.http.server.repository.RepositoryController} to get the repository for an HttpRequest.
+ */
 public interface RepositoryResolver {
 
 	RepositoryManager getRepositoryManager();

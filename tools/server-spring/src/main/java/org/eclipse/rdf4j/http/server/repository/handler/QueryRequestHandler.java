@@ -14,6 +14,10 @@ import javax.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.ModelAndView;
 
+/**
+ * Interface used by the {@link org.eclipse.rdf4j.http.server.repository.AbstractRepositoryController} to process a
+ * query.
+ */
 public interface QueryRequestHandler {
 
 	ModelAndView handleQueryRequest(HttpServletRequest request, RequestMethod requestMethod,

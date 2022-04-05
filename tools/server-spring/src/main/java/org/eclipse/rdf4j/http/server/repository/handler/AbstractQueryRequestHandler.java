@@ -37,6 +37,9 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.View;
 
+/**
+ * A base implementation to handle an HTTP query request.
+ */
 public abstract class AbstractQueryRequestHandler implements QueryRequestHandler {
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
@@ -58,6 +61,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			repositoryCon = repositoryResolver.getRepositoryConnection(request, repository);
 
 			String queryString = getQueryString(request, requestMethod);
+
 			logQuery(requestMethod, queryString);
 
 			Query query = getQuery(request, repositoryCon, queryString);

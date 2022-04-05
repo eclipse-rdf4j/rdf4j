@@ -12,9 +12,13 @@ import javax.servlet.http.HttpServletRequest;
 
 import org.springframework.web.servlet.ModelAndView;
 
+/**
+ * An interface used by {@link org.eclipse.rdf4j.http.server.repository.AbstractRepositoryController} to process HTTP
+ * request for creating or deleting a repository.
+ */
 public interface RepositoryRequestHandler {
 
-	ModelAndView handleCreateNewRepositoryRequest(HttpServletRequest request) throws Exception;
+	ModelAndView handleCreateOrUpdateRepositoryRequest(HttpServletRequest request) throws Exception;
 
 	ModelAndView handleDeleteRepositoryRequest(HttpServletRequest request) throws Exception;
 

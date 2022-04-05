@@ -40,8 +40,8 @@ public abstract class AbstractRepositoryController extends AbstractController {
 			return getRepositoryRequestHandler().handleDeleteRepositoryRequest(request);
 		}
 		case PUT: {
-			logger.debug("handleCreateNewRepositoryRequest");
-			return getRepositoryRequestHandler().handleCreateNewRepositoryRequest(request);
+			logger.debug("handleCreateOrUpdateRepositoryRequest");
+			return getRepositoryRequestHandler().handleCreateOrUpdateRepositoryRequest(request);
 		}
 		}
 
