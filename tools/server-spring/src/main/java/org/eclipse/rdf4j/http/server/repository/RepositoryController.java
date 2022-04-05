@@ -35,6 +35,10 @@ public class RepositoryController extends AbstractRepositoryController {
 	}
 
 	public void setRepositoryManager(RepositoryManager repMan) {
+		if (logger.isDebugEnabled()) {
+			logger.debug("setRepositoryManager {}", repMan);
+		}
+
 		RepositoryResolver repositoryResolver = new DefaultRepositoryResolver(repMan);
 		queryRequestHandler = new DefaultQueryRequestHandler(repositoryResolver);
 		repositoryRequestHandler = new DefaultRepositoryRequestHandler(repositoryResolver);
