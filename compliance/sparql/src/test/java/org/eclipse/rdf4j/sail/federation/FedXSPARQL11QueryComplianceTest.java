@@ -12,7 +12,6 @@ import java.io.IOException;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.parser.sparql.manifest.SPARQL11QueryComplianceTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -23,6 +22,7 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RepositoryProvider;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
+import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11QueryComplianceTest;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 

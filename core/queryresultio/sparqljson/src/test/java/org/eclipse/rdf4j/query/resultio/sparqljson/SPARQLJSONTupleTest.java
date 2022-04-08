@@ -26,11 +26,11 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOTupleTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
+import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOTupleTest;
 import org.junit.Test;
 
 /**

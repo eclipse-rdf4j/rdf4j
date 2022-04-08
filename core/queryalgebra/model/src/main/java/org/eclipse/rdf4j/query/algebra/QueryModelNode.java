@@ -45,8 +45,8 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	 *
 	 * @param current     The current child node.
 	 * @param replacement The new child node.
-	 * @throws IllegalArgumentException If <tt>current</tt> is not one of node's children.
-	 * @throws ClassCastException       If <tt>replacement</tt> is of an incompatible type.
+	 * @throws IllegalArgumentException If <var>current</var> is not one of node's children.
+	 * @throws ClassCastException       If <var>replacement</var> is of an incompatible type.
 	 */
 	void replaceChildNode(QueryModelNode current, QueryModelNode replacement);
 
@@ -55,12 +55,12 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	 *
 	 * @param replacement The new node.
 	 * @throws IllegalStateException If this node does not have a parent node.
-	 * @throws ClassCastException    If <tt>replacement</tt> is of an incompatible type.
+	 * @throws ClassCastException    If <var>replacement</var> is of an incompatible type.
 	 */
 	void replaceWith(QueryModelNode replacement);
 
 	/**
-	 * Returns <tt>true</tt> if this query model node and its children are recursively equal to <tt>o</tt> and its
+	 * Returns <var>true</var> if this query model node and its children are recursively equal to <var>o</var> and its
 	 * children.
 	 */
 	@Override
@@ -76,7 +76,7 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	 * Returns the signature of this query model node. Signatures normally include the node's name and any parameters,
 	 * but not parent or child nodes. This method is used by {@link #toString()}.
 	 *
-	 * @return The node's signature, e.g. <tt>SLICE (offset=10, limit=10)</tt>.
+	 * @return The node's signature, e.g. <var>SLICE (offset=10, limit=10)</var>.
 	 */
 	String getSignature();
 

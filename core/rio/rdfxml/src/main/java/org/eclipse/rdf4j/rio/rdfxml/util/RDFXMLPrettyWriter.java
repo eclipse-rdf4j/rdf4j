@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -455,9 +456,9 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 		} else if (obj instanceof Literal) {
 			Literal objLit = (Literal) obj;
 			// datatype attribute
-			IRI datatype = objLit.getDatatype();
+			CoreDatatype datatype = objLit.getCoreDatatype();
 			// Check if datatype is rdf:XMLLiteral
-			boolean isXmlLiteral = datatype.equals(RDF.XMLLITERAL);
+			boolean isXmlLiteral = datatype == CoreDatatype.RDF.XMLLITERAL;
 
 			// language attribute
 			if (Literals.isLanguageLiteral(objLit)) {
@@ -466,7 +467,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 				if (isXmlLiteral) {
 					writeAttribute(RDF.NAMESPACE, "parseType", "Literal");
 				} else {
-					writeAttribute(RDF.NAMESPACE, "datatype", datatype.toString());
+					writeAttribute(RDF.NAMESPACE, "datatype", objLit.getDatatype().toString());
 				}
 			}
 
@@ -492,7 +493,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 	}
 
 	/**
-	 * Writes <tt>n</tt> indents.
+	 * Writes <var>n</var> indents.
 	 */
 	protected void writeIndents(int n) throws IOException {
 		for (int i = 0; i < n; i++) {

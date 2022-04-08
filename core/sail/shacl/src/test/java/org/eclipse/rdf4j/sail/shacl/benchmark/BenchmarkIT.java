@@ -8,9 +8,9 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
@@ -24,23 +24,22 @@ import org.openjdk.jmh.runner.options.TimeValue;
  * @author Håvard Ottestad
  */
 @Tag("slow")
+@Isolated
 public class BenchmarkIT {
-
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	@Test
 	public void test() throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("")
 				.exclude(ComplexLargeBenchmark.class.getSimpleName())
+				.exclude(ComplexLargeTransactionalBenchmark.class.getSimpleName())
 				.exclude(NativeStoreBenchmark.class.getSimpleName())
 				.measurementBatchSize(1)
 				.measurementTime(TimeValue.NONE)
 				.measurementIterations(1)
 				.warmupIterations(0)
 				.forks(0)
+				.shouldFailOnError(true)
 				.build();
 
 		new Runner(opt).run();

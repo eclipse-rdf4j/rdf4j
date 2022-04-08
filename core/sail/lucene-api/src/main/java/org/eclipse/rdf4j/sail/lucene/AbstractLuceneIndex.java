@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 
@@ -20,16 +19,6 @@ public abstract class AbstractLuceneIndex extends AbstractSearchIndex {
 	protected final Collection<AbstractReaderMonitor> oldmonitors = new ArrayList<>();
 
 	protected abstract AbstractReaderMonitor getCurrentMonitor();
-
-	@Override
-	public void beginReading() {
-		getCurrentMonitor().beginReading();
-	}
-
-	@Override
-	public void endReading() throws IOException {
-		getCurrentMonitor().endReading();
-	}
 
 	public Collection<AbstractReaderMonitor> getOldMonitors() {
 		return oldmonitors;

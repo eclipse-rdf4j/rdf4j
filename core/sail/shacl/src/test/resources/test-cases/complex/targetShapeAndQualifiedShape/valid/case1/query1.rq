@@ -20,11 +20,6 @@ PREFIX wgs: <http://www.w3.org/2003/01/geo/wgs84_pos#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-
-
-
-
-
 <http://example-scalar.com/xxxx/4> a ont:MinMaxScalars;
   ont:min0max1int "3"^^xsd:int;
   ont:min0max2integer 1, 2;

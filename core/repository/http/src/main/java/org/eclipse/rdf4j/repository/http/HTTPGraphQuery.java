@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.repository.http;
 
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
@@ -46,7 +47,7 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		try {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendGraphQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
-					getMaxExecutionTime(), getBindingsArray());
+					getMaxExecutionTime(), new WeakReference<>(this), getBindingsArray());
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}

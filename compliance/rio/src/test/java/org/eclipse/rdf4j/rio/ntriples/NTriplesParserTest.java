@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.rio.ntriples;
 
 import org.eclipse.rdf4j.rio.RDFParser;
+import org.eclipse.rdf4j.testsuite.rio.ntriples.AbstractNTriplesParserTest;
 
 import junit.framework.Test;
 

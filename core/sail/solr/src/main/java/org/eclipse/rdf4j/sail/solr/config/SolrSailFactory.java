@@ -28,7 +28,7 @@ public class SolrSailFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:LuceneSail/Solr";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:LuceneSail/Solr</tt>.
+	 * Returns the Sail's type: <var>openrdf:LuceneSail/Solr</var>.
 	 */
 	@Override
 	public String getSailType() {

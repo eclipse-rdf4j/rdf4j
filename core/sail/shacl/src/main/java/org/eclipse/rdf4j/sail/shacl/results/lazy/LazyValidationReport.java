@@ -87,10 +87,6 @@ public class LazyValidationReport extends ValidationReport {
 		return asModel(new DynamicModelFactory().createEmptyModel());
 	}
 
-	public Resource getId() {
-		return id;
-	}
-
 	/**
 	 * @return false if the changes violated a SHACL Shape
 	 */

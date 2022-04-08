@@ -68,8 +68,8 @@ public abstract class CustomGraphQueryInferencerTest {
 	public static final Collection<Object[]> parameters() {
 		Expectation predExpect = new Expectation(8, 2, 0, 2, 0);
 		return Arrays.asList(new Object[][] { { PREDICATE, predExpect, QueryLanguage.SPARQL },
-				{ "resource", new Expectation(4, 2, 2, 0, 2), QueryLanguage.SPARQL },
-				{ "predicate-serql", predExpect, QueryLanguage.SERQL } });
+				{ "resource", new Expectation(4, 2, 2, 0, 2), QueryLanguage.SPARQL } }
+		);
 	}
 
 	private String initial;
@@ -86,7 +86,6 @@ public abstract class CustomGraphQueryInferencerTest {
 			IOException, MalformedQueryException, UpdateExecutionException {
 		// Initialize
 		Repository sail = new SailRepository(inferencer);
-		sail.initialize();
 		RepositoryConnection connection = sail.getConnection();
 		try {
 			connection.begin();

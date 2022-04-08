@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
@@ -18,7 +19,7 @@ import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.federated.repository.FedXRepositoryConfigBuilder;
 import org.eclipse.rdf4j.model.Model;
@@ -33,7 +34,6 @@ import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
-import org.eclipse.rdf4j.repository.manager.SystemRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
@@ -86,9 +86,7 @@ public class CreateServlet extends TransformationServlet {
 		if (federate) {
 			for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
 				String identity = info.getId();
-				if (!SystemRepository.ID.equals(identity)) {
-					builder.result(identity, info.getDescription(), info.getLocation());
-				}
+				builder.result(identity, info.getDescription(), info.getLocation());
 			}
 		}
 		builder.end();
@@ -132,7 +130,7 @@ public class CreateServlet extends TransformationServlet {
 
 	static ConfigTemplate getConfigTemplate(final String type) throws IOException {
 		try (InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + ".ttl")) {
-			final String template = IOUtil.readString(new InputStreamReader(ttlInput, "UTF-8"));
+			final String template = IOUtil.readString(new InputStreamReader(ttlInput, StandardCharsets.UTF_8));
 			return new ConfigTemplate(template);
 		}
 	}

@@ -7,7 +7,7 @@
 		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-sail-extensible-store</artifactId>
-	<name>RDF4J Extensible Store</name>
+	<name>RDF4J: Extensible Store</name>
 	<description>Store that can be extended with a simple user-made backend.</description>
 	<dependencies>
 		<dependency>
@@ -45,12 +45,6 @@
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-repository-testsuite</artifactId>
-			<version>${project.version}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-queryparser-serql</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>

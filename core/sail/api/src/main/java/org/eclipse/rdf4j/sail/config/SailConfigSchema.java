@@ -19,20 +19,20 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class SailConfigSchema {
 
 	/**
-	 * The Sail API schema namespace ( <tt>http://www.openrdf.org/config/sail#</tt>).
+	 * The Sail API schema namespace ( <var>http://www.openrdf.org/config/sail#</var>).
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail#";
 
-	/** <tt>http://www.openrdf.org/config/sail#sailType</tt> */
+	/** <var>http://www.openrdf.org/config/sail#sailType</var> */
 	public final static IRI SAILTYPE;
 
-	/** <tt>http://www.openrdf.org/config/sail#delegate</tt> */
+	/** <var>http://www.openrdf.org/config/sail#delegate</var> */
 	public final static IRI DELEGATE;
 
-	/** <tt>http://www.openrdf.org/config/sail#iterationCacheSyncTreshold</tt> */
+	/** <var>http://www.openrdf.org/config/sail#iterationCacheSyncTreshold</var> */
 	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD;
 
-	/** <tt>http://www.openrdf.org/config/sail#connectionTimeOut</tt> */
+	/** <var>http://www.openrdf.org/config/sail#connectionTimeOut</var> */
 	public final static IRI CONNECTION_TIME_OUT;
 
 	static {

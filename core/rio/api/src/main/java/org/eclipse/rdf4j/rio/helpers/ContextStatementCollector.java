@@ -11,8 +11,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.model.NamespaceAware;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -56,7 +56,9 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	 * LinkedHashMap to store the reported namespaces.
 	 */
 	public ContextStatementCollector(Collection<Statement> statements, ValueFactory vf, Resource... contexts) {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
+
 		if (statements instanceof NamespaceAware) {
 			this.namespaces = Namespaces.wrap(((NamespaceAware) statements).getNamespaces());
 		} else {
@@ -72,7 +74,8 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	 */
 	public ContextStatementCollector(Collection<Statement> statements, Map<String, String> namespaces, ValueFactory vf,
 			Resource... contexts) {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 		this.statements = statements;
 		this.namespaces = namespaces;
 		this.vf = vf;

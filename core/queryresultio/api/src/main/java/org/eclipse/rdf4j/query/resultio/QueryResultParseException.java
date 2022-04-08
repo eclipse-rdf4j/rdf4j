@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 
 /**
  * A parse exception that can be thrown by a query result parser when it encounters an error from which it cannot or
@@ -112,7 +112,7 @@ public class QueryResultParseException extends RDF4JException {
 	/**
 	 * Gets the line number associated with this parse exception.
 	 *
-	 * @return A line number, or <tt>-1</tt> if no line number is available or applicable.
+	 * @return A line number, or <var>-1</var> if no line number is available or applicable.
 	 */
 	public long getLineNumber() {
 		return lineNo;
@@ -121,7 +121,7 @@ public class QueryResultParseException extends RDF4JException {
 	/**
 	 * Gets the column number associated with this parse exception.
 	 *
-	 * @return A column number, or <tt>-1</tt> if no column number is available or applicable.
+	 * @return A column number, or <var>-1</var> if no column number is available or applicable.
 	 */
 	public long getColumnNumber() {
 		return columnNo;

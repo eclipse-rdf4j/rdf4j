@@ -20,8 +20,8 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -204,9 +204,9 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	@Override
-	public void initialize()
+	public void init()
 			throws SailException {
-		super.initialize();
+		super.init();
 
 		if (sharedSchema) {
 			return;

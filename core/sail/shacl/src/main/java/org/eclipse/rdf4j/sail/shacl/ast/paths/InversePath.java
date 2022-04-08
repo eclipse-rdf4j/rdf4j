@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
 import java.util.Set;
@@ -7,23 +15,23 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class InversePath extends Path {
 
 	private final Path inversePath;
 
-	public InversePath(Resource id, Resource inversePath, RepositoryConnection connection) {
+	public InversePath(Resource id, Resource inversePath, ShapeSource shapeSource) {
 		super(id);
-		this.inversePath = Path.buildPath(connection, inversePath);
+		this.inversePath = Path.buildPath(shapeSource, inversePath);
 
 	}
 
@@ -39,13 +47,12 @@ public class InversePath extends Path {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNodeWrapper planNodeWrapper) {
 
-		PlanNode added = inversePath.getAdded(connectionsGroup, null);
-		added = new TupleMapper(added, t -> {
-			return new ValidationTuple(t.getValue(), t.getActiveTarget(), ConstraintComponent.Scope.propertyShape,
-					true);
-		});
+		PlanNode added = inversePath.getAdded(connectionsGroup, dataGraph, null);
+		added = new TupleMapper(added, t -> new ValidationTuple(t.getValue(), t.getActiveTarget(),
+				ConstraintComponent.Scope.propertyShape, true, dataGraph));
 
 		if (planNodeWrapper != null) {
 			added = planNodeWrapper.apply(added);

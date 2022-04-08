@@ -15,20 +15,20 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnectionListener;
 import org.eclipse.rdf4j.sail.SailException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 /**
- * Some general tests for {@link NogifyingSailConnectionWrapper} expected behaviour.
+ * Some general tests for {@link NotifyingSailConnectionWrapper} expected behaviour.
  *
  * @author Dale Visser
  */
 public class NotifyingSailConnectionWrapperTest {
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
@@ -63,13 +63,13 @@ public class NotifyingSailConnectionWrapperTest {
 
 	TestListener listener = new TestListener();
 
-	@Before
+	@BeforeEach
 	public void setUp() throws SailException {
 		wrapper = new NotifyingSailConnectionWrapper(delegate);
 		factory = SimpleValueFactory.getInstance();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws SailException {
 		wrapper.close();
 	}

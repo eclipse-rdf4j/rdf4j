@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
 
@@ -19,7 +20,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 
 /**
  * @author Håvard Ottestad
@@ -34,10 +34,14 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 	private final boolean returnMatching;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
+	private final Resource[] dataGraph;
 
-	public ExternalPredicateObjectFilter(SailConnection connection, IRI filterOnPredicate, Set<Resource> filterOnObject,
+	public ExternalPredicateObjectFilter(SailConnection connection, Resource[] dataGraph,
+			IRI filterOnPredicate,
+			Set<Resource> filterOnObject,
 			PlanNode parent,
 			boolean returnMatching, FilterOn filterOn) {
+		this.dataGraph = dataGraph;
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
 		this.connection = connection;
@@ -79,7 +83,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 						if (matches) {
 							next = temp;
 						} else {
-							if (GlobalValidationExecutionLogging.loggingEnabled) {
+							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(depth(),
 										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
 												+ ":IgnoredAsNotMatching",
@@ -91,7 +95,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 						if (!matches) {
 							next = temp;
 						} else {
-							if (GlobalValidationExecutionLogging.loggingEnabled) {
+							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(depth(),
 										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
 												+ ":IgnoredAsMatching",
@@ -110,7 +114,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 				if (subject.isResource()) {
 					return filterOnObject.stream()
 							.anyMatch(object -> connection.hasStatement((Resource) subject, filterOnPredicate, object,
-									true));
+									true, dataGraph));
 				}
 				return false;
 			}
@@ -212,6 +216,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 					filterOnObject.equals(that.filterOnObject) &&
 					filterOnPredicate.equals(that.filterOnPredicate) &&
 					filterOn == that.filterOn &&
+					Arrays.equals(dataGraph, that.dataGraph) &&
 					parent.equals(that.parent);
 		} else {
 			return returnMatching == that.returnMatching &&
@@ -219,6 +224,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 					filterOnObject.equals(that.filterOnObject) &&
 					filterOnPredicate.equals(that.filterOnPredicate) &&
 					filterOn == that.filterOn &&
+					Arrays.equals(dataGraph, that.dataGraph) &&
 					parent.equals(that.parent);
 		}
 	}
@@ -229,10 +235,11 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
 			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnObject, filterOnPredicate,
-					filterOn, parent, returnMatching);
+					filterOn, parent, returnMatching, Arrays.hashCode(dataGraph));
 
 		} else {
-			return Objects.hash(connection, filterOnObject, filterOnPredicate, filterOn, parent, returnMatching);
+			return Objects.hash(connection, filterOnObject, filterOnPredicate, filterOn, parent, returnMatching,
+					Arrays.hashCode(dataGraph));
 		}
 	}
 

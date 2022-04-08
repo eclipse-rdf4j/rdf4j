@@ -54,14 +54,6 @@ public class ConfigurableSailRepositoryConnection extends SailRepositoryConnecti
 		super.add(arg0, arg1);
 	}
 
-	@SuppressWarnings("deprecation")
-	@Override
-	public void add(Resource subject, org.eclipse.rdf4j.model.URI predicate, Value object,
-			Resource... contexts) throws RepositoryException {
-		checkOperations(true);
-		super.add(subject, predicate, object, contexts);
-	}
-
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws RepositoryException {

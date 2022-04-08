@@ -14,7 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.util.iterators.Iterators;
+import org.eclipse.rdf4j.common.iterator.Iterators;
 
 /**
  * A tuple operator that groups tuples that have a specific set of equivalent variable bindings, and that can apply

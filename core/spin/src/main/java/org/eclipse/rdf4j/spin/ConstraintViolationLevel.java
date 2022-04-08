@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin;
 
-import org.eclipse.rdf4j.model.URI;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.SPIN;
 
 /**
@@ -19,7 +19,7 @@ public enum ConstraintViolationLevel {
 	ERROR,
 	FATAL;
 
-	public static ConstraintViolationLevel valueOf(URI levelValue) {
+	public static ConstraintViolationLevel valueOf(IRI levelValue) {
 		ConstraintViolationLevel level;
 		if (levelValue == null) {
 			level = ConstraintViolationLevel.ERROR;

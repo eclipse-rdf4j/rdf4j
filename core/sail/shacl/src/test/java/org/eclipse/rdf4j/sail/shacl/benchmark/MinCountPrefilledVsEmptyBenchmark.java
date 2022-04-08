@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
@@ -49,9 +48,6 @@ import ch.qos.logback.classic.Logger;
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MinCountPrefilledVsEmptyBenchmark {
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	private List<List<Statement>> allStatements;
 	private SailRepository shaclRepo;
@@ -60,7 +56,6 @@ public class MinCountPrefilledVsEmptyBenchmark {
 	public void setUp() throws Exception {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
-		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 
 		if (shaclRepo != null) {
 			shaclRepo.shutDown();
@@ -82,7 +77,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 			allStatements2.add(vf.createStatement(iri, RDFS.LABEL, vf.createLiteral("label" + i)));
 		}
 
-		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.trig");
 		this.shaclRepo = new SailRepository(shaclRepo);
 
 		shaclRepo.disableValidation();
@@ -122,13 +117,8 @@ public class MinCountPrefilledVsEmptyBenchmark {
 	@Benchmark
 	public void shaclEmpty() throws Exception {
 
-		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.trig");
 		SailRepository repository = new SailRepository(shaclRepo);
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.commit();
-		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
@@ -145,7 +135,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 	@Benchmark
 	public void shaclEmptyJustinit() throws Exception {
 
-		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.trig");
 		SailRepository repository = new SailRepository(shaclRepo);
 		repository.shutDown();
 
@@ -154,7 +144,7 @@ public class MinCountPrefilledVsEmptyBenchmark {
 	@Benchmark
 	public void shaclEmptyJustInitializeAndEmptyTransaction() throws Exception {
 
-		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.trig");
 		SailRepository repository = new SailRepository(shaclRepo);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {

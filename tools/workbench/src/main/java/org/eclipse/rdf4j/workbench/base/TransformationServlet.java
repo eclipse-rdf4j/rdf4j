@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.workbench.base;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -77,9 +78,9 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
 		if (req.getCharacterEncoding() == null) {
-			req.setCharacterEncoding("UTF-8");
+			req.setCharacterEncoding(StandardCharsets.UTF_8.name());
 		}
-		resp.setCharacterEncoding("UTF-8");
+		resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
 		resp.setDateHeader("Expires", new Date().getTime() - 10000L);
 		resp.setHeader("Cache-Control", "no-cache, no-store");
 

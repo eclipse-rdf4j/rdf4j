@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
@@ -39,6 +40,10 @@ public abstract class SailQuery extends AbstractParserQuery {
 
 		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 
+		// That query has a root does not add to the explanation.
+		if (tupleExpr instanceof QueryRoot) {
+			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		}
 		SailConnection sailCon = getConnection().getSailConnection();
 
 		return sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred(), timeout);

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.Namespace;
  */
 public class RSX {
 
-	/** The namespace (<tt>http://rdf4j.org/shacl-extensions#</tt>). */
+	/** The namespace (<var>http://rdf4j.org/shacl-extensions#</var>). */
 	public static final String NAMESPACE = "http://rdf4j.org/shacl-extensions#";
 
 	/**
@@ -32,8 +32,10 @@ public class RSX {
 	 * Primitive datatypes
 	 */
 
-	/** <tt>http://rdf4j.org/shacl-extensions#targetShape</tt> */
+	/** <var>http://rdf4j.org/shacl-extensions#targetShape</var> */
 	public final static IRI targetShape = create("targetShape");
+	public final static IRI dataGraph = create("dataGraph");
+	public final static IRI shapesGraph = create("shapesGraph");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(RSX.NAMESPACE, localName);

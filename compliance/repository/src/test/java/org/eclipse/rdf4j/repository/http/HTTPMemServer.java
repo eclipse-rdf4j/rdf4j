@@ -15,12 +15,13 @@ import java.util.Properties;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.webapp.WebAppContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
-import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-import org.eclipse.rdf4j.repository.manager.SystemRepository;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +50,8 @@ public class HTTPMemServer {
 
 	private final Server jetty;
 
+	private final RemoteRepositoryManager manager;
+
 	public HTTPMemServer() throws IOException {
 		System.clearProperty("DEBUG");
 		PropertiesReader reader = new PropertiesReader("maven-config.properties");
@@ -61,6 +64,8 @@ public class HTTPMemServer {
 		webapp.setContextPath(RDF4J_CONTEXT);
 		webapp.setWar(webappDir);
 		jetty.setHandler(webapp);
+
+		manager = RemoteRepositoryManager.getInstance(SERVER_URL);
 	}
 
 	public void start() throws Exception {
@@ -69,26 +74,30 @@ public class HTTPMemServer {
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
 
 		jetty.start();
-
 		createTestRepositories();
 	}
 
 	public void stop() throws Exception {
-		Repository systemRepo = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
-		try (RepositoryConnection con = systemRepo.getConnection()) {
-			con.clear();
+		try {
+			manager.getAllRepositoryInfos().forEach(ri -> manager.removeRepository(ri.getId()));
+			manager.shutDown();
+		} finally {
+			jetty.stop();
+			System.clearProperty("org.mortbay.log.class");
 		}
-
-		jetty.stop();
-		System.clearProperty("org.mortbay.log.class");
 	}
 
 	private void createTestRepositories() throws RepositoryException, RepositoryConfigException {
-		Repository systemRep = new HTTPRepository(Protocol.getRepositoryLocation(SERVER_URL, SystemRepository.ID));
+		try {
+			RepositoryConfig testRepoConfig = RepositoryConfigUtil.getRepositoryConfig(
+					Rio.parse(getClass().getResourceAsStream("/fixtures/memory.ttl"), "", RDFFormat.TURTLE),
+					TEST_REPO_ID);
+			manager.addRepositoryConfig(testRepoConfig);
 
-		try (RepositoryConnection conn = systemRep.getConnection()) {
-			conn.add(getClass().getResourceAsStream("/fixtures/memory.ttl"), "", RDFFormat.TURTLE);
-			conn.add(getClass().getResourceAsStream("/fixtures/memory-rdfs.ttl"), "", RDFFormat.TURTLE);
+			RepositoryConfig testInferenceRepoConfig = RepositoryConfigUtil.getRepositoryConfig(
+					Rio.parse(getClass().getResourceAsStream("/fixtures/memory-rdfs.ttl"), "", RDFFormat.TURTLE),
+					TEST_INFERENCE_REPO_ID);
+			manager.addRepositoryConfig(testInferenceRepoConfig);
 		} catch (IOException e) {
 			throw new RepositoryConfigException(e);
 		}

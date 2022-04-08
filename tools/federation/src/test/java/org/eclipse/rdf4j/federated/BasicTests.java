@@ -452,4 +452,20 @@ public class BasicTests extends SPARQLBaseTest {
 			Assertions.assertEquals(0, numberOfResults.get());
 		}
 	}
+
+	@Test
+	public void testDescribe_SingleResource() throws Exception {
+
+		/* test DESCRIBE query for a single resource (data in two members) */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		execute("/tests/basic/query_describe1.rq", "/tests/basic/query_describe1.ttl", false);
+	}
+
+	@Test
+	public void testDescribe_MultipleResources() throws Exception {
+
+		/* test DESCRIBE query for multiple resources (data in two members) */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		execute("/tests/basic/query_describe2.rq", "/tests/basic/query_describe2.ttl", false);
+	}
 }

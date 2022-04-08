@@ -17,24 +17,24 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 public interface NotifyingRepository extends Repository {
 
 	/**
-	 * Registers a <tt>RepositoryListener</tt> that will receive notifications of operations that are performed on this
-	 * repository.
+	 * Registers a <var>RepositoryListener</var> that will receive notifications of operations that are performed on
+	 * this repository.
 	 */
 	void addRepositoryListener(RepositoryListener listener);
 
 	/**
-	 * Removes a registered <tt>RepositoryListener</tt> from this repository.
+	 * Removes a registered <var>RepositoryListener</var> from this repository.
 	 */
 	void removeRepositoryListener(RepositoryListener listener);
 
 	/**
-	 * Registers a <tt>RepositoryConnectionListener</tt> that will receive notifications of operations that are
+	 * Registers a <var>RepositoryConnectionListener</var> that will receive notifications of operations that are
 	 * performed on any< connections that are created by this repository.
 	 */
 	void addRepositoryConnectionListener(RepositoryConnectionListener listener);
 
 	/**
-	 * Removes a registered <tt>RepositoryConnectionListener</tt> from this repository.
+	 * Removes a registered <var>RepositoryConnectionListener</var> from this repository.
 	 */
 	void removeRepositoryConnectionListener(RepositoryConnectionListener listener);
 

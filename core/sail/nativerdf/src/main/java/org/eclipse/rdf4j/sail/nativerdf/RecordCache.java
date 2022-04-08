@@ -57,7 +57,7 @@ abstract class RecordCache {
 	 * Gets the number of records currently stored in the cache, throwing an {@link IllegalStateException} if the cache
 	 * is no longer {@link #isValid() valid}.
 	 *
-	 * @return
+	 * @return records in the cache
 	 * @throws IllegalStateException If the cache is not/no longer {@link #isValid() valid}.
 	 */
 	public final long getRecordCount() {

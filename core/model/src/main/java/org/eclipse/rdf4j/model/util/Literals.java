@@ -12,7 +12,6 @@ import java.math.BigInteger;
 import java.util.Date;
 import java.util.IllformedLocaleException;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Optional;
 
 import javax.xml.datatype.Duration;
@@ -21,6 +20,7 @@ import javax.xml.datatype.XMLGregorianCalendar;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -37,10 +37,10 @@ public class Literals {
 
 	/**
 	 * Gets the label of the supplied literal. The fallback value is returned in case the supplied literal is
-	 * <tt>null</tt>.
+	 * <var>null</var>.
 	 *
 	 * @param l        The literal to get the label for.
-	 * @param fallback The value to fall back to in case the supplied literal is <tt>null</tt>.
+	 * @param fallback The value to fall back to in case the supplied literal is <var>null</var>.
 	 * @return Either the literal's label, or the fallback value.
 	 */
 	public static String getLabel(Literal l, String fallback) {
@@ -55,20 +55,22 @@ public class Literals {
 		return v instanceof Literal ? getLabel((Literal) v, fallback) : fallback;
 	}
 
-	public static String getLabel(Optional v, String fallback) {
-
-		return v != null ? getLabel((Value) v.orElseGet(null), fallback) : fallback;
+	public static String getLabel(Optional<Value> v, String fallback) {
+		return v != null ? getLabel(v.orElseGet(null), fallback) : fallback;
 	}
 
 	/**
-	 * Retrieves the {@link XSD.Datatype} value for the supplied Literal, if it has one.
+	 * Retrieves the {@link org.eclipse.rdf4j.model.vocabulary.XSD.Datatype} value for the supplied Literal, if it has
+	 * one.
 	 *
-	 * @param a Literal
-	 * @return an Optional {@link XSD.Datatype} enum, if one is available. Note that the absence of this enum does
-	 *         <i>not</i> indicate that the literal has no datatype, merely that it has no cached enum representation of
-	 *         that datatype.
+	 * @param l a Literal
+	 * @return an Optional {@link org.eclipse.rdf4j.model.vocabulary.XSD.Datatype} enum, if one is available. Note that
+	 *         the absence of this enum does <i>not</i> indicate that the literal has no datatype, merely that it has no
+	 *         cached enum representation of that datatype.
 	 * @since 3.5.0
+	 * @deprecated Use {@link Literal#getCoreDatatype()} instead.
 	 */
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public static Optional<XSD.Datatype> getXsdDatatype(Literal l) {
 		if (l instanceof SimpleLiteral) {
 			return ((SimpleLiteral) l).getXsdDatatype();
@@ -436,30 +438,30 @@ public class Literals {
 		}
 
 		if (object instanceof Boolean) {
-			return valueFactory.createLiteral(((Boolean) object).booleanValue());
+			return valueFactory.createLiteral((Boolean) object);
 		} else if (object instanceof Byte) {
-			return valueFactory.createLiteral(((Byte) object).byteValue());
+			return valueFactory.createLiteral((Byte) object);
 		} else if (object instanceof Double) {
-			return valueFactory.createLiteral(((Double) object).doubleValue());
+			return valueFactory.createLiteral((Double) object);
 		} else if (object instanceof Float) {
-			return valueFactory.createLiteral(((Float) object).floatValue());
+			return valueFactory.createLiteral((Float) object);
 		} else if (object instanceof Integer) {
-			return valueFactory.createLiteral(((Integer) object).intValue());
+			return valueFactory.createLiteral((Integer) object);
 		} else if (object instanceof Long) {
-			return valueFactory.createLiteral(((Long) object).longValue());
+			return valueFactory.createLiteral((Long) object);
 		} else if (object instanceof Short) {
-			return valueFactory.createLiteral(((Short) object).shortValue());
+			return valueFactory.createLiteral((Short) object);
 		} else if (object instanceof XMLGregorianCalendar) {
 			return valueFactory.createLiteral((XMLGregorianCalendar) object);
 		} else if (object instanceof Date) {
 			return valueFactory.createLiteral((Date) object);
 		} else if (object instanceof String) {
-			return valueFactory.createLiteral(object.toString(), XSD.STRING);
+			return valueFactory.createLiteral(object.toString(), CoreDatatype.XSD.STRING);
 		} else {
 			if (throwExceptionOnFailure) {
 				throw new LiteralUtilException("Did not recognise object when creating literal");
 			}
-			return valueFactory.createLiteral(object.toString(), XSD.STRING);
+			return valueFactory.createLiteral(object.toString(), CoreDatatype.XSD.STRING);
 		}
 	}
 
@@ -481,13 +483,10 @@ public class Literals {
 			return false;
 		}
 
-		if (object instanceof Boolean || object instanceof Byte || object instanceof Double || object instanceof Float
+		return object instanceof Boolean || object instanceof Byte || object instanceof Double
+				|| object instanceof Float
 				|| object instanceof Integer || object instanceof Long || object instanceof Short
-				|| object instanceof XMLGregorianCalendar || object instanceof Date || object instanceof String) {
-			return true;
-		}
-
-		return false;
+				|| object instanceof XMLGregorianCalendar || object instanceof Date || object instanceof String;
 	}
 
 	/**
@@ -497,25 +496,54 @@ public class Literals {
 	 * @return True if the literal has a language tag attached to it and false otherwise.
 	 */
 	public static boolean isLanguageLiteral(Literal literal) {
-		return Objects.requireNonNull(literal, "Literal cannot be null").getLanguage().isPresent();
+		return literal.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
 	}
 
 	/**
 	 * Normalizes the given <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag according to the rules
-	 * defined by the JDK in the {@link Locale} API.
+	 * defined in <a href="https://www.rfc-editor.org/rfc/rfc5646.html#section-2.1.1">RFC 5646, section 2.1.1</a>:
+	 * <p>
+	 * <blockquote> All subtags, including extension and private use subtags, use lowercase letters with two exceptions:
+	 * two-letter and four-letter subtags that neither appear at the start of the tag nor occur after singletons. Such
+	 * two-letter subtags are all uppercase (as in the tags "en-CA-x-ca" or "sgn-BE-FR") and four- letter subtags are
+	 * titlecase (as in the tag "az-Latn-x-latn"). </blockquote>
 	 *
 	 * @param languageTag An unnormalized, valid, language tag
 	 * @return A normalized version of the given language tag
 	 * @throws IllformedLocaleException If the given language tag is ill-formed according to the rules specified in
-	 *                                  BCP47.
+	 *                                  BCP47 (RFC 5646).
 	 */
 	public static String normalizeLanguageTag(String languageTag) throws IllformedLocaleException {
-		return new Locale.Builder().setLanguageTag(languageTag).build().toLanguageTag().intern();
+		// check if language tag is well-formed
+		new Locale.Builder().setLanguageTag(languageTag);
+
+		// all subtags are case-insensitive
+		String normalizedTag = languageTag.toLowerCase();
+
+		String[] subtags = normalizedTag.split("-");
+		for (int i = 1; i < subtags.length; i++) {
+			String subtag = subtags[i];
+
+			if (subtag.length() == 2) {
+				// exception 1: two-letter subtags not at the starte and not preceded by a singleton are upper case
+				if (subtags[i - 1].length() > 1 && subtag.matches("\\w\\w")) {
+					subtags[i] = subtag.toUpperCase();
+				}
+			} else if (subtag.length() == 4) {
+				// exception 2: four-letter subtags not at the start and not preceded by a singleton are title case
+				if (subtags[i - 1].length() > 1 && subtag.matches("\\w\\w\\w\\w")) {
+					subtags[i] = subtag.substring(0, 1).toUpperCase() + subtag.substring(1);
+				}
+			}
+		}
+
+		return String.join("-", subtags);
 	}
 
 	/**
-	 * Checks if the given string is a <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag according to
-	 * the rules defined by the JDK in the {@link Locale} API.
+	 * Checks if the given string is a well-formed <a href="https://tools.ietf.org/html/bcp47">BCP47</a> language tag
+	 * according to the rules defined in <a href="https://www.rfc-editor.org/rfc/rfc5646.html#section-2.1.1">RFC 5646,
+	 * section 2.1.1</a>.
 	 *
 	 * @param languageTag A language tag
 	 * @return <code>true</code> if the given language tag is well-formed according to the rules specified in BCP47.

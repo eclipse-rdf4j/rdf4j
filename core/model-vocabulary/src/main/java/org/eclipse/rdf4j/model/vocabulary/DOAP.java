@@ -32,164 +32,164 @@ public class DOAP {
 	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);
 
 	// Classes
-	/** <tt>doap:ArchRepository</tt> */
+	/** <var>doap:ArchRepository</var> */
 	public static final IRI ARCH_REPOSITORY = create("ArchRepository");
 
-	/** <tt>doap:BKRepository</tt> */
+	/** <var>doap:BKRepository</var> */
 	public static final IRI BKREPOSITORY = create("BKRepository");
 
-	/** <tt>doap:BazaarBranch</tt> */
+	/** <var>doap:BazaarBranch</var> */
 	public static final IRI BAZAAR_BRANCH = create("BazaarBranch");
 
-	/** <tt>doap:CVSRepository</tt> */
+	/** <var>doap:CVSRepository</var> */
 	public static final IRI CVSREPOSITORY = create("CVSRepository");
 
-	/** <tt>doap:DarcsRepository</tt> */
+	/** <var>doap:DarcsRepository</var> */
 	public static final IRI DARCS_REPOSITORY = create("DarcsRepository");
 
-	/** <tt>doap:GitBranch</tt> */
+	/** <var>doap:GitBranch</var> */
 	public static final IRI GIT_BRANCH = create("GitBranch");
 
-	/** <tt>doap:GitRepository</tt> */
+	/** <var>doap:GitRepository</var> */
 	public static final IRI GIT_REPOSITORY = create("GitRepository");
 
-	/** <tt>doap:HgRepository</tt> */
+	/** <var>doap:HgRepository</var> */
 	public static final IRI HG_REPOSITORY = create("HgRepository");
 
-	/** <tt>doap:Project</tt> */
+	/** <var>doap:Project</var> */
 	public static final IRI PROJECT = create("Project");
 
-	/** <tt>doap:Repository</tt> */
+	/** <var>doap:Repository</var> */
 	public static final IRI REPOSITORY = create("Repository");
 
-	/** <tt>doap:SVNRepository</tt> */
+	/** <var>doap:SVNRepository</var> */
 	public static final IRI SVNREPOSITORY = create("SVNRepository");
 
-	/** <tt>doap:Specification</tt> */
+	/** <var>doap:Specification</var> */
 	public static final IRI SPECIFICATION = create("Specification");
 
-	/** <tt>doap:Version</tt> */
+	/** <var>doap:Version</var> */
 	public static final IRI VERSION = create("Version");
 
 	// Properties
-	/** <tt>doap:anon-root</tt> */
+	/** <var>doap:anon-root</var> */
 	public static final IRI ANON_ROOT = create("anon-root");
 
-	/** <tt>doap:audience</tt> */
+	/** <var>doap:audience</var> */
 	public static final IRI AUDIENCE = create("audience");
 
-	/** <tt>doap:blog</tt> */
+	/** <var>doap:blog</var> */
 	public static final IRI BLOG = create("blog");
 
-	/** <tt>doap:browse</tt> */
+	/** <var>doap:browse</var> */
 	public static final IRI BROWSE = create("browse");
 
-	/** <tt>doap:bug-database</tt> */
+	/** <var>doap:bug-database</var> */
 	public static final IRI BUG_DATABASE = create("bug-database");
 
-	/** <tt>doap:category</tt> */
+	/** <var>doap:category</var> */
 	public static final IRI CATEGORY = create("category");
 
-	/** <tt>doap:created</tt> */
+	/** <var>doap:created</var> */
 	public static final IRI CREATED = create("created");
 
-	/** <tt>doap:description</tt> */
+	/** <var>doap:description</var> */
 	public static final IRI DESCRIPTION = create("description");
 
-	/** <tt>doap:developer</tt> */
+	/** <var>doap:developer</var> */
 	public static final IRI DEVELOPER = create("developer");
 
-	/** <tt>doap:developer-forum</tt> */
+	/** <var>doap:developer-forum</var> */
 	public static final IRI DEVELOPER_FORUM = create("developer-forum");
 
-	/** <tt>doap:documenter</tt> */
+	/** <var>doap:documenter</var> */
 	public static final IRI DOCUMENTER = create("documenter");
 
-	/** <tt>doap:download-mirror</tt> */
+	/** <var>doap:download-mirror</var> */
 	public static final IRI DOWNLOAD_MIRROR = create("download-mirror");
 
-	/** <tt>doap:download-page</tt> */
+	/** <var>doap:download-page</var> */
 	public static final IRI DOWNLOAD_PAGE = create("download-page");
 
-	/** <tt>doap:file-release</tt> */
+	/** <var>doap:file-release</var> */
 	public static final IRI FILE_RELEASE = create("file-release");
 
-	/** <tt>doap:helper</tt> */
+	/** <var>doap:helper</var> */
 	public static final IRI HELPER = create("helper");
 
-	/** <tt>doap:homepage</tt> */
+	/** <var>doap:homepage</var> */
 	public static final IRI HOMEPAGE = create("homepage");
 
-	/** <tt>doap:implements</tt> */
+	/** <var>doap:implements</var> */
 	public static final IRI IMPLEMENTS = create("implements");
 
-	/** <tt>doap:language</tt> */
+	/** <var>doap:language</var> */
 	public static final IRI LANGUAGE = create("language");
 
-	/** <tt>doap:license</tt> */
+	/** <var>doap:license</var> */
 	public static final IRI LICENSE = create("license");
 
-	/** <tt>doap:location</tt> */
+	/** <var>doap:location</var> */
 	public static final IRI LOCATION = create("location");
 
-	/** <tt>doap:mailing-list</tt> */
+	/** <var>doap:mailing-list</var> */
 	public static final IRI MAILING_LIST = create("mailing-list");
 
-	/** <tt>doap:maintainer</tt> */
+	/** <var>doap:maintainer</var> */
 	public static final IRI MAINTAINER = create("maintainer");
 
-	/** <tt>doap:module</tt> */
+	/** <var>doap:module</var> */
 	public static final IRI MODULE = create("module");
 
-	/** <tt>doap:name</tt> */
+	/** <var>doap:name</var> */
 	public static final IRI NAME = create("name");
 
-	/** <tt>doap:old-homepage</tt> */
+	/** <var>doap:old-homepage</var> */
 	public static final IRI OLD_HOMEPAGE = create("old-homepage");
 
-	/** <tt>doap:os</tt> */
+	/** <var>doap:os</var> */
 	public static final IRI OS = create("os");
 
-	/** <tt>doap:platform</tt> */
+	/** <var>doap:platform</var> */
 	public static final IRI PLATFORM = create("platform");
 
-	/** <tt>doap:programming-language</tt> */
+	/** <var>doap:programming-language</var> */
 	public static final IRI PROGRAMMING_LANGUAGE = create("programming-language");
 
-	/** <tt>doap:release</tt> */
+	/** <var>doap:release</var> */
 	public static final IRI RELEASE = create("release");
 
-	/** <tt>doap:repository</tt> */
+	/** <var>doap:repository</var> */
 	public static final IRI REPOSITORY_PROP = create("repository");
 
-	/** <tt>doap:repositoryOf</tt> */
+	/** <var>doap:repositoryOf</var> */
 	public static final IRI REPOSITORY_OF = create("repositoryOf");
 
-	/** <tt>doap:revision</tt> */
+	/** <var>doap:revision</var> */
 	public static final IRI REVISION = create("revision");
 
-	/** <tt>doap:screenshots</tt> */
+	/** <var>doap:screenshots</var> */
 	public static final IRI SCREENSHOTS = create("screenshots");
 
-	/** <tt>doap:service-endpoint</tt> */
+	/** <var>doap:service-endpoint</var> */
 	public static final IRI SERVICE_ENDPOINT = create("service-endpoint");
 
-	/** <tt>doap:shortdesc</tt> */
+	/** <var>doap:shortdesc</var> */
 	public static final IRI SHORTDESC = create("shortdesc");
 
-	/** <tt>doap:support-forum</tt> */
+	/** <var>doap:support-forum</var> */
 	public static final IRI SUPPORT_FORUM = create("support-forum");
 
-	/** <tt>doap:tester</tt> */
+	/** <var>doap:tester</var> */
 	public static final IRI TESTER = create("tester");
 
-	/** <tt>doap:translator</tt> */
+	/** <var>doap:translator</var> */
 	public static final IRI TRANSLATOR = create("translator");
 
-	/** <tt>doap:vendor</tt> */
+	/** <var>doap:vendor</var> */
 	public static final IRI VENDOR = create("vendor");
 
-	/** <tt>doap:wiki</tt> */
+	/** <var>doap:wiki</var> */
 	public static final IRI WIKI = create("wiki");
 
 	private static IRI create(String localName) {

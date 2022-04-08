@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
-import org.eclipse.rdf4j.query.algebra.Like;
 import org.eclipse.rdf4j.query.algebra.LocalName;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Max;
@@ -83,7 +82,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Bound theOp) throws Exception {
@@ -93,21 +92,21 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Var theVar) throws Exception {
 		if (theVar.isAnonymous() && !theVar.hasValue()) {
 			mBuffer.append("?").append(BaseTupleExprRenderer.scrubVarName(theVar.getName()));
 		} else if (theVar.hasValue()) {
-			mBuffer.append(RenderUtils.getSPARQLQueryString(theVar.getValue()));
+			mBuffer.append(RenderUtils.toSPARQL(theVar.getValue()));
 		} else {
 			mBuffer.append("?").append(theVar.getName());
 		}
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(BNodeGenerator theGen) throws Exception {
@@ -115,7 +114,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(MathExpr theOp) throws Exception {
@@ -127,7 +126,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Compare theOp) throws Exception {
@@ -139,7 +138,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Exists theOp) throws Exception {
@@ -149,7 +148,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(In theOp) throws Exception {
@@ -173,7 +172,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(CompareAll theOp) throws Exception {
@@ -187,15 +186,15 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(ValueConstant theVal) throws Exception {
-		mBuffer.append(RenderUtils.getSPARQLQueryString(theVal.getValue()));
+		mBuffer.append(RenderUtils.toSPARQL(theVal.getValue()));
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(FunctionCall theOp) throws Exception {
@@ -215,7 +214,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(CompareAny theOp) throws Exception {
@@ -229,7 +228,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Regex theOp) throws Exception {
@@ -245,7 +244,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(LangMatches theOp) throws Exception {
@@ -257,7 +256,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(SameTerm theOp) throws Exception {
@@ -269,7 +268,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(And theAnd) throws Exception {
@@ -277,7 +276,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Or theOr) throws Exception {
@@ -285,7 +284,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Not theNot) throws Exception {
@@ -295,7 +294,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Count theOp) throws Exception {
@@ -303,7 +302,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Datatype theOp) throws Exception {
@@ -311,7 +310,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(IsBNode theOp) throws Exception {
@@ -319,7 +318,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(IsLiteral theOp) throws Exception {
@@ -327,7 +326,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(IsNumeric theOp) throws Exception {
@@ -335,7 +334,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(IsResource theOp) throws Exception {
@@ -348,7 +347,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(IsURI theOp) throws Exception {
@@ -356,7 +355,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(IRIFunction theOp) throws Exception {
@@ -364,7 +363,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Label theOp) throws Exception {
@@ -372,7 +371,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Lang theOp) throws Exception {
@@ -380,19 +379,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
-	 */
-	@Override
-	public void meet(Like theOp) throws Exception {
-		theOp.getArg().visit(this);
-		mBuffer.append(" like \"").append(theOp.getPattern()).append("\"");
-		if (!theOp.isCaseSensitive()) {
-			mBuffer.append(" ignore case");
-		}
-	}
-
-	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(LocalName theOp) throws Exception {
@@ -400,7 +387,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Min theOp) throws Exception {
@@ -408,7 +395,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Max theOp) throws Exception {
@@ -416,7 +403,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Namespace theOp) throws Exception {
@@ -424,7 +411,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Str theOp) throws Exception {

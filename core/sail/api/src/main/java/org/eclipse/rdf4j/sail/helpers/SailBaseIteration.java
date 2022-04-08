@@ -23,7 +23,6 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 	/**
 	 * Creates a new memory-store specific iteration object.
 	 *
-	 * @param lock       a query lock
 	 * @param iter       the wrapped iteration over sail objects.
 	 * @param connection the connection from which this iteration originates.
 	 */

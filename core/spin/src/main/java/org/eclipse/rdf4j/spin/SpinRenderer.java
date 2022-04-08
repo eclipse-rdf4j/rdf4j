@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
-import org.eclipse.rdf4j.model.impl.ValueFactoryImpl;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.AFN;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SP;
@@ -104,7 +104,7 @@ import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.helpers.RDFHandlerBase;
+import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 
 import com.google.common.base.Function;
 
@@ -137,7 +137,7 @@ public class SpinRenderer {
 
 	public SpinRenderer(Output output) {
 		this(output, SpinWellKnownVars.INSTANCE::getURI, SpinWellKnownFunctions.INSTANCE::getURI,
-				ValueFactoryImpl.getInstance());
+				SimpleValueFactory.getInstance());
 	}
 
 	public SpinRenderer(Output output, Function<String, IRI> wellKnownVarMapper,
@@ -1227,7 +1227,7 @@ public class SpinRenderer {
 		private void renderDataBlock(String data) throws RDFHandlerException {
 			SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(valueFactory);
 			parser.setAllowBlankNodes(false); // no blank nodes allowed
-			parser.setRDFHandler(new RDFHandlerBase() {
+			parser.setRDFHandler(new AbstractRDFHandler() {
 
 				final Map<Resource, ListContext> namedGraphLists = new HashMap<>();
 

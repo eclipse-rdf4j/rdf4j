@@ -4,34 +4,38 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
+  rdf4j:truncated false;
   sh:conforms false;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode 2;
-      sh:value 2;
-      sh:sourceConstraintComponent sh:AndConstraintComponent;
-      sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties
-    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode 3;
-      sh:value 3;
-      sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties
+      sh:sourceConstraintComponent sh:AndConstraintComponent;
+      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties;
+      sh:value 3
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode 2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:AndConstraintComponent;
+      sh:sourceShape ex:IdAndUsernameAreBothFunctionalProperties;
+      sh:value 2
     ] .
 
 ex:IdAndUsernameAreBothFunctionalProperties a sh:NodeShape;
-  sh:targetObjectsOf ex:id, ex:username;
   sh:and ([ a sh:PropertyShape;
+        sh:maxCount 1;
         sh:path [
             sh:inversePath ex:id
-          ];
-        sh:maxCount 1
+          ]
       ] [ a sh:PropertyShape;
+        sh:maxCount 1;
         sh:path [
             sh:inversePath ex:username
-          ];
-        sh:maxCount 1
-      ]) .
+          ]
+      ]);
+  sh:targetObjectsOf ex:id, ex:username .

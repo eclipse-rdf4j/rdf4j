@@ -8,12 +8,14 @@
 
 package org.eclipse.rdf4j.sail.memory;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
+import org.eclipse.rdf4j.sail.features.ThreadSafetyAware;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 
 /**
@@ -22,7 +24,7 @@ import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
  * @author Arjohn Kampman
  * @author jeen
  */
-public class MemoryStoreConnection extends SailSourceConnection {
+public class MemoryStoreConnection extends SailSourceConnection implements ThreadSafetyAware {
 
 	/*-----------*
 	 * Variables *
@@ -115,5 +117,10 @@ public class MemoryStoreConnection extends SailSourceConnection {
 
 	public MemoryStore getSail() {
 		return sail;
+	}
+
+	@Override
+	public boolean supportsConcurrentReads() {
+		return getTransactionIsolation() != null && getTransactionIsolation() != IsolationLevels.SERIALIZABLE;
 	}
 }

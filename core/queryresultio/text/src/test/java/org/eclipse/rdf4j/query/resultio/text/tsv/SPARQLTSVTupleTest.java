@@ -12,6 +12,7 @@ import static org.junit.Assert.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
@@ -21,11 +22,11 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.MutableTupleQueryResult;
-import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOTupleTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOTupleTest;
 import org.junit.Test;
 
 /**
@@ -93,7 +94,7 @@ public class SPARQLTSVTupleTest extends AbstractQueryResultIOTupleTest {
 		writer.handleLinks(Arrays.<String>asList());
 		QueryResults.report(results, writer);
 
-		return out.toString("UTF-8");
+		return out.toString(StandardCharsets.UTF_8);
 	}
 
 	private void assertRegex(String pattern, String actual) {

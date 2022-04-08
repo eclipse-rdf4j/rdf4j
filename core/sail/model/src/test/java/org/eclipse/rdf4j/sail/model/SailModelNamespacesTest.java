@@ -8,12 +8,12 @@
 package org.eclipse.rdf4j.sail.model;
 
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.ModelNamespacesTest;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.testsuite.model.ModelNamespacesTest;
 
 /**
  * @author Mark
@@ -28,7 +28,7 @@ public class SailModelNamespacesTest extends ModelNamespacesTest {
 	protected Model getModelImplementation() {
 		sail = new MemoryStore();
 		try {
-			sail.initialize();
+			sail.init();
 			conn = sail.getConnection();
 			conn.begin();
 			return new SailModel(conn, false);

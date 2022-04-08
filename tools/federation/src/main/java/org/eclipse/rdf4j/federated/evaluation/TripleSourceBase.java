@@ -54,13 +54,11 @@ public abstract class TripleSourceBase implements TripleSource {
 	protected final FederationContext federationContext;
 	protected final Monitoring monitoringService;
 	protected final Endpoint endpoint;
-	protected final FederationEvalStrategy strategy;
 
 	public TripleSourceBase(FederationContext federationContext, Endpoint endpoint) {
 		this.federationContext = federationContext;
 		this.monitoringService = federationContext.getMonitoringService();
 		this.endpoint = endpoint;
-		this.strategy = federationContext.getStrategy();
 	}
 
 	@Override
@@ -142,9 +140,9 @@ public abstract class TripleSourceBase implements TripleSource {
 			if (filterExpr != null) {
 				if (bindings.size() > 0) {
 					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
-							this.strategy);
+							queryInfo.getStrategy());
 				} else {
-					res = new FilteringIteration(filterExpr, res, this.strategy);
+					res = new FilteringIteration(filterExpr, res, queryInfo.getStrategy());
 				}
 				if (!res.hasNext()) {
 					Iterations.closeCloseable(res);

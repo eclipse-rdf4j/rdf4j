@@ -28,7 +28,7 @@ public class ElasticsearchSailFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:LuceneSail/Elasticsearch";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:LuceneSail/Elasticsearch</tt>.
+	 * Returns the Sail's type: <var>openrdf:LuceneSail/Elasticsearch</var>.
 	 */
 	@Override
 	public String getSailType() {

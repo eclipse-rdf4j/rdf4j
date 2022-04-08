@@ -20,8 +20,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link AbstractSail}.
@@ -33,7 +33,9 @@ public class AbstractSailTest {
 
 	AbstractSail subject;
 
-	@Before
+	private final Random random = new Random(43252333);
+
+	@BeforeEach
 	public void setUp() throws Exception {
 
 		subject = new AbstractSail() {
@@ -123,14 +125,14 @@ public class AbstractSailTest {
 		@Override
 		public void run() {
 			try {
-				Thread.sleep(new Random().nextInt(1000));
-				if ((new Random().nextInt() & 1) == 0) {
+				Thread.sleep(random.nextInt(1000));
+				if ((random.nextInt() & 1) == 0) {
 					sail.init(); // 50% of our runs do an explicit init
 				}
 				try (SailConnection conn = sail.getConnection()) {
 					Thread.sleep(10);
 				}
-				if (new Random().nextInt(4) == 1) {
+				if (random.nextInt(4) == 1) {
 					sail.shutDown(); // roughly one in four do a shutdown follow by another get connection
 					try (SailConnection conn = sail.getConnection()) {
 						Thread.sleep(10);

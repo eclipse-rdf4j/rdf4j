@@ -6,7 +6,6 @@ PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-
 ex:PersonSub rdfs:subClassOf ex:Person.
 
 ex:validPerson1 a ex:PersonSub ;

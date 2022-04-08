@@ -65,7 +65,7 @@ public class If extends AbstractQueryModelNode implements ValueExpr {
 	/**
 	 * Sets the condition argument of this unary value operator.
 	 *
-	 * @param condition The (new) condition argument for this operator, must not be <tt>null</tt>.
+	 * @param condition The (new) condition argument for this operator, must not be <var>null</var>.
 	 */
 	public void setCondition(ValueExpr condition) {
 		assert condition != null : "arg must not be null";

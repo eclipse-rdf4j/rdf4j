@@ -14,7 +14,6 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -59,7 +58,9 @@ public class Statements {
 	 */
 	public static void consume(ValueFactory vf, Resource subject, IRI predicate, Value object,
 			Consumer<Statement> consumer, Resource... contexts) {
-		OpenRDFUtil.verifyContextNotNull(contexts);
+		Objects.requireNonNull(contexts,
+				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
+
 		Objects.requireNonNull(consumer);
 
 		if (contexts.length > 0) {

@@ -4,30 +4,34 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
+  rdf4j:truncated false;
   sh:conforms false;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
-      sh:value ex:steve;
       sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1er055022x1
+      sh:sourceConstraintComponent sh:AndConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx32255;
+      sh:value ex:peter
     ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
-      sh:value ex:peter;
       sh:resultPath ex:knows;
-      sh:sourceConstraintComponent sh:AndConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape _:node1er055022x1
+      sh:sourceConstraintComponent sh:AndConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx32255;
+      sh:value ex:steve
     ] .
 
-_:node1er055022x1 a sh:PropertyShape;
-  sh:path ex:knows;
+_:node1ftskin5gx32255 a sh:PropertyShape;
   sh:and ([ a sh:NodeShape;
         sh:hasValue ex:peter
       ] [ a sh:NodeShape;
         sh:hasValue ex:steve
-      ]) .
+      ]);
+  sh:path ex:knows .

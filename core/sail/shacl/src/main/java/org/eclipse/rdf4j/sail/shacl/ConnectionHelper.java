@@ -22,7 +22,7 @@ class ConnectionHelper {
 	static CloseableIteration<Statement, SailException> getCloseableIteration(
 			RepositoryResult<Statement> repositoryResults) {
 
-		return new CloseableIteration<Statement, SailException>() {
+		return new CloseableIteration<>() {
 
 			@Override
 			public boolean hasNext() throws SailException {

@@ -14,8 +14,8 @@ import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
-import org.eclipse.rdf4j.exceptions.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;

@@ -12,7 +12,7 @@
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-util</artifactId>
+			<artifactId>rdf4j-common-io</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>

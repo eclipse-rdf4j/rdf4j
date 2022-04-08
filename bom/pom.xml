@@ -8,7 +8,7 @@
 	</parent>
 	<artifactId>rdf4j-bom</artifactId>
 	<packaging>pom</packaging>
-	<name>RDF4J BOM</name>
+	<name>RDF4J: BOM</name>
 	<description>RDF4J Bill of Materials (BOM)</description>
 	<dependencyManagement>
 		<dependencies>
@@ -61,11 +61,6 @@
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-queryparser-api</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-queryparser-serql</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
@@ -220,11 +215,6 @@
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-sail-federation</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-sail-extensible-store</artifactId>
 				<version>${project.version}</version>
 			</dependency>
@@ -270,17 +260,12 @@
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-sail-spin</artifactId>
+				<artifactId>rdf4j-sail-lmdb</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-shacl</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-lucene-spin</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
@@ -293,9 +278,45 @@
 				<artifactId>rdf4j-sparqlbuilder</artifactId>
 				<version>${project.version}</version>
 			</dependency>
+			<!-- common modules -->
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-util</artifactId>
+				<artifactId>rdf4j-common-annotation</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-common-exception</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-common-io</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-common-iterator</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-common-text</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-common-transaction</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-common-util</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.rdf4j</groupId>
+				<artifactId>rdf4j-common-xml</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<!-- tool modules -->
@@ -378,11 +399,6 @@
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.rdf4j</groupId>
-				<artifactId>rdf4j-serql-testsuite</artifactId>
-				<version>${project.version}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.eclipse.rdf4j</groupId>
 				<artifactId>rdf4j-sparql-testsuite</artifactId>
 				<version>${project.version}</version>
 			</dependency>
@@ -391,6 +407,55 @@
 				<groupId>org.slf4j</groupId>
 				<artifactId>slf4j-simple</artifactId>
 				<version>${slf4j.version}</version>
+			</dependency>
+			<!--  LMDB native extensions -->
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl-lmdb</artifactId>
+				<classifier>natives-linux</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl-lmdb</artifactId>
+				<classifier>natives-macos-arm64</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl-lmdb</artifactId>
+				<classifier>natives-macos</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl-lmdb</artifactId>
+				<classifier>natives-windows</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl</artifactId>
+				<classifier>natives-linux</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl</artifactId>
+				<classifier>natives-macos</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl</artifactId>
+				<classifier>natives-macos-arm64</classifier>
+				<version>${lwjgl.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.lwjgl</groupId>
+				<artifactId>lwjgl</artifactId>
+				<classifier>natives-windows</classifier>
+				<version>${lwjgl.version}</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>

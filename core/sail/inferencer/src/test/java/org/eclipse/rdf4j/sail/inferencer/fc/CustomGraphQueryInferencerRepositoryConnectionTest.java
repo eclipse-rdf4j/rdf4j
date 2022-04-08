@@ -9,16 +9,16 @@ package org.eclipse.rdf4j.sail.inferencer.fc;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
 
 public class CustomGraphQueryInferencerRepositoryConnectionTest extends RepositoryConnectionTest {
 

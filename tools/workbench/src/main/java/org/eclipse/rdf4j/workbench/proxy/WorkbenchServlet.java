@@ -14,6 +14,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -24,7 +25,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.rdf4j.exceptions.ValidationException;
+import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -189,12 +190,12 @@ public class WorkbenchServlet extends AbstractServlet {
 		} else {
 			manager = new RemoteRepositoryManager(param);
 		}
-		manager.initialize();
+		manager.init();
 		return manager;
 	}
 
 	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
-		return new File(URLDecoder.decode(rdf.getFile(), "UTF-8"));
+		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));
 	}
 
 	private void service(final String repoID, final HttpServletRequest req, final HttpServletResponse resp)
@@ -263,9 +264,9 @@ public class WorkbenchServlet extends AbstractServlet {
 				LOGGER.info("Setting user '{}' and their password.", user);
 				rrm.setUsernameAndPassword(user, password);
 			}
-			// initialize() required to push credentials to internal HTTP
+			// init() required to push credentials to internal HTTP
 			// client.
-			rrm.initialize();
+			rrm.init();
 		}
 	}
 }

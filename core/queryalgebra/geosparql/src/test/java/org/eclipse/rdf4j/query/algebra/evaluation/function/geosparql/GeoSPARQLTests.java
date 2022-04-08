@@ -86,7 +86,6 @@ public class GeoSPARQLTests {
 
 	private static Repository setupTestRepository() {
 		SailRepository repo = new SailRepository(new MemoryStore());
-		repo.initialize();
 		ValueFactory f = repo.getValueFactory();
 
 		Map<String, String> cities = new HashMap<>();

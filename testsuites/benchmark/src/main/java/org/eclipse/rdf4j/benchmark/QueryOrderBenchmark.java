@@ -1,6 +1,7 @@
 package org.eclipse.rdf4j.benchmark;
 
 import java.io.File;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -50,6 +51,8 @@ public class QueryOrderBenchmark {
 	public TemporaryFolder tempDir = new TemporaryFolder();
 	private File dataDir;
 
+	private final Random random = new Random(43252333);
+
 	private Repository repository;
 
 	private RepositoryConnection conn;
@@ -75,14 +78,13 @@ public class QueryOrderBenchmark {
 	}
 
 	private void initialize() {
-		repository.initialize();
 		try (RepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			for (int i = 0; i < countk; i++) {
 				conn.begin();
 				for (int j = 0; j < 1000; j++) {
-					IRI subj = vf.createIRI("urn:test:" + Double.toHexString(Math.random()));
-					Literal val = vf.createLiteral(Double.toHexString(Math.random()));
+					IRI subj = vf.createIRI("urn:test:" + Double.toHexString(random.nextDouble()));
+					Literal val = vf.createLiteral(Double.toHexString(random.nextDouble()));
 					conn.add(subj, RDF.VALUE, val);
 				}
 				conn.commit();

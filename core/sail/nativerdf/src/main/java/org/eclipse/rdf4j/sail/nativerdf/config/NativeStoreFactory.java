@@ -29,7 +29,7 @@ public class NativeStoreFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:NativeStore";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:NativeStore</tt>.
+	 * Returns the Sail's type: <var>openrdf:NativeStore</var>.
 	 */
 	@Override
 	public String getSailType() {

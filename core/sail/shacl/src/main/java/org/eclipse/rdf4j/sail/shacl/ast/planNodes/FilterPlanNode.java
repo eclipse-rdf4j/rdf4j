@@ -13,7 +13,6 @@ import java.util.Objects;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,7 +96,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 						if (trueNode != null) {
 							trueNode.push(temp);
 						} else {
-							if (GlobalValidationExecutionLogging.loggingEnabled) {
+							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(FilterPlanNode.this.depth(),
 										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp,
 										FilterPlanNode.this, getId(), null);
@@ -107,7 +106,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 						if (falseNode != null) {
 							falseNode.push(temp);
 						} else {
-							if (GlobalValidationExecutionLogging.loggingEnabled) {
+							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(FilterPlanNode.this.depth(),
 										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp,
 										FilterPlanNode.this,

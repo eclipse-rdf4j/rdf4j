@@ -8,6 +8,9 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 /**
@@ -28,6 +31,14 @@ public class From implements QueryElement {
 	From(Iri iri, boolean isNamed) {
 		this.iri = iri;
 		this.isNamed = isNamed;
+	}
+
+	From(IRI iri) {
+		this(iri, false);
+	}
+
+	From(IRI iri, boolean isNamed) {
+		this(iri(iri), isNamed);
 	}
 
 	@Override

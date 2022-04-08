@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
 import java.util.Optional;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 @SuppressWarnings("javadoc")
@@ -35,6 +38,18 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 		this.graph = Optional.ofNullable(graph);
 
 		return (T) this;
+	}
+
+	/**
+	 * Specify which graph to target
+	 *
+	 * @param graph the IRI identifying the graph to target
+	 *
+	 * @return this query instance
+	 */
+	@SuppressWarnings("unchecked")
+	public T graph(IRI graph) {
+		return graph(iri(graph));
 	}
 
 	/**

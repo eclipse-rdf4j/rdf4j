@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.binary;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+
 class BinaryRDFConstants {
 
 	/**
@@ -14,10 +17,11 @@ class BinaryRDFConstants {
 	 */
 	static final byte[] MAGIC_NUMBER = new byte[] { 'B', 'R', 'D', 'F' };
 
-	/**
-	 * The version number of the current format.
-	 */
-	static final int FORMAT_VERSION = 1;
+	static final Charset V1_STRING_CHARSET = StandardCharsets.UTF_16BE;
+
+	static final int FORMAT_V1 = 1;
+
+	static final int FORMAT_V2 = 2;
 
 	/* RECORD TYPES */
 

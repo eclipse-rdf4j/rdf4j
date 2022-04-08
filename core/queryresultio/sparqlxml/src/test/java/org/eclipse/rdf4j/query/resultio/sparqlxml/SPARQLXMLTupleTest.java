@@ -14,10 +14,10 @@ import java.io.InputStream;
 
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.resultio.AbstractQueryResultIOTupleTest;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
+import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOTupleTest;
 import org.junit.Test;
 
 /**

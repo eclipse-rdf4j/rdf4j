@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.federated.evaluation.union;
 
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutorBase;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 
@@ -23,8 +22,8 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
  */
 public abstract class UnionExecutorBase<T> extends ParallelExecutorBase<T> {
 
-	public UnionExecutorBase(FederationEvalStrategy strategy, QueryInfo queryInfo) {
-		super(strategy, queryInfo);
+	public UnionExecutorBase(QueryInfo queryInfo) {
+		super(queryInfo);
 	}
 
 	@Override

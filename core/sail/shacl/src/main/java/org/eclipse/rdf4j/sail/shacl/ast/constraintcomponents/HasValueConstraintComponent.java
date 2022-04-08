@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.Collections;
@@ -12,9 +20,8 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
@@ -33,6 +40,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValueInFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
@@ -58,7 +67,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+			ValidationSettings validationSettings,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 
 		EffectiveTarget target = getTargetChain().getEffectiveTarget("_target", scope,
@@ -72,16 +82,19 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
+				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
+						EffectiveTarget.Extend.right,
 						false, null);
 
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, scope, true, null);
-				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
+				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, true,
+						null);
+				PlanNode addedByPath = path.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
 				addedByPath = target.getTargetFilter(connectionsGroup,
-						Unique.getInstance(new TrimToTarget(addedByPath), false));
-				addedByPath = target.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left, false,
+						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
+				addedByPath = target.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope,
+						EffectiveTarget.Extend.left, false,
 						null);
 
 				addedTargets = UnionNode.getInstance(addedByPath, addedTargets);
@@ -91,11 +104,13 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			PlanNode joined = new BulkedExternalLeftOuterJoin(
 					addedTargets,
 					connectionsGroup.getBaseConnection(),
+					validationSettings.getDataGraph(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,
 					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
+					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
+							validationSettings.getDataGraph())
 			);
 
 			PlanNode invalidTargets = new GroupByFilter(joined, group -> {
@@ -110,10 +125,12 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
+				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
+						EffectiveTarget.Extend.right,
 						false, null);
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, scope, false, null);
+				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
+						null);
 			}
 
 			PlanNode falseNode = new ValueInFilter(addedTargets, new HashSet<>(Collections.singletonList(hasValue)))
@@ -128,11 +145,11 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
 					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, Scope.nodeShape, true, null);
+					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
 			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
@@ -189,7 +206,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		String targetVarPrefix = "target_";
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();

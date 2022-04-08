@@ -35,11 +35,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
  */
 public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
-	private final static String VARNAME_SUBJECT = "subject";
+	protected final static String VARNAME_SUBJECT = "subject";
 
-	private final static String VARNAME_PREDICATE = "predicate";
+	protected final static String VARNAME_PREDICATE = "predicate";
 
-	private final static String VARNAME_OBJECT = "object";
+	protected final static String VARNAME_OBJECT = "object";
 
 	private final List<String> describeExprNames;
 
@@ -74,7 +74,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private int describeExprsIndex;
 
-	private BindingSet parentBindings;
+	protected BindingSet parentBindings;
 
 	private void resetCurrentDescribeExprIter() throws QueryEvaluationException {
 		while (currentDescribeExprIter == null) {
@@ -202,7 +202,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		return null;
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
+	protected CloseableIteration<BindingSet, QueryEvaluationException> createNextIteration(Value subject, Value object)
 			throws QueryEvaluationException {
 		if (subject == null && object == null) {
 			return new EmptyIteration<>();

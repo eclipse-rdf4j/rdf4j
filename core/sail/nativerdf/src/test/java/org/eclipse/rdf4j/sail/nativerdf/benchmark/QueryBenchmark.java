@@ -16,8 +16,8 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.IOUtils;
-import org.eclipse.rdf4j.IsolationLevels;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -48,11 +48,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 2)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmark {
 
@@ -93,7 +93,7 @@ public class QueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {
-
+		tempDir.create();
 		File file = tempDir.newFolder();
 
 		repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));
@@ -119,7 +119,7 @@ public class QueryBenchmark {
 
 	@TearDown(Level.Trial)
 	public void afterClass() throws IOException {
-
+		tempDir.delete();
 		repository.shutDown();
 	}
 

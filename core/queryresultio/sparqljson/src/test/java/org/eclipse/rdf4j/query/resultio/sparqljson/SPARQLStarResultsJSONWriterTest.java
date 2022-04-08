@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqljson;
 
-import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultWriterTest;
 import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+import org.eclipse.rdf4j.testsuite.query.resultio.AbstractTupleQueryResultWriterTest;
 
 public class SPARQLStarResultsJSONWriterTest extends AbstractTupleQueryResultWriterTest {
 

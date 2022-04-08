@@ -7,9 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
+import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 
 /**
  * Context to maintain the state of the current federation
@@ -31,6 +36,8 @@ public class FederationContext {
 
 	private final FedXConfig fedXConfig;
 
+	private final SourceSelectionCache sourceSelectionCache;
+
 	public FederationContext(FederationManager manager, EndpointManager endpointManager, QueryManager queryManager,
 			DelegateFederatedServiceResolver federatedServiceResolver,
 			Monitoring monitoring, FedXConfig fedXConfig) {
@@ -41,6 +48,7 @@ public class FederationContext {
 		this.serviceResolver = federatedServiceResolver;
 		this.monitoring = monitoring;
 		this.fedXConfig = fedXConfig;
+		this.sourceSelectionCache = createSourceSelectionCache();
 	}
 
 	public FedX getFederation() {
@@ -59,10 +67,6 @@ public class FederationContext {
 		return this.endpointManager;
 	}
 
-	public FederationEvalStrategy getStrategy() {
-		return manager.getStrategy();
-	}
-
 	public Monitoring getMonitoringService() {
 		return this.monitoring;
 	}
@@ -73,5 +77,30 @@ public class FederationContext {
 
 	public FedXConfig getConfig() {
 		return this.fedXConfig;
+	}
+
+	public SourceSelectionCache getSourceSelectionCache() {
+		return this.sourceSelectionCache;
+	}
+
+	/**
+	 * Create a fresh {@link FederationEvalStrategy} using information from this federation context.
+	 */
+	public FederationEvalStrategy createStrategy(Dataset dataset) {
+		TripleSource tripleSource = null;
+		EvaluationStatistics evaluationStatistics = null;
+		return manager.getFederationEvaluationStrategyFactory()
+				.createEvaluationStrategy(dataset, tripleSource, evaluationStatistics);
+	}
+
+	/**
+	 * Create the {@link SourceSelectionCache}
+	 *
+	 * @return the {@link SourceSelectionCache}
+	 * @see FedXConfig#getSourceSelectionCacheSpec()
+	 */
+	private SourceSelectionCache createSourceSelectionCache() {
+		String cacheSpec = getConfig().getSourceSelectionCacheSpec();
+		return new SourceSelectionMemoryCache(cacheSpec);
 	}
 }

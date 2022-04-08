@@ -5,24 +5,27 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  rdf4j:truncated false;
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:Person;
-      sh:resultPath ex:info2;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1f3n7e6ogx12
-    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode "purple";
       sh:resultPath ex:info2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1f3n7e6ogx12
+      sh:sourceShape _:node1ftskin5gx42869
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:Person;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx42869
     ] .
 
-_:node1f3n7e6ogx12 a sh:PropertyShape;
+_:node1ftskin5gx42869 a sh:PropertyShape;
   sh:minCount 1;
   sh:path ex:info2 .

@@ -15,16 +15,15 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 public class NoShapesTest {
 
 	@Test
-	public void testSkippingValidationWhenThereAreNoShapes() {
+	public void testSkippingValidationWhenThereAreNoShapes() throws InterruptedException {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
-		shaclSail.init();
 
 		try (SailConnection connection = shaclSail.getConnection()) {
 			ShaclSailConnection connectionSpy = Mockito.spy((ShaclSailConnection) connection);

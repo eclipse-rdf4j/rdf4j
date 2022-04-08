@@ -29,7 +29,7 @@ public class ForwardChainingRDFSInferencerFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:ForwardChainingRDFSInferencer";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:ForwardChainingRDFSInferencer</tt>.
+	 * Returns the Sail's type: <var>openrdf:ForwardChainingRDFSInferencer</var>.
 	 */
 	@Override
 	public String getSailType() {

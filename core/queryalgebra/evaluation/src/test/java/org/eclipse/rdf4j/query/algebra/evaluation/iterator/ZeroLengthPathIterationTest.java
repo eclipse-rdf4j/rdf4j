@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.Before;
@@ -65,7 +66,7 @@ public class ZeroLengthPathIterationTest {
 	/**
 	 * Verify that evaluation of a {@link ZeroLengthPathIteration} does not discard input bindings.
 	 *
-	 * @see https://github.com/eclipse/rdf4j/issues/689
+	 * @see <a href="https://github.com/eclipse/rdf4j/issues/689">GH-689</a>
 	 */
 	@Test
 	public void testRetainInputBindings() {
@@ -76,7 +77,7 @@ public class ZeroLengthPathIterationTest {
 		Var subjectVar = new Var("x");
 		Var objVar = new Var("y");
 		try (ZeroLengthPathIteration zlp = new ZeroLengthPathIteration(evaluator, subjectVar, objVar, null, null, null,
-				bindings)) {
+				bindings, new QueryEvaluationContext.Minimal(null))) {
 			BindingSet result = zlp.getNextElement();
 
 			assertTrue("zlp evaluation should have retained unrelated input binding", result.hasBinding("a"));

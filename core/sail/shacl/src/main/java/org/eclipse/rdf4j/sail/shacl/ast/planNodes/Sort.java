@@ -108,7 +108,7 @@ public class Sort implements PlanNode {
 
 				}
 
-				assert !iterator.hasNext() : "Iterator: " + iterator.toString();
+				assert !iterator.hasNext() : "Iterator: " + iterator;
 			}
 
 			@Override

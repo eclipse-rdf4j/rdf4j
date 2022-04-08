@@ -18,6 +18,8 @@ import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+
 /**
  * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
  *
@@ -71,42 +73,42 @@ public interface Literal extends Value {
 	IRI getDatatype();
 
 	/**
-	 * Returns the <tt>boolean</tt> value of this literal.
+	 * Returns the <var>boolean</var> value of this literal.
 	 *
-	 * @return The <tt>boolean</tt> value of the literal.
-	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <tt>boolean</tt> .
+	 * @return The <var>boolean</var> value of the literal.
+	 * @throws IllegalArgumentException If the literal's label cannot be represented by a <var>boolean</var> .
 	 */
 	boolean booleanValue();
 
 	/**
-	 * Returns the <tt>byte</tt> value of this literal.
+	 * Returns the <var>byte</var> value of this literal.
 	 *
-	 * @return The <tt>byte</tt> value of the literal.
-	 * @throws NumberFormatException If the literal cannot be represented by a <tt>byte</tt>.
+	 * @return The <var>byte</var> value of the literal.
+	 * @throws NumberFormatException If the literal cannot be represented by a <var>byte</var>.
 	 */
 	byte byteValue();
 
 	/**
-	 * Returns the <tt>short</tt> value of this literal.
+	 * Returns the <var>short</var> value of this literal.
 	 *
-	 * @return The <tt>short</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>short</tt>.
+	 * @return The <var>short</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <var>short</var>.
 	 */
 	short shortValue();
 
 	/**
-	 * Returns the <tt>int</tt> value of this literal.
+	 * Returns the <var>int</var> value of this literal.
 	 *
-	 * @return The <tt>int</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>int</tt>.
+	 * @return The <var>int</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <var>int</var>.
 	 */
 	int intValue();
 
 	/**
-	 * Returns the <tt>long</tt> value of this literal.
+	 * Returns the <var>long</var> value of this literal.
 	 *
-	 * @return The <tt>long</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by to a <tt>long</tt> .
+	 * @return The <var>long</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by to a <var>long</var> .
 	 */
 	long longValue();
 
@@ -127,29 +129,29 @@ public interface Literal extends Value {
 	BigDecimal decimalValue();
 
 	/**
-	 * Returns the <tt>float</tt> value of this literal.
+	 * Returns the <var>float</var> value of this literal.
 	 *
-	 * @return The <tt>float</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>float</tt>.
+	 * @return The <var>float</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <var>float</var>.
 	 */
 	float floatValue();
 
 	/**
-	 * Returns the <tt>double</tt> value of this literal.
+	 * Returns the <var>double</var> value of this literal.
 	 *
-	 * @return The <tt>double</tt> value of the literal.
-	 * @throws NumberFormatException If the literal's label cannot be represented by a <tt>double</tt>.
+	 * @return The <var>double</var> value of the literal.
+	 * @throws NumberFormatException If the literal's label cannot be represented by a <var>double</var>.
 	 */
 	double doubleValue();
 
 	/**
 	 * Retrieves the {@link TemporalAccessor temporal accessor} value of this literal.
-	 * 
+	 *
 	 * <p>
 	 * A temporal accessor representation can be given for literals whose label conforms to the syntax of the following
 	 * <a href="https://www.w3.org/TR/xmlschema11-2">XML Schema 1.1</a> date/time datatypes:
 	 * </p>
-	 * 
+	 *
 	 * <ul>
 	 *
 	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#dateTime">xsd:dateTime</a>,</li>
@@ -161,24 +163,24 @@ public interface Literal extends Value {
 	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gMonthDay">xsd:gMonthDay</a>,</li>
 	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gDay">xsd:gDay</a>,</li>
 	 * <li><a href="https://www.w3.org/TR/xmlschema11-2/#gMonth">xsd:gMonth</a>.</li>
-	 * 
+	 *
 	 * </ul>
-	 * 
+	 *
 	 * <p>
 	 * Temporal accessor representations may be converted to specific {@link java.time} values like
 	 * {@link OffsetDateTime} using target static factory methods, for instance
 	 * {@code OffsetDateTime.from(literal.temporalAccessorValue())}.
 	 * </p>
-	 * 
+	 *
 	 * <p>
 	 * Note however that {@link java.time} doesn't include dedicated classes for some legal XML Schema date/time values,
 	 * like offset dates (for instance, {@code 2020-11-16+01:00}) and {@code xsd:gDay} (for instance, {@code ---16}).
 	 * </p>
-	 * 
+	 *
 	 * @return the temporal accessor value of this literal
 	 *
 	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAccessor} value
-	 * 
+	 *
 	 * @since 3.5.0
 	 * @author Alessandro Bollini
 	 *
@@ -192,7 +194,7 @@ public interface Literal extends Value {
 	 *          Datatypes Second Edition</a>: it is not included among temporal datatypes automatically assigned by
 	 *          {@link ValueFactory#createLiteral(TemporalAmount)} in order to provide better interoperability with the
 	 *          latter version of the standard.
-	 * 
+	 *
 	 * @implSpec The default method implementation throws an {@link UnsupportedOperationException} and is only supplied
 	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
 	 *           expected to override it.
@@ -209,7 +211,7 @@ public interface Literal extends Value {
 	 * <a href="https://www.w3.org/TR/xmlschema-2/">XML Schema 2</a>
 	 * <a href="https://www.w3.org/TR/xmlschema-2/#duration">xsd:duration</a> datatype.
 	 * </p>
-	 * 
+	 *
 	 * <p>
 	 * The adoption of the <a href="https://www.w3.org/TR/xmlschema-2/">XML Schema 2</a> definition is a known deviation
 	 * from the <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF 1.1</a> standard;
@@ -225,7 +227,7 @@ public interface Literal extends Value {
 	 * Note however that {@link java.time} doesn't include dedicated classes for legal XML Schema duration values
 	 * including both date and time components (for instance, {@code P1YT23H}).
 	 * </p>
-	 * 
+	 *
 	 * @return the temporal amount value of this literal
 	 *
 	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAmount} value
@@ -259,13 +261,29 @@ public interface Literal extends Value {
 	/**
 	 * Returns the {@link XMLGregorianCalendar} value of this literal. A calendar representation can be given for
 	 * literals whose label conforms to the syntax of the following <a href="https://www.w3.org/TR/xmlschema11-2/">XML
-	 * Schema datatypes</a>: <tt>dateTime</tt>, <tt>time</tt>, <tt>date</tt>, <tt>gYearMonth</tt>, <tt>gMonthDay</tt>,
-	 * <tt>gYear</tt>, <tt>gMonth</tt> or <tt>gDay</tt>.
+	 * Schema datatypes</a>: <var>dateTime</var>, <var>time</var>, <var>date</var>, <var>gYearMonth</var>,
+	 * <var>gMonthDay</var>, <var>gYear</var>, <var>gMonth</var> or <var>gDay</var>.
 	 *
 	 * @return The calendar value of the literal.
 	 * @throws IllegalArgumentException If the literal cannot be represented by a {@link XMLGregorianCalendar}.
 	 */
 	XMLGregorianCalendar calendarValue();
+
+	/**
+	 * CoreDatatype is an interface for natively supported datatypes in RDF4J. This includes, among others, the XML
+	 * Schema datatypes and rdf:langString. CoreDatatypes are implemented as enums and more performant and convenient to
+	 * work with than IRI-based datatypes. The constant {@link CoreDatatype#NONE)} is used to represent a datatype that
+	 * is not one of the supported core datatypes.
+	 *
+	 * @return The CoreDatatype or {@link CoreDatatype#NONE)} if the datatype matches none of the core datatypes. This
+	 *         method will not return null.
+	 *
+	 * @implNote This method may not return null. Returning {@link CoreDatatype#NONE)} is only permitted if the datatype
+	 *           does not match any of the core datatypes. A literal with a language tag must return
+	 *           {@link CoreDatatype.RDF#LANGSTRING)}. A literal without a specified datatype must return
+	 *           {@link CoreDatatype.XSD#STRING)}.
+	 */
+	CoreDatatype getCoreDatatype();
 
 	/**
 	 * Compares this literal to another object.

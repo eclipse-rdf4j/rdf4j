@@ -1,0 +1,912 @@
+@prefix : <http://example.com/data/> .
+@prefix ont: <http://example.com/ontology#> .
+@prefix vocsh: <http://example.org/shape/> .
+@prefix so: <http://www.ontotext.com/semantic-object/> .
+@prefix affected: <http://www.ontotext.com/semantic-object/affected> .
+@prefix res: <http://www.ontotext.com/semantic-object/result/> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix gn: <http://www.geonames.org/ontology#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix puml: <http://plantuml.com/ontology#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix void: <http://rdfs.org/ns/void#> .
+@prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix dash: <http://datashapes.org/dash#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix ec: <http://www.ontotext.com/connectors/entity-change#> .
+@prefix ecinst: <http://www.ontotext.com/connectors/entity-change/instance#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+ {
+  vocsh:MinMaxScalars a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:MinMaxScalars
+          ]
+      ];
+    sh:property [
+        sh:path ont:min0max1int;
+        sh:maxCount 1;
+        sh:datatype xsd:int
+      ], [
+        sh:path ont:min0max2integer;
+        sh:maxCount 2;
+        sh:datatype xsd:integer
+      ], [
+        sh:path ont:min1max1string;
+        sh:minCount 1;
+        sh:maxCount 1;
+        sh:datatype xsd:string
+      ], [
+        sh:path ont:min1max2long;
+        sh:minCount 1;
+        sh:maxCount 2;
+        sh:datatype xsd:long
+      ], [
+        sh:path ont:min3max4stringOrLangString;
+        sh:minCount 3;
+        sh:maxCount 4;
+        sh:or ([
+              sh:datatype xsd:string
+            ] [
+              sh:datatype rdf:langString
+            ])
+      ], [
+        sh:path ont:noMinMax2boolean;
+        sh:maxCount 2;
+        sh:datatype xsd:boolean
+      ], [
+        sh:path ont:min1MaxInfLangString;
+        sh:minCount 1;
+        sh:datatype rdf:langString
+      ] .
+
+  vocsh:MinMaxObjects a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:MinMaxObjects
+          ]
+      ];
+    sh:property [
+        sh:path ont:min0max1;
+        sh:maxCount 1;
+        sh:node vocsh:MinMaxScalarsRef
+      ], [
+        sh:path ont:min2max3;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:node vocsh:MinMaxScalarsRef
+      ], [
+        sh:path ont:min0max2;
+        sh:maxCount 2;
+        sh:node vocsh:MinMaxScalarsRef
+      ], [
+        sh:path ont:noMinMax2;
+        sh:maxCount 2;
+        sh:node vocsh:MinMaxScalarsRef
+      ], [
+        sh:path ont:min1NoMax;
+        sh:minCount 1;
+        sh:maxCount 1;
+        sh:node vocsh:MinMaxScalarsRef
+      ] .
+
+  vocsh:_AbstractOne a sh:NodeShape;
+    rsx:targetShape [ a sh:NodeShape;
+        sh:and ([
+              sh:or ([
+                    sh:path rdf:type;
+                    sh:hasValue ont:RealOne
+                  ])
+            ])
+      ];
+    sh:property [
+        sh:path ont:desc;
+        sh:maxCount 1;
+        sh:datatype xsd:string;
+        sh:minLength 2;
+        sh:maxLength 555
+      ], [
+        sh:path ont:minMaxScalar;
+        sh:maxCount 3;
+        sh:node vocsh:MinMaxScalarsRef
+      ], [
+        sh:path rdfs:label;
+        sh:minCount 1;
+        sh:maxCount 1;
+        sh:datatype xsd:string
+      ] .
+
+  vocsh:RealOne a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:RealOne
+          ]
+      ];
+    sh:property [
+        sh:path ont:desc;
+        sh:maxCount 1;
+        sh:datatype xsd:string;
+        sh:minLength 4;
+        sh:maxLength 55
+      ], [
+        sh:path ont:realDescr;
+        sh:maxCount 1;
+        sh:datatype xsd:string
+      ], [
+        sh:path ont:minMaxObj;
+        sh:maxCount 4;
+        sh:node vocsh:MinMaxObjectsRef
+      ], [
+        sh:path rdfs:label;
+        sh:minCount 1;
+        sh:maxCount 1;
+        sh:datatype xsd:string
+      ] .
+
+  vocsh:TypeConstraintObj a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:TypeConstraintObj
+          ]
+      ];
+    sh:property [
+        sh:path ont:int;
+        sh:maxCount 2;
+        sh:datatype xsd:int
+      ], [
+        sh:path ont:integer;
+        sh:maxCount 2;
+        sh:datatype xsd:integer
+      ], [
+        sh:path ont:unsignedInt;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedInt
+      ], [
+        sh:path ont:positiveInteger;
+        sh:maxCount 2;
+        sh:datatype xsd:positiveInteger
+      ], [
+        sh:path ont:nonPositiveInteger;
+        sh:maxCount 2;
+        sh:datatype xsd:nonPositiveInteger
+      ], [
+        sh:path ont:negativeInteger;
+        sh:maxCount 2;
+        sh:datatype xsd:negativeInteger
+      ], [
+        sh:path ont:nonNegativeInteger;
+        sh:maxCount 2;
+        sh:datatype xsd:nonNegativeInteger
+      ], [
+        sh:path ont:string;
+        sh:maxCount 2;
+        sh:datatype xsd:string
+      ], [
+        sh:path ont:iri;
+        sh:maxCount 2
+      ], [
+        sh:path ont:long;
+        sh:maxCount 2;
+        sh:datatype xsd:long
+      ], [
+        sh:path ont:unsignedLong;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedLong
+      ], [
+        sh:path ont:short;
+        sh:maxCount 2;
+        sh:datatype xsd:short
+      ], [
+        sh:path ont:unsignedShort;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedShort
+      ], [
+        sh:path ont:byte;
+        sh:maxCount 2;
+        sh:datatype xsd:byte
+      ], [
+        sh:path ont:unsignedByte;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedByte
+      ], [
+        sh:path ont:boolean;
+        sh:maxCount 2;
+        sh:datatype xsd:boolean
+      ], [
+        sh:path ont:double;
+        sh:maxCount 2;
+        sh:datatype xsd:double
+      ], [
+        sh:path ont:year;
+        sh:maxCount 2;
+        sh:datatype xsd:gYear
+      ], [
+        sh:path ont:date;
+        sh:maxCount 2;
+        sh:datatype xsd:date
+      ], [
+        sh:path ont:time;
+        sh:maxCount 2;
+        sh:datatype xsd:time
+      ], [
+        sh:path ont:dateTime;
+        sh:maxCount 2;
+        sh:datatype xsd:dateTime
+      ], [
+        sh:path ont:yearMonth;
+        sh:maxCount 2;
+        sh:datatype xsd:gYearMonth
+      ], [
+        sh:path ont:langString;
+        sh:maxCount 2;
+        sh:datatype rdf:langString
+      ], [
+        sh:path ont:stringOrLangString;
+        sh:maxCount 2;
+        sh:or ([
+              sh:datatype xsd:string
+            ] [
+              sh:datatype rdf:langString
+            ])
+      ] .
+
+  vocsh:TypeConstraintObjMin2Max3 a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:TypeConstraintObjMin2Max3
+          ]
+      ];
+    sh:property [
+        sh:path ont:int;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:int
+      ], [
+        sh:path ont:integer;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:integer
+      ], [
+        sh:path ont:unsignedInt;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:unsignedInt
+      ], [
+        sh:path ont:positiveInteger;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:positiveInteger
+      ], [
+        sh:path ont:nonPositiveInteger;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:nonPositiveInteger
+      ], [
+        sh:path ont:negativeInteger;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:negativeInteger
+      ], [
+        sh:path ont:nonNegativeInteger;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:nonNegativeInteger
+      ], [
+        sh:path ont:string;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:string
+      ], [
+        sh:path ont:iri;
+        sh:minCount 2;
+        sh:maxCount 3
+      ], [
+        sh:path ont:long;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:long
+      ], [
+        sh:path ont:unsignedLong;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:unsignedLong
+      ], [
+        sh:path ont:short;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:short
+      ], [
+        sh:path ont:unsignedShort;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:unsignedShort
+      ], [
+        sh:path ont:byte;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:byte
+      ], [
+        sh:path ont:unsignedByte;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:unsignedByte
+      ], [
+        sh:path ont:boolean;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:boolean
+      ], [
+        sh:path ont:double;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:double
+      ], [
+        sh:path ont:year;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:gYear
+      ], [
+        sh:path ont:date;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:date
+      ], [
+        sh:path ont:time;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:time
+      ], [
+        sh:path ont:dateTime;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:dateTime
+      ], [
+        sh:path ont:yearMonth;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype xsd:gYearMonth
+      ], [
+        sh:path ont:langString;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:datatype rdf:langString
+      ], [
+        sh:path ont:stringOrLangString;
+        sh:minCount 2;
+        sh:maxCount 3;
+        sh:or ([
+              sh:datatype xsd:string
+            ] [
+              sh:datatype rdf:langString
+            ])
+      ] .
+
+  vocsh:NumberConstrainsObject a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:NumberConstrainsObject
+          ]
+      ];
+    sh:property [
+        sh:path ont:int;
+        sh:maxCount 2;
+        sh:datatype xsd:int;
+        sh:minInclusive "-2147"^^xsd:int;
+        sh:maxInclusive "2147"^^xsd:int
+      ], [
+        sh:path ont:integer;
+        sh:maxCount 2;
+        sh:datatype xsd:integer;
+        sh:minInclusive -1234567890123456789;
+        sh:maxInclusive 678901234567890
+      ], [
+        sh:path ont:unsignedInt;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedInt;
+        sh:minInclusive "122"^^xsd:unsignedInt;
+        sh:maxInclusive "5122"^^xsd:unsignedInt
+      ], [
+        sh:path ont:positiveInteger;
+        sh:maxCount 2;
+        sh:datatype xsd:positiveInteger;
+        sh:minInclusive "5577666"^^xsd:positiveInteger;
+        sh:maxInclusive "25577666"^^xsd:positiveInteger
+      ], [
+        sh:path ont:nonPositiveInteger;
+        sh:maxCount 2;
+        sh:datatype xsd:nonPositiveInteger;
+        sh:minInclusive "-100"^^xsd:nonPositiveInteger;
+        sh:maxInclusive "-1"^^xsd:nonPositiveInteger
+      ], [
+        sh:path ont:long;
+        sh:maxCount 2;
+        sh:datatype xsd:long;
+        sh:minInclusive "55"^^xsd:long;
+        sh:maxInclusive "9223372036854775806"^^xsd:long
+      ], [
+        sh:path ont:short;
+        sh:maxCount 2;
+        sh:datatype xsd:short;
+        sh:minInclusive "42"^^xsd:short;
+        sh:maxInclusive "32766"^^xsd:short
+      ], [
+        sh:path ont:unsignedShort;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedShort;
+        sh:minInclusive "5555"^^xsd:unsignedShort;
+        sh:maxInclusive "65534"^^xsd:unsignedShort
+      ], [
+        sh:path ont:byte;
+        sh:maxCount 2;
+        sh:datatype xsd:byte;
+        sh:minInclusive "-120"^^xsd:byte;
+        sh:maxInclusive "105"^^xsd:byte
+      ], [
+        sh:path ont:unsignedByte;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedByte;
+        sh:minInclusive "55"^^xsd:unsignedByte;
+        sh:maxInclusive "245"^^xsd:unsignedByte
+      ], [
+        sh:path ont:year;
+        sh:maxCount 2;
+        sh:datatype xsd:gYear;
+        sh:minInclusive "-0002"^^xsd:gYear;
+        sh:maxInclusive "2020"^^xsd:gYear
+      ], [
+        sh:path ont:date;
+        sh:maxCount 2;
+        sh:datatype xsd:date;
+        sh:minInclusive "-0012-01-01"^^xsd:date;
+        sh:maxInclusive "2019-01-01"^^xsd:date
+      ], [
+        sh:path ont:time;
+        sh:maxCount 2;
+        sh:datatype xsd:time;
+        sh:minInclusive "15:10:30"^^xsd:time;
+        sh:maxInclusive "22:10:30"^^xsd:time
+      ], [
+        sh:path ont:dateTime;
+        sh:maxCount 2;
+        sh:datatype xsd:dateTime;
+        sh:minInclusive "-1989-08-25T08:22:48Z"^^xsd:dateTime;
+        sh:maxInclusive "2016-06-23T09:07:21Z"^^xsd:dateTime
+      ], [
+        sh:path ont:yearMonth;
+        sh:maxCount 2;
+        sh:datatype xsd:gYearMonth;
+        sh:minInclusive "-2014-02"^^xsd:gYearMonth;
+        sh:maxInclusive "2024-08"^^xsd:gYearMonth
+      ] .
+
+  vocsh:NumberConstrainsObjectExclusive a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:NumberConstrainsObjectExclusive
+          ]
+      ];
+    sh:property [
+        sh:path ont:int;
+        sh:maxCount 2;
+        sh:datatype xsd:int;
+        sh:minExclusive "-2147"^^xsd:int;
+        sh:maxExclusive "2147"^^xsd:int
+      ], [
+        sh:path ont:integer;
+        sh:maxCount 2;
+        sh:datatype xsd:integer;
+        sh:minExclusive -1234567890123456789;
+        sh:maxExclusive 678901234567890
+      ], [
+        sh:path ont:unsignedInt;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedInt;
+        sh:minExclusive "122"^^xsd:unsignedInt;
+        sh:maxExclusive "5122"^^xsd:unsignedInt
+      ], [
+        sh:path ont:positiveInteger;
+        sh:maxCount 2;
+        sh:datatype xsd:positiveInteger;
+        sh:minExclusive "5577666"^^xsd:positiveInteger;
+        sh:maxExclusive "25577666"^^xsd:positiveInteger
+      ], [
+        sh:path ont:nonPositiveInteger;
+        sh:maxCount 2;
+        sh:datatype xsd:nonPositiveInteger;
+        sh:minExclusive "-100"^^xsd:nonPositiveInteger;
+        sh:maxExclusive "-1"^^xsd:nonPositiveInteger
+      ], [
+        sh:path ont:long;
+        sh:maxCount 2;
+        sh:datatype xsd:long;
+        sh:minExclusive "55"^^xsd:long;
+        sh:maxExclusive "9223372036854775806"^^xsd:long
+      ], [
+        sh:path ont:short;
+        sh:maxCount 2;
+        sh:datatype xsd:short;
+        sh:minExclusive "42"^^xsd:short;
+        sh:maxExclusive "32766"^^xsd:short
+      ], [
+        sh:path ont:unsignedShort;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedShort;
+        sh:minExclusive "5555"^^xsd:unsignedShort;
+        sh:maxExclusive "65534"^^xsd:unsignedShort
+      ], [
+        sh:path ont:byte;
+        sh:maxCount 2;
+        sh:datatype xsd:byte;
+        sh:minExclusive "-120"^^xsd:byte;
+        sh:maxExclusive "105"^^xsd:byte
+      ], [
+        sh:path ont:unsignedByte;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedByte;
+        sh:minExclusive "55"^^xsd:unsignedByte;
+        sh:maxExclusive "245"^^xsd:unsignedByte
+      ], [
+        sh:path ont:year;
+        sh:maxCount 2;
+        sh:datatype xsd:gYear;
+        sh:minExclusive "-0002"^^xsd:gYear;
+        sh:maxExclusive "2020"^^xsd:gYear
+      ], [
+        sh:path ont:date;
+        sh:maxCount 2;
+        sh:datatype xsd:date;
+        sh:minExclusive "-0012-01-01"^^xsd:date;
+        sh:maxExclusive "2019-01-01"^^xsd:date
+      ], [
+        sh:path ont:time;
+        sh:maxCount 2;
+        sh:datatype xsd:time;
+        sh:minExclusive "15:10:30"^^xsd:time;
+        sh:maxExclusive "22:10:30"^^xsd:time
+      ], [
+        sh:path ont:dateTime;
+        sh:maxCount 2;
+        sh:datatype xsd:dateTime;
+        sh:minExclusive "-1989-08-25T08:22:48Z"^^xsd:dateTime;
+        sh:maxExclusive "2016-06-23T09:07:21Z"^^xsd:dateTime
+      ], [
+        sh:path ont:yearMonth;
+        sh:maxCount 2;
+        sh:datatype xsd:gYearMonth;
+        sh:minExclusive "-2014-02"^^xsd:gYearMonth;
+        sh:maxExclusive "2024-08"^^xsd:gYearMonth
+      ] .
+
+  vocsh:ValuesInConstraints a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:ValuesInConstraints
+          ]
+      ];
+    sh:property [
+        sh:path ont:int;
+        sh:maxCount 10;
+        sh:in ("-2147483648"^^xsd:int "-2"^^xsd:int "2147483647"^^xsd:int);
+        sh:datatype xsd:int
+      ], [
+        sh:path ont:integer;
+        sh:maxCount 10;
+        sh:in (-2 2147483647 1 2 -5);
+        sh:datatype xsd:integer
+      ], [
+        sh:path ont:unsignedInt;
+        sh:maxCount 10;
+        sh:in ("0"^^xsd:unsignedInt "5"^^xsd:unsignedInt "4294967295"^^xsd:unsignedInt);
+        sh:datatype xsd:unsignedInt
+      ], [
+        sh:path ont:unsignedLong;
+        sh:maxCount 10;
+        sh:in ("0"^^xsd:unsignedLong "5"^^xsd:unsignedLong);
+        sh:datatype xsd:unsignedLong
+      ], [
+        sh:path ont:unsignedShort;
+        sh:maxCount 10;
+        sh:in ("0"^^xsd:unsignedShort "5"^^xsd:unsignedShort "65535"^^xsd:unsignedShort);
+        sh:datatype xsd:unsignedShort
+      ], [
+        sh:path ont:unsignedByte;
+        sh:maxCount 10;
+        sh:in ("0"^^xsd:unsignedByte "2"^^xsd:unsignedByte "255"^^xsd:unsignedByte);
+        sh:datatype xsd:unsignedByte
+      ], [
+        sh:path ont:positiveFloat;
+        sh:maxCount 10;
+        sh:in ("0.1"^^xsd:float "2.1"^^xsd:float "255.0"^^xsd:float);
+        sh:datatype xsd:float
+      ], [
+        sh:path ont:nonPositiveFloat;
+        sh:maxCount 10;
+        sh:in ("-0.1"^^xsd:float "-2.1"^^xsd:float "-255.0"^^xsd:float);
+        sh:datatype xsd:float
+      ], [
+        sh:path ont:nonNegativeFloat;
+        sh:maxCount 10;
+        sh:in ("0.1"^^xsd:float "2.1"^^xsd:float "255.0"^^xsd:float);
+        sh:datatype xsd:float
+      ], [
+        sh:path ont:negativeFloat;
+        sh:maxCount 10;
+        sh:in ("-0.1"^^xsd:float "-2.1"^^xsd:float "-255.0"^^xsd:float);
+        sh:datatype xsd:float
+      ], [
+        sh:path ont:negativeInteger;
+        sh:maxCount 10;
+        sh:in ("-1"^^xsd:negativeInteger "-2"^^xsd:negativeInteger "-255"^^xsd:negativeInteger);
+        sh:datatype xsd:negativeInteger
+      ], [
+        sh:path ont:positiveInteger;
+        sh:maxCount 10;
+        sh:in ("1"^^xsd:positiveInteger "2"^^xsd:positiveInteger "3"^^xsd:positiveInteger);
+        sh:datatype xsd:positiveInteger
+      ], [
+        sh:path ont:nonPositiveInteger;
+        sh:maxCount 10;
+        sh:in ("-5"^^xsd:nonPositiveInteger "0"^^xsd:nonPositiveInteger);
+        sh:datatype xsd:nonPositiveInteger
+      ], [
+        sh:path ont:long;
+        sh:maxCount 10;
+        sh:in ("-9223372036854775808"^^xsd:long "2"^^xsd:long "-5"^^xsd:long "9223372036854775807"^^xsd:long);
+        sh:datatype xsd:long
+      ], [
+        sh:path ont:decimal;
+        sh:maxCount 10;
+        sh:in (123.456 1234.456 -1234.456 -0.456 -456.0);
+        sh:datatype xsd:decimal
+      ], [
+        sh:path ont:float;
+        sh:maxCount 10;
+        sh:in (1.23456E2);
+        sh:datatype xsd:double
+      ], [
+        sh:path ont:short;
+        sh:maxCount 10;
+        sh:in ("-32768"^^xsd:short "-5"^^xsd:short "32767"^^xsd:short);
+        sh:datatype xsd:short
+      ], [
+        sh:path ont:byte;
+        sh:maxCount 10;
+        sh:in ("-128"^^xsd:byte "105"^^xsd:byte "127"^^xsd:byte);
+        sh:datatype xsd:byte
+      ], [
+        sh:path ont:year;
+        sh:maxCount 10;
+        sh:in ("-0002"^^xsd:gYear "2001+02:00"^^xsd:gYear "2001Z"^^xsd:gYear);
+        sh:datatype xsd:gYear
+      ], [
+        sh:path ont:date;
+        sh:maxCount 10;
+        sh:in ("2001-10-26"^^xsd:date "2001-10-26+02:00"^^xsd:date "2001-10-26Z"^^xsd:date
+            "-2001-10-26"^^xsd:date "-20000-04-01"^^xsd:date);
+        sh:datatype xsd:date
+      ], [
+        sh:path ont:time;
+        sh:maxCount 10;
+        sh:in ("21:32:52"^^xsd:time "21:32:52+02:00"^^xsd:time "19:32:52Z"^^xsd:time);
+        sh:datatype xsd:time
+      ], [
+        sh:path ont:dateTime;
+        sh:maxCount 10;
+        sh:in ("2001-10-26T21:32:52"^^xsd:dateTime "2001-10-26T21:32:52+02:00"^^xsd:dateTime
+            "2001-10-26T19:32:52Z"^^xsd:dateTime "-2001-10-26T21:32:52"^^xsd:dateTime "2001-10-26T21:32:52.12679"^^xsd:dateTime);
+        sh:datatype xsd:dateTime
+      ], [
+        sh:path ont:yearMonth;
+        sh:maxCount 10;
+        sh:in ("2001-10"^^xsd:gYearMonth "2001-10+02:00"^^xsd:gYearMonth "2001-10Z"^^xsd:gYearMonth
+            "-2001-10"^^xsd:gYearMonth "-20000-04"^^xsd:gYearMonth);
+        sh:datatype xsd:gYearMonth
+      ], [
+        sh:path ont:valInExclusive;
+        sh:maxCount 10;
+        sh:in ("blue" "gre en" "pink");
+        sh:datatype xsd:string
+      ], [
+        sh:path ont:valInInclusive;
+        sh:maxCount 10;
+        dash:hasValueIn ("blue" "green" "pink");
+        sh:datatype xsd:string
+      ], [
+        sh:path ont:valIn;
+        sh:maxCount 10;
+        sh:in ("blue" "green" "pink");
+        sh:datatype xsd:string
+      ], [
+        sh:path ont:valueInConstraint;
+        sh:maxCount 10;
+        sh:node vocsh:ValuesInConstraintsRef
+      ] .
+
+  vocsh:NumberConstrainsObjectMixed a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:NumberConstrainsObjectMixed
+          ]
+      ];
+    sh:property [
+        sh:path ont:int;
+        sh:maxCount 2;
+        sh:datatype xsd:int;
+        sh:maxInclusive "2147"^^xsd:int;
+        sh:minExclusive "-2147"^^xsd:int
+      ], [
+        sh:path ont:numberConstrainsObject;
+        sh:maxCount 1;
+        sh:node vocsh:NumberConstrainsObjectRef
+      ], [
+        sh:path ont:nonNegativeInteger2;
+        sh:maxCount 2;
+        sh:datatype xsd:nonNegativeInteger;
+        sh:minExclusive "42"^^xsd:nonNegativeInteger;
+        sh:maxExclusive "123456789012345678901234567892"^^xsd:nonNegativeInteger
+      ], [
+        sh:path ont:nonNegativeInteger3;
+        sh:maxCount 2;
+        sh:datatype xsd:nonNegativeInteger;
+        sh:minInclusive "42"^^xsd:nonNegativeInteger;
+        sh:maxInclusive "123456789012345678901234567891"^^xsd:nonNegativeInteger
+      ], [
+        sh:path ont:unsignedLong2;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedLong;
+        sh:minExclusive "+0000000005"^^xsd:unsignedLong;
+        sh:maxExclusive "18446744073709551612"^^xsd:unsignedLong
+      ], [
+        sh:path ont:unsignedLong3;
+        sh:maxCount 2;
+        sh:datatype xsd:unsignedLong;
+        sh:minInclusive "+0000000005"^^xsd:unsignedLong;
+        sh:maxInclusive "18446744073709551611"^^xsd:unsignedLong
+      ] .
+
+  vocsh:StringConstraints a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:StringConstraints
+          ]
+      ];
+    sh:property [
+        sh:path ont:minLength8NoMax;
+        sh:maxCount 1;
+        sh:datatype xsd:string;
+        sh:minLength 8
+      ], [
+        sh:path ont:maxLength16NoMin;
+        sh:maxCount 1;
+        sh:datatype xsd:string;
+        sh:maxLength 16
+      ], [
+        sh:path ont:min6AndMax16Length;
+        sh:maxCount 1;
+        sh:datatype xsd:string;
+        sh:minLength 6;
+        sh:maxLength 16
+      ], [
+        sh:path ont:sameMin6AndMax6Length;
+        sh:maxCount 1;
+        sh:datatype xsd:string;
+        sh:minLength 6;
+        sh:maxLength 6
+      ], [
+        sh:path ont:hugeMaxLength;
+        sh:maxCount 1;
+        sh:datatype xsd:string;
+        sh:maxLength 2147483647
+      ], [
+        sh:path ont:patternTest;
+        sh:maxCount 1;
+        sh:datatype xsd:string;
+        sh:pattern "stringy[0-9]{0,3}"
+      ], [
+        sh:path ont:weirdPatternTest;
+        sh:maxCount 1;
+        sh:datatype xsd:string
+      ] .
+
+  vocsh:LangStringUniq a sh:NodeShape;
+    rsx:targetShape [ a sh:Shape;
+        sh:property [
+            sh:path rdf:type;
+            sh:hasValue ont:LangStringUniq
+          ]
+      ];
+    sh:property [
+        sh:path ont:uniqSingleLang;
+        sh:maxCount 20;
+        sh:datatype rdf:langString;
+        sh:uniqueLang true;
+        sh:languageIn ("en")
+      ], [
+        sh:path ont:uniqSingleDialect;
+        sh:maxCount 20;
+        sh:datatype rdf:langString;
+        sh:uniqueLang true;
+        sh:languageIn ("en-GB")
+      ], [
+        sh:path ont:uniqMultipleDialects;
+        sh:maxCount 20;
+        sh:datatype rdf:langString;
+        sh:uniqueLang true;
+        sh:languageIn ("en-GB" "en-CA")
+      ], [
+        sh:path ont:uniqMultipleLangsAndDialects;
+        sh:maxCount 20;
+        sh:datatype rdf:langString;
+        sh:uniqueLang true;
+        sh:languageIn ("en-GB" "en-CA" "de-DE" "de-Latn-DE")
+      ], [
+        sh:path ont:uniqNoLang;
+        sh:maxCount 20;
+        sh:datatype rdf:langString;
+        sh:uniqueLang true
+      ], [
+        sh:path ont:uniqEnDeAllDialects;
+        sh:maxCount 20;
+        sh:datatype rdf:langString;
+        sh:uniqueLang true
+      ], [
+        sh:path ont:uniqStrOrLangstrEnDeAllDialects;
+        sh:maxCount 20;
+        sh:uniqueLang true;
+        sh:or ([
+              sh:datatype xsd:string
+            ] [
+              sh:datatype rdf:langString
+            ])
+      ], [
+        sh:path ont:uniqStrOrLangstrEnDeAllDialects;
+        sh:qualifiedValueShape [
+            sh:datatype xsd:string
+          ];
+        sh:qualifiedMaxCount 1
+      ], [
+        sh:path ont:uniqRandomCapitalization;
+        sh:uniqueLang true;
+        sh:or ([
+              sh:languageIn ("en" "de" "de-Latn-DE" "fr-CA" "fr-FR")
+            ] [
+              sh:datatype xsd:string
+            ]), ([
+              sh:datatype xsd:string
+            ] [
+              sh:datatype rdf:langString
+            ])
+      ], [
+        sh:path ont:uniqRandomCapitalization2;
+        sh:uniqueLang true;
+        sh:or ([
+              sh:languageIn ("en-Latn-GB-boont-r-extended-sequence-x-private" "ru-Cyrl-petr1708"
+                  "de-Latn-DE" "de-CH-1996" "sr-Latn-RS" "es-419" "sl-nedis" "sl-IT-nedis" "sl-rozaj-biske-1994"
+                  "be-Latn-BY" "x-i-enochian" "cmn-Hans-CN" "cmn-Hans-CN" "yue-HK" "zh-Hans-CN" "zh-Latn-wadegile"
+                  "yue-HK" "hy-Latn-IT-arevela")
+            ] [
+              sh:datatype xsd:string
+            ]), ([
+              sh:datatype xsd:string
+            ] [
+              sh:datatype rdf:langString
+            ])
+      ] .
+  rdf4j:nil sh:shapesGraph rdf4j:nil.
+
+}

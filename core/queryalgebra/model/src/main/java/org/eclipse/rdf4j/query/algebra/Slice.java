@@ -57,7 +57,7 @@ public class Slice extends UnaryTupleOperator {
 	/**
 	 * Checks whether the row selection has a (valid) offset.
 	 *
-	 * @return <tt>true</tt> when <tt>offset &gt; 0</tt>
+	 * @return <var>true</var> when <var>offset &gt; 0</var>
 	 */
 	public boolean hasOffset() {
 		return offset > 0L;
@@ -74,7 +74,7 @@ public class Slice extends UnaryTupleOperator {
 	/**
 	 * Checks whether the row selection has a (valid) limit.
 	 *
-	 * @return <tt>true</tt> when <tt>offset &gt;= 0</tt>
+	 * @return <var>true</var> when <var>offset &gt;= 0</var>
 	 */
 	public boolean hasLimit() {
 		return limit >= 0L;

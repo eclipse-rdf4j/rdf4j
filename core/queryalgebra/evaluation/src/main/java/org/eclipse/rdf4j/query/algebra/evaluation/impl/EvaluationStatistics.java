@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Collection;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
@@ -17,6 +18,7 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -35,15 +37,20 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  */
 public class EvaluationStatistics {
 
-	protected CardinalityCalculator cc;
+	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
-	public synchronized double getCardinality(TupleExpr expr) {
-		if (cc == null) {
-			cc = createCardinalityCalculator();
+	private CardinalityCalculator calculator;
+
+	public double getCardinality(TupleExpr expr) {
+		if (calculator == null) {
+			calculator = createCardinalityCalculator();
+			assert calculator != null;
 		}
 
-		expr.visit(cc);
-		return cc.getCardinality();
+		expr.visit(calculator);
+		return calculator.getCardinality();
 	}
 
 	protected CardinalityCalculator createCardinalityCalculator() {
@@ -56,9 +63,9 @@ public class EvaluationStatistics {
 
 	protected static class CardinalityCalculator extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private static double VAR_CARDINALITY = 10;
+		private static final double VAR_CARDINALITY = 10;
 
-		private static double UNBOUND_SERVICE_CARDINALITY = 100000;
+		private static final double UNBOUND_SERVICE_CARDINALITY = 100000;
 
 		protected double cardinality;
 
@@ -105,7 +112,7 @@ public class EvaluationStatistics {
 
 		@Override
 		public void meet(ArbitraryLengthPath node) {
-			final Var pathVar = new Var("_anon_" + UUID.randomUUID().toString().replaceAll("-", "_"));
+			final Var pathVar = new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
 			pathVar.setAnonymous(true);
 			// cardinality of ALP is determined based on the cost of a
 			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that
@@ -263,16 +270,13 @@ public class EvaluationStatistics {
 		}
 
 		@Override
-		protected void meetNode(QueryModelNode node) {
-			if (node instanceof ExternalSet) {
-				meetExternalSet((ExternalSet) node);
-			} else {
-				throw new IllegalArgumentException("Unhandled node type: " + node.getClass());
-			}
+		public void meet(QueryRoot node) {
+			node.getArg().visit(this);
 		}
 
-		protected void meetExternalSet(ExternalSet node) {
-			cardinality = node.cardinality();
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			throw new IllegalArgumentException("Unhandled node type: " + node.getClass());
 		}
 	}
 
@@ -291,5 +295,4 @@ public class EvaluationStatistics {
 		}
 	}
 
-	;
 }

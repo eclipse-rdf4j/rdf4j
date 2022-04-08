@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.util;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.RepositoryConnection;

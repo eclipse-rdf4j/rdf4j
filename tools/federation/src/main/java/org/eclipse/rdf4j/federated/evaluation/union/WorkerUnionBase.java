@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.federated.evaluation.union;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 
@@ -26,8 +25,8 @@ public abstract class WorkerUnionBase<T> extends UnionExecutorBase<T> {
 
 	protected List<ParallelTask<T>> tasks = new ArrayList<>();
 
-	public WorkerUnionBase(FederationEvalStrategy strategy, QueryInfo queryInfo) {
-		super(strategy, queryInfo);
+	public WorkerUnionBase(QueryInfo queryInfo) {
+		super(queryInfo);
 	}
 
 	/**

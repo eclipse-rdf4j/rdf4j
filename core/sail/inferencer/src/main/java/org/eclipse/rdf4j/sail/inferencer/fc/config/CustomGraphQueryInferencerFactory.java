@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.inferencer.fc.config;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
@@ -29,7 +29,7 @@ public class CustomGraphQueryInferencerFactory implements SailFactory {
 	public static final String SAIL_TYPE = "openrdf:CustomGraphQueryInferencer";
 
 	/**
-	 * Returns the Sail's type: <tt>openrdf:CustomGraphQueryInferencer</tt>.
+	 * Returns the Sail's type: <var>openrdf:CustomGraphQueryInferencer</var>.
 	 */
 	@Override
 	public String getSailType() {

@@ -12,16 +12,16 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Statement;
 
 /**
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+ *          one release to the next.
  */
 @InternalUseOnly
 public class Stats {
 
-	private boolean emptyBeforeTransaction;
+	private Boolean emptyBeforeTransaction;
 	private boolean hasAdded;
 	private boolean hasRemoved;
-	private boolean emptyIncludingCurrentTransaction;
+	private Boolean emptyIncludingCurrentTransaction;
 
 	public void added(Statement statement) {
 		hasAdded = true;

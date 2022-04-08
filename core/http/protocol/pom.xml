@@ -27,32 +27,13 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-util</artifactId>
+			<artifactId>rdf4j-common-xml</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>javax.xml.bind</groupId>
-			<artifactId>jaxb-api</artifactId>
+			<groupId>jakarta.xml.bind</groupId>
+			<artifactId>jakarta.xml.bind-api</artifactId>
 			<version>${jaxb.version}</version>
 		</dependency>
 	</dependencies>
-	<profiles>
-		<profile>
-			<id>jdk9</id>
-			<activation>
-				<jdk>[1.9,9,10)</jdk>
-			</activation>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>org.apache.maven.plugins</groupId>
-						<artifactId>maven-surefire-plugin</artifactId>
-						<configuration>
-							<argLine>--add-modules=java.xml.bind</argLine>
-						</configuration>
-					</plugin>
-				</plugins>
-			</build>
-		</profile>
-	</profiles>
 </project>

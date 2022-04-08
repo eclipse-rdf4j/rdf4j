@@ -7,7 +7,7 @@ echo "The release script requires several external command line tools:"
 echo " - git"
 echo " - mvn"
 echo " - gh (the GitHub CLI, see https://github.com/cli/cli)"
-echo " - xmlllint (http://xmlsoft.org/xmllint.html)"
+echo " - xmllint (http://xmlsoft.org/xmllint.html)"
 
 echo ""
 echo "This script will stop if an unhandled error occurs";
@@ -172,6 +172,7 @@ git push -u origin "${BRANCH}"
 git push origin "${MVN_VERSION_RELEASE}"
 
 # deleting the branch (local and remote) since we don't intend to merge the branch and it's enough that we leave the git tag
+git checkout "${MVN_VERSION_RELEASE}"
 git branch -d "${BRANCH}"
 git push origin --delete "${BRANCH}"
 
@@ -185,7 +186,6 @@ read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 mvn clean
 
-
 echo "Build javadocs"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
@@ -198,11 +198,10 @@ RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
 tar -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/site/apidocs .
-
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
-gh pr create -B main --title "${MVN_VERSION_RELEASE} news item and docs" --body "Javadocs and news item for ${MVN_VERSION_RELEASE}"
+gh pr create -B main --title "${RELEASE_NOTES_BRANCH}" --body "Javadocs, release-notes and news item for ${MVN_VERSION_RELEASE}"
 
 echo "Javadocs are in git branch ${RELEASE_NOTES_BRANCH}"
 

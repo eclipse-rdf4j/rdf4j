@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.union;
 
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 
@@ -19,8 +18,8 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
  */
 public class SynchronousWorkerUnion<T> extends WorkerUnionBase<T> {
 
-	public SynchronousWorkerUnion(FederationEvalStrategy strategy, QueryInfo queryInfo) {
-		super(strategy, queryInfo);
+	public SynchronousWorkerUnion(QueryInfo queryInfo) {
+		super(queryInfo);
 	}
 
 	@Override

@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.nativerdf.datastore;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -54,7 +55,7 @@ public class DataStorePerfTest {
 		long[] timeData = new long[4];
 		timeData[0] = stringCount;
 
-		File dataDir = FileUtil.createTempDir("datastoretest");
+		File dataDir = Files.createTempDirectory("datastoretest").toFile();
 
 		try {
 			System.out.println("Initializing data store in directory " + dataDir);

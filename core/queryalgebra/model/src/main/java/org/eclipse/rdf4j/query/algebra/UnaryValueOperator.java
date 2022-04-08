@@ -34,7 +34,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	/**
 	 * Creates a new unary value operator.
 	 *
-	 * @param arg The operator's argument, must not be <tt>null</tt>.
+	 * @param arg The operator's argument, must not be <var>null</var>.
 	 */
 	protected UnaryValueOperator(ValueExpr arg) {
 		setArg(arg);
@@ -56,7 +56,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	/**
 	 * Sets the argument of this unary value operator.
 	 *
-	 * @param arg The (new) argument for this operator, must not be <tt>null</tt>.
+	 * @param arg The (new) argument for this operator, must not be <var>null</var>.
 	 */
 	public void setArg(ValueExpr arg) {
 		assert arg != null : "arg must not be null";

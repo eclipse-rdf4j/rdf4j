@@ -133,7 +133,7 @@ public class IDFile implements Closeable {
 	/**
 	 * Gets the largest ID that is stored in this ID file.
 	 *
-	 * @return The largest ID, or <tt>0</tt> if the file does not contain any data.
+	 * @return The largest ID, or <var>0</var> if the file does not contain any data.
 	 * @throws IOException If an I/O error occurs.
 	 */
 	public int getMaxID() throws IOException {
