@@ -246,43 +246,13 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	 * @return List of IRIs (SHACL predicates)
 	 */
 	public static List<IRI> getSupportedShaclPredicates() {
-		return Arrays.asList(
-				SHACL.TARGET_CLASS,
-				SHACL.PATH,
-				SHACL.PROPERTY,
-				SHACL.OR,
-				SHACL.AND,
-				SHACL.MIN_COUNT,
-				SHACL.MAX_COUNT,
-				SHACL.MIN_LENGTH,
-				SHACL.MAX_LENGTH,
-				SHACL.PATTERN,
-				SHACL.FLAGS,
-				SHACL.NODE_KIND_PROP,
-				SHACL.LANGUAGE_IN,
-				SHACL.DATATYPE,
-				SHACL.MIN_EXCLUSIVE,
-				SHACL.MIN_INCLUSIVE,
-				SHACL.MAX_EXCLUSIVE,
-				SHACL.MAX_INCLUSIVE,
-				SHACL.CLASS,
-				SHACL.TARGET_NODE,
-				SHACL.DEACTIVATED,
-				SHACL.TARGET_SUBJECTS_OF,
-				SHACL.IN,
-				SHACL.UNIQUE_LANG,
-				SHACL.NOT,
-				SHACL.TARGET_OBJECTS_OF,
-				SHACL.HAS_VALUE,
-				SHACL.TARGET_PROP,
-				SHACL.INVERSE_PATH,
-				SHACL.NODE,
-				SHACL.QUALIFIED_MAX_COUNT,
-				SHACL.QUALIFIED_MIN_COUNT,
-				SHACL.QUALIFIED_VALUE_SHAPE,
-				DASH.hasValueIn,
-				RSX.targetShape
-		);
+		return Arrays.asList(SHACL.TARGET_CLASS, SHACL.PATH, SHACL.PROPERTY, SHACL.OR, SHACL.AND, SHACL.MIN_COUNT,
+				SHACL.MAX_COUNT, SHACL.MIN_LENGTH, SHACL.MAX_LENGTH, SHACL.PATTERN, SHACL.FLAGS, SHACL.NODE_KIND_PROP,
+				SHACL.LANGUAGE_IN, SHACL.DATATYPE, SHACL.MIN_EXCLUSIVE, SHACL.MIN_INCLUSIVE, SHACL.MAX_EXCLUSIVE,
+				SHACL.MAX_INCLUSIVE, SHACL.CLASS, SHACL.TARGET_NODE, SHACL.DEACTIVATED, SHACL.TARGET_SUBJECTS_OF,
+				SHACL.IN, SHACL.UNIQUE_LANG, SHACL.NOT, SHACL.TARGET_OBJECTS_OF, SHACL.HAS_VALUE, SHACL.TARGET_PROP,
+				SHACL.INVERSE_PATH, SHACL.NODE, SHACL.QUALIFIED_MAX_COUNT, SHACL.QUALIFIED_MIN_COUNT,
+				SHACL.QUALIFIED_VALUE_SHAPE, DASH.hasValueIn, RSX.targetShape);
 	}
 
 	@Override
@@ -334,8 +304,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 		try (SailRepositoryConnection shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
 			shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
-			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null,
-					false)) {
+			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null, false)) {
 				shapesRepoWithReasoningConnection.add(statements);
 			}
 			enrichShapes(shapesRepoWithReasoningConnection);
@@ -413,8 +382,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 		init();
 
 		ShaclSailConnection shaclSailConnection = new ShaclSailConnection(this, super.getConnection(),
-				super.getConnection(), super.getConnection(), super.getConnection(),
-				shapesRepo.getConnection());
+				super.getConnection(), super.getConnection(), super.getConnection(), shapesRepo.getConnection());
 
 		// don't synchronize the entire method, because this can cause a deadlock when trying to get a new connection
 		// while at the same time closing another connection
@@ -443,14 +411,10 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 	private void implicitTargetClass(SailRepositoryConnection shaclSailConnection) {
 		try (Stream<Statement> stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, false).stream()) {
-			stream
-					.map(Statement::getSubject)
-					.filter(s ->
+			stream.map(Statement::getSubject).filter(s ->
 
-					shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.NODE_SHAPE, true)
-							|| shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.PROPERTY_SHAPE, true)
-					)
-					.forEach(s -> {
+			shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.NODE_SHAPE, true)
+					|| shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.PROPERTY_SHAPE, true)).forEach(s -> {
 						shaclSailConnection.add(s, SHACL.TARGET_CLASS, s);
 					});
 		}
@@ -471,10 +435,9 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 		assert lock == null;
 
 		if (threadHoldingWriteLock == Thread.currentThread()) {
-			throw new SailConflictException(
-					"Deadlock detected when a single thread uses multiple connections " +
-							"interleaved and one connection has modified the shapes without calling commit() " +
-							"while another connection also tries to modify the shapes!");
+			throw new SailConflictException("Deadlock detected when a single thread uses multiple connections "
+					+ "interleaved and one connection has modified the shapes without calling commit() "
+					+ "while another connection also tries to modify the shapes!");
 		}
 
 		try {
@@ -499,10 +462,9 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 
 	Lock acquireReadLock() {
 		if (threadHoldingWriteLock == Thread.currentThread()) {
-			throw new SailConflictException(
-					"Deadlock detected when a single thread uses multiple connections " +
-							"interleaved and one connection has modified the shapes without calling commit() " +
-							"while another connection calls commit()!");
+			throw new SailConflictException("Deadlock detected when a single thread uses multiple connections "
+					+ "interleaved and one connection has modified the shapes without calling commit() "
+					+ "while another connection calls commit()!");
 		}
 		try {
 			return lockManager.getReadLock();

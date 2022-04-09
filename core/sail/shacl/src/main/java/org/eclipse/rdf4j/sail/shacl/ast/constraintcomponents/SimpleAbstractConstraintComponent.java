@@ -71,21 +71,16 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	}
 
 	@Override
-	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
-			Scope scope) {
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			PlanNodeProvider overrideTargetNode, Scope scope) {
 
-		return generateTransactionalValidationPlan(
-				connectionsGroup,
-				overrideTargetNode,
-				scope
-		);
+		return generateTransactionalValidationPlan(connectionsGroup, overrideTargetNode, scope);
 
 	}
 
 	@Override
-	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
@@ -131,8 +126,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 		return String.join("\n", "",
 				"BIND((" + getSparqlFilterExpression(variable.getName(), negatePlan) + ") as " + tempVar + ")",
-				"FILTER(COALESCE(" + tempVar + ", true))"
-		);
+				"FILTER(COALESCE(" + tempVar + ", true))");
 	}
 
 	/**
@@ -170,10 +164,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					return Unique.getInstance(allTargets, true);
 				} else {
 					return effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup, scope,
-							EffectiveTarget.Extend.right,
-							false,
-							p -> getFilterAttacherWithNegation(negatePlan, p)
-					);
+							EffectiveTarget.Extend.right, false, p -> getFilterAttacherWithNegation(negatePlan, p));
 
 				}
 
@@ -199,15 +190,13 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					overrideTargetPlanNode = effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup, scope,
 							EffectiveTarget.Extend.right, false, null);
 
-					planNode = new BulkedExternalInnerJoin(overrideTargetPlanNode,
-							connectionsGroup.getBaseConnection(),
+					planNode = new BulkedExternalInnerJoin(overrideTargetPlanNode, connectionsGroup.getBaseConnection(),
 							connectionsGroup.getBaseValueFactory(),
 							path.get()
 									.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 											new StatementMatcher.Variable("c"),
 											connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-							false, null,
-							(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
+							false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 				}
 			}
 
@@ -223,8 +212,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		PlanNode invalidValuesDirectOnPath = path.get()
 				.getAdded(connectionsGroup, planNode -> getFilterAttacherWithNegation(negatePlan, planNode));
 
-		InnerJoin innerJoin = new InnerJoin(
-				effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
+		InnerJoin innerJoin = new InnerJoin(effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
 				invalidValuesDirectOnPath);
 
 		if (connectionsGroup.getStats().wasEmptyBeforeTransaction()) {
@@ -245,14 +233,12 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 			PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(
 					effectiveTarget.getPlanNode(connectionsGroup, scope, false, null),
-					connectionsGroup.getBaseConnection(),
-					connectionsGroup.getBaseValueFactory(),
+					connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
 					path.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					true,
-					connectionsGroup.getPreviousStateConnection(),
+									new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(),
+									stableRandomVariableProvider),
+					true, connectionsGroup.getPreviousStateConnection(),
 					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 			top = UnionNode.getInstance(top, bulkedExternalInnerJoin);

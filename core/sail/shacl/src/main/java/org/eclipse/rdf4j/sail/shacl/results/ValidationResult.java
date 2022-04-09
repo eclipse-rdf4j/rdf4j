@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -156,15 +155,9 @@ public class ValidationResult {
 
 	@Override
 	public String toString() {
-		return "ValidationResult{" +
-				"focusNode=" + focusNode +
-				", value=" + value.orElse(null) +
-				", shape=" + shape.getId() +
-				", path=" + path +
-				", sourceConstraintComponent=" + sourceConstraintComponent +
-				", severity=" + severity +
-				", detail=" + detail +
-				'}';
+		return "ValidationResult{" + "focusNode=" + focusNode + ", value=" + value.orElse(null) + ", shape="
+				+ shape.getId() + ", path=" + path + ", sourceConstraintComponent=" + sourceConstraintComponent
+				+ ", severity=" + severity + ", detail=" + detail + '}';
 	}
 
 	@Override

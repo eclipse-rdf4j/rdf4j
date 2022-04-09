@@ -49,8 +49,8 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 	Boolean qualifiedValueShapesDisjoint;
 	Long qualifiedMaxCount;
 
-	public QualifiedMaxCountConstraintComponent(Resource id, RepositoryConnection connection,
-			Cache cache, ShaclSail shaclSail, Boolean qualifiedValueShapesDisjoint, Long qualifiedMaxCount) {
+	public QualifiedMaxCountConstraintComponent(Resource id, RepositoryConnection connection, Cache cache,
+			ShaclSail shaclSail, Boolean qualifiedValueShapesDisjoint, Long qualifiedMaxCount) {
 		super(id);
 
 		ShaclProperties p = new ShaclProperties(id, connection);
@@ -151,19 +151,14 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 			target = Unique.getInstance(new TrimToTarget(target), false);
 
-			PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
-					target,
-					connectionsGroup.getBaseConnection(),
-					connectionsGroup.getBaseValueFactory(),
+			PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(target,
+					connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
 					getTargetChain().getPath()
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-			);
+									new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(),
+									stableRandomVariableProvider),
+					false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 			return new TupleMapper(relevantTargetsWithPath, t -> {
 				List<Value> targetChain = t.getTargetChain(true);
@@ -172,12 +167,8 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		};
 
-		PlanNode planNode = qualifiedValueShape.generateTransactionalValidationPlan(
-				connectionsGroup,
-				logValidationPlans,
-				planNodeProvider,
-				scope
-		);
+		PlanNode planNode = qualifiedValueShape.generateTransactionalValidationPlan(connectionsGroup,
+				logValidationPlans, planNodeProvider, scope);
 
 		PlanNode invalid = Unique.getInstance(planNode, false);
 
@@ -192,18 +183,13 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		allTargetsPlan = Unique.getInstance(new TrimToTarget(allTargetsPlan), false);
 
-		allTargetsPlan = new BulkedExternalLeftOuterJoin(
-				allTargetsPlan,
-				connectionsGroup.getBaseConnection(),
+		allTargetsPlan = new BulkedExternalLeftOuterJoin(allTargetsPlan, connectionsGroup.getBaseConnection(),
 				connectionsGroup.getBaseValueFactory(),
 				getTargetChain().getPath()
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-				false,
-				null,
-				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-		);
+				false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 		invalid = new NotValuesIn(allTargetsPlan, invalid);
 

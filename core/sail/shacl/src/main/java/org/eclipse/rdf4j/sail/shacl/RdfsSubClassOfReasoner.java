@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.query.algebra.Str;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,8 +51,7 @@ public class RdfsSubClassOfReasoner {
 			return null;
 		}
 
-		if (statement.getPredicate().equals(RDF.TYPE)
-				&& forwardChainCache.containsKey(statement.getObject())) {
+		if (statement.getPredicate().equals(RDF.TYPE) && forwardChainCache.containsKey(statement.getObject())) {
 			return forwardChainCache.get(statement.getObject())
 					.stream()
 					.map(r -> statement(statement.getSubject(), RDF.TYPE, r, statement.getContext()))

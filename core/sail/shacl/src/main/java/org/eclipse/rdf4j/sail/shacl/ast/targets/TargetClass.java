@@ -65,10 +65,9 @@ public class TargetClass extends Target {
 			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
 					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 		} else {
-			planNode = new Select(connection,
-					valueFactory,
-					getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider()),
-					"?a", b -> new ValidationTuple(b.getValue("a"), scope, false));
+			planNode = new Select(connection, valueFactory,
+					getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider()), "?a",
+					b -> new ValidationTuple(b.getValue("a"), scope, false));
 		}
 
 		return Unique.getInstance(planNode, false);
@@ -91,15 +90,12 @@ public class TargetClass extends Target {
 		return targets.stream()
 				.map(r -> "<" + r + ">")
 				.sorted()
-				.map(r -> String.join("\n", "",
-						"{",
+				.map(r -> String.join("\n", "", "{",
 						"\tBIND(rdf:type as " + stableRandomVariableProvider.next().asSparqlVariable() + ")",
 						"\tBIND(" + r + " as " + objectVariable + ")",
 						"\t" + subjectVariable + " " + stableRandomVariableProvider.current().asSparqlVariable()
 								+ objectVariable + ".",
-						"}"
-				)
-				)
+						"}"))
 				.reduce((l, r) -> l + " UNION " + r)
 				.get();
 
@@ -119,22 +115,17 @@ public class TargetClass extends Target {
 
 	@Override
 	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
 		Stream<Resource> stream = targetClass.stream();
 
 		if (rdfsSubClassOfReasoner != null) {
-			stream = stream
-					.map(rdfsSubClassOfReasoner::backwardsChain)
-					.flatMap(Collection::stream)
-					.distinct();
+			stream = stream.map(rdfsSubClassOfReasoner::backwardsChain).flatMap(Collection::stream).distinct();
 		}
 
-		return stream
-				.map(t -> new StatementMatcher(object, new StatementMatcher.Variable(RDF.TYPE),
-						new StatementMatcher.Variable(t)));
+		return stream.map(t -> new StatementMatcher(object, new StatementMatcher.Variable(RDF.TYPE),
+				new StatementMatcher.Variable(t)));
 
 	}
 
@@ -147,8 +138,7 @@ public class TargetClass extends Target {
 		Collection<Resource> targetClass;
 
 		if (rdfsSubClassOfReasoner != null) {
-			targetClass = this.targetClass
-					.stream()
+			targetClass = this.targetClass.stream()
 					.map(rdfsSubClassOfReasoner::backwardsChain)
 					.flatMap(Collection::stream)
 					.distinct()
@@ -174,8 +164,8 @@ public class TargetClass extends Target {
 
 			String randomSparqlVariable = stableRandomVariableProvider.next().asSparqlVariable();
 
-			return object.asSparqlVariable() + " a " + randomSparqlVariable + ".\n" +
-					"FILTER(" + randomSparqlVariable + " in ( " + in + " )) \n";
+			return object.asSparqlVariable() + " a " + randomSparqlVariable + ".\n" + "FILTER(" + randomSparqlVariable
+					+ " in ( " + in + " )) \n";
 		}
 
 	}

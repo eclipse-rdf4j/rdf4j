@@ -91,8 +91,8 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
 
-				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false, null);
+				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right, false,
+						null);
 			} else {
 				addedTargets = target.getPlanNode(connectionsGroup, scope, true, null);
 				PlanNode addedByPath = path.getAdded(connectionsGroup, null);
@@ -106,16 +106,11 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 				addedTargets = Unique.getInstance(addedTargets, false);
 			}
 
-			PlanNode joined = new BulkedExternalLeftOuterJoin(
-					addedTargets,
-					connectionsGroup.getBaseConnection(),
+			PlanNode joined = new BulkedExternalLeftOuterJoin(addedTargets, connectionsGroup.getBaseConnection(),
 					connectionsGroup.getBaseValueFactory(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-			);
+					false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 			PlanNode invalidTargets = new GroupByFilter(joined, group -> {
 				return group.stream().map(ValidationTuple::getValue).noneMatch(hasValueIn::contains);
@@ -129,14 +124,13 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false, null);
+				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right, false,
+						null);
 			} else {
 				addedTargets = target.getPlanNode(connectionsGroup, scope, false, null);
 			}
 
-			PlanNode falseNode = new ValueInFilter(addedTargets, hasValueIn)
-					.getFalseNode(UnBufferedPlanNode.class);
+			PlanNode falseNode = new ValueInFilter(addedTargets, hasValueIn).getFalseNode(UnBufferedPlanNode.class);
 
 			return falseNode;
 
@@ -160,8 +154,7 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		List<StatementMatcher> statementMatchers = Collections.emptyList();
@@ -178,45 +171,35 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 		if (scope == Scope.propertyShape) {
 			Path path = getTargetChain().getPath().get();
 
-			String sparql = hasValueIn
-					.stream()
-					.map(value -> {
+			String sparql = hasValueIn.stream().map(value -> {
 
-						if (value.isIRI()) {
-							return "BIND(<" + value + "> as ?" + object.getName() + ")\n"
-									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
-											stableRandomVariableProvider);
-						}
-						if (value.isLiteral()) {
-							return "BIND(" + value.toString() + " as ?" + object.getName() + ")\n"
-									+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
-											stableRandomVariableProvider);
-						}
+				if (value.isIRI()) {
+					return "BIND(<" + value + "> as ?" + object.getName() + ")\n" + path.getTargetQueryFragment(subject,
+							object, rdfsSubClassOfReasoner, stableRandomVariableProvider);
+				}
+				if (value.isLiteral()) {
+					return "BIND(" + value + " as ?" + object.getName() + ")\n" + path.getTargetQueryFragment(subject,
+							object, rdfsSubClassOfReasoner, stableRandomVariableProvider);
+				}
 
-						throw new UnsupportedOperationException(
-								"value was unsupported type: " + value.getClass().getSimpleName());
-					})
-					.collect(
-							Collectors.joining("} UNION {\n" + VALUES_INJECTION_POINT + "\n",
-									"{\n" + VALUES_INJECTION_POINT + "\n",
-									"}"));
+				throw new UnsupportedOperationException(
+						"value was unsupported type: " + value.getClass().getSimpleName());
+			})
+					.collect(Collectors.joining("} UNION {\n" + VALUES_INJECTION_POINT + "\n",
+							"{\n" + VALUES_INJECTION_POINT + "\n", "}"));
 			return SparqlFragment.bgp(sparql, statementMatchers);
 
 		} else {
 
-			String sparql = hasValueIn
-					.stream()
-					.map(value -> {
-						if (value.isIRI()) {
-							return "?" + object.getName() + " = <" + value + ">";
-						} else if (value.isLiteral()) {
-							return "?" + object.getName() + " = " + value;
-						}
-						throw new UnsupportedOperationException(
-								"value was unsupported type: " + value.getClass().getSimpleName());
-					})
-					.reduce((a, b) -> a + " || " + b)
-					.orElseThrow(() -> new IllegalStateException("hasValueIn was empty"));
+			String sparql = hasValueIn.stream().map(value -> {
+				if (value.isIRI()) {
+					return "?" + object.getName() + " = <" + value + ">";
+				} else if (value.isLiteral()) {
+					return "?" + object.getName() + " = " + value;
+				}
+				throw new UnsupportedOperationException(
+						"value was unsupported type: " + value.getClass().getSimpleName());
+			}).reduce((a, b) -> a + " || " + b).orElseThrow(() -> new IllegalStateException("hasValueIn was empty"));
 			return SparqlFragment.filterCondition(sparql, statementMatchers);
 
 		}

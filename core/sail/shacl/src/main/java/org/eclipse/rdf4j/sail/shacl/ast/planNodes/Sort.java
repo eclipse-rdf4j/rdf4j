@@ -80,8 +80,7 @@ public class Sort implements PlanNode {
 								return;
 							}
 
-							if (prev != null
-									&& prev.compareActiveTarget(next) > 0) {
+							if (prev != null && prev.compareActiveTarget(next) > 0) {
 								alreadySorted = false;
 							}
 							prev = next;
@@ -173,8 +172,6 @@ public class Sort implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "Sort{" +
-				"parent=" + parent +
-				'}';
+		return "Sort{" + "parent=" + parent + '}';
 	}
 }

@@ -87,10 +87,12 @@ public class ValidationQuery {
 	}
 
 	public static ValidationQuery union(ValidationQuery a, ValidationQuery b) {
-		if (a == Deactivated.instance)
+		if (a == Deactivated.instance) {
 			return b;
-		if (b == Deactivated.instance)
+		}
+		if (b == Deactivated.instance) {
 			return a;
+		}
 
 		assert a.getTargetVariable(false).equals(b.getTargetVariable(false));
 		assert a.getValueVariable(false).equals(b.getValueVariable(false));
@@ -135,23 +137,21 @@ public class ValidationQuery {
 			if (scope_validationReport == ConstraintComponent.Scope.propertyShape) {
 				if (propertyShapeWithValue_validationReport) {
 					return new ValidationTuple(bindings.getValue(getTargetVariable(true)),
-							bindings.getValue(getValueVariable(true)),
-							scope_validationReport, true);
+							bindings.getValue(getValueVariable(true)), scope_validationReport, true);
 				} else {
-					return new ValidationTuple(bindings.getValue(getTargetVariable(true)),
-							scope_validationReport, false);
+					return new ValidationTuple(bindings.getValue(getTargetVariable(true)), scope_validationReport,
+							false);
 				}
 
 			} else {
-				return new ValidationTuple(bindings.getValue(getTargetVariable(true)),
-						scope_validationReport, true);
+				return new ValidationTuple(bindings.getValue(getTargetVariable(true)), scope_validationReport, true);
 			}
 
 		});
 
 		return new ValidationReportNode(select, t -> {
-			return new ValidationResult(t.getActiveTarget(), t.getValue(), shape,
-					constraintComponent_validationReport, severity, t.getScope());
+			return new ValidationResult(t.getActiveTarget(), t.getValue(), shape, constraintComponent_validationReport,
+					severity, t.getScope());
 		});
 
 	}

@@ -53,8 +53,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren, Scope scope) {
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		String targetVarPrefix = "target_";
@@ -79,17 +79,11 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 						connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
 				.orElseThrow(IllegalStateException::new);
 
-		query += String.join("\n", "",
-				"FILTER(",
-				"	EXISTS {",
-				"		" + pathQuery2,
-				"		FILTER(",
+		query += String.join("\n", "", "FILTER(", "	EXISTS {", "		" + pathQuery2, "		FILTER(",
 				"			lang(?" + value2.getName() + ") != \"\" && ",
 				"			lang(?" + value1.getName() + ") != \"\" && ",
 				"			?" + value1.getName() + " != ?" + value2.getName() + " && ",
-				"			lang(?" + value1.getName() + ") = lang(?" + value2.getName() + ")",
-				"		)",
-				"	}",
+				"			lang(?" + value1.getName() + ") = lang(?" + value2.getName() + ")", "		)", "	}",
 				")");
 
 		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
@@ -123,18 +117,13 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			PlanNode targets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope,
 					EffectiveTarget.Extend.right, false, null);
 
-			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
-					targets,
-					connectionsGroup.getBaseConnection(),
-					connectionsGroup.getBaseValueFactory(),
+			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(targets,
+					connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
 					path.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-			);
+									new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(),
+									stableRandomVariableProvider),
+					false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
 			return Unique.getInstance(new TrimToTarget(nonUniqueTargetLang), false);
@@ -167,17 +156,12 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode allRelevantTargets = Unique.getInstance(mergeNode, false);
 
-		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
-				allRelevantTargets,
-				connectionsGroup.getBaseConnection(),
-				connectionsGroup.getBaseValueFactory(),
+		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(allRelevantTargets,
+				connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
 				path.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-				false,
-				null,
-				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-		);
+				false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 		PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
 

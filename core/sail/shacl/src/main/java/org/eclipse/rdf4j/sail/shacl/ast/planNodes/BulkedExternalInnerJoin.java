@@ -44,8 +44,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private final ValueFactory valueFactory;
 
 	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, ValueFactory valueFactory,
-			String query,
-			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
+			String query, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper) {
 
 		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
@@ -190,10 +189,8 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 		if (skipBasedOnPreviousConnection) {
 
-			stringBuilder
-					.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
-							+ " [label=\"skip if not present\"]")
-					.append("\n");
+			stringBuilder.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+					+ " [label=\"skip if not present\"]").append("\n");
 
 		}
 

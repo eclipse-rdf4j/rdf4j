@@ -48,10 +48,7 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Logger;
@@ -393,9 +390,7 @@ public class ComplexLargeBenchmark {
 			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, Bulk,
-						ParallelValidation,
-						CacheEnabled);
+				connection.begin(IsolationLevels.NONE, Bulk, ParallelValidation, CacheEnabled);
 				connection.add(realData);
 
 				connection.commit();
@@ -424,8 +419,7 @@ public class ComplexLargeBenchmark {
 			}
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ParallelValidation,
-						CacheEnabled);
+				connection.begin(IsolationLevels.NONE, ParallelValidation, CacheEnabled);
 				connection.add(realData);
 
 				connection.commit();

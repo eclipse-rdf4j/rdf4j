@@ -80,8 +80,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false, null);
+				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right, false,
+						null);
 
 			} else {
 				addedTargets = target.getPlanNode(connectionsGroup, scope, true, null);
@@ -96,16 +96,11 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 				addedTargets = Unique.getInstance(addedTargets, false);
 			}
 
-			PlanNode joined = new BulkedExternalLeftOuterJoin(
-					addedTargets,
-					connectionsGroup.getBaseConnection(),
+			PlanNode joined = new BulkedExternalLeftOuterJoin(addedTargets, connectionsGroup.getBaseConnection(),
 					connectionsGroup.getBaseValueFactory(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-			);
+					false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 			PlanNode invalidTargets = new GroupByFilter(joined, group -> {
 				return group.stream().map(ValidationTuple::getValue).noneMatch(v -> hasValue.equals(v));
@@ -119,8 +114,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right,
-						false, null);
+				addedTargets = target.extend(addedTargets, connectionsGroup, scope, EffectiveTarget.Extend.right, false,
+						null);
 			} else {
 				addedTargets = target.getPlanNode(connectionsGroup, scope, false, null);
 			}
@@ -150,8 +145,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		List<StatementMatcher> statementMatchers = Collections.emptyList();
@@ -168,15 +162,13 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			Path path = getTargetChain().getPath().get();
 
 			if (hasValue.isIRI()) {
-				return SparqlFragment.bgp("BIND(<" + hasValue + "> as ?" + object.getName() + ")\n"
-						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
-								stableRandomVariableProvider),
+				return SparqlFragment.bgp("BIND(<" + hasValue + "> as ?" + object.getName() + ")\n" + path
+						.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner, stableRandomVariableProvider),
 						statementMatchers);
 			}
 			if (hasValue.isLiteral()) {
-				return SparqlFragment.bgp("BIND(" + hasValue.toString() + " as ?" + object.getName() + ")\n"
-						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
-								stableRandomVariableProvider),
+				return SparqlFragment.bgp("BIND(" + hasValue.toString() + " as ?" + object.getName() + ")\n" + path
+						.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner, stableRandomVariableProvider),
 						statementMatchers);
 			}
 
@@ -197,8 +189,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		String targetVarPrefix = "target_";
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
@@ -220,11 +212,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
 					.orElseThrow(IllegalStateException::new);
 
-			query += "FILTER( " +
-					"NOT EXISTS{" +
-					"	BIND(" + stringRepresentationOfValue(hasValue) + " as ?" + value.getName() + ")\n" +
-					pathQuery +
-					"})";
+			query += "FILTER( " + "NOT EXISTS{" + "	BIND(" + stringRepresentationOfValue(hasValue) + " as ?"
+					+ value.getName() + ")\n" + pathQuery + "})";
 
 		}
 

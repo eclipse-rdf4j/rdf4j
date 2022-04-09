@@ -50,10 +50,7 @@ public class EffectiveTarget {
 		for (Targetable targetable : chain) {
 			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
 					new StatementMatcher.Variable(targetVarPrefix + EffectiveTarget.formatVariableIndex(index++)),
-					targetable,
-					previous,
-					rdfsSubClassOfReasoner,
-					stableRandomVariableProvider);
+					targetable, previous, rdfsSubClassOfReasoner, stableRandomVariableProvider);
 			previous = effectiveTargetObject;
 			this.chain.addLast(effectiveTargetObject);
 		}
@@ -61,10 +58,7 @@ public class EffectiveTarget {
 		if (optional != null) {
 			this.optional = new EffectiveTargetObject(
 					new StatementMatcher.Variable(targetVarPrefix + EffectiveTarget.formatVariableIndex(index)),
-					optional,
-					previous,
-					rdfsSubClassOfReasoner,
-					stableRandomVariableProvider);
+					optional, previous, rdfsSubClassOfReasoner, stableRandomVariableProvider);
 		} else {
 			this.optional = null;
 		}
@@ -143,8 +137,8 @@ public class EffectiveTarget {
 		} else {
 
 			PlanNode parent = new BindSelect(connectionsGroup.getBaseConnection(),
-					connectionsGroup.getBaseValueFactory(), query, vars, source, varNames, scope,
-					1000, direction, includePropertyShapeValues);
+					connectionsGroup.getBaseValueFactory(), query, vars, source, varNames, scope, 1000, direction,
+					includePropertyShapeValues);
 
 			if (filter != null) {
 				parent = connectionsGroup.getCachedNodeFor(parent);
@@ -152,8 +146,7 @@ public class EffectiveTarget {
 				parent = Unique.getInstance(parent, true);
 				return parent;
 			} else {
-				return connectionsGroup.getCachedNodeFor(
-						Unique.getInstance(parent, true));
+				return connectionsGroup.getCachedNodeFor(Unique.getInstance(parent, true));
 			}
 
 		}
@@ -180,14 +173,11 @@ public class EffectiveTarget {
 				.anyMatch(currentStatementPattern ->
 
 				connectionsGroup.getAddedStatements()
-						.hasStatement(
-								currentStatementPattern.getSubjectValue(),
-								currentStatementPattern.getPredicateValue(),
-								currentStatementPattern.getObjectValue(), false)
-						||
-						connectionsGroup.getRemovedStatements()
-								.hasStatement(
-										currentStatementPattern.getSubjectValue(),
+						.hasStatement(currentStatementPattern.getSubjectValue(),
+								currentStatementPattern.getPredicateValue(), currentStatementPattern.getObjectValue(),
+								false)
+						|| connectionsGroup.getRemovedStatements()
+								.hasStatement(currentStatementPattern.getSubjectValue(),
 										currentStatementPattern.getPredicateValue(),
 										currentStatementPattern.getObjectValue(), false)
 
@@ -254,23 +244,11 @@ public class EffectiveTarget {
 
 			TargetChainRetriever targetChainRetriever;
 			if (includeTargetsAffectedByRemoval) {
-				targetChainRetriever = new TargetChainRetriever(
-						connectionsGroup,
-						statementMatchers,
-						statementMatchersRemoval,
-						query,
-						getVars(),
-						scope
-				);
+				targetChainRetriever = new TargetChainRetriever(connectionsGroup, statementMatchers,
+						statementMatchersRemoval, query, getVars(), scope);
 			} else {
-				targetChainRetriever = new TargetChainRetriever(
-						connectionsGroup,
-						statementMatchers,
-						null,
-						query,
-						getVars(),
-						scope
-				);
+				targetChainRetriever = new TargetChainRetriever(connectionsGroup, statementMatchers, null, query,
+						getVars(), scope);
 			}
 
 			if (filter != null) {
@@ -305,9 +283,7 @@ public class EffectiveTarget {
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
-				parent, query, last.var,
-				ValidationTuple::getActiveTarget)
-						.getTrueNode(UnBufferedPlanNode.class);
+				parent, query, last.var, ValidationTuple::getActiveTarget).getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	public String getQuery(boolean includeOptional) {
@@ -321,17 +297,13 @@ public class EffectiveTarget {
 			chain = this.chain;
 		}
 
-		return chain.stream()
-				.map(EffectiveTargetObject::getQueryFragment)
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("") + "\n";
+		return chain.stream().map(EffectiveTargetObject::getQueryFragment).reduce((a, b) -> a + "\n" + b).orElse("")
+				+ "\n";
 
 	}
 
 	public List<StatementMatcher.Variable> getAllTargetVariables() {
-		return chain.stream()
-				.map(c -> c.var)
-				.collect(Collectors.toCollection(ArrayList::new));
+		return chain.stream().map(c -> c.var).collect(Collectors.toCollection(ArrayList::new));
 	}
 
 	public enum Extend {

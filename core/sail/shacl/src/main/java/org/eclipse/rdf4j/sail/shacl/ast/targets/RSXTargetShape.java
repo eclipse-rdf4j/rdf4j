@@ -88,14 +88,9 @@ public class RSXTargetShape extends Target {
 
 		List<StatementMatcher.Variable> vars = Collections.singletonList(object);
 
-		return Unique.getInstance(new TargetChainRetriever(
-				connectionsGroup,
-				statementMatchers,
-				statementMatchers,
-				query,
-				vars,
-				scope
-		), false);
+		return Unique.getInstance(
+				new TargetChainRetriever(connectionsGroup, statementMatchers, statementMatchers, query, vars, scope),
+				false);
 
 	}
 
@@ -116,16 +111,13 @@ public class RSXTargetShape extends Target {
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
-				parent, query,
-				new StatementMatcher.Variable("temp1"),
-				ValidationTuple::getActiveTarget)
+				parent, query, new StatementMatcher.Variable("temp1"), ValidationTuple::getActiveTarget)
 						.getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	@Override
 	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
 		return this.targetShape

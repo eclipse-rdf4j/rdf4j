@@ -83,17 +83,13 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		}
 
 		PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
-				Unique.getInstance(new TrimToTarget(target), false),
-				connectionsGroup.getBaseConnection(),
+				Unique.getInstance(new TrimToTarget(target), false), connectionsGroup.getBaseConnection(),
 				connectionsGroup.getBaseValueFactory(),
 				getTargetChain().getPath()
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-				false,
-				null,
-				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-		);
+				false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count < minCount);
 
@@ -112,8 +108,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren, Scope scope) {
 		if (minCount <= 0) {
 			return ValidationQuery.Deactivated.getInstance();
 		}

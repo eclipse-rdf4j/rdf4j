@@ -43,18 +43,14 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	private final ValueFactory valueFactory;
 
 	public ExternalFilterByQuery(SailConnection connection, ValueFactory valueFactory, PlanNode parent,
-			String queryFragment,
-			StatementMatcher.Variable queryVariable,
-			Function<ValidationTuple, Value> filterOn) {
+			String queryFragment, StatementMatcher.Variable queryVariable, Function<ValidationTuple, Value> filterOn) {
 		super(parent);
 		this.connection = connection;
 		this.valueFactory = valueFactory;
 		this.queryVariable = queryVariable;
 		this.filterOn = filterOn;
 
-		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
-				.get(QueryLanguage.SPARQL)
-				.get();
+		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
 		queryFragment = "SELECT ?" + queryVariable.getName() + " WHERE {\n" + queryFragment + "\n}";
 		this.queryString = queryFragment;
@@ -76,9 +72,8 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 		bindings.addBinding(queryVariable.getName(), value);
 
-		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = connection.evaluate(
-				query.getTupleExpr(), query.getDataset(),
-				bindings, false)) {
+		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = connection
+				.evaluate(query.getTupleExpr(), query.getDataset(), bindings, false)) {
 			return bindingSet.hasNext();
 		}
 
@@ -86,10 +81,8 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterByQuery{" +
-				", queryString=" + queryString.replace("\n", "\t") +
-				", queryVariable='" + queryVariable.toString().replace("\n", "  ") + '\'' +
-				'}';
+		return "ExternalFilterByQuery{" + ", queryString=" + queryString.replace("\n", "\t") + ", queryVariable='"
+				+ queryVariable.toString().replace("\n", "  ") + '\'' + '}';
 	}
 
 	@Override

@@ -39,8 +39,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	private final ValueFactory valueFactory;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, ValueFactory valueFactory,
-			String query,
-			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
+			String query, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper) {
 		this.valueFactory = valueFactory;
 		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
@@ -170,10 +169,8 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 		}
 
 		if (skipBasedOnPreviousConnection) {
-			stringBuilder
-					.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
-							+ " [label=\"skip if not present\"]")
-					.append("\n");
+			stringBuilder.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+					+ " [label=\"skip if not present\"]").append("\n");
 
 		}
 
@@ -183,8 +180,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 
 	@Override
 	public String toString() {
-		return "BulkedExternalLeftOuterJoin{" + "query=" + query.replace("\n", "  ")
-				+ '}';
+		return "BulkedExternalLeftOuterJoin{" + "query=" + query.replace("\n", "  ") + '}';
 	}
 
 	@Override

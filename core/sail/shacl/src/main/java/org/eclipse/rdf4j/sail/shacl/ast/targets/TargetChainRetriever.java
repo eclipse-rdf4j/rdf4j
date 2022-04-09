@@ -61,9 +61,9 @@ public class TargetChainRetriever implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final ValueFactory valueFactory;
 
-	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
-			List<StatementMatcher> statementMatchers, List<StatementMatcher> removedStatementMatchers, String query,
-			List<StatementMatcher.Variable> vars, ConstraintComponent.Scope scope) {
+	public TargetChainRetriever(ConnectionsGroup connectionsGroup, List<StatementMatcher> statementMatchers,
+			List<StatementMatcher> removedStatementMatchers, String query, List<StatementMatcher.Variable> vars,
+			ConstraintComponent.Scope scope) {
 		this.connectionsGroup = connectionsGroup;
 		this.valueFactory = connectionsGroup.getBaseValueFactory();
 		this.statementMatchers = StatementMatcher.reduce(statementMatchers);
@@ -78,9 +78,7 @@ public class TargetChainRetriever implements PlanNode {
 		this.query = "select " + sparqlProjection + " where {\n" + query + "\n}";
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 
-		queryParserFactory = QueryParserRegistry.getInstance()
-				.get(QueryLanguage.SPARQL)
-				.get();
+		queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
 		this.removedStatementMatchers = removedStatementMatchers != null
 				? StatementMatcher.reduce(removedStatementMatchers)
@@ -144,10 +142,9 @@ public class TargetChainRetriever implements PlanNode {
 						connection = connectionsGroup.getRemovedStatements();
 					}
 
-					statements = connection.getStatements(
-							currentStatementMatcher.getSubjectValue(),
-							currentStatementMatcher.getPredicateValue(),
-							currentStatementMatcher.getObjectValue(), false);
+					statements = connection.getStatements(currentStatementMatcher.getSubjectValue(),
+							currentStatementMatcher.getPredicateValue(), currentStatementMatcher.getObjectValue(),
+							false);
 				} while (!statements.hasNext());
 
 				previousBindings = null;
@@ -220,8 +217,7 @@ public class TargetChainRetriever implements PlanNode {
 						// TODO: Should really bulk this operation!
 
 						results = connectionsGroup.getBaseConnection()
-								.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
-										bindings, true);
+								.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), bindings, true);
 
 					} catch (MalformedQueryException e) {
 						logger.error("Malformed query: \n{}", query);
@@ -234,10 +230,11 @@ public class TargetChainRetriever implements PlanNode {
 
 					if (nextBinding.size() == 1) {
 						Iterator<Binding> iterator = nextBinding.iterator();
-						if (iterator.hasNext())
+						if (iterator.hasNext()) {
 							next = new ValidationTuple(iterator.next().getValue(), scope, false);
-						else
+						} else {
 							next = new ValidationTuple((Value) null, scope, false);
+						}
 					} else {
 						Value[] values = StreamSupport.stream(nextBinding.spliterator(), false)
 								.sorted(Comparator.comparing(Binding::getName))
@@ -355,10 +352,9 @@ public class TargetChainRetriever implements PlanNode {
 			return false;
 		}
 		TargetChainRetriever that = (TargetChainRetriever) o;
-		return statementMatchers.equals(that.statementMatchers) &&
-				removedStatementMatchers.equals(that.removedStatementMatchers) &&
-				query.equals(that.query) &&
-				scope == that.scope;
+		return statementMatchers.equals(that.statementMatchers)
+				&& removedStatementMatchers.equals(that.removedStatementMatchers) && query.equals(that.query)
+				&& scope == that.scope;
 	}
 
 	@Override
@@ -368,11 +364,7 @@ public class TargetChainRetriever implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "TargetChainRetriever{" +
-				"statementPatterns=" + statementMatchers +
-				", removedStatementMatchers=" + removedStatementMatchers +
-				", query='" + query.replace("\n", "\t") + '\'' +
-				", scope=" + scope +
-				'}';
+		return "TargetChainRetriever{" + "statementPatterns=" + statementMatchers + ", removedStatementMatchers="
+				+ removedStatementMatchers + ", query='" + query.replace("\n", "\t") + '\'' + ", scope=" + scope + '}';
 	}
 }

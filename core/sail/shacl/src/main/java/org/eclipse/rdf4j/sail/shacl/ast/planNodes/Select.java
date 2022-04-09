@@ -54,9 +54,8 @@ public class Select implements PlanNode {
 			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
 
 			// empty set
-			query = "" +
-					"?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n" +
-					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
+			query = "" + "?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n"
+					+ "FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
 		}
 		sorted = orderBy != null;
 
@@ -175,17 +174,13 @@ public class Select implements PlanNode {
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection && select.connection instanceof MemoryStoreConnection) {
-			return sorted == select.sorted &&
-					((MemoryStoreConnection) connection).getSail()
+			return sorted == select.sorted
+					&& ((MemoryStoreConnection) connection).getSail()
 							.equals(((MemoryStoreConnection) select.connection).getSail())
-					&&
-					mapper.equals(select.mapper) &&
-					query.equals(select.query);
+					&& mapper.equals(select.mapper) && query.equals(select.query);
 		} else {
-			return sorted == select.sorted &&
-					connection.equals(select.connection) &&
-					mapper.equals(select.mapper) &&
-					query.equals(select.query);
+			return sorted == select.sorted && connection.equals(select.connection) && mapper.equals(select.mapper)
+					&& query.equals(select.query);
 		}
 	}
 

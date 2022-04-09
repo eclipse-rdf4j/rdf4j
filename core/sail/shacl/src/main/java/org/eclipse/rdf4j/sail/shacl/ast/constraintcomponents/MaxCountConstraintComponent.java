@@ -84,8 +84,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 					Unique.getInstance(new TrimToTarget(addedByPath), false));
 
 			addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, scope, EffectiveTarget.Extend.left,
-					false,
-					null);
+					false, null);
 
 			mergeNode = UnionNode.getInstance(addedTargets, addedByPath);
 		}
@@ -95,33 +94,23 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 		PlanNode relevantTargetsWithPath;
 
 		if (maxCount >= 0) {
-			relevantTargetsWithPath = new BulkedExternalInnerJoin(
-					mergeNode,
-					connectionsGroup.getBaseConnection(),
+			relevantTargetsWithPath = new BulkedExternalInnerJoin(mergeNode, connectionsGroup.getBaseConnection(),
 					connectionsGroup.getBaseValueFactory(),
 					getTargetChain().getPath()
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-			);
+									new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(),
+									stableRandomVariableProvider),
+					false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 		} else {
-			relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
-					mergeNode,
-					connectionsGroup.getBaseConnection(),
+			relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(mergeNode, connectionsGroup.getBaseConnection(),
 					connectionsGroup.getBaseValueFactory(),
 					getTargetChain().getPath()
 							.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true)
-			);
+									new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(),
+									stableRandomVariableProvider),
+					false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 		}
 
 		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count > maxCount);
@@ -148,8 +137,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope) {
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+			boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		String targetVarPrefix = "target_";
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
