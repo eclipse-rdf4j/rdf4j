@@ -8,9 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
-import java.util.Set;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -22,6 +19,9 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
+
+import java.util.Set;
+import java.util.stream.Stream;
 
 public class ZeroOrMorePath extends Path {
 

@@ -7,11 +7,11 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
-import java.util.Set;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+
+import java.util.Set;
 
 public interface Exportable {
 

@@ -8,11 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
-import java.util.Objects;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -26,6 +21,11 @@ import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SetFilterNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValuesBackedNode;
+
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Stream;
 
 public class TargetNode extends Target {
 	private final TreeSet<Value> targetNodes;

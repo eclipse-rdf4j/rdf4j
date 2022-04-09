@@ -8,10 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
-import java.util.Optional;
-
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.model.Model;
@@ -19,6 +15,10 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+import java.util.Optional;
 
 /**
  * @since 4.0.0
@@ -37,7 +37,7 @@ public class ShaclSailValidationReportHelper {
 	/**
 	 * Finds a validation report using {@link #getValidationReport(Throwable)} and returns a {@link String} containing
 	 * the pretty-printed report.
-	 * 
+	 *
 	 * @param t the {@link Throwable} to start searching for a validation report at
 	 * @return an Optional with the pretty-printed report if one is found, empty otherwise.
 	 */
@@ -54,7 +54,7 @@ public class ShaclSailValidationReportHelper {
 	/**
 	 * Finds a validation report using {@link #getValidationReport(Throwable)} and pretty-prints it to the specified
 	 * output stream.
-	 * 
+	 *
 	 * @param t   the {@link Throwable} to start searching for a validation report at
 	 * @param out the output stream to print to
 	 */
@@ -68,7 +68,7 @@ public class ShaclSailValidationReportHelper {
 	/**
 	 * Looks for a {@link ValidationException} starting with the specified throwable and working back through the cause
 	 * references, and returns the validation report as a {@link Model} if one is found.
-	 * 
+	 *
 	 * @param t the {@link Throwable} to start the search at
 	 * @return an optional with the validation report, or empty.
 	 */

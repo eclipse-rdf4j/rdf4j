@@ -7,10 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.config;
 
-import static org.eclipse.rdf4j.model.util.Values.iri;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+
+import static org.eclipse.rdf4j.model.util.Values.iri;
 
 /**
  * Defines constants for the ShaclSail schema which is used by {@link ShaclSailFactory}s to initialize

@@ -8,9 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
-import java.util.Set;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -24,6 +21,9 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TupleMapper;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+
+import java.util.Set;
+import java.util.stream.Stream;
 
 public class InversePath extends Path {
 

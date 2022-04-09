@@ -8,9 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
-import java.util.List;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -22,6 +19,9 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.Targetable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 public abstract class Path implements Identifiable, Exportable, Targetable {
 
