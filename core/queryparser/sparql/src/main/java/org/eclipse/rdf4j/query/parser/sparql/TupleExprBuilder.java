@@ -635,32 +635,38 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		result = new Projection(result, projElemList);
 
 		if (group != null) {
-			for (ProjectionElem elem : projElemList.getElements()) {
-				if (!elem.hasAggregateOperatorInExpression()) {
-					Set<String> groupNames = group.getBindingNames();
+			boolean projectionHasAggregate = projElemList.getElements()
+					.stream()
+					.anyMatch(elem -> elem.hasAggregateOperatorInExpression());
 
-					ExtensionElem extElem = elem.getSourceExpression();
-					if (extElem != null) {
-						ValueExpr expr = extElem.getExpr();
+			if (projectionHasAggregate) {
+				for (ProjectionElem elem : projElemList.getElements()) {
+					if (!elem.hasAggregateOperatorInExpression()) {
 
-						VarCollector collector = new VarCollector();
-						expr.visit(collector);
+						Set<String> groupNames = group.getBindingNames();
 
-						for (Var var : collector.getCollectedVars()) {
-							if (!groupNames.contains(var.getName())) {
+						// elem is only allowed to be a simple var or constant (see
+						// https://www.w3.org/TR/sparql11-query/#aggregateRestrictions)
+						ExtensionElem extElem = elem.getSourceExpression();
+						if (extElem != null) {
+							ValueExpr expr = extElem.getExpr();
+							throw new VisitorException(
+									"non-aggregate expression '" + expr
+											+ "' not allowed in projection when using GROUP BY.");
+
+						} else {
+							if (!elem.getSourceName().equals(elem.getTargetName())) {
 								throw new VisitorException(
-										"variable '" + var.getName() + "' in projection not present in GROUP BY.");
-
+										"non-aggregate expression '(?" + elem.getSourceName() + " AS ?"
+												+ elem.getTargetName()
+												+ ")' not allowed in projection when using GROUP BY.");
 							}
-						}
-					} else {
-						if (!groupNames.contains(elem.getTargetName())) {
-							throw new VisitorException(
-									"variable '" + elem.getTargetName() + "' in projection not present in GROUP BY.");
-						} else if (!groupNames.contains(elem.getSourceName())) {
-							throw new VisitorException(
-									"variable '" + elem.getSourceName() + "' in projection not present in GROUP BY.");
-
+							// projection element is simple var or constant. Must be present in GROUP BY.
+							if (!groupNames.contains(elem.getTargetName())) {
+								throw new VisitorException(
+										"variable '" + elem.getTargetName()
+												+ "' in projection not present in GROUP BY.");
+							}
 						}
 					}
 				}
