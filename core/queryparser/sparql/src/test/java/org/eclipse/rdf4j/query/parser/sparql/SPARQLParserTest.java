@@ -387,7 +387,7 @@ public class SPARQLParserTest {
 		String query = "SELECT DISTINCT ?s (?o AS ?o1) \n"
 				+ "WHERE {\n"
 				+ "	?s ?p ?o \n"
-				+ "} GROUP BY ?o";
+				+ "} GROUP BY ?s ?o";
 
 		// should parse without error
 		parser.parseQuery(query, null);
@@ -412,9 +412,19 @@ public class SPARQLParserTest {
 				+ "	?s ?p ?o \n"
 				+ "} GROUP BY ?o";
 
-		assertThatExceptionOfType(MalformedQueryException.class).isThrownBy(() -> parser.parseQuery(query, null))
-				.withMessageStartingWith("non-aggregate expression '(?o AS ?o1)");
+		// should parse without error
+		parser.parseQuery(query, null);
+	}
 
+	@Test
+	public void testGroupByProjectionHandling_Aggregate_Alias2() {
+		String query = "SELECT (COUNT(?s) as ?count) (?o AS ?o1) \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?p";
+
+		assertThatExceptionOfType(MalformedQueryException.class).isThrownBy(() -> parser.parseQuery(query, null))
+				.withMessageStartingWith("variable 'o' in projection not present in GROUP BY.");
 	}
 
 	@Test
