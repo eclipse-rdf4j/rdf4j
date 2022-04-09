@@ -134,6 +134,13 @@ Another factor is the speed of your disks. You should use SSDs for larger databa
 More up-to-date information about LMDB can be found at: https://www.symas.com/symas-lmdb-tech-info
 Especially the [SSD-benchmarks](http://www.lmdb.tech/bench/optanessd/imdt.html) may be of interest.
 
+## Backup and restore
+LMDB provides a set of [command line tools](http://www.lmdb.tech/doc/tools.html) that can be used
+to backup and restore the value and triple databases.
+Those tools can typically be used while the databases are in use as LMDB permits concurrent use
+through multiple processes. Please note that it may happen that the backups of the value and triple 
+databases may get out of sync if the LMDB store has active writes as each uses its own transaction.
+
 ## Control database file size
 [LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database) uses memory-mapped files
 
