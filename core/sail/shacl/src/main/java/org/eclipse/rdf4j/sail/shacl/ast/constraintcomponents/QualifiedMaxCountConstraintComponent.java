@@ -7,12 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import static org.eclipse.rdf4j.model.util.Values.literal;
-
-import java.math.BigInteger;
-import java.util.List;
-import java.util.Set;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -44,13 +38,19 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
 
+import java.math.BigInteger;
+import java.util.List;
+import java.util.Set;
+
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
 public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComponent {
 	Shape qualifiedValueShape;
 	Boolean qualifiedValueShapesDisjoint;
 	Long qualifiedMaxCount;
 
 	public QualifiedMaxCountConstraintComponent(Resource id, RepositoryConnection connection, Cache cache,
-			ShaclSail shaclSail, Boolean qualifiedValueShapesDisjoint, Long qualifiedMaxCount) {
+												ShaclSail shaclSail, Boolean qualifiedValueShapesDisjoint, Long qualifiedMaxCount) {
 		super(id);
 
 		ShaclProperties p = new ShaclProperties(id, connection);
@@ -104,22 +104,22 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 	@Override
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			boolean negatePlan, boolean negateChildren, Scope scope) {
+														 boolean negatePlan, boolean negateChildren, Scope scope) {
 		assert scope == Scope.propertyShape;
 		throw new ShaclUnsupportedException();
 	}
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			PlanNodeProvider overrideTargetNode, Scope scope) {
+														PlanNodeProvider overrideTargetNode, Scope scope) {
 		assert scope == Scope.propertyShape;
 
 		PlanNode target;
 
 		if (overrideTargetNode != null) {
 			target = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
-							false, null);
+				.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
+					false, null);
 		} else {
 			target = getAllTargetsPlan(connectionsGroup, scope);
 		}
@@ -134,7 +134,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 	}
 
 	public PlanNode negated(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			PlanNodeProvider overrideTargetNode, Scope scope) {
+							PlanNodeProvider overrideTargetNode, Scope scope) {
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
@@ -144,21 +144,21 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 			if (overrideTargetNode != null) {
 				target = getTargetChain()
-						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-						.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
-								false, null);
+					.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
+						false, null);
 			}
 
 			target = Unique.getInstance(new TrimToTarget(target), false);
 
 			PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(target,
-					connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
-					getTargetChain().getPath()
-							.get()
-							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-									new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(),
-									stableRandomVariableProvider),
-					false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
+				connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
+				getTargetChain().getPath()
+					.get()
+					.getTargetQueryFragment(new StatementMatcher.Variable("a"),
+						new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(),
+						stableRandomVariableProvider),
+				false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 			return new TupleMapper(relevantTargetsWithPath, t -> {
 				List<Value> targetChain = t.getTargetChain(true);
@@ -168,7 +168,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 		};
 
 		PlanNode planNode = qualifiedValueShape.generateTransactionalValidationPlan(connectionsGroup,
-				logValidationPlans, planNodeProvider, scope);
+			logValidationPlans, planNodeProvider, scope);
 
 		PlanNode invalid = Unique.getInstance(planNode, false);
 
@@ -176,20 +176,20 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		if (overrideTargetNode != null) {
 			allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
-							false, null);
+				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+				.extend(overrideTargetNode.getPlanNode(), connectionsGroup, scope, EffectiveTarget.Extend.right,
+					false, null);
 		}
 
 		allTargetsPlan = Unique.getInstance(new TrimToTarget(allTargetsPlan), false);
 
 		allTargetsPlan = new BulkedExternalLeftOuterJoin(allTargetsPlan, connectionsGroup.getBaseConnection(),
-				connectionsGroup.getBaseValueFactory(),
-				getTargetChain().getPath()
-						.get()
-						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-				false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
+			connectionsGroup.getBaseValueFactory(),
+			getTargetChain().getPath()
+				.get()
+				.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
+					connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
+			false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true));
 
 		invalid = new NotValuesIn(allTargetsPlan, invalid);
 
@@ -202,8 +202,8 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 		assert scope == Scope.propertyShape;
 
 		PlanNode allTargets = getTargetChain()
-				.getEffectiveTarget("target_", Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner())
-				.getPlanNode(connectionsGroup, Scope.propertyShape, true, null);
+			.getEffectiveTarget("target_", Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner())
+			.getPlanNode(connectionsGroup, Scope.propertyShape, true, null);
 
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, scope);
 

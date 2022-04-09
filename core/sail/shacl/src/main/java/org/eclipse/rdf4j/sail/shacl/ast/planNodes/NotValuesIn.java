@@ -8,14 +8,14 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+
+import java.util.HashSet;
+import java.util.Objects;
+import java.util.Set;
 
 public class NotValuesIn implements PlanNode {
 
@@ -25,9 +25,7 @@ public class NotValuesIn implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public NotValuesIn(PlanNode parent, PlanNode notIn) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-
-		this.parent = parent;
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.notIn = notIn;
 	}
 
@@ -95,11 +93,7 @@ public class NotValuesIn implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId())
-				.append(" [label=\"")
-				.append(StringEscapeUtils.escapeJava(this.toString()))
-				.append("\"];")
-				.append("\n");
+		stringBuilder.append(getId()).append(" [label=\"").append(StringEscapeUtils.escapeJava(this.toString())).append("\"];").append("\n");
 	}
 
 	@Override
@@ -109,10 +103,7 @@ public class NotValuesIn implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "NotValuesIn{" +
-				"parent=" + parent +
-				", notIn=" + notIn +
-				'}';
+		return "NotValuesIn{" + "parent=" + parent + ", notIn=" + notIn + '}';
 	}
 
 	@Override

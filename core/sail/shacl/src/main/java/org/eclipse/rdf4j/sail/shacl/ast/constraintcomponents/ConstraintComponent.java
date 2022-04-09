@@ -22,12 +22,9 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
 
 public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
-	ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			boolean negatePlan, boolean negateChildren, Scope scope);
+	ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans, boolean negatePlan, boolean negateChildren, Scope scope);
 
-	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
-			Scope scope);
+	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, boolean logValidationPlans, PlanNodeProvider overrideTargetNode, Scope scope);
 
 	/**
 	 * A constraint component should decide which validation approach is going to be the optimal performance wise based
@@ -53,15 +50,10 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
 	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope);
 
-	SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
-			Scope scope, StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
+	SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject, StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope, StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
 
 	enum Scope {
-		none,
-		nodeShape,
-		propertyShape
+		none, nodeShape, propertyShape
 	}
 
 	ConstraintComponent deepClone();

@@ -8,13 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Objects;
-import java.util.function.Function;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+
+import java.util.Objects;
+import java.util.function.Function;
 
 public class ValidationReportNode implements PlanNode {
 
@@ -23,10 +23,8 @@ public class ValidationReportNode implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValidationReportNode(PlanNode parent,
-			Function<ValidationTuple, ValidationResult> validationResultFunction) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-		this.parent = parent;
+	public ValidationReportNode(PlanNode parent, Function<ValidationTuple, ValidationResult> validationResultFunction) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent);;
 		this.validationResultFunction = validationResultFunction;
 	}
 
@@ -67,11 +65,7 @@ public class ValidationReportNode implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId())
-				.append(" [label=\"")
-				.append(StringEscapeUtils.escapeJava(this.toString()))
-				.append("\"];")
-				.append("\n");
+		stringBuilder.append(getId()).append(" [label=\"").append(StringEscapeUtils.escapeJava(this.toString())).append("\"];").append("\n");
 	}
 
 	@Override

@@ -8,14 +8,14 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.util.Literals;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.util.Literals;
 
 /**
  * @author Håvard Ottestad
@@ -63,10 +63,7 @@ public class LanguageInFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "LanguageInFilter{" +
-				"languageRanges=" + Arrays.toString(languageRanges.toArray()) +
-				", lowerCaseLanguageIn=" + Arrays.toString(lowerCaseLanguageIn.toArray()) +
-				'}';
+		return "LanguageInFilter{" + "languageRanges=" + Arrays.toString(languageRanges.toArray()) + ", lowerCaseLanguageIn=" + Arrays.toString(lowerCaseLanguageIn.toArray()) + '}';
 	}
 
 	@Override

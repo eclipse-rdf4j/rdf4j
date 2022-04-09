@@ -8,13 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import static org.eclipse.rdf4j.model.util.Values.literal;
-
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -25,20 +18,22 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
 public class ClosedConstraintComponent extends AbstractConstraintComponent {
 
 	private final List<Path> paths;
 	private final List<IRI> ignoredProperties;
 
-	public ClosedConstraintComponent(RepositoryConnection connection, List<Resource> property,
-			Resource ignoredProperties) {
+	public ClosedConstraintComponent(RepositoryConnection connection, List<Resource> property, Resource ignoredProperties) {
 
 		paths = property.stream().flatMap(r -> {
-			return connection.getStatements(r, SHACL.PATH, null)
-					.stream()
-					.map(Statement::getObject)
-					.map(o -> ((Resource) o))
-					.map(path -> Path.buildPath(connection, path));
+			return connection.getStatements(r, SHACL.PATH, null).stream().map(Statement::getObject).map(o -> ((Resource) o)).map(path -> Path.buildPath(connection, path));
 
 		}).collect(Collectors.toList());
 

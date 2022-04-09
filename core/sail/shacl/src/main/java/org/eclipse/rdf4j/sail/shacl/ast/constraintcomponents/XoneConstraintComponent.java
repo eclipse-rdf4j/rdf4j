@@ -8,11 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -28,24 +23,24 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 public class XoneConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> xone;
 
-	public XoneConstraintComponent(Resource id, RepositoryConnection connection,
-			Cache cache, ShaclSail shaclSail) {
+	public XoneConstraintComponent(Resource id, RepositoryConnection connection, Cache cache, ShaclSail shaclSail) {
 		super(id);
-		xone = ShaclAstLists.toList(connection, id, Resource.class)
-				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> {
-					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, connection, cache, false, shaclSail);
-					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-						return PropertyShape.getInstance(p, connection, cache, shaclSail);
-					}
-					throw new IllegalStateException("Unknown shape type for " + p.getId());
-				})
-				.collect(Collectors.toList());
+		xone = ShaclAstLists.toList(connection, id, Resource.class).stream().map(r -> new ShaclProperties(r, connection)).map(p -> {
+			if (p.getType() == SHACL.NODE_SHAPE) {
+				return NodeShape.getInstance(p, connection, cache, false, shaclSail);
+			} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
+				return PropertyShape.getInstance(p, connection, cache, shaclSail);
+			}
+			throw new IllegalStateException("Unknown shape type for " + p.getId());
+		}).collect(Collectors.toList());
 
 	}
 
@@ -88,10 +83,7 @@ public class XoneConstraintComponent extends AbstractConstraintComponent {
 	public ConstraintComponent deepClone() {
 
 		XoneConstraintComponent constraintComponent = new XoneConstraintComponent(this);
-		constraintComponent.xone = xone.stream()
-				.map(ConstraintComponent::deepClone)
-				.map(a -> ((Shape) a))
-				.collect(Collectors.toList());
+		constraintComponent.xone = xone.stream().map(ConstraintComponent::deepClone).map(a -> ((Shape) a)).collect(Collectors.toList());
 		return constraintComponent;
 	}
 }

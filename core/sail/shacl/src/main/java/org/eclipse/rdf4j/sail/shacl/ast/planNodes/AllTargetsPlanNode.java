@@ -7,12 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.ArrayDeque;
-import java.util.List;
-import java.util.Objects;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -21,6 +15,12 @@ import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+
+import java.util.ArrayDeque;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Used to signal bulk validation. This plan node should only be used from EffectiveTarget#getAllTargets
@@ -32,18 +32,12 @@ public class AllTargetsPlanNode implements PlanNode {
 	private boolean printed;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public AllTargetsPlanNode(ConnectionsGroup connectionsGroup,
-			ArrayDeque<EffectiveTarget.EffectiveTargetObject> chain, List<StatementMatcher.Variable> vars,
-			ConstraintComponent.Scope scope) {
-		String query = chain.stream()
-				.map(EffectiveTarget.EffectiveTargetObject::getQueryFragment)
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
+	public AllTargetsPlanNode(ConnectionsGroup connectionsGroup, ArrayDeque<EffectiveTarget.EffectiveTargetObject> chain, List<StatementMatcher.Variable> vars, ConstraintComponent.Scope scope) {
+		String query = chain.stream().map(EffectiveTarget.EffectiveTargetObject::getQueryFragment).reduce((a, b) -> a + "\n" + b).orElse("");
 
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
-		this.select = new Select(connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(), query,
-				null, new AllTargetsBindingSetMapper(varNames, scope, false));
+		this.select = new Select(connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(), query, null, new AllTargetsBindingSetMapper(varNames, scope, false));
 
 	}
 
@@ -83,8 +77,7 @@ public class AllTargetsPlanNode implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(select.getId() + " -> " + getId()).append("\n");
 		select.getPlanAsGraphvizDot(stringBuilder);
 	}

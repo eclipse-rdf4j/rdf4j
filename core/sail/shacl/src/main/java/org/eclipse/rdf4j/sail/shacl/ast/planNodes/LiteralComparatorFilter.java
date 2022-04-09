@@ -8,12 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Objects;
-
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -39,10 +39,7 @@ public class LiteralComparatorFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "LiteralComparatorFilter{" +
-				"compareTo=" + compareTo +
-				", compareOp=" + compareOp +
-				'}';
+		return "LiteralComparatorFilter{" + "compareTo=" + compareTo + ", compareOp=" + compareOp + '}';
 	}
 
 	@Override

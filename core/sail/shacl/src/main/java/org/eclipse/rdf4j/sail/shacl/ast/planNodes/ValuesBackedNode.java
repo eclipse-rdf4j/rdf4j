@@ -8,12 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Iterator;
-import java.util.List;
-import java.util.Objects;
-import java.util.SortedSet;
-import java.util.stream.Collectors;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -21,6 +15,12 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
+import java.util.SortedSet;
+import java.util.stream.Collectors;
 
 /**
  * @author Håvard Ottestad
@@ -36,11 +36,7 @@ public class ValuesBackedNode implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ValuesBackedNode(SortedSet<Value> values, ConstraintComponent.Scope scope) {
-
-		this.tuples = values.stream()
-				.map(c -> new ValidationTuple(c, scope, false))
-				.collect(Collectors.toList());
-
+		this.tuples = values.stream().map(c -> new ValidationTuple(c, scope, false)).collect(Collectors.toList());
 		this.values = values;
 		this.scope = scope;
 	}
@@ -79,8 +75,7 @@ public class ValuesBackedNode implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 
 	}
 
@@ -91,8 +86,7 @@ public class ValuesBackedNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ValuesBackedNode{" +
-				"values=" + values + '}';
+		return "ValuesBackedNode{" + "values=" + values + '}';
 	}
 
 	@Override

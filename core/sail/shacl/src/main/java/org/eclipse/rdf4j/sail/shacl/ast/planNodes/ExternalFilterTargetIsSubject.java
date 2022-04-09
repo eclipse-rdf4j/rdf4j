@@ -8,12 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Objects;
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -60,8 +60,7 @@ public class ExternalFilterTargetIsSubject extends FilterPlanNode {
 
 		ExternalFilterTargetIsSubject that = (ExternalFilterTargetIsSubject) o;
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
-			return ((MemoryStoreConnection) connection).getSail()
-					.equals(((MemoryStoreConnection) that.connection).getSail());
+			return ((MemoryStoreConnection) connection).getSail().equals(((MemoryStoreConnection) that.connection).getSail());
 		}
 		return connection.equals(that.connection);
 	}

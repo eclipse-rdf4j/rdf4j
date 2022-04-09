@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Objects;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -28,6 +26,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
+
 /**
  * @author Håvard Ottestad
  */
@@ -44,13 +44,12 @@ public class SparqlTargetSelect implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public SparqlTargetSelect(SailConnection connection, ValueFactory valueFactory, String query,
-			ConstraintComponent.Scope scope) {
+	public SparqlTargetSelect(SailConnection connection, ValueFactory valueFactory, String query, ConstraintComponent.Scope scope) {
 		this.connection = connection;
 		this.query = query;
 		this.valueFactory = valueFactory;
 		assert query.contains("?this") : "Query should contain ?this: " + query;
-		this.variables = new String[] { "?this" };
+		this.variables = new String[]{"?this"};
 		this.scope = scope;
 
 	}
@@ -63,14 +62,11 @@ public class SparqlTargetSelect implements PlanNode {
 
 			{
 
-				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
-						.get(QueryLanguage.SPARQL)
-						.get();
+				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
 				try {
 					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null, valueFactory);
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(),
-							new MapBindingSet(), true);
+					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true);
 				} catch (MalformedQueryException e) {
 					logger.error("Malformed query: \n{}", query);
 					throw e;
@@ -106,15 +102,12 @@ public class SparqlTargetSelect implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder
-					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
-					.append("\n");
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId()).append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId()).append("\n");
 		}
@@ -143,13 +136,7 @@ public class SparqlTargetSelect implements PlanNode {
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
-		return Objects.equals(
-				connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail()
-						: connection,
-				select.connection instanceof MemoryStoreConnection
-						? ((MemoryStoreConnection) select.connection).getSail()
-						: select.connection)
-				&& query.equals(select.query);
+		return Objects.equals(connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) connection).getSail() : connection, select.connection instanceof MemoryStoreConnection ? ((MemoryStoreConnection) select.connection).getSail() : select.connection) && query.equals(select.query);
 	}
 
 	@Override

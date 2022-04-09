@@ -8,11 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.Collections;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.function.Function;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -25,6 +20,11 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValueInFilter;
+
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.function.Function;
 
 public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 
@@ -69,27 +69,24 @@ public class InConstraintComponent extends SimpleAbstractConstraintComponent {
 	}
 
 	private String getInSetAsString() {
-		return in.stream()
-				.map(targetNode -> {
-					if (targetNode.isResource()) {
-						return "<" + targetNode + ">";
-					}
-					if (targetNode.isLiteral()) {
-						IRI datatype = ((Literal) targetNode).getDatatype();
-						if (datatype == null) {
-							return "\"" + targetNode.stringValue() + "\"";
-						}
-						if (((Literal) targetNode).getLanguage().isPresent()) {
-							return "\"" + targetNode.stringValue() + "\"@" + ((Literal) targetNode).getLanguage().get();
-						}
-						return "\"" + targetNode.stringValue() + "\"^^<" + datatype.stringValue() + ">";
-					}
+		return in.stream().map(targetNode -> {
+			if (targetNode.isResource()) {
+				return "<" + targetNode + ">";
+			}
+			if (targetNode.isLiteral()) {
+				IRI datatype = ((Literal) targetNode).getDatatype();
+				if (datatype == null) {
+					return "\"" + targetNode.stringValue() + "\"";
+				}
+				if (((Literal) targetNode).getLanguage().isPresent()) {
+					return "\"" + targetNode.stringValue() + "\"@" + ((Literal) targetNode).getLanguage().get();
+				}
+				return "\"" + targetNode.stringValue() + "\"^^<" + datatype.stringValue() + ">";
+			}
 
-					throw new IllegalStateException(targetNode.getClass().getSimpleName());
+			throw new IllegalStateException(targetNode.getClass().getSimpleName());
 
-				})
-				.reduce((a, b) -> a + ", " + b)
-				.orElse("");
+		}).reduce((a, b) -> a + ", " + b).orElse("");
 	}
 
 	@Override

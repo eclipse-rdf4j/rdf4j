@@ -8,11 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import org.eclipse.rdf4j.model.Value;
+
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
-
-import org.eclipse.rdf4j.model.Value;
 
 /**
  * @author Håvard Ottestad
@@ -33,8 +33,7 @@ public class ValueInFilter extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "ValueInFilter{" + "valueSet=" + Arrays.toString(valueSet.stream().map(Formatter::prefix).toArray())
-				+ '}';
+		return "ValueInFilter{" + "valueSet=" + Arrays.toString(valueSet.stream().map(Formatter::prefix).toArray()) + '}';
 	}
 
 	@Override
