@@ -8,13 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.wrapper.shape;
 
-import static org.eclipse.rdf4j.model.util.Values.iri;
-
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -35,6 +28,13 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencerConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.stream.Stream;
+
+import static org.eclipse.rdf4j.model.util.Values.iri;
 
 public class ForwardChainingShapeSource implements ShapeSource {
 

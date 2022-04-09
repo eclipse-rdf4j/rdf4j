@@ -7,9 +7,9 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+
+import java.util.stream.Stream;
 
 public interface Targetable {
 

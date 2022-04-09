@@ -7,11 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.common.transaction.TransactionSettingFactory;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHint;
+
+import java.util.Optional;
 
 /**
  * Factory class for producing instances of {@link PerformanceHint} from string values.

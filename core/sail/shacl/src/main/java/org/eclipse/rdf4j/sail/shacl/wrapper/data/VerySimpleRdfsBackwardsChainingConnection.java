@@ -8,11 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.wrapper.data;
 
-import static org.eclipse.rdf4j.model.util.Statements.statement;
-
-import java.util.HashSet;
-import java.util.Set;
-
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
@@ -26,6 +21,11 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import static org.eclipse.rdf4j.model.util.Statements.statement;
 
 /**
  * Very simple RDFS backwardschaining connection that supports type inference on hasStatement and getStatement. It does

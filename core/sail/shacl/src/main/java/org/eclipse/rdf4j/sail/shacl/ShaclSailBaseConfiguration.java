@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import java.util.Set;
-
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
@@ -19,6 +17,8 @@ import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Set;
 
 abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 

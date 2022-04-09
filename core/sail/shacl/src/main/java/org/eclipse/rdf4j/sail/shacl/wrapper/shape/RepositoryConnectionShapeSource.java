@@ -8,9 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.wrapper.shape;
 
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -18,6 +15,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class RepositoryConnectionShapeSource implements ShapeSource {
 
