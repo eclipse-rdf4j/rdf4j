@@ -10,7 +10,6 @@ PREFIX skos:  <http://www.w3.org/2004/02/skos/core#>
 PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
 
 INSERT DATA {
-
    [
     a dcat:Distribution ;
     dc:identifier "https://data.some.org/catalog/datasets/1/distribution/1" ;

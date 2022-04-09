@@ -97,7 +97,7 @@ public class ValueInBenchmarkEmpty {
 	public void shacl() throws Exception {
 
 		SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail("test-cases/hasValueIn/simple/shacl.ttl"));
+				Utils.getInitializedShaclSail("test-cases/hasValueIn/simple/shacl.trig"));
 
 		((ShaclSail) repository.getSail()).setDashDataShapes(true);
 
@@ -122,7 +122,7 @@ public class ValueInBenchmarkEmpty {
 	public void shaclBulk() throws Exception {
 
 		SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail("test-cases/hasValueIn/simple/shacl.ttl"));
+				Utils.getInitializedShaclSail("test-cases/hasValueIn/simple/shacl.trig"));
 
 		((ShaclSail) repository.getSail()).setDashDataShapes(true);
 

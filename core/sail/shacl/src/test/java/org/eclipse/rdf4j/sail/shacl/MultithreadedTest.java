@@ -237,11 +237,11 @@ public abstract class MultithreadedTest {
 								try {
 									connection.commit();
 								} catch (RepositoryException e) {
+									connection.rollback();
 									if (!((e.getCause() instanceof ShaclSailValidationException)
 											|| e.getCause() instanceof SailConflictException)) {
 										throw e;
 									}
-									connection.rollback();
 								}
 
 							}
@@ -286,7 +286,7 @@ public abstract class MultithreadedTest {
 			StringReader shaclRules = new StringReader(turtle);
 
 			try {
-				Model parse = Rio.parse(shaclRules, "", RDFFormat.TURTLE);
+				Model parse = Rio.parse(shaclRules, "", RDFFormat.TRIG);
 				parse.stream()
 						.map(statement -> {
 							if (graph != null) {
@@ -313,7 +313,7 @@ public abstract class MultithreadedTest {
 			StringReader shaclRules = new StringReader(turtle);
 
 			try {
-				Model parse = Rio.parse(shaclRules, "", RDFFormat.TURTLE);
+				Model parse = Rio.parse(shaclRules, "", RDFFormat.TRIG);
 				parse.stream()
 						.map(statement -> {
 							if (graph != null) {
@@ -358,7 +358,6 @@ public abstract class MultithreadedTest {
 		sail.setSerializableValidation(true);
 
 		runValidationFailuresTest(sail, IsolationLevels.SNAPSHOT, 100);
-
 	}
 
 	@Test
@@ -391,7 +390,6 @@ public abstract class MultithreadedTest {
 		sail.setSerializableValidation(false);
 
 		runValidationFailuresTest(sail, IsolationLevels.READ_COMMITTED, 100);
-
 	}
 
 	@Test
@@ -417,19 +415,19 @@ public abstract class MultithreadedTest {
 		List<Statement> parse;
 		try (InputStream resource = MultithreadedTest.class.getClassLoader()
 				.getResourceAsStream("complexBenchmark/smallFileInvalid.ttl")) {
-			parse = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TURTLE));
+			parse = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TRIG));
 		}
 
 		List<Statement> parse2;
 		try (InputStream resource = MultithreadedTest.class.getClassLoader()
 				.getResourceAsStream("complexBenchmark/smallFileInvalid2.ttl")) {
-			parse2 = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TURTLE));
+			parse2 = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TRIG));
 		}
 
 		List<Statement> parse3;
 		try (InputStream resource = MultithreadedTest.class.getClassLoader()
 				.getResourceAsStream("complexBenchmark/smallFile.ttl")) {
-			parse3 = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TURTLE));
+			parse3 = new ArrayList<>(Rio.parse(resource, "", RDFFormat.TRIG));
 		}
 
 		ExecutorService executorService = null;
@@ -437,7 +435,7 @@ public abstract class MultithreadedTest {
 
 			executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 
-			Utils.loadShapeData(repository, "complexBenchmark/shacl.ttl");
+			Utils.loadShapeData(repository, "complexBenchmark/shacl.trig");
 
 			IntStream.range(1, numberOfRuns)
 
@@ -451,11 +449,11 @@ public abstract class MultithreadedTest {
 							try {
 								connection.commit();
 							} catch (RepositoryException e) {
+								connection.rollback();
 								if (!((e.getCause() instanceof ShaclSailValidationException)
 										|| e.getCause() instanceof SailConflictException)) {
 									throw e;
 								}
-								connection.rollback();
 							}
 
 							connection.begin(isolationLevels);
@@ -464,11 +462,11 @@ public abstract class MultithreadedTest {
 							try {
 								connection.commit();
 							} catch (RepositoryException e) {
+								connection.rollback();
 								if (!((e.getCause() instanceof ShaclSailValidationException)
 										|| e.getCause() instanceof SailConflictException)) {
 									throw e;
 								}
-								connection.rollback();
 							}
 
 							connection.begin(isolationLevels);
@@ -477,11 +475,11 @@ public abstract class MultithreadedTest {
 							try {
 								connection.commit();
 							} catch (RepositoryException e) {
+								connection.rollback();
 								if (!((e.getCause() instanceof ShaclSailValidationException)
 										|| e.getCause() instanceof SailConflictException)) {
 									throw e;
 								}
-								connection.rollback();
 							}
 
 							connection.begin(isolationLevels);
@@ -490,11 +488,11 @@ public abstract class MultithreadedTest {
 							try {
 								connection.commit();
 							} catch (RepositoryException e) {
+								connection.rollback();
 								if (!((e.getCause() instanceof ShaclSailValidationException)
 										|| e.getCause() instanceof SailConflictException)) {
 									throw e;
 								}
-								connection.rollback();
 							}
 						}
 					})
@@ -524,7 +522,8 @@ public abstract class MultithreadedTest {
 
 		} finally {
 			if (executorService != null) {
-				executorService.shutdown();
+				List<Runnable> runnables = executorService.shutdownNow();
+				assert runnables.isEmpty();
 			}
 
 			repository.shutDown();

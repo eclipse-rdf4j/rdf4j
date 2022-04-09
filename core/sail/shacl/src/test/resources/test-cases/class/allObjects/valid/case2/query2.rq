@@ -6,7 +6,6 @@ PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-
 [] ex:temp ex:validPerson1.
 
 

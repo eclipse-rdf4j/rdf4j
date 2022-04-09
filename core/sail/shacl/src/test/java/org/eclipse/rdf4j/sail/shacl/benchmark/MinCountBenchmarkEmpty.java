@@ -74,7 +74,7 @@ public class MinCountBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
@@ -90,7 +90,7 @@ public class MinCountBenchmarkEmpty {
 	@Benchmark
 	public void shaclBulk() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
@@ -106,7 +106,7 @@ public class MinCountBenchmarkEmpty {
 	@Benchmark
 	public void shaclClear() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shacl.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
@@ -168,7 +168,7 @@ public class MinCountBenchmarkEmpty {
 	@Benchmark
 	public void shaclMinCountZero() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMinCountZero.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclMinCountZero.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {

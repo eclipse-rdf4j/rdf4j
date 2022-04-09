@@ -8,6 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
+import java.math.BigInteger;
+import java.util.Set;
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -16,12 +22,6 @@ import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.MaxLengthFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
-
-import java.math.BigInteger;
-import java.util.Set;
-import java.util.function.Function;
-
-import static org.eclipse.rdf4j.model.util.Values.literal;
 
 public class MaxLengthConstraintComponent extends SimpleAbstractConstraintComponent {
 

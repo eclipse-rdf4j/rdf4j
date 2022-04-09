@@ -54,7 +54,7 @@ public class NativeStoreTest {
 
 			));
 
-			connection.add(invalidSampleData, "", RDFFormat.TURTLE);
+			connection.add(invalidSampleData, "", RDFFormat.TRIG);
 
 			assertThrows(ShaclSailValidationException.class, () -> {
 				try {
@@ -84,7 +84,7 @@ public class NativeStoreTest {
 					"ex:PersonShapeProperty ", "  sh:path foaf:age ;", "  sh:datatype xsd:int ;", "  sh:maxCount 1 ;",
 					"  sh:minCount 1 ."));
 
-			connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			connection.add(shaclRules, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			connection.commit();
 
 		}

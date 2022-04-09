@@ -56,7 +56,7 @@ public class ComplexTargetBenchmark {
 	@Param({ "1", "1000", "100000" })
 	public int existingTargets = 10;
 
-	public String shape = "shaclDatatypeTargetFilterWithUnion.ttl";
+	public String shape = "shaclDatatypeTargetFilterWithUnion.trig";
 
 	public int NUMBER_OF_TRANSACTIONS = 10;
 

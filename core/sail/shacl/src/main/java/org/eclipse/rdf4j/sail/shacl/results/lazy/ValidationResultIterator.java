@@ -8,18 +8,18 @@
 
 package org.eclipse.rdf4j.sail.shacl.results.lazy;
 
-import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
-import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 @InternalUseOnly
 public class ValidationResultIterator implements Iterator<ValidationResult> {

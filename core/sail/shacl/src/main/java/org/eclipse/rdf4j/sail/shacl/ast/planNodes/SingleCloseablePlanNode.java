@@ -8,11 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
-
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * A plan node that can only be closed once

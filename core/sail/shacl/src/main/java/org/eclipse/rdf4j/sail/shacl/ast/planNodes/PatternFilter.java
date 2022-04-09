@@ -8,10 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import org.eclipse.rdf4j.model.Value;
-
 import java.util.Objects;
 import java.util.regex.Pattern;
+
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * @author Håvard Ottestad

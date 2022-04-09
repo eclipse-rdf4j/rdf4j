@@ -7,7 +7,20 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
+
 public class PlanNodeHelper {
+
+	private final static SimpleDataset rdf4jNilDataset;
+
+	static {
+		rdf4jNilDataset = new SimpleDataset();
+		rdf4jNilDataset.addDefaultGraph(RDF4J.NIL);
+	}
 
 	public static PlanNode handleSorting(PlanNode child, PlanNode parent) {
 		return handleSorting(child.requiresSorted(), parent);
@@ -20,6 +33,26 @@ public class PlanNodeHelper {
 			}
 		}
 		return parent;
+	}
+
+	public static Dataset asDefaultGraphDataset(Resource[] dataGraph) {
+		if (dataGraph.length == 0) {
+			return null;
+		} else if (dataGraph.length == 1 && dataGraph[0] == null) {
+			return rdf4jNilDataset;
+		}
+
+		SimpleDataset dataGraphDataset = new SimpleDataset();
+		for (Resource context : dataGraph) {
+			if (context == null) {
+				dataGraphDataset.addDefaultGraph(RDF4J.NIL);
+			} else if (context.isIRI()) {
+				dataGraphDataset.addDefaultGraph(((IRI) context));
+			} else {
+				throw new IllegalArgumentException("Trying to validate a data graph that is not an IRI.");
+			}
+		}
+		return dataGraphDataset;
 	}
 
 }

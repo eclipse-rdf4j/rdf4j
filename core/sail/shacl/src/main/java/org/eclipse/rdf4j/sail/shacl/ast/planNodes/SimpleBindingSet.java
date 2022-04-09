@@ -8,16 +8,16 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.AbstractBindingSet;
-import org.eclipse.rdf4j.query.Binding;
-import org.eclipse.rdf4j.query.impl.SimpleBinding;
-
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 /**
  * A simple binding set tuned for the use case that the ShaclSail has.

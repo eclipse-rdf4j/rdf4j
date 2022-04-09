@@ -42,7 +42,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
 public class ContextsController extends AbstractController {
 
 	public ContextsController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });
+		setSupportedMethods(METHOD_GET, METHOD_HEAD);
 	}
 
 	@Override
@@ -53,7 +53,7 @@ public class ContextsController extends AbstractController {
 				TupleQueryResultWriterRegistry.getInstance());
 
 		if (METHOD_GET.equals(request.getMethod())) {
-			List<String> columnNames = Arrays.asList("contextID");
+			List<String> columnNames = List.of("contextID");
 			List<BindingSet> contexts = new ArrayList<>();
 			RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request);
 			try {

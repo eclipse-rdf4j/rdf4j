@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+import java.util.Optional;
+
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.model.Model;
@@ -15,10 +19,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-
-import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
-import java.util.Optional;
 
 /**
  * @since 4.0.0

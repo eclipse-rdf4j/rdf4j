@@ -4,21 +4,23 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
+  rdf4j:truncated false;
   sh:conforms false;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:validPerson1;
-      sh:value ex:norway;
-      sh:resultPath _:node1ejq3v6hmx1;
-      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:resultPath _:node1ftskin5gx58130;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:personShapeOr
+      sh:sourceConstraintComponent sh:NotConstraintComponent;
+      sh:sourceShape ex:personShapeOr;
+      sh:value ex:norway
     ] .
 
 ex:personShapeOr a sh:PropertyShape;
-  sh:path _:node1ejq3v6hmx1;
   sh:not [ a sh:NodeShape;
       sh:and ([ a sh:NodeShape;
             sh:not [ a sh:NodeShape;
@@ -29,6 +31,7 @@ ex:personShapeOr a sh:PropertyShape;
                 sh:class ex:Animal
               ]
           ])
-    ] .
+    ];
+  sh:path _:node1ftskin5gx58130 .
 
-_:node1ejq3v6hmx1 sh:inversePath ex:inverseKnows .
+_:node1ftskin5gx58130 sh:inversePath ex:inverseKnows .

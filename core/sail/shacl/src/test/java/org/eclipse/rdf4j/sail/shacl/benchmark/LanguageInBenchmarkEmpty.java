@@ -82,7 +82,7 @@ public class LanguageInBenchmarkEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclLanguageIn.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclLanguageIn.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
@@ -104,7 +104,7 @@ public class LanguageInBenchmarkEmpty {
 	@Benchmark
 	public void shaclBulk() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclLanguageIn.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclLanguageIn.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);

@@ -8,10 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.NodeKindConstraintComponent;
-
-import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -35,18 +35,18 @@ public class NodeKindFilter extends FilterPlanNode {
 		 */
 
 		switch (nodeKind) {
-			case IRI:
-				return value.isIRI();
-			case Literal:
-				return value.isLiteral();
-			case BlankNode:
-				return value.isBNode();
-			case IRIOrLiteral:
-				return value.isIRI() || value.isLiteral();
-			case BlankNodeOrIRI:
-				return value.isBNode() || value.isIRI();
-			case BlankNodeOrLiteral:
-				return value.isBNode() || value.isLiteral();
+		case IRI:
+			return value.isIRI();
+		case Literal:
+			return value.isLiteral();
+		case BlankNode:
+			return value.isBNode();
+		case IRIOrLiteral:
+			return value.isIRI() || value.isLiteral();
+		case BlankNodeOrIRI:
+			return value.isBNode() || value.isIRI();
+		case BlankNodeOrLiteral:
+			return value.isBNode() || value.isLiteral();
 		}
 
 		throw new IllegalStateException("Unknown nodeKind");

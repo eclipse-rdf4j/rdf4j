@@ -8,14 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -26,6 +18,15 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ValidationTuple {
 
@@ -39,11 +40,15 @@ public class ValidationTuple {
 	private final List<ValidationResult> validationResults;
 	private final Set<ValidationTuple> compressedTuples;
 
-	public ValidationTuple(BindingSet bindingSet, String[] variables, ConstraintComponent.Scope scope, boolean hasValue) {
-		this(bindingSet, Arrays.asList(variables), scope, hasValue);
+	private final Resource[] contexts;
+
+	public ValidationTuple(BindingSet bindingSet, String[] variables, ConstraintComponent.Scope scope, boolean hasValue,
+			Resource[] contexts) {
+		this(bindingSet, Arrays.asList(variables), scope, hasValue, contexts);
 	}
 
-	public ValidationTuple(BindingSet bindingSet, List<String> variables, ConstraintComponent.Scope scope, boolean hasValue) {
+	public ValidationTuple(BindingSet bindingSet, List<String> variables, ConstraintComponent.Scope scope,
+			boolean hasValue, Resource[] contexts) {
 
 		chain = new Value[variables.size()];
 
@@ -55,27 +60,33 @@ public class ValidationTuple {
 		this.propertyShapeScopeWithValue = hasValue;
 		this.validationResults = Collections.emptyList();
 		this.compressedTuples = Collections.emptySet();
+		this.contexts = contexts;
 	}
 
-	public ValidationTuple(List<Value> chain, ConstraintComponent.Scope scope, boolean hasValue) {
+	public ValidationTuple(List<Value> chain, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {
 		this.chain = chain.toArray(new Value[0]);
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 		this.validationResults = Collections.emptyList();
 		this.compressedTuples = Collections.emptySet();
-
+		this.contexts = contexts;
 	}
 
 	// We will assume that the provided chain will not be mutated elsewhere.
-	public ValidationTuple(Value[] chain, ConstraintComponent.Scope scope, boolean hasValue) {
+	public ValidationTuple(Value[] chain, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {
 		this.chain = chain;
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 		this.validationResults = Collections.emptyList();
 		this.compressedTuples = Collections.emptySet();
+		this.contexts = contexts;
 	}
 
-	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue) {
+	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue, Resource context) {
+		this(a, c, scope, hasValue, new Resource[] { context });
+	}
+
+	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {
 		chain = new Value[2];
 		chain[0] = a;
 		chain[1] = c;
@@ -83,35 +94,41 @@ public class ValidationTuple {
 		this.propertyShapeScopeWithValue = hasValue;
 		this.validationResults = Collections.emptyList();
 		this.compressedTuples = Collections.emptySet();
-
+		this.contexts = contexts;
 	}
 
-	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue) {
+	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue, Resource context) {
+		this(subject, scope, hasValue, new Resource[] { context });
+	}
+
+	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {
 		chain = new Value[1];
 		chain[0] = subject;
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = hasValue;
 		this.validationResults = Collections.emptyList();
 		this.compressedTuples = Collections.emptySet();
-
+		this.contexts = contexts;
 	}
 
-	private ValidationTuple(List<ValidationResult> validationResults, Value[] chain, ConstraintComponent.Scope scope, boolean propertyShapeScopeWithValue, Set<ValidationTuple> compressedTuples) {
+	private ValidationTuple(List<ValidationResult> validationResults, Value[] chain, ConstraintComponent.Scope scope,
+			boolean propertyShapeScopeWithValue, Set<ValidationTuple> compressedTuples, Resource[] contexts) {
 		this.validationResults = Collections.unmodifiableList(validationResults);
 		this.chain = chain;
 		this.scope = scope;
 		this.propertyShapeScopeWithValue = propertyShapeScopeWithValue;
 		this.compressedTuples = Collections.unmodifiableSet(compressedTuples);
+		this.contexts = contexts;
 
 	}
 
-	public ValidationTuple(ValidationTuple temp, Set<ValidationTuple> compressedTuples) {
-		this.validationResults = temp.validationResults;
-		this.chain = temp.chain;
-		this.scope = temp.scope;
-		this.propertyShapeScopeWithValue = temp.propertyShapeScopeWithValue;
+	public ValidationTuple(ValidationTuple tuple, Set<ValidationTuple> compressedTuples) {
+		this.validationResults = tuple.validationResults;
+		this.chain = tuple.chain;
+		this.scope = tuple.scope;
+		this.propertyShapeScopeWithValue = tuple.propertyShapeScopeWithValue;
 		this.compressedTuples = Collections.unmodifiableSet(compressedTuples);
-
+		this.contexts = tuple.contexts;
 	}
 
 	public boolean sameTargetAs(ValidationTuple other) {
@@ -183,7 +200,8 @@ public class ValidationTuple {
 
 		Set<ValidationTuple> compressedTuples = enrichCompressedTuples(t -> t.addValidationResult(validationResult));
 
-		return new ValidationTuple(validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples);
+		return new ValidationTuple(validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples,
+				contexts);
 	}
 
 	public Value getActiveTarget() {
@@ -200,9 +218,10 @@ public class ValidationTuple {
 
 	@Override
 	public String toString() {
-		return "ValidationTuple{" + "chain=" + Arrays.toString(chain) + ", scope=" + scope + ", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
+		return "ValidationTuple{" + "chain=" + Arrays.toString(chain) + ", scope=" + scope
+				+ ", propertyShapeScopeWithValue=" + propertyShapeScopeWithValue +
 //			", validationResults=" + validationResults +
-			", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) + '}';
+				", compressedTuples=" + Arrays.toString(compressedTuples.toArray()) + '}';
 	}
 
 	public List<ValidationTuple> shiftToNodeShape() {
@@ -220,7 +239,8 @@ public class ValidationTuple {
 				chain = this.chain;
 			}
 
-			return Collections.singletonList(new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue, Collections.emptySet()));
+			return Collections.singletonList(new ValidationTuple(this.validationResults, chain, scope,
+					propertyShapeScopeWithValue, Collections.emptySet(), contexts));
 
 		} else {
 			return this.compressedTuples.stream().map(t -> {
@@ -234,7 +254,8 @@ public class ValidationTuple {
 					chain = chain.subList(0, chain.size() - 1);
 				}
 
-				return new ValidationTuple(t.validationResults, chain.toArray(new Value[chain.size()]), scope, propertyShapeScopeWithValue, Collections.emptySet());
+				return new ValidationTuple(t.validationResults, chain.toArray(new Value[chain.size()]), scope,
+						propertyShapeScopeWithValue, Collections.emptySet(), t.contexts);
 
 			}).collect(Collectors.toList());
 
@@ -251,10 +272,14 @@ public class ValidationTuple {
 
 		if (!compressedTuples.isEmpty()) {
 
-			return compressedTuples.stream().map(t -> new ValidationTuple(t.validationResults, t.chain, scope, propertyShapeScopeWithValue, Collections.emptySet())).collect(Collectors.toList());
+			return compressedTuples.stream()
+					.map(t -> new ValidationTuple(t.validationResults, t.chain, scope, propertyShapeScopeWithValue,
+							Collections.emptySet(), t.contexts))
+					.collect(Collectors.toList());
 
 		} else {
-			return Collections.singletonList(new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue, Collections.emptySet()));
+			return Collections.singletonList(new ValidationTuple(this.validationResults, chain, scope,
+					propertyShapeScopeWithValue, Collections.emptySet(), contexts));
 		}
 
 	}
@@ -302,10 +327,11 @@ public class ValidationTuple {
 
 		Set<ValidationTuple> compressedTuples = enrichCompressedTuples(t -> t.setValue(value));
 
-		return new ValidationTuple(this.validationResults, chain, scope, true, compressedTuples);
+		return new ValidationTuple(this.validationResults, chain, scope, true, compressedTuples, contexts);
 	}
 
-	private Set<ValidationTuple> enrichCompressedTuples(Function<ValidationTuple, ValidationTuple> validationTupleValidationTupleFunction) {
+	private Set<ValidationTuple> enrichCompressedTuples(
+			Function<ValidationTuple, ValidationTuple> validationTupleValidationTupleFunction) {
 		if (compressedTuples.isEmpty()) {
 			return compressedTuples;
 		}
@@ -329,7 +355,7 @@ public class ValidationTuple {
 
 				Set<ValidationTuple> compressedTuples = enrichCompressedTuples(ValidationTuple::trimToTarget);
 
-				return new ValidationTuple(this.validationResults, chain, scope, false, compressedTuples);
+				return new ValidationTuple(validationResults, chain, scope, false, compressedTuples, contexts);
 			}
 		}
 		return this;
@@ -344,22 +370,28 @@ public class ValidationTuple {
 			boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;
 			if (getScope() == ConstraintComponent.Scope.propertyShape) {
 				if (hasValue()) {
-					assert this.chain.length > 1 : "Attempting to pop chain will not leave any elements on the chain! " + this;
+					assert this.chain.length > 1 : "Attempting to pop chain will not leave any elements on the chain! "
+							+ this;
 					chain = Arrays.copyOf(this.chain, this.chain.length - 1);
 				} else {
 					propertyShapeScopeWithValue = true;
 					chain = this.chain;
 				}
 			} else {
-				assert this.chain.length > 1 : "Attempting to pop chain will not leave any elements on the chain! " + this;
+				assert this.chain.length > 1 : "Attempting to pop chain will not leave any elements on the chain! "
+						+ this;
 				chain = Arrays.copyOf(this.chain, this.chain.length - 1);
 			}
 
-			return Collections.singletonList(new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue, Collections.emptySet()));
+			return Collections.singletonList(new ValidationTuple(this.validationResults, chain, scope,
+					propertyShapeScopeWithValue, Collections.emptySet(), contexts));
 		} else {
 
 			return compressedTuples.stream().flatMap(t1 -> {
-				return t1.pop().stream().map(t -> new ValidationTuple(t.validationResults, t.chain, t.scope, t.propertyShapeScopeWithValue, t.compressedTuples));
+				return t1.pop()
+						.stream()
+						.map(t -> new ValidationTuple(t.validationResults, t.chain, t.scope,
+								t.propertyShapeScopeWithValue, t.compressedTuples, t.contexts));
 			}).collect(Collectors.toList());
 
 		}
@@ -379,12 +411,15 @@ public class ValidationTuple {
 			return false;
 		}
 		ValidationTuple that = (ValidationTuple) o;
-		return propertyShapeScopeWithValue == that.propertyShapeScopeWithValue && Arrays.equals(chain, that.chain) && scope == that.scope && validationResults.equals(that.validationResults) && compressedTuples.equals(that.compressedTuples);
+		return propertyShapeScopeWithValue == that.propertyShapeScopeWithValue && Arrays.equals(chain, that.chain)
+				&& scope == that.scope && validationResults.equals(that.validationResults)
+				&& compressedTuples.equals(that.compressedTuples);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(Arrays.hashCode(chain), scope, propertyShapeScopeWithValue, validationResults, compressedTuples);
+		return Objects.hash(Arrays.hashCode(chain), scope, propertyShapeScopeWithValue, validationResults,
+				compressedTuples);
 	}
 
 	public ValidationTuple join(ValidationTuple right) {
@@ -399,10 +434,35 @@ public class ValidationTuple {
 			compressedTuples.addAll(right.getCompressedTuples());
 		}
 
-		ValidationTuple validationTuple = new ValidationTuple(validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples);
+		Resource[] contexts;
+
+		if (this.contexts != right.contexts) {
+			assert this.contexts != null;
+			assert right.contexts != null;
+			if (this.contexts.length == 1 && right.contexts.length == 1 && this.contexts[0] == right.contexts[0]) {
+				contexts = this.contexts;
+			} else if (this.contexts.length > 0 && right.contexts.length > 0) {
+				contexts = Arrays.copyOf(this.contexts, this.contexts.length + right.contexts.length);
+				System.arraycopy(right.contexts, 0, contexts, this.contexts.length, right.contexts.length);
+			} else if (right.contexts.length > 0) {
+				// this.contexts must be an empty array
+				contexts = right.contexts;
+			} else {
+				contexts = this.contexts;
+			}
+		} else {
+			contexts = this.contexts;
+		}
+
+		ValidationTuple validationTuple = new ValidationTuple(validationResults, chain, scope,
+				propertyShapeScopeWithValue, compressedTuples, contexts);
 		if (scope == ConstraintComponent.Scope.propertyShape) {
 			validationTuple = validationTuple.setValue(right.getValue());
 		}
 		return validationTuple;
+	}
+
+	public Resource[] getContexts() {
+		return contexts;
 	}
 }

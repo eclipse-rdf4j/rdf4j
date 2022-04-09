@@ -8,6 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -15,8 +22,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalPredicateObjectFilter;
@@ -25,13 +30,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
-
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class TargetClass extends Target {
 
@@ -52,22 +52,23 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			ConstraintComponent.Scope scope) {
 		return getAddedRemovedInner(connectionsGroup.getAddedStatements(),
-				connectionsGroup.getAddedStatementsValueFactory(), scope);
+				connectionsGroup.getAddedStatementsValueFactory(), dataGraph, scope);
 	}
 
-	private PlanNode getAddedRemovedInner(SailConnection connection, ValueFactory valueFactory,
+	private PlanNode getAddedRemovedInner(SailConnection connection, ValueFactory valueFactory, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
 		PlanNode planNode;
 		if (targetClass.size() == 1) {
 			Resource clazz = targetClass.stream().findAny().get();
 			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,
-					UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
+					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 		} else {
 			planNode = new Select(connection, valueFactory,
 					getQueryFragment("?a", "?c", null, new StatementMatcher.StableRandomVariableProvider()), "?a",
-					b -> new ValidationTuple(b.getValue("a"), scope, false));
+					b -> new ValidationTuple(b.getValue("a"), scope, false, dataGraph), dataGraph);
 		}
 
 		return Unique.getInstance(planNode, false);
@@ -102,8 +103,10 @@ public class TargetClass extends Target {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
-		return new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(), RDF.TYPE, targetClass, parent,
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNode parent) {
+		return new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE, targetClass,
+				parent,
 				true, ExternalPredicateObjectFilter.FilterOn.activeTarget);
 
 	}

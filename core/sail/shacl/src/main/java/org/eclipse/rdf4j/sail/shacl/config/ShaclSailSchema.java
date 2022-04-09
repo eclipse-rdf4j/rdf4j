@@ -7,10 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-
-import static org.eclipse.rdf4j.model.util.Values.iri;
 
 /**
  * Defines constants for the ShaclSail schema which is used by {@link ShaclSailFactory}s to initialize
@@ -57,6 +57,8 @@ public class ShaclSailSchema {
 	public final static IRI VALIDATION_RESULTS_LIMIT_TOTAL = create("validationResultsLimitTotal");
 	public final static IRI VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT = create("validationResultsLimitPerConstraint");
 	public final static IRI TRANSACTIONAL_VALIDATION_LIMIT = create("transactionalValidationLimit");
+
+	public final static IRI SHAPES_GRAPH = create("shapesGraph");
 
 	private static IRI create(String localName) {
 		return iri(NAMESPACE, localName);

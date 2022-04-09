@@ -1,0 +1,46 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+rdf4j:SHACLShapeGraph {
+  ex:PersonShape
+  	a sh:NodeShape  ;
+  	sh:target [
+          		a sh:SPARQLTarget ;
+          		sh:select """
+                                  PREFIX ex: <http://example.com/ns#>
+                                  PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                                  PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                                  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                                  PREFIX sh: <http://www.w3.org/ns/shacl#>
+                                  PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+                                  PREFIX dcat: <http://www.w3.org/ns/dcat#>
+                                  PREFIX dc: <http://purl.org/dc/terms/>
+                                  PREFIX skos:  <http://www.w3.org/2004/02/skos/core#>
+                                  PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
+
+
+          			SELECT ?this
+          			WHERE {
+          			        # we want to validate that all Datasets with >=3 Distributions has a dc:title
+          				?this a dcat:Dataset .
+          				?this dcat:distribution ?distribution.
+          				FILTER(! EXISTS {?this dc:language "no"})
+          			}
+          			GROUP BY ?this
+                                  HAVING(COUNT(?distribution) >= 3)
+          			""" ;
+          ] ;
+
+  	sh:property [
+  		sh:path dc:title ;
+  		sh:minCount 1 ;
+  	] .
+
+
+}

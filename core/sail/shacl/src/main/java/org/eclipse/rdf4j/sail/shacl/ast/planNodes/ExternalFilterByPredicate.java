@@ -8,6 +8,10 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.Set;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -16,10 +20,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.Set;
 
 /**
  * @author Håvard Ottestad
@@ -32,12 +32,16 @@ public class ExternalFilterByPredicate implements PlanNode {
 	private final On on;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
+	private final Resource[] dataGraph;
 
 	public enum On {
-		Subject, Object
+		Subject,
+		Object
 	}
 
-	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent, On on) {
+	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent, On on,
+			Resource[] dataGraph) {
+		this.dataGraph = dataGraph;
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.connection = connection;
 		this.filterOnPredicates = filterOnPredicates;
@@ -71,11 +75,18 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 				if (node.isResource() && on == On.Subject) {
 
-					return filterOnPredicates.stream().filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true)).findFirst().orElse(null);
+					return filterOnPredicates.stream()
+							.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true,
+									dataGraph))
+							.findFirst()
+							.orElse(null);
 
 				} else if (on == On.Object) {
 
-					return filterOnPredicates.stream().filter(predicate -> connection.hasStatement(null, predicate, node, true)).findFirst().orElse(null);
+					return filterOnPredicates.stream()
+							.filter(predicate -> connection.hasStatement(null, predicate, node, true, dataGraph))
+							.findFirst()
+							.orElse(null);
 
 				}
 				return null;
@@ -116,15 +127,18 @@ public class ExternalFilterByPredicate implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
+					+ getId() + " [label=\"filter source\"]").append("\n");
 		} else {
-			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]")
+					.append("\n");
 		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
@@ -132,7 +146,8 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterByPredicate{" + "filterOnPredicates=" + Arrays.toString(filterOnPredicates.stream().map(Formatter::prefix).toArray()) + '}';
+		return "ExternalFilterByPredicate{" + "filterOnPredicates="
+				+ Arrays.toString(filterOnPredicates.stream().map(Formatter::prefix).toArray()) + '}';
 	}
 
 	@Override
@@ -166,19 +181,24 @@ public class ExternalFilterByPredicate implements PlanNode {
 		}
 		ExternalFilterByPredicate that = (ExternalFilterByPredicate) o;
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
-			return ((MemoryStoreConnection) connection).getSail().equals(((MemoryStoreConnection) that.connection).getSail()) && filterOnPredicates.equals(that.filterOnPredicates) && parent.equals(that.parent) && on == that.on;
+			return ((MemoryStoreConnection) connection).getSail()
+					.equals(((MemoryStoreConnection) that.connection).getSail())
+					&& Arrays.equals(dataGraph, that.dataGraph) && filterOnPredicates.equals(that.filterOnPredicates)
+					&& parent.equals(that.parent) && on == that.on;
 
 		}
 
-		return connection.equals(that.connection) && filterOnPredicates.equals(that.filterOnPredicates) && parent.equals(that.parent) && on == that.on;
+		return connection.equals(that.connection) && filterOnPredicates.equals(that.filterOnPredicates)
+				&& Arrays.equals(dataGraph, that.dataGraph) && parent.equals(that.parent) && on == that.on;
 	}
 
 	@Override
 	public int hashCode() {
 		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnPredicates, parent, on);
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnPredicates,
+					Arrays.hashCode(dataGraph), parent, on);
 
 		}
-		return Objects.hash(connection, filterOnPredicates, parent, on);
+		return Objects.hash(connection, filterOnPredicates, Arrays.hashCode(dataGraph), parent, on);
 	}
 }

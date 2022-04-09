@@ -7,11 +7,18 @@
  ******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
@@ -21,15 +28,13 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AndConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ClassConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ClosedConstraintComponent;
@@ -70,16 +75,11 @@ import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetClass;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetNode;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetObjectsOf;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetSubjectsOf;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.StringWriter;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
 
@@ -96,6 +96,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	List<ConstraintComponent> constraintComponents = new ArrayList<>();
 
+	Resource[] contexts;
+
 	public Shape() {
 	}
 
@@ -105,19 +107,21 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		this.severity = shape.severity;
 		this.id = shape.id;
 		this.targetChain = shape.targetChain;
+		this.contexts = shape.contexts;
 	}
 
-	public void populate(ShaclProperties properties, RepositoryConnection connection, Cache cache,
+	public void populate(ShaclProperties properties, ShapeSource shapeSource, Cache cache,
 			ShaclSail shaclSail) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
 		this.id = properties.getId();
+		this.contexts = shapeSource.getActiveContexts();
 
 		if (!properties.getTargetClass().isEmpty()) {
 			target.add(new TargetClass(properties.getTargetClass()));
 		}
 		if (!properties.getTargetNode().isEmpty()) {
-			target.add(new TargetNode(properties.getTargetNode()));
+			target.add(new TargetNode(properties.getTargetNode(), shapeSource.getActiveContexts()));
 		}
 		if (!properties.getTargetObjectsOf().isEmpty()) {
 			target.add(new TargetObjectsOf(properties.getTargetObjectsOf()));
@@ -130,23 +134,23 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 			properties.getTargetShape()
 					.stream()
-					.map(targetShape -> new RSXTargetShape(targetShape, connection, shaclSail))
+					.map(targetShape -> new RSXTargetShape(targetShape, shapeSource, shaclSail))
 					.forEach(target::add);
 
 		}
 
 		if (!properties.getTarget().isEmpty()) {
 			properties.getTarget().forEach(target -> {
-//									if (connection.hasStatement(sparqlTarget, RDF.TYPE, SHACL.SPARQL_TARGET, true)) {
-//										propertyShapes.add(new SparqlTarget(shapeId, shaclSail, connection,
+//									if (shapeSource.hasStatement(sparqlTarget, RDF.TYPE, SHACL.SPARQL_TARGET, true)) {
+//										propertyShapes.add(new SparqlTarget(shapeId, shaclSail, shapeSource,
 //												shaclProperties.isDeactivated(), target));
 //									}
 				if (shaclSail.isDashDataShapes()
-						&& connection.hasStatement(target, RDF.TYPE, DASH.AllObjectsTarget, true)) {
+						&& shapeSource.isType(target, DASH.AllObjectsTarget)) {
 					this.target.add(new DashAllObjects(target));
 				}
 				if (shaclSail.isDashDataShapes()
-						&& connection.hasStatement(target, RDF.TYPE, DASH.AllSubjectsTarget, true)) {
+						&& shapeSource.isType(target, DASH.AllSubjectsTarget)) {
 					this.target.add(new DashAllSubjects(target));
 				}
 
@@ -159,6 +163,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	@Override
 	public Resource getId() {
 		return id;
+	}
+
+	public Resource[] getContexts() {
+		return contexts;
 	}
 
 	protected abstract Shape shallowClone();
@@ -189,21 +197,21 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		model.addAll(modelBuilder.build());
 	}
 
-	List<ConstraintComponent> getConstraintComponents(ShaclProperties properties, RepositoryConnection connection,
+	List<ConstraintComponent> getConstraintComponents(ShaclProperties properties, ShapeSource shapeSource,
 			Cache cache, ShaclSail shaclSail) {
 
 		List<ConstraintComponent> constraintComponent = new ArrayList<>();
 
 		properties.getProperty()
 				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> PropertyShape.getInstance(p, connection, cache, shaclSail))
+				.map(r -> new ShaclProperties(r, shapeSource))
+				.map(p -> PropertyShape.getInstance(p, shapeSource, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		properties.getNode()
 				.stream()
-				.map(r -> new ShaclProperties(r, connection))
-				.map(p -> NodeShape.getInstance(p, connection, cache, true, shaclSail))
+				.map(r -> new ShaclProperties(r, shapeSource))
+				.map(p -> NodeShape.getInstance(p, shapeSource, cache, true, shaclSail))
 				.forEach(constraintComponent::add);
 
 		if (properties.getMinCount() != null) {
@@ -252,11 +260,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 				.forEach(constraintComponent::add);
 
 		if (properties.getLanguageIn() != null) {
-			constraintComponent.add(new LanguageInConstraintComponent(connection, properties.getLanguageIn()));
+			constraintComponent.add(new LanguageInConstraintComponent(shapeSource, properties.getLanguageIn()));
 		}
 
 		if (properties.getIn() != null) {
-			constraintComponent.add(new InConstraintComponent(connection, properties.getIn()));
+			constraintComponent.add(new InConstraintComponent(shapeSource, properties.getIn()));
 		}
 
 		if (properties.getNodeKind() != null) {
@@ -264,7 +272,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		}
 
 		if (properties.isClosed()) {
-			constraintComponent.add(new ClosedConstraintComponent(connection, properties.getProperty(),
+			constraintComponent.add(new ClosedConstraintComponent(shapeSource, properties.getProperty(),
 					properties.getIgnoredProperties()));
 		}
 
@@ -287,14 +295,14 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 			if (properties.getQualifiedMaxCount() != null) {
 				QualifiedMaxCountConstraintComponent qualifiedMaxCountConstraintComponent = new QualifiedMaxCountConstraintComponent(
-						properties.getQualifiedValueShape(), connection, cache, shaclSail,
+						properties.getQualifiedValueShape(), shapeSource, cache, shaclSail,
 						properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMaxCount());
 				constraintComponent.add(qualifiedMaxCountConstraintComponent);
 			}
 
 			if (properties.getQualifiedMinCount() != null) {
 				QualifiedMinCountConstraintComponent qualifiedMinCountConstraintComponent = new QualifiedMinCountConstraintComponent(
-						properties.getQualifiedValueShape(), connection, cache, shaclSail,
+						properties.getQualifiedValueShape(), shapeSource, cache, shaclSail,
 						properties.getQualifiedValueShapesDisjoint(), properties.getQualifiedMinCount());
 				constraintComponent.add(qualifiedMinCountConstraintComponent);
 			}
@@ -303,28 +311,28 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		if (shaclSail.isDashDataShapes()) {
 			properties.getHasValueIn()
 					.stream()
-					.map(hasValueIn -> new DashHasValueInConstraintComponent(hasValueIn, connection))
+					.map(hasValueIn -> new DashHasValueInConstraintComponent(shapeSource, hasValueIn))
 					.forEach(constraintComponent::add);
 		}
 
 		properties.getOr()
 				.stream()
-				.map(or -> new OrConstraintComponent(or, connection, cache, shaclSail))
+				.map(or -> new OrConstraintComponent(or, shapeSource, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		properties.getXone()
 				.stream()
-				.map(xone -> new XoneConstraintComponent(xone, connection, cache, shaclSail))
+				.map(xone -> new XoneConstraintComponent(xone, shapeSource, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		properties.getAnd()
 				.stream()
-				.map(and -> new AndConstraintComponent(and, connection, cache, shaclSail))
+				.map(and -> new AndConstraintComponent(and, shapeSource, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		properties.getNot()
 				.stream()
-				.map(or -> new NotConstraintComponent(or, connection, cache, shaclSail))
+				.map(or -> new NotConstraintComponent(or, shapeSource, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		return constraintComponent;
@@ -341,12 +349,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		constraintComponents.forEach(c -> c.setTargetChain(targetChain));
 	}
 
-	public PlanNode generatePlans(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
-			boolean validateEntireBaseSail) {
+	public PlanNode generatePlans(ConnectionsGroup connectionsGroup, ValidationSettings validationSettings) {
 		assert constraintComponents.size() == 1;
 
 		ValidationApproach validationApproach = ValidationApproach.SPARQL;
-		if (!validateEntireBaseSail) {
+		if (!validationSettings.isValidateEntireBaseSail()) {
 			validationApproach = constraintComponents.stream()
 					.map(constraintComponent -> constraintComponent.getPreferredValidationApproach(connectionsGroup))
 					.reduce(ValidationApproach::reducePreferred)
@@ -357,20 +364,22 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			if (connectionsGroup.isSparqlValidation()
 					&& Shape.this.getOptimalBulkValidationApproach() == ValidationApproach.SPARQL) {
 				logger.debug("Use validation approach {} for shape {}", validationApproach, this);
-				return Shape.this
-						.generateSparqlValidationQuery(connectionsGroup, logValidationPlans, false, false, Scope.none)
-						.getValidationPlan(connectionsGroup.getBaseConnection(),
-								connectionsGroup.getBaseValueFactory());
+				return Shape.this.generateSparqlValidationQuery(connectionsGroup, validationSettings, false, false,
+						Scope.none)
+						.getValidationPlan(connectionsGroup.getBaseConnection(), connectionsGroup.getBaseValueFactory(),
+								validationSettings.getDataGraph(),
+								getContexts());
 			} else {
 				logger.debug("Use fall back validation approach for bulk validation instead of SPARQL for shape {}",
 						this);
 
-				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans,
+				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, validationSettings,
 						() -> Shape.this.getTargetChain()
 								.getEffectiveTarget("_target",
 										this instanceof NodeShape ? Scope.nodeShape : Scope.propertyShape,
 										connectionsGroup.getRdfsSubClassOfReasoner())
 								.getAllTargets(connectionsGroup,
+										validationSettings.getDataGraph(),
 										this instanceof NodeShape ? Scope.nodeShape : Scope.propertyShape),
 						Scope.none);
 			}
@@ -378,8 +387,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		} else if (validationApproach == ValidationApproach.Transactional) {
 			logger.debug("Use validation approach {} for shape {}", validationApproach, this);
 
-			if (this.requiresEvaluation(connectionsGroup, Scope.none)) {
-				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, logValidationPlans, null,
+			if (this.requiresEvaluation(connectionsGroup, Scope.none, validationSettings.getDataGraph())) {
+				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, validationSettings, null,
 						Scope.none);
 			} else {
 				return EmptyNode.getInstance();
@@ -405,8 +414,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	}
 
 	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope) {
-		return constraintComponents.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope));
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph) {
+		return constraintComponents.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope, dataGraph));
 	}
 
 	/**
@@ -429,13 +438,20 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 	public static class Factory {
 
-		public static List<Shape> getShapes(RepositoryConnection connection, ShaclSail shaclSail) {
+		public static List<ContextWithShapes> getShapes(ShapeSource shapeSource, ShaclSail shaclSail) {
 
-			List<Shape> parsed = parse(connection, shaclSail);
-			List<Shape> split = split(parsed);
-			calculateTargetChain(split);
+			List<ContextWithShapes> parsed = parse(shapeSource, shaclSail);
 
-			return split;
+			return parsed.stream()
+					.map(contextWithShapes -> {
+						List<Shape> split = split(contextWithShapes.getShapes());
+						calculateTargetChain(split);
+						return new ContextWithShapes(contextWithShapes.getDataGraph(),
+								contextWithShapes.getShapeGraph(), split);
+
+					})
+					.collect(Collectors.toList());
+
 		}
 
 		private static void calculateTargetChain(List<Shape> parsed) {
@@ -483,54 +499,42 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 			}).collect(Collectors.toList());
 		}
 
-		private static List<Shape> parse(RepositoryConnection connection, ShaclSail shaclSail) {
-			Cache cache = new Cache();
+		private static List<ContextWithShapes> parse(ShapeSource shapeSource, ShaclSail shaclSail) {
 
-			Set<Resource> resources = getTargetableShapes(connection);
+			try (Stream<ShapeSource.ShapesGraph> allShapeContexts = shapeSource.getAllShapeContexts()) {
+				return allShapeContexts
+						.map(shapesGraph -> {
+							Cache cache = new Cache();
+							return getShapesInContext(shapeSource, shaclSail, cache, shapesGraph.getDataGraph(),
+									shapesGraph.getShapesGraph());
+						})
+						.collect(Collectors.toList());
 
-			return resources.stream().map(r -> new ShaclProperties(r, connection)).map(p -> {
-				if (p.getType() == SHACL.NODE_SHAPE) {
-					return NodeShape.getInstance(p, connection, cache, true, shaclSail);
-				} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-					return PropertyShape.getInstance(p, connection, cache, shaclSail);
-				}
-				throw new IllegalStateException("Unknown shape type for " + p.getId());
-			}).collect(Collectors.toList());
-		}
-
-		private static Set<Resource> getTargetableShapes(RepositoryConnection connection) {
-			Set<Resource> collect;
-			try (Stream<Statement> TARGET_NODE = connection.getStatements(null, SHACL.TARGET_NODE, null, true)
-					.stream()) {
-				try (Stream<Statement> TARGET_CLASS = connection.getStatements(null, SHACL.TARGET_CLASS, null, true)
-						.stream()) {
-					try (Stream<Statement> TARGET_SUBJECTS_OF = connection
-							.getStatements(null, SHACL.TARGET_SUBJECTS_OF, null, true)
-							.stream()) {
-						try (Stream<Statement> TARGET_OBJECTS_OF = connection
-								.getStatements(null, SHACL.TARGET_OBJECTS_OF, null, true)
-								.stream()) {
-							try (Stream<Statement> TARGET = connection
-									.getStatements(null, SHACL.TARGET_PROP, null, true)
-									.stream()) {
-								try (Stream<Statement> RSX_TARGET_SHAPE = connection
-										.getStatements(null, RSX.targetShape, null, true)
-										.stream()) {
-									collect = Stream
-											.of(TARGET_CLASS, TARGET_NODE, TARGET_OBJECTS_OF, TARGET_SUBJECTS_OF,
-													TARGET, RSX_TARGET_SHAPE)
-											.reduce(Stream::concat)
-											.get()
-											.map(Statement::getSubject)
-											.collect(Collectors.toSet());
-								}
-							}
-						}
-					}
-				}
 			}
-			return collect;
+
 		}
+
+		private static ContextWithShapes getShapesInContext(ShapeSource shapeSource, ShaclSail shaclSail, Cache cache,
+				Resource[] dataGraph, Resource[] shapesGraph) {
+			ShapeSource shapeSourceWithContext = shapeSource.withContext(shapesGraph);
+
+			try (Stream<Resource> resources = shapeSourceWithContext.getTargetableShape()) {
+				List<Shape> shapes = resources
+						.map(r -> new ShaclProperties(r, shapeSourceWithContext))
+						.map(p -> {
+							if (p.getType() == SHACL.NODE_SHAPE) {
+								return NodeShape.getInstance(p, shapeSourceWithContext, cache, true, shaclSail);
+							} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
+								return PropertyShape.getInstance(p, shapeSourceWithContext, cache, shaclSail);
+							}
+							throw new IllegalStateException("Unknown shape type for " + p.getId());
+						})
+						.collect(Collectors.toList());
+
+				return new ContextWithShapes(dataGraph, shapesGraph, shapes);
+			}
+		}
+
 	}
 
 	@Override

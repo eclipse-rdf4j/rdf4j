@@ -292,8 +292,8 @@ public class TransactionSettingsTest {
 
 			connection.begin(Bulk, IsolationLevels.NONE);
 
-			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
@@ -316,8 +316,8 @@ public class TransactionSettingsTest {
 
 			connection.begin(Bulk, IsolationLevels.NONE);
 
-			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
@@ -345,8 +345,8 @@ public class TransactionSettingsTest {
 
 			connection.begin(Bulk, IsolationLevels.SNAPSHOT);
 
-			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
@@ -374,8 +374,8 @@ public class TransactionSettingsTest {
 
 			connection.begin(Bulk, IsolationLevels.NONE);
 
-			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
@@ -408,8 +408,8 @@ public class TransactionSettingsTest {
 
 			connection.begin(Disabled);
 
-			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
@@ -444,8 +444,8 @@ public class TransactionSettingsTest {
 
 			connection.begin(Disabled, IsolationLevels.SNAPSHOT);
 
-			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.commit();
@@ -480,8 +480,8 @@ public class TransactionSettingsTest {
 
 			connection.begin(Bulk);
 
-			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
@@ -505,8 +505,8 @@ public class TransactionSettingsTest {
 
 			connection.begin(Auto);
 
-			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.commit();
@@ -532,8 +532,8 @@ public class TransactionSettingsTest {
 
 			connection.begin(Auto);
 
-			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			try (InputStream shapesData = Utils.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.commit();
@@ -570,28 +570,28 @@ public class TransactionSettingsTest {
 			connection.begin(SerialValidation);
 
 			try (InputStream shapesData = Utils.class.getClassLoader()
-					.getResourceAsStream("shaclDatatypeAndMinCount.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+					.getResourceAsStream("shaclDatatypeAndMinCount.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.commit();
 
-			Mockito.verify(spy, Mockito.never()).submitRunnableToExecutorService(Mockito.any());
+			Mockito.verify(spy, Mockito.never()).submitToExecutorService(Mockito.any());
 
 			connection.clear(RDF4J.SHACL_SHAPE_GRAPH);
 
-			Mockito.verify(spy, Mockito.never()).submitRunnableToExecutorService(Mockito.any());
+			Mockito.verify(spy, Mockito.never()).submitToExecutorService(Mockito.any());
 
 			connection.begin(ParallelValidation);
 
 			try (InputStream shapesData = Utils.class.getClassLoader()
-					.getResourceAsStream("shaclDatatypeAndMinCount.ttl")) {
-				connection.add(shapesData, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+					.getResourceAsStream("shaclDatatypeAndMinCount.trig")) {
+				connection.add(shapesData, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
 			}
 
 			connection.commit();
 
-			Mockito.verify(spy, Mockito.atLeastOnce()).submitRunnableToExecutorService(Mockito.any());
+			Mockito.verify(spy, Mockito.atLeastOnce()).submitToExecutorService(Mockito.any());
 
 		} finally {
 			repository.shutDown();

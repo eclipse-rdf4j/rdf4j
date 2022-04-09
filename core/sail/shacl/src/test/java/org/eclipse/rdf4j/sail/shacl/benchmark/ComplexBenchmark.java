@@ -17,6 +17,7 @@ import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclProperties;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.RepositoryConnectionShapeSource;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -38,6 +40,7 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.infra.Blackhole;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Logger;
@@ -84,7 +87,7 @@ public class ComplexBenchmark {
 	@Benchmark
 	public void shaclParallelCache() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 		((ShaclSail) repository.getSail()).setParallelValidation(true);
 		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
 
@@ -107,7 +110,7 @@ public class ComplexBenchmark {
 	@Benchmark
 	public void shaclNoTransactions() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 		repository.shutDown();
 
@@ -122,8 +125,8 @@ public class ComplexBenchmark {
 			connection.begin(IsolationLevels.NONE);
 			try {
 				connection.add(
-						ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/shacl.ttl"), "",
-						RDFFormat.TURTLE);
+						ComplexBenchmark.class.getClassLoader().getResourceAsStream("complexBenchmark/shacl.trig"), "",
+						RDFFormat.TRIG);
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
@@ -132,15 +135,21 @@ public class ComplexBenchmark {
 	}
 
 	@Benchmark
-	public void shaclPropertiesSwitch() {
+	public void shaclPropertiesSwitch(Blackhole blackhole) {
+
+		Resource[] context = { RDF4J.SHACL_SHAPE_GRAPH };
 
 		try (SailRepositoryConnection connection = memoryStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
 
 			try (Stream<Statement> stream = connection.getStatements(null, SHACL.PROPERTY, null).stream()) {
 				stream.map(Statement::getObject).forEach(o -> {
-					new ShaclProperties((Resource) o, connection);
+					ShaclProperties shaclProperties = new ShaclProperties((Resource) o,
+							new RepositoryConnectionShapeSource(connection).withContext(context));
+					blackhole.consume(shaclProperties);
 				});
 			}
+			connection.commit();
 
 		}
 
@@ -149,7 +158,7 @@ public class ComplexBenchmark {
 	@Benchmark
 	public void shaclEmptyTransactions() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 		((ShaclSail) repository.getSail()).setParallelValidation(false);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -166,7 +175,7 @@ public class ComplexBenchmark {
 	@Benchmark
 	public void shaclNothingToValidateTransactions() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 		((ShaclSail) repository.getSail()).setParallelValidation(false);
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -185,7 +194,7 @@ public class ComplexBenchmark {
 	@Benchmark
 	public void shaclParallelCacheSingleTransactionNoIsolation() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 		((ShaclSail) repository.getSail()).setParallelValidation(true);
 		((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
 
@@ -206,7 +215,7 @@ public class ComplexBenchmark {
 	@Benchmark
 	public void shaclParallel() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 		((ShaclSail) repository.getSail()).setParallelValidation(true);
 		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
@@ -230,7 +239,7 @@ public class ComplexBenchmark {
 	@Benchmark
 	public void shaclCache() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 		((ShaclSail) repository.getSail()).setParallelValidation(false);
 
@@ -253,7 +262,7 @@ public class ComplexBenchmark {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 
 		((ShaclSail) repository.getSail()).setParallelValidation(false);
 		((ShaclSail) repository.getSail()).setCacheSelectNodes(false);

@@ -28,7 +28,7 @@ public class TransactionValidationLimitTest {
 	@Test
 	public void testFailoverToBulkValidationSingleConnection() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.trig");
 
 		((ShaclSail) shaclRepository.getSail()).setTransactionalValidationLimit(3);
 
@@ -71,7 +71,7 @@ public class TransactionValidationLimitTest {
 	@Test
 	public void testFailoverToBulkValidationNewConnection() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.trig");
 
 		((ShaclSail) shaclRepository.getSail()).setTransactionalValidationLimit(3);
 
@@ -118,7 +118,7 @@ public class TransactionValidationLimitTest {
 	@Test
 	public void testFailoverToBulkValidationTriggersValidation() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.trig");
 
 		((ShaclSail) shaclRepository.getSail()).setTransactionalValidationLimit(3);
 
@@ -154,7 +154,7 @@ public class TransactionValidationLimitTest {
 	@Test
 	public void testBulkValidationForEmptySail() throws Exception {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shacl.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();

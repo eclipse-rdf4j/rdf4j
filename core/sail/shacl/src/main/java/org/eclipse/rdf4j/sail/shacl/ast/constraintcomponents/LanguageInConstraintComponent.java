@@ -8,19 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.Values;
-import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LanguageInFilter;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -30,19 +17,38 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LanguageInFilter;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
+
 public class LanguageInConstraintComponent extends SimpleAbstractConstraintComponent {
 
 	private final List<String> languageIn;
 	private final ArrayList<String> languageRanges;
 	private final Set<String> lowerCaseLanguageIn;
 
-	public LanguageInConstraintComponent(RepositoryConnection connection, Resource languageIn) {
+	public LanguageInConstraintComponent(ShapeSource shapeSource, Resource languageIn) {
 		super(languageIn);
-		this.languageIn = ShaclAstLists.toList(connection, languageIn, Value.class).stream().map(Value::stringValue).collect(Collectors.toList());
+		this.languageIn = ShaclAstLists.toList(shapeSource, languageIn, Value.class)
+				.stream()
+				.map(Value::stringValue)
+				.collect(Collectors.toList());
 
 		this.languageRanges = new ArrayList<>(new HashSet<>(this.languageIn));
 
-		this.lowerCaseLanguageIn = this.languageIn.stream().filter(l -> !l.contains("*")).map(String::toLowerCase).collect(Collectors.toSet());
+		this.lowerCaseLanguageIn = this.languageIn.stream()
+				.filter(l -> !l.contains("*"))
+				.map(String::toLowerCase)
+				.collect(Collectors.toSet());
 	}
 
 	private LanguageInConstraintComponent(LanguageInConstraintComponent languageInConstraintComponent) {
@@ -57,7 +63,8 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 		model.add(subject, SHACL.LANGUAGE_IN, getId());
 
 		if (!model.contains(getId(), null, null)) {
-			ShaclAstLists.listToRdf(languageIn.stream().map(Values::literal).collect(Collectors.toList()), getId(), model);
+			ShaclAstLists.listToRdf(languageIn.stream().map(Values::literal).collect(Collectors.toList()), getId(),
+					model);
 		}
 	}
 
@@ -67,7 +74,10 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 			return "true";
 		}
 
-		String filter = languageRanges.stream().map(lang -> "langMatches(lang(?" + varName + "), \"" + lang + "\")").reduce((a, b) -> a + " || " + b).orElseThrow(IllegalStateException::new);
+		String filter = languageRanges.stream()
+				.map(lang -> "langMatches(lang(?" + varName + "), \"" + lang + "\")")
+				.reduce((a, b) -> a + " || " + b)
+				.orElseThrow(IllegalStateException::new);
 
 		if (negated) {
 			return "(" + filter + ")";
@@ -113,7 +123,8 @@ public class LanguageInConstraintComponent extends SimpleAbstractConstraintCompo
 
 	@Override
 	public String toString() {
-		return "LanguageInPropertyShape{" + "languageIn=" + Arrays.toString(languageIn.toArray()) + ", lowerCaseLanguageIn=" + Arrays.toString(lowerCaseLanguageIn.toArray()) + ", id=" + getId() + '}';
+		return "LanguageInPropertyShape{" + "languageIn=" + Arrays.toString(languageIn.toArray())
+				+ ", lowerCaseLanguageIn=" + Arrays.toString(lowerCaseLanguageIn.toArray()) + ", id=" + getId() + '}';
 	}
 
 }

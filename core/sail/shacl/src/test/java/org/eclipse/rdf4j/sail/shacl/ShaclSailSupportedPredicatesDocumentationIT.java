@@ -70,7 +70,7 @@ public class ShaclSailSupportedPredicatesDocumentationIT extends AbstractShaclTe
 	private Model getShacl(String shacl) throws IOException {
 		return Rio.parse(
 				new StringReader(shacl), "",
-				RDFFormat.TURTLE);
+				RDFFormat.TRIG);
 	}
 
 }

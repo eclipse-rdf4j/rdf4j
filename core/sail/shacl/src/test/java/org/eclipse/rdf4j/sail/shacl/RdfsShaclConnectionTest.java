@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.VerySimpleRdfsBackwardsChainingConnection;
 import org.junit.jupiter.api.Test;
 
 public class RdfsShaclConnectionTest {
@@ -54,6 +56,7 @@ public class RdfsShaclConnectionTest {
 
 			assertTrue(connection2.hasStatement(aSubSub, RDF.TYPE, sup, true));
 		}
+		shaclSail.shutDown();
 
 	}
 
@@ -98,6 +101,8 @@ public class RdfsShaclConnectionTest {
 			}
 		}
 
+		shaclSail.shutDown();
+
 	}
 
 	@Test
@@ -128,6 +133,8 @@ public class RdfsShaclConnectionTest {
 
 			}
 		}
+		shaclSail.shutDown();
+
 	}
 
 	private void fill(ShaclSail shaclSail) {

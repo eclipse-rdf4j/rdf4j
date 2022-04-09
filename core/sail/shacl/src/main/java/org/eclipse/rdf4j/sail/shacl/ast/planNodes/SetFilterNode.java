@@ -8,14 +8,14 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.Set;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
-
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.Set;
 
 public class SetFilterNode implements PlanNode {
 
@@ -88,7 +88,8 @@ public class SetFilterNode implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
@@ -100,7 +101,9 @@ public class SetFilterNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "SetFilterNode{" + "targetNodeList=" + Arrays.toString(targetNodeList.stream().map(Formatter::prefix).toArray()) + ", index=" + index + ", returnValid=" + returnValid + '}';
+		return "SetFilterNode{" + "targetNodeList="
+				+ Arrays.toString(targetNodeList.stream().map(Formatter::prefix).toArray()) + ", index=" + index
+				+ ", returnValid=" + returnValid + '}';
 	}
 
 	@Override
@@ -128,7 +131,8 @@ public class SetFilterNode implements PlanNode {
 			return false;
 		}
 		SetFilterNode that = (SetFilterNode) o;
-		return index == that.index && returnValid == that.returnValid && targetNodeList.equals(that.targetNodeList) && parent.equals(that.parent);
+		return index == that.index && returnValid == that.returnValid && targetNodeList.equals(that.targetNodeList)
+				&& parent.equals(that.parent);
 	}
 
 	@Override

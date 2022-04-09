@@ -75,7 +75,7 @@ public class DatatypeBenchmarkSerializableEmpty {
 	@Benchmark
 	public void shacl() throws Exception {
 
-		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.ttl"));
+		SailRepository repository = new SailRepository(Utils.getInitializedShaclSail("shaclDatatype.trig"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.SERIALIZABLE);

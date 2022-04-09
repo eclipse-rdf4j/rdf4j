@@ -8,6 +8,14 @@
 
 package org.eclipse.rdf4j.sail.shacl.results;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -15,14 +23,6 @@ import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-
-import static org.eclipse.rdf4j.model.util.Values.bnode;
-import static org.eclipse.rdf4j.model.util.Values.literal;
 
 /**
  * The ValidationReport represents the report from a SHACL validation in an easy-to-use Java API.
@@ -33,7 +33,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 @Deprecated
 public class ValidationReport {
 
-	protected final Resource id = bnode();
+	protected Resource id = null;
 
 	protected boolean conforms = true;
 
@@ -58,8 +58,6 @@ public class ValidationReport {
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_REPORT);
 		model.add(getId(), RDF4J.TRUNCATED, BooleanLiteral.valueOf(truncated));
 
-		model.setNamespace(SHACL.NS);
-
 		HashSet<Resource> rdfListDedupe = new HashSet<>();
 
 		for (ValidationResult result : validationResult) {
@@ -74,7 +72,10 @@ public class ValidationReport {
 		return asModel(new DynamicModelFactory().createEmptyModel());
 	}
 
-	public Resource getId() {
+	public final Resource getId() {
+		if (id == null) {
+			id = bnode();
+		}
 		return id;
 	}
 

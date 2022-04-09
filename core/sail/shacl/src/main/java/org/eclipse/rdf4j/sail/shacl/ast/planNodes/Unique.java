@@ -8,21 +8,21 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import org.apache.commons.text.StringEscapeUtils;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.shacl.CloseablePeakableIteration;
-import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Objects;
 import java.util.Set;
+
+import org.apache.commons.text.StringEscapeUtils;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.CloseablePeakableIteration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Ottestad
@@ -70,7 +70,8 @@ public class Unique implements PlanNode {
 
 			{
 				if (compress) {
-					parentIterator = new CloseablePeakableIteration<>(new TargetAndValueSortIterator(new CloseablePeakableIteration<>(parent.iterator())));
+					parentIterator = new CloseablePeakableIteration<>(
+							new TargetAndValueSortIterator(new CloseablePeakableIteration<>(parent.iterator())));
 				} else {
 					parentIterator = new CloseablePeakableIteration<>(parent.iterator());
 				}
@@ -91,7 +92,8 @@ public class Unique implements PlanNode {
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
-					assert !propertyShapeWithValue || temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue();
+					assert !propertyShapeWithValue
+							|| temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue();
 
 					if (temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue()) {
 						propertyShapeWithValue = true;
@@ -102,7 +104,8 @@ public class Unique implements PlanNode {
 
 						if (propertyShapeWithValue) {
 
-							while (parentIterator.hasNext() && parentIterator.peek().getValue().equals(temp.getValue()) && parentIterator.peek().sameTargetAs(temp)) {
+							while (parentIterator.hasNext() && parentIterator.peek().getValue().equals(temp.getValue())
+									&& parentIterator.peek().sameTargetAs(temp)) {
 								tuples.add(parentIterator.next());
 							}
 						} else {
@@ -148,7 +151,9 @@ public class Unique implements PlanNode {
 						previous = next;
 					} else {
 						if (validationExecutionLogger.isEnabled()) {
-							validationExecutionLogger.log(depth(), Unique.this.getClass().getSimpleName() + ":IgnoredNotUnique ", temp, Unique.this, getId(), stackTrace != null ? stackTrace[2].toString() : null);
+							validationExecutionLogger.log(depth(),
+									Unique.this.getClass().getSimpleName() + ":IgnoredNotUnique ", temp, Unique.this,
+									getId(), stackTrace != null ? stackTrace[2].toString() : null);
 						}
 					}
 
@@ -194,7 +199,8 @@ public class Unique implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
@@ -266,7 +272,8 @@ public class Unique implements PlanNode {
 
 			if (validationTuple.hasValue() || oValidationTuple.validationTuple.hasValue()) {
 				assert validationTuple.hasValue() && oValidationTuple.validationTuple.hasValue();
-				return validationTuple.getValue().equals(oValidationTuple.validationTuple.getValue()) && validationTuple.getActiveTarget().equals(oValidationTuple.validationTuple.getActiveTarget());
+				return validationTuple.getValue().equals(oValidationTuple.validationTuple.getValue())
+						&& validationTuple.getActiveTarget().equals(oValidationTuple.validationTuple.getActiveTarget());
 			} else {
 				return validationTuple.getActiveTarget().equals(oValidationTuple.validationTuple.getActiveTarget());
 			}
@@ -282,7 +289,8 @@ public class Unique implements PlanNode {
 
 		private final CloseablePeakableIteration<? extends ValidationTuple, SailException> iterator;
 
-		public TargetAndValueSortIterator(CloseablePeakableIteration<? extends ValidationTuple, SailException> iterator) {
+		public TargetAndValueSortIterator(
+				CloseablePeakableIteration<? extends ValidationTuple, SailException> iterator) {
 			this.iterator = iterator;
 		}
 
@@ -300,7 +308,9 @@ public class Unique implements PlanNode {
 			ArrayList<ValidationTuple> validationTuples = new ArrayList<>();
 			ValidationTuple temp = iterator.next();
 			if (temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue()) {
-				while (iterator.hasNext() && temp.sameTargetAs(iterator.peek()) && iterator.peek().getScope() == ConstraintComponent.Scope.propertyShape && iterator.peek().hasValue()) {
+				while (iterator.hasNext() && temp.sameTargetAs(iterator.peek())
+						&& iterator.peek().getScope() == ConstraintComponent.Scope.propertyShape
+						&& iterator.peek().hasValue()) {
 					validationTuples.add(iterator.next());
 				}
 			}

@@ -16,7 +16,8 @@ class ComplexQueryFragment {
 	private final String query;
 	private final StatementMatcher.Variable targetVar;
 
-	public ComplexQueryFragment(String query, String targetVarPrefix, StatementMatcher.Variable targetVar, StatementMatcher.Variable value) {
+	public ComplexQueryFragment(String query, String targetVarPrefix, StatementMatcher.Variable targetVar,
+			StatementMatcher.Variable value) {
 		this.query = query;
 		this.targetVarPrefix = targetVarPrefix;
 		this.targetVar = targetVar;

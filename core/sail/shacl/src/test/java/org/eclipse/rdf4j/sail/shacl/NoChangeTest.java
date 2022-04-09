@@ -27,14 +27,14 @@ import org.mockito.Mockito;
 public class NoChangeTest {
 
 	@Test
-	public void testSkippingValidationWhenThereAreNoChanges() throws IOException {
+	public void testSkippingValidationWhenThereAreNoChanges() throws IOException, InterruptedException {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.init();
 
 		Model shapes;
-		try (InputStream stream = NoShapesTest.class.getClassLoader().getResourceAsStream("shacl.ttl")) {
-			shapes = Rio.parse(stream, RDFFormat.TURTLE);
+		try (InputStream stream = NoShapesTest.class.getClassLoader().getResourceAsStream("shacl.trig")) {
+			shapes = Rio.parse(stream, RDFFormat.TRIG);
 		}
 
 		try (SailConnection connection = shaclSail.getConnection()) {

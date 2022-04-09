@@ -15,6 +15,7 @@ import java.util.Iterator;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
  * @author Håvard Ottestad
  */
 public class MockInputPlanNode implements PlanNode {
+	public static final Resource[] CONTEXTS = { null };
 
 	Collection<ValidationTuple> initialData;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -45,9 +47,11 @@ public class MockInputPlanNode implements PlanNode {
 						.collect(Collectors.toList()))
 				.map(v -> {
 					if (v.size() > 1) {
-						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, true);
+						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, true,
+								CONTEXTS);
 					} else {
-						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, false);
+						return new ValidationTuple(new ArrayList<>(v), ConstraintComponent.Scope.propertyShape, false,
+								CONTEXTS);
 					}
 				})
 				.sorted(ValidationTuple::compareValue)

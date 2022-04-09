@@ -8,10 +8,15 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Objects;
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -25,9 +30,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Objects;
-import java.util.function.Function;
-
 /**
  * @author Håvard Ottestad
  */
@@ -37,12 +39,15 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 	private final SailConnection connection;
 	private final ParsedQuery query;
+	private final Dataset dataset;
 	private final StatementMatcher.Variable queryVariable;
 	private final Function<ValidationTuple, Value> filterOn;
 	private final String queryString;
 	private final ValueFactory valueFactory;
 
-	public ExternalFilterByQuery(SailConnection connection, ValueFactory valueFactory, PlanNode parent, String queryFragment, StatementMatcher.Variable queryVariable, Function<ValidationTuple, Value> filterOn) {
+	public ExternalFilterByQuery(SailConnection connection, ValueFactory valueFactory, Resource[] dataGraph,
+			PlanNode parent, String queryFragment, StatementMatcher.Variable queryVariable,
+			Function<ValidationTuple, Value> filterOn) {
 		super(parent);
 		this.connection = connection;
 		this.valueFactory = valueFactory;
@@ -59,6 +64,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 			logger.error("Malformed query: \n{}", queryFragment);
 			throw e;
 		}
+		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 
 	}
 
@@ -71,7 +77,8 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 		bindings.addBinding(queryVariable.getName(), value);
 
-		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = connection.evaluate(query.getTupleExpr(), query.getDataset(), bindings, false)) {
+		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = connection
+				.evaluate(query.getTupleExpr(), dataset, bindings, false)) {
 			return bindingSet.hasNext();
 		}
 
@@ -79,7 +86,8 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterByQuery{" + ", queryString=" + queryString.replace("\n", "\t") + ", queryVariable='" + queryVariable.toString().replace("\n", "  ") + '\'' + '}';
+		return "ExternalFilterByQuery{" + ", queryString=" + queryString.replace("\n", "\t") + ", queryVariable='"
+				+ queryVariable.toString().replace("\n", "  ") + '\'' + '}';
 	}
 
 	@Override
@@ -96,18 +104,24 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 		ExternalFilterByQuery that = (ExternalFilterByQuery) o;
 
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
-			return ((MemoryStoreConnection) connection).getSail().equals(((MemoryStoreConnection) that.connection).getSail()) && queryVariable.equals(that.queryVariable) && filterOn.equals(that.filterOn) && queryString.equals(that.queryString);
+			return ((MemoryStoreConnection) connection).getSail()
+					.equals(((MemoryStoreConnection) that.connection).getSail())
+					&& Objects.equals(dataset, that.dataset) && queryVariable.equals(that.queryVariable)
+					&& filterOn.equals(that.filterOn) && queryString.equals(that.queryString);
 		}
 
-		return connection.equals(that.connection) && queryVariable.equals(that.queryVariable) && filterOn.equals(that.filterOn) && queryString.equals(that.queryString);
+		return connection.equals(that.connection) && queryVariable.equals(that.queryVariable)
+				&& Objects.equals(dataset, that.dataset) && filterOn.equals(that.filterOn)
+				&& queryString.equals(that.queryString);
 	}
 
 	@Override
 	public int hashCode() {
 		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(super.hashCode(), ((MemoryStoreConnection) connection).getSail(), queryVariable, filterOn, queryString);
+			return Objects.hash(super.hashCode(), ((MemoryStoreConnection) connection).getSail(), queryVariable,
+					filterOn, dataset, queryString);
 		}
 
-		return Objects.hash(super.hashCode(), connection, queryVariable, filterOn, queryString);
+		return Objects.hash(super.hashCode(), connection, queryVariable, filterOn, dataset, queryString);
 	}
 }

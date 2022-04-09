@@ -38,7 +38,7 @@ public class TruncatedValidationReportTest {
 
 	@Test
 	public void testTotal() throws IOException {
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
 		sail.setValidationResultsLimitTotal(10);
@@ -59,7 +59,7 @@ public class TruncatedValidationReportTest {
 	@Test
 	public void testPerConstraint() throws IOException {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
 		sail.setValidationResultsLimitPerConstraint(10);
@@ -82,7 +82,7 @@ public class TruncatedValidationReportTest {
 	@Test
 	public void testPerConstraint2() throws IOException {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
 		sail.setValidationResultsLimitPerConstraint(10);
@@ -107,7 +107,7 @@ public class TruncatedValidationReportTest {
 	@Test
 	public void testZeroTotal() throws IOException {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
 		sail.setValidationResultsLimitTotal(0);
@@ -129,7 +129,7 @@ public class TruncatedValidationReportTest {
 	@Test
 	public void testZeroPerConstraint() throws IOException {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
 		sail.setValidationResultsLimitPerConstraint(0);
@@ -151,7 +151,7 @@ public class TruncatedValidationReportTest {
 	@Test
 	public void testTotalAndPerConstraint() throws IOException {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
 		sail.setValidationResultsLimitTotal(20);
@@ -175,7 +175,7 @@ public class TruncatedValidationReportTest {
 	@Test
 	public void testTotalAndPerConstraint2() throws IOException {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
 		sail.setValidationResultsLimitTotal(20);
@@ -198,7 +198,7 @@ public class TruncatedValidationReportTest {
 	@Test
 	public void testNoLimit() throws IOException {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		((ShaclSail) shaclRepository.getSail()).setValidationResultsLimitPerConstraint(-1);
 		((ShaclSail) shaclRepository.getSail()).setValidationResultsLimitTotal(-1);
@@ -223,7 +223,7 @@ public class TruncatedValidationReportTest {
 	@Test
 	public void testDefaultLimit() throws IOException {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ValidationReport validationReport = getValidationReport(shaclRepository);
 		shaclRepository.shutDown();
@@ -245,7 +245,7 @@ public class TruncatedValidationReportTest {
 	@Test
 	public void testLimitIsEqualToSize() throws IOException {
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
 		sail.setValidationResultsLimitTotal(NUMBER_OF_FAILURES * 2);
@@ -270,7 +270,7 @@ public class TruncatedValidationReportTest {
 
 	@Test
 	public void testRevalidate() throws IOException {
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.ttl");
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("shaclDatatypeAndMinCount.trig");
 
 		ShaclSail sail = (ShaclSail) shaclRepository.getSail();
 		sail.setValidationResultsLimitPerConstraint(15);

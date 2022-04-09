@@ -8,10 +8,15 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.Objects;
+import java.util.function.Function;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -25,9 +30,6 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Objects;
-import java.util.function.Function;
-
 /**
  * @author Håvard Ottestad
  */
@@ -40,12 +42,14 @@ public class Select implements PlanNode {
 
 	private final String query;
 	private final boolean sorted;
+	private final Dataset dataset;
 	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final ValueFactory valueFactory;
 
-	public Select(SailConnection connection, ValueFactory valueFactory, String query, String orderBy, Function<BindingSet, ValidationTuple> mapper) {
+	public Select(SailConnection connection, ValueFactory valueFactory, String query, String orderBy,
+			Function<BindingSet, ValidationTuple> mapper, Resource[] dataGraph) {
 		this.connection = connection;
 		this.valueFactory = valueFactory;
 		this.mapper = mapper;
@@ -53,11 +57,13 @@ public class Select implements PlanNode {
 			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
 
 			// empty set
-			query = "" + "?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n" + "FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
+			query = "" + "?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n"
+					+ "FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
 		}
 		sorted = orderBy != null;
 
 		this.query = "select * where {\n" + query + "\n} " + (orderBy != null ? "order by " + orderBy : "");
+		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 
 	}
 
@@ -73,11 +79,13 @@ public class Select implements PlanNode {
 					return;
 				}
 
-				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
+				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
+						.get(QueryLanguage.SPARQL)
+						.get();
 
 				try {
 					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null, valueFactory);
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), new MapBindingSet(), true);
+					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset, new MapBindingSet(), true);
 				} catch (MalformedQueryException e) {
 					logger.error("Malformed query: \n{}", query);
 					throw e;
@@ -117,12 +125,15 @@ public class Select implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId()).append("\n");
+			stringBuilder
+					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
+					.append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId()).append("\n");
 		}
@@ -166,9 +177,13 @@ public class Select implements PlanNode {
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection && select.connection instanceof MemoryStoreConnection) {
-			return sorted == select.sorted && ((MemoryStoreConnection) connection).getSail().equals(((MemoryStoreConnection) select.connection).getSail()) && mapper.equals(select.mapper) && query.equals(select.query);
+			return sorted == select.sorted
+					&& ((MemoryStoreConnection) connection).getSail()
+							.equals(((MemoryStoreConnection) select.connection).getSail())
+					&& mapper.equals(select.mapper) && dataset.equals(select.dataset) && query.equals(select.query);
 		} else {
-			return sorted == select.sorted && connection.equals(select.connection) && mapper.equals(select.mapper) && query.equals(select.query);
+			return sorted == select.sorted && connection.equals(select.connection) && mapper.equals(select.mapper)
+					&& dataset.equals(select.dataset) && query.equals(select.query);
 		}
 	}
 
@@ -177,9 +192,9 @@ public class Select implements PlanNode {
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(((MemoryStoreConnection) connection).getSail(), mapper, query, sorted);
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), mapper, query, sorted, dataset);
 		} else {
-			return Objects.hash(connection, mapper, query, sorted);
+			return Objects.hash(connection, mapper, query, sorted, dataset);
 		}
 
 	}

@@ -8,10 +8,22 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import static java.util.stream.Collectors.toCollection;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -31,16 +43,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
-import static java.util.stream.Collectors.toCollection;
-
 /**
  * Takes a plan node as a source and for each tuple in the source it will build a BindingSet from the vars and the tuple
  * and inject it into the query
@@ -53,6 +55,7 @@ public class BindSelect implements PlanNode {
 
 	private final SailConnection connection;
 	private final ValueFactory valueFactory;
+	private final Dataset dataset;
 	private final Function<BindingSet, ValidationTuple> mapper;
 
 	private final String query;
@@ -67,10 +70,14 @@ public class BindSelect implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public BindSelect(SailConnection connection, ValueFactory valueFactory, String query, List<StatementMatcher.Variable> vars, PlanNode source, List<String> varNames, ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction, boolean includePropertyShapeValues) {
+	public BindSelect(SailConnection connection, ValueFactory valueFactory, Resource[] dataGraph, String query,
+			List<StatementMatcher.Variable> vars, PlanNode source, List<String> varNames,
+			ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction,
+			boolean includePropertyShapeValues) {
 		this.connection = connection;
 		this.valueFactory = valueFactory;
-		this.mapper = (bindingSet) -> new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues);
+		this.mapper = (bindingSet) -> new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues,
+				dataGraph);
 		this.varNames = varNames;
 		this.scope = scope;
 		this.vars = vars;
@@ -84,6 +91,9 @@ public class BindSelect implements PlanNode {
 		this.query = query;
 		this.direction = direction;
 		this.includePropertyShapeValues = includePropertyShapeValues;
+
+		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+
 		// this.stackTrace = Thread.currentThread().getStackTrace();
 
 	}
@@ -163,9 +173,15 @@ public class BindSelect implements PlanNode {
 					List<String> varNames;
 
 					if (direction == EffectiveTarget.Extend.right) {
-						varNames = vars.stream().limit(targetChainSize).map(StatementMatcher.Variable::getName).collect(Collectors.toList());
+						varNames = vars.stream()
+								.limit(targetChainSize)
+								.map(StatementMatcher.Variable::getName)
+								.collect(Collectors.toList());
 					} else {
-						varNames = vars.stream().skip(vars.size() - targetChainSize).map(StatementMatcher.Variable::getName).collect(Collectors.toList());
+						varNames = vars.stream()
+								.skip(vars.size() - targetChainSize)
+								.map(StatementMatcher.Variable::getName)
+								.collect(Collectors.toList());
 					}
 
 					Set<String> varNamesSet = new HashSet<>(varNames);
@@ -179,7 +195,10 @@ public class BindSelect implements PlanNode {
 						}
 
 						return temp == targetChainSize;
-					}).map(t -> new SimpleBindingSet(varNamesSet, varNames, t.getTargetChain(includePropertyShapeValues))).collect(Collectors.toList());
+					})
+							.map(t -> new SimpleBindingSet(varNamesSet, varNames,
+									t.getTargetChain(includePropertyShapeValues)))
+							.collect(Collectors.toList());
 
 					bulk = bulk.stream().filter(t -> {
 						int temp;
@@ -194,7 +213,8 @@ public class BindSelect implements PlanNode {
 
 					updateQuery(parsedQuery, bindingSets, targetChainSize);
 
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), EmptyBindingSet.getInstance(), true);
+					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset, EmptyBindingSet.getInstance(),
+							true);
 				}
 			}
 
@@ -277,12 +297,15 @@ public class BindSelect implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId()).append("\n");
+			stringBuilder
+					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId())
+					.append("\n");
 		} else {
 			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId()).append("\n");
 		}
@@ -323,9 +346,17 @@ public class BindSelect implements PlanNode {
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
-			return bulkSize == that.bulkSize && includePropertyShapeValues == that.includePropertyShapeValues && ((MemoryStoreConnection) connection).getSail().equals(((MemoryStoreConnection) that.connection).getSail()) && varNames.equals(that.varNames) && scope.equals(that.scope) && query.equals(that.query) && vars.equals(that.vars) && source.equals(that.source) && direction == that.direction;
+			return bulkSize == that.bulkSize && includePropertyShapeValues == that.includePropertyShapeValues
+					&& ((MemoryStoreConnection) connection).getSail()
+							.equals(((MemoryStoreConnection) that.connection).getSail())
+					&& varNames.equals(that.varNames) && scope.equals(that.scope) && query.equals(that.query)
+					&& vars.equals(that.vars) && source.equals(that.source) && Objects.equals(dataset, that.dataset)
+					&& direction == that.direction;
 		} else {
-			return bulkSize == that.bulkSize && includePropertyShapeValues == that.includePropertyShapeValues && connection.equals(that.connection) && varNames.equals(that.varNames) && scope.equals(that.scope) && query.equals(that.query) && vars.equals(that.vars) && source.equals(that.source) && direction == that.direction;
+			return bulkSize == that.bulkSize && includePropertyShapeValues == that.includePropertyShapeValues
+					&& connection.equals(that.connection) && varNames.equals(that.varNames) && scope.equals(that.scope)
+					&& query.equals(that.query) && vars.equals(that.vars) && source.equals(that.source)
+					&& Objects.equals(dataset, that.dataset) && direction == that.direction;
 		}
 
 	}
@@ -335,15 +366,19 @@ public class BindSelect implements PlanNode {
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(((MemoryStoreConnection) connection).getSail(), varNames, scope, query, vars, bulkSize, source, direction, includePropertyShapeValues);
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), varNames, scope, query, vars, bulkSize,
+					source, direction, includePropertyShapeValues, dataset);
 		} else {
-			return Objects.hash(connection, varNames, scope, query, vars, bulkSize, source, direction, includePropertyShapeValues);
+			return Objects.hash(connection, varNames, scope, query, vars, bulkSize, source, direction,
+					includePropertyShapeValues, dataset);
 		}
 	}
 
 	@Override
 	public String toString() {
-		return "BindSelect{" + "query='" + query.replace("\n", "\t") + '\'' + ", vars=" + vars + ", bulkSize=" + bulkSize + ", source=" + source + ", direction=" + direction + ", includePropertyShapeValues=" + includePropertyShapeValues + ", varNames=" + varNames + ", scope=" + scope + '}';
+		return "BindSelect{" + "query='" + query.replace("\n", "\t") + '\'' + ", vars=" + vars + ", bulkSize="
+				+ bulkSize + ", source=" + source + ", direction=" + direction + ", includePropertyShapeValues="
+				+ includePropertyShapeValues + ", varNames=" + varNames + ", scope=" + scope + '}';
 	}
 
 }

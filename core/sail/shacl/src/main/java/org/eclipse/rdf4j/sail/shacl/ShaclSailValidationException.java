@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
@@ -32,7 +34,9 @@ public class ShaclSailValidationException extends SailException implements Valid
 		ValidationReport validationReport = getValidationReport();
 
 		Model model = validationReport.asModel();
-		model.setNamespace(SHACL.PREFIX, SHACL.NAMESPACE);
+		model.setNamespace(RSX.NS);
+		model.setNamespace(RDF4J.NS);
+		model.setNamespace(SHACL.NS);
 		return model;
 
 	}

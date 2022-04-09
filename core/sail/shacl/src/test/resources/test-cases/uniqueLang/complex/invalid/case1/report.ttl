@@ -4,28 +4,34 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
+  rdf4j:truncated false;
+  sh:conforms false;
   sh:result [ a sh:ValidationResult;
-      sh:sourceShape [ a sh:PropertyShape;
-          sh:path ex:age;
-          sh:datatype xsd:integer
-        ];
-      sh:resultPath ex:age;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:person1;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape [ a sh:PropertyShape;
+          sh:datatype xsd:integer;
+          sh:path ex:age
+        ];
       sh:value "123"
     ], [ a sh:ValidationResult;
-      sh:sourceShape ex:PersonShape;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:person1;
-      sh:value ex:person1;
+      sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:NodeKindConstraintComponent;
-      sh:resultSeverity sh:Violation
-    ];
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
-  sh:conforms false .
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:person1
+    ] .
 
 ex:PersonShape a sh:NodeShape;
-  sh:targetNode ex:person1;
-  sh:nodeKind sh:BlankNode .
+  sh:nodeKind sh:BlankNode;
+  sh:targetNode ex:person1 .

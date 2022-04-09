@@ -5,30 +5,133 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  rdf4j:truncated false;
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
-      sh:focusNode ex:validPerson1;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:info2;
       sh:resultPath ex:info2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1f3n3sf97x5
+      sh:sourceShape _:node1fts8k5lqx28158
     ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode rdf:nil;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:shape1;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:Person;
       sh:resultPath ex:info2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1f3n3sf97x5
+      sh:sourceShape _:node1fts8k5lqx28158
     ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode _:node1fts8k5lqx28158;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
       sh:focusNode "blue";
       sh:resultPath ex:info2;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:MinCountConstraintComponent;
-      sh:sourceShape _:node1f3n3sf97x5
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:info;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode 1;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode [];
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode sh:NodeShape;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode [];
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode [];
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode [];
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode rdf4j:nil;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
+    ], [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
+      sh:focusNode ex:validPerson1;
+      sh:resultPath ex:info2;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:MinCountConstraintComponent;
+      sh:sourceShape _:node1fts8k5lqx28158
     ] .
 
-_:node1f3n3sf97x5 a sh:PropertyShape;
+_:node1fts8k5lqx28158 a sh:PropertyShape;
   sh:minCount 1;
   sh:path ex:info2 .

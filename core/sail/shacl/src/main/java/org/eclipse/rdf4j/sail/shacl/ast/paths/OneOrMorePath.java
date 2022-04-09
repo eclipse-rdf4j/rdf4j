@@ -8,28 +8,28 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
+import java.util.Set;
+import java.util.stream.Stream;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
-
-import java.util.Set;
-import java.util.stream.Stream;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class OneOrMorePath extends Path {
 
 	private final Path oneOrMorePath;
 
-	public OneOrMorePath(Resource id, Resource oneOrMorePath, RepositoryConnection connection) {
+	public OneOrMorePath(Resource id, Resource oneOrMorePath, ShapeSource shapeSource) {
 		super(id);
-		this.oneOrMorePath = Path.buildPath(connection, oneOrMorePath);
+		this.oneOrMorePath = Path.buildPath(shapeSource, oneOrMorePath);
 
 	}
 
@@ -45,7 +45,8 @@ public class OneOrMorePath extends Path {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, PlanNodeWrapper planNodeWrapper) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNodeWrapper planNodeWrapper) {
 		throw new ShaclUnsupportedException();
 	}
 

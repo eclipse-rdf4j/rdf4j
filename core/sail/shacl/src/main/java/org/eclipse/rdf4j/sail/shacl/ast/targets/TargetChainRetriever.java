@@ -8,6 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.StreamSupport;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -16,6 +23,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -26,22 +34,16 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LoggingCloseableIteration;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeHelper;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.StreamSupport;
 
 /**
  * Used to run the query that represents the target and sets the bindings based on values that match the statement
@@ -57,14 +59,19 @@ public class TargetChainRetriever implements PlanNode {
 	private final String query;
 	private final QueryParserFactory queryParserFactory;
 	private final ConstraintComponent.Scope scope;
+	private final Resource[] dataGraph;
+	private final Dataset dataset;
 	private StackTraceElement[] stackTrace;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final ValueFactory valueFactory;
 
-	public TargetChainRetriever(ConnectionsGroup connectionsGroup, List<StatementMatcher> statementMatchers,
+	public TargetChainRetriever(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			List<StatementMatcher> statementMatchers,
 			List<StatementMatcher> removedStatementMatchers, String query, List<StatementMatcher.Variable> vars,
 			ConstraintComponent.Scope scope) {
 		this.connectionsGroup = connectionsGroup;
+		this.dataGraph = dataGraph;
+		this.dataset = PlanNodeHelper.asDefaultGraphDataset(this.dataGraph);
 		this.valueFactory = connectionsGroup.getBaseValueFactory();
 		this.statementMatchers = StatementMatcher.reduce(statementMatchers);
 
@@ -144,7 +151,7 @@ public class TargetChainRetriever implements PlanNode {
 
 					statements = connection.getStatements(currentStatementMatcher.getSubjectValue(),
 							currentStatementMatcher.getPredicateValue(), currentStatementMatcher.getObjectValue(),
-							false);
+							false, dataGraph);
 				} while (!statements.hasNext());
 
 				previousBindings = null;
@@ -217,7 +224,7 @@ public class TargetChainRetriever implements PlanNode {
 						// TODO: Should really bulk this operation!
 
 						results = connectionsGroup.getBaseConnection()
-								.evaluate(parsedQuery.getTupleExpr(), parsedQuery.getDataset(), bindings, true);
+								.evaluate(parsedQuery.getTupleExpr(), dataset, bindings, true);
 
 					} catch (MalformedQueryException e) {
 						logger.error("Malformed query: \n{}", query);
@@ -231,16 +238,16 @@ public class TargetChainRetriever implements PlanNode {
 					if (nextBinding.size() == 1) {
 						Iterator<Binding> iterator = nextBinding.iterator();
 						if (iterator.hasNext()) {
-							next = new ValidationTuple(iterator.next().getValue(), scope, false);
+							next = new ValidationTuple(iterator.next().getValue(), scope, false, dataGraph);
 						} else {
-							next = new ValidationTuple((Value) null, scope, false);
+							next = new ValidationTuple((Value) null, scope, false, dataGraph);
 						}
 					} else {
 						Value[] values = StreamSupport.stream(nextBinding.spliterator(), false)
 								.sorted(Comparator.comparing(Binding::getName))
 								.map(Binding::getValue)
 								.toArray(Value[]::new);
-						next = new ValidationTuple(values, scope, false);
+						next = new ValidationTuple(values, scope, false, dataGraph);
 
 					}
 
@@ -325,7 +332,7 @@ public class TargetChainRetriever implements PlanNode {
 
 	@Override
 	public String getId() {
-		return null;
+		return System.identityHashCode(this) + "";
 	}
 
 	@Override
@@ -352,14 +359,16 @@ public class TargetChainRetriever implements PlanNode {
 			return false;
 		}
 		TargetChainRetriever that = (TargetChainRetriever) o;
-		return statementMatchers.equals(that.statementMatchers)
-				&& removedStatementMatchers.equals(that.removedStatementMatchers) && query.equals(that.query)
-				&& scope == that.scope;
+		return statementMatchers.equals(that.statementMatchers) &&
+				removedStatementMatchers.equals(that.removedStatementMatchers) &&
+				query.equals(that.query) &&
+				Objects.equals(dataset, that.dataset) &&
+				scope == that.scope;
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(statementMatchers, removedStatementMatchers, query, scope);
+		return Objects.hash(statementMatchers, removedStatementMatchers, query, scope, dataset);
 	}
 
 	@Override

@@ -100,7 +100,7 @@ public class ComplexLargeTransactionalBenchmark {
 		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 
 		try {
-			repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.ttl"));
+			repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 				connection.add(realData);

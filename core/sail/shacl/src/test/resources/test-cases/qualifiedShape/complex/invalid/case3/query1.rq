@@ -20,9 +20,6 @@ PREFIX wgs: <http://www.w3.org/2003/01/geo/wgs84_pos#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-
-
-
 [] a ont:LangStringUniq;
         ont:uniqStrOrLangstrEnDeAllDialects "en val"@en .
 

@@ -8,19 +8,21 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import java.util.ArrayDeque;
+import java.util.Objects;
+import java.util.function.Function;
+
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
-
-import java.util.ArrayDeque;
-import java.util.Objects;
-import java.util.function.Function;
 
 /**
  * @author Håvard Ottestad
@@ -36,6 +38,8 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private static final ValueComparator VALUE_COMPARATOR = new ValueComparator();
 	private final SailConnection connection;
 	private final PlanNode leftNode;
+	private final Dataset dataset;
+	private final Resource[] dataGraph;
 	private ParsedQuery parsedQuery = null;
 	private final boolean skipBasedOnPreviousConnection;
 	private final SailConnection previousStateConnection;
@@ -43,7 +47,9 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private boolean printed = false;
 	private final ValueFactory valueFactory;
 
-	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, ValueFactory valueFactory, String query, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, Function<BindingSet, ValidationTuple> mapper) {
+	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, ValueFactory valueFactory,
+			Resource[] dataGraph, String query, boolean skipBasedOnPreviousConnection,
+			SailConnection previousStateConnection, Function<BindingSet, ValidationTuple> mapper) {
 
 		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode);
 
@@ -54,7 +60,8 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
 		this.mapper = mapper;
 		this.previousStateConnection = previousStateConnection;
-
+		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+		this.dataGraph = dataGraph;
 	}
 
 	@Override
@@ -85,7 +92,8 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 						parsedQuery = parseQuery(query, valueFactory);
 					}
 
-					runQuery(left, right, connection, parsedQuery, skipBasedOnPreviousConnection, previousStateConnection, mapper);
+					runQuery(left, right, connection, parsedQuery, dataset, dataGraph, skipBasedOnPreviousConnection,
+							previousStateConnection, mapper);
 
 					while (!right.isEmpty()) {
 
@@ -169,20 +177,24 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
+				.append("\n");
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId() + " [label=\"right\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
+					+ getId() + " [label=\"right\"]").append("\n");
 		} else {
-			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"right\"]")
+					.append("\n");
 		}
 
 		if (skipBasedOnPreviousConnection) {
 
-			stringBuilder.append(System.identityHashCode(previousStateConnection) + " -> " + getId() + " [label=\"skip if not present\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
+					+ " [label=\"skip if not present\"]").append("\n");
 
 		}
 
@@ -217,11 +229,14 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			return false;
 		}
 		BulkedExternalInnerJoin that = (BulkedExternalInnerJoin) o;
-		return skipBasedOnPreviousConnection == that.skipBasedOnPreviousConnection && connection.equals(that.connection) && leftNode.equals(that.leftNode) && Objects.equals(previousStateConnection, that.previousStateConnection) && query.equals(that.query);
+		return skipBasedOnPreviousConnection == that.skipBasedOnPreviousConnection && connection.equals(that.connection)
+				&& leftNode.equals(that.leftNode) && Objects.equals(dataset, that.dataset)
+				&& Objects.equals(previousStateConnection, that.previousStateConnection) && query.equals(that.query);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(super.hashCode(), connection, leftNode, skipBasedOnPreviousConnection, previousStateConnection, query);
+		return Objects.hash(super.hashCode(), connection, dataset, leftNode, skipBasedOnPreviousConnection,
+				previousStateConnection, query);
 	}
 }
