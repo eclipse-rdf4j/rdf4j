@@ -7,15 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.ArrayDeque;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -28,6 +19,15 @@ import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
+
+import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
@@ -44,12 +44,8 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		return queryParserFactory.getParser().parseQuery(completeQuery, null);
 	}
 
-	void runQuery(ArrayDeque<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection,
-			ParsedQuery parsedQuery, Dataset dataset, Resource[] dataGraph, boolean skipBasedOnPreviousConnection,
-			SailConnection previousStateConnection,
-			Function<BindingSet, ValidationTuple> mapper) {
-		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection,
-				previousStateConnection, dataGraph);
+	void runQuery(ArrayDeque<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection, ParsedQuery parsedQuery, Dataset dataset, Resource[] dataGraph, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, Function<BindingSet, ValidationTuple> mapper) {
+		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection, previousStateConnection, dataGraph);
 
 		if (!newBindindingset.isEmpty()) {
 			updateQuery(parsedQuery, newBindindingset);
@@ -57,16 +53,10 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		}
 	}
 
-	private static void executeQuery(ArrayDeque<ValidationTuple> right, SailConnection connection,
-			Dataset dataset, ParsedQuery parsedQuery,
-			Function<BindingSet, ValidationTuple> mapper) {
+	private static void executeQuery(ArrayDeque<ValidationTuple> right, SailConnection connection, Dataset dataset, ParsedQuery parsedQuery, Function<BindingSet, ValidationTuple> mapper) {
 
-		try (Stream<? extends BindingSet> stream = connection
-				.evaluate(parsedQuery.getTupleExpr(), dataset, new MapBindingSet(), true)
-				.stream()) {
-			stream
-					.map(mapper)
-					.forEachOrdered(right::addFirst);
+		try (Stream<? extends BindingSet> stream = connection.evaluate(parsedQuery.getTupleExpr(), dataset, new MapBindingSet(), true).stream()) {
+			stream.map(mapper).forEachOrdered(right::addFirst);
 		}
 
 	}
@@ -74,58 +64,46 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	private void updateQuery(ParsedQuery parsedQuery, List<BindingSet> newBindindingset) {
 		try {
 
-			parsedQuery.getTupleExpr()
-					.visit(new AbstractQueryModelVisitor<Exception>() {
-						@Override
-						public void meet(BindingSetAssignment node) throws Exception {
-							Set<String> bindingNames = node.getBindingNames();
-							if (bindingNames.size() == 1 && bindingNames.contains("a")) {
-								node.setBindingSets(newBindindingset);
-							}
-							super.meet(node);
-						}
+			parsedQuery.getTupleExpr().visit(new AbstractQueryModelVisitor<Exception>() {
+				@Override
+				public void meet(BindingSetAssignment node) throws Exception {
+					Set<String> bindingNames = node.getBindingNames();
+					if (bindingNames.size() == 1 && bindingNames.contains("a")) {
+						node.setBindingSets(newBindindingset);
+					}
+					super.meet(node);
+				}
 
-					});
+			});
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	private List<BindingSet> buildBindingSets(ArrayDeque<ValidationTuple> left, SailConnection connection,
-			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, Resource[] dataGraph) {
+	private List<BindingSet> buildBindingSets(ArrayDeque<ValidationTuple> left, SailConnection connection, boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, Resource[] dataGraph) {
 		return left.stream()
 
-				.filter(tuple -> {
-					if (!skipBasedOnPreviousConnection) {
-						return true;
-					}
+			.filter(tuple -> {
+				if (!skipBasedOnPreviousConnection) {
+					return true;
+				}
 
-					boolean hasStatement;
+				boolean hasStatement;
 
-					if (!(tuple.getActiveTarget().isResource())) {
-						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),
-								true, dataGraph);
+				if (!(tuple.getActiveTarget().isResource())) {
+					hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true, dataGraph);
 
-					} else {
-						hasStatement = previousStateConnection.hasStatement(((Resource) tuple.getActiveTarget()),
-								null, null, true, dataGraph) ||
-								previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true,
-										dataGraph);
+				} else {
+					hasStatement = previousStateConnection.hasStatement(((Resource) tuple.getActiveTarget()), null, null, true, dataGraph) || previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true, dataGraph);
 
-					}
+				}
 
-					if (!hasStatement && validationExecutionLogger.isEnabled()) {
-						validationExecutionLogger.log(depth(),
-								this.getClass().getSimpleName() + ":IgnoredDueToPreviousStateConnection", tuple, this,
-								getId(), null);
-					}
-					return hasStatement;
+				if (!hasStatement && validationExecutionLogger.isEnabled()) {
+					validationExecutionLogger.log(depth(), this.getClass().getSimpleName() + ":IgnoredDueToPreviousStateConnection", tuple, this, getId(), null);
+				}
+				return hasStatement;
 
-				})
-				.map(ValidationTuple::getActiveTarget)
-				.map(r -> new SimpleBindingSet(Collections.singleton("a"), Collections.singletonList("a"),
-						Collections.singletonList(r)))
-				.collect(Collectors.toList());
+			}).map(ValidationTuple::getActiveTarget).map(r -> new SimpleBindingSet(Collections.singleton("a"), Collections.singletonList("a"), Collections.singletonList(r))).collect(Collectors.toList());
 	}
 
 	@Override

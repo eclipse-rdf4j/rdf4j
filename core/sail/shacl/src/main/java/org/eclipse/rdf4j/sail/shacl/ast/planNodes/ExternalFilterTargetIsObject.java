@@ -8,13 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Arrays;
-import java.util.Objects;
-
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+
+import java.util.Arrays;
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -38,8 +38,7 @@ public class ExternalFilterTargetIsObject extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterTargetIsObject{" +
-				'}';
+		return "ExternalFilterTargetIsObject{" + '}';
 	}
 
 	@Override
@@ -57,9 +56,7 @@ public class ExternalFilterTargetIsObject extends FilterPlanNode {
 
 		ExternalFilterTargetIsObject that = (ExternalFilterTargetIsObject) o;
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
-			return ((MemoryStoreConnection) connection).getSail()
-					.equals(((MemoryStoreConnection) that.connection).getSail())
-					&& Arrays.equals(dataGraph, that.dataGraph);
+			return ((MemoryStoreConnection) connection).getSail().equals(((MemoryStoreConnection) that.connection).getSail()) && Arrays.equals(dataGraph, that.dataGraph);
 		}
 		return connection.equals(that.connection) && Arrays.equals(dataGraph, that.dataGraph);
 	}
@@ -67,8 +64,7 @@ public class ExternalFilterTargetIsObject extends FilterPlanNode {
 	@Override
 	public int hashCode() {
 		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(super.hashCode(), ((MemoryStoreConnection) connection).getSail(),
-					Arrays.hashCode(dataGraph));
+			return Objects.hash(super.hashCode(), ((MemoryStoreConnection) connection).getSail(), Arrays.hashCode(dataGraph));
 		}
 		return Objects.hash(super.hashCode(), connection, Arrays.hashCode(dataGraph));
 	}

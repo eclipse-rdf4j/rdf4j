@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.Set;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -35,11 +33,12 @@ import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
+import java.util.Set;
+
 public class NotConstraintComponent extends AbstractConstraintComponent {
 	Shape not;
 
-	public NotConstraintComponent(Resource id, ShapeSource shapeSource,
-			Cache cache, ShaclSail shaclSail) {
+	public NotConstraintComponent(Resource id, ShapeSource shapeSource, Cache cache, ShaclSail shaclSail) {
 		super(id);
 
 		ShaclProperties p = new ShaclProperties(id, shapeSource);
@@ -78,16 +77,12 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings,
-			boolean negatePlan, boolean negateChildren, Scope scope) {
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
 		throw new ShaclUnsupportedException();
 	}
 
 	@Override
-	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings,
-			PlanNodeProvider overrideTargetNode, Scope scope) {
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope) {
 
 		// if (scope == Scope.nodeShape) {
 
@@ -98,30 +93,17 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope);
 		}
 
-		PlanNode planNode = not.generateTransactionalValidationPlan(
-				connectionsGroup,
-				validationSettings,
-				planNodeProvider,
-				scope
-		);
+		PlanNode planNode = not.generateTransactionalValidationPlan(connectionsGroup, validationSettings, planNodeProvider, scope);
 
 		PlanNode invalid = Unique.getInstance(planNode, false);
 
 		PlanNode allTargetsPlan;
 		if (overrideTargetNode != null) {
 			if (scope == Scope.propertyShape) {
-				allTargetsPlan = getTargetChain()
-						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-						.extend(planNodeProvider.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
-								Scope.nodeShape,
-								EffectiveTarget.Extend.right, false, null);
+				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner()).extend(planNodeProvider.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape, EffectiveTarget.Extend.right, false, null);
 				allTargetsPlan = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 			} else {
-				allTargetsPlan = getTargetChain()
-						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-						.extend(planNodeProvider.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
-								scope, EffectiveTarget.Extend.right,
-								false, null);
+				allTargetsPlan = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner()).extend(planNodeProvider.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(), scope, EffectiveTarget.Extend.right, false, null);
 			}
 
 		} else {
@@ -160,15 +142,11 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		PlanNode allTargets;
 
 		if (scope == Scope.propertyShape) {
-			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
+			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner()).getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
 			allTargets = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		} else {
-			allTargets = getTargetChain()
-					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, dataGraph, scope, true, null);
+			allTargets = getTargetChain().getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner()).getPlanNode(connectionsGroup, dataGraph, scope, true, null);
 
 		}
 

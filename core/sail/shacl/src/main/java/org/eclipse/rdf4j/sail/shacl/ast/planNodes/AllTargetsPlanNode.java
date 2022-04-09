@@ -7,13 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
@@ -23,6 +16,13 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Used to signal bulk validation. This plan node should only be used from EffectiveTarget#getAllTargets
@@ -34,19 +34,12 @@ public class AllTargetsPlanNode implements PlanNode {
 	private boolean printed;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public AllTargetsPlanNode(ConnectionsGroup connectionsGroup,
-			Resource[] dataGraph, ArrayDeque<EffectiveTarget.EffectiveTargetObject> chain,
-			List<StatementMatcher.Variable> vars,
-			ConstraintComponent.Scope scope) {
-		String query = chain.stream()
-				.map(EffectiveTarget.EffectiveTargetObject::getQueryFragment)
-				.reduce((a, b) -> a + "\n" + b)
-				.orElse("");
+	public AllTargetsPlanNode(ConnectionsGroup connectionsGroup, Resource[] dataGraph, ArrayDeque<EffectiveTarget.EffectiveTargetObject> chain, List<StatementMatcher.Variable> vars, ConstraintComponent.Scope scope) {
+		String query = chain.stream().map(EffectiveTarget.EffectiveTargetObject::getQueryFragment).reduce((a, b) -> a + "\n" + b).orElse("");
 
 		List<String> varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toList());
 
-		this.select = new Select(connectionsGroup.getBaseConnection(), query, null,
-				new AllTargetsBindingSetMapper(varNames, scope, false, dataGraph), dataGraph);
+		this.select = new Select(connectionsGroup.getBaseConnection(), query, null, new AllTargetsBindingSetMapper(varNames, scope, false, dataGraph), dataGraph);
 
 	}
 
@@ -86,8 +79,7 @@ public class AllTargetsPlanNode implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(select.getId() + " -> " + getId()).append("\n");
 		select.getPlanAsGraphvizDot(stringBuilder);
 	}
@@ -141,8 +133,7 @@ public class AllTargetsPlanNode implements PlanNode {
 		private final boolean hasValue;
 		private final Resource[] contexts;
 
-		public AllTargetsBindingSetMapper(List<String> varNames, ConstraintComponent.Scope scope, boolean hasValue,
-				Resource[] contexts) {
+		public AllTargetsBindingSetMapper(List<String> varNames, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {
 			this.varNames = varNames;
 			this.scope = scope;
 			this.hasValue = hasValue;
@@ -163,8 +154,7 @@ public class AllTargetsPlanNode implements PlanNode {
 				return false;
 			}
 			AllTargetsBindingSetMapper that = (AllTargetsBindingSetMapper) o;
-			return hasValue == that.hasValue && varNames.equals(that.varNames) && scope == that.scope
-					&& Arrays.equals(contexts, that.contexts);
+			return hasValue == that.hasValue && varNames.equals(that.varNames) && scope == that.scope && Arrays.equals(contexts, that.contexts);
 		}
 
 		@Override

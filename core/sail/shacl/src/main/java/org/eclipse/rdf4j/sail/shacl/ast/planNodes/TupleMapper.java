@@ -8,12 +8,12 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Objects;
-import java.util.function.Function;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
+
+import java.util.Objects;
+import java.util.function.Function;
 
 public class TupleMapper implements PlanNode {
 	PlanNode parent;
@@ -62,8 +62,7 @@ public class TupleMapper implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);
 	}
@@ -103,8 +102,7 @@ public class TupleMapper implements PlanNode {
 			return false;
 		}
 		TupleMapper that = (TupleMapper) o;
-		return parent.equals(that.parent) &&
-				function.equals(that.function);
+		return parent.equals(that.parent) && function.equals(that.function);
 	}
 
 	@Override

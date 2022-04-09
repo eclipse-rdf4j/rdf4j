@@ -8,17 +8,17 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Objects;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -115,10 +115,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 					init();
 					ValidationTuple tuple = iterator.next();
 					if (validationExecutionLogger.isEnabled()) {
-						validationExecutionLogger.log(depth(),
-								bufferedSplitter.parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple,
-								bufferedSplitter.parent,
-								getId(), null);
+						validationExecutionLogger.log(depth(), bufferedSplitter.parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple, bufferedSplitter.parent, getId(), null);
 					}
 					return tuple;
 				}
@@ -141,8 +138,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 				return;
 			}
 			printed = true;
-			stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-					.append("\n");
+			stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 			stringBuilder.append(bufferedSplitter.parent.getId() + " -> " + getId()).append("\n");
 			bufferedSplitter.parent.getPlanAsGraphvizDot(stringBuilder);
 		}

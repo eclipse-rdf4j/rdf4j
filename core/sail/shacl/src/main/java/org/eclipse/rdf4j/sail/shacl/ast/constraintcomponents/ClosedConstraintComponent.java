@@ -8,13 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import static org.eclipse.rdf4j.model.util.Values.literal;
-
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -24,18 +17,22 @@ import org.eclipse.rdf4j.sail.shacl.ast.ShaclAstLists;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
 public class ClosedConstraintComponent extends AbstractConstraintComponent {
 
 	private final List<Path> paths;
 	private final List<IRI> ignoredProperties;
 
-	public ClosedConstraintComponent(ShapeSource shapeSource, List<Resource> property,
-			Resource ignoredProperties) {
+	public ClosedConstraintComponent(ShapeSource shapeSource, List<Resource> property, Resource ignoredProperties) {
 
 		paths = property.stream().flatMap(r -> {
-			return shapeSource.getObjects(r, ShapeSource.Predicates.PATH)
-					.map(o -> ((Resource) o))
-					.map(path -> Path.buildPath(shapeSource, path));
+			return shapeSource.getObjects(r, ShapeSource.Predicates.PATH).map(o -> ((Resource) o)).map(path -> Path.buildPath(shapeSource, path));
 
 		}).collect(Collectors.toList());
 

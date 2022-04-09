@@ -8,10 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.Set;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -20,6 +16,10 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * @author Håvard Ottestad
@@ -36,11 +36,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final Resource[] dataGraph;
 
-	public ExternalPredicateObjectFilter(SailConnection connection, Resource[] dataGraph,
-			IRI filterOnPredicate,
-			Set<Resource> filterOnObject,
-			PlanNode parent,
-			boolean returnMatching, FilterOn filterOn) {
+	public ExternalPredicateObjectFilter(SailConnection connection, Resource[] dataGraph, IRI filterOnPredicate, Set<Resource> filterOnObject, PlanNode parent, boolean returnMatching, FilterOn filterOn) {
 		this.dataGraph = dataGraph;
 		parent = PlanNodeHelper.handleSorting(this, parent);
 
@@ -67,14 +63,14 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 
 					Value value;
 					switch (filterOn) {
-					case value:
-						value = temp.getValue();
-						break;
-					case activeTarget:
-						value = temp.getActiveTarget();
-						break;
-					default:
-						throw new IllegalStateException("Unknown filterOn: " + filterOn);
+						case value:
+							value = temp.getValue();
+							break;
+						case activeTarget:
+							value = temp.getActiveTarget();
+							break;
+						default:
+							throw new IllegalStateException("Unknown filterOn: " + filterOn);
 					}
 
 					boolean matches = matches(value);
@@ -84,11 +80,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 							next = temp;
 						} else {
 							if (validationExecutionLogger.isEnabled()) {
-								validationExecutionLogger.log(depth(),
-										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
-												+ ":IgnoredAsNotMatching",
-										temp, ExternalPredicateObjectFilter.this,
-										getId(), null);
+								validationExecutionLogger.log(depth(), ExternalPredicateObjectFilter.this.getClass().getSimpleName() + ":IgnoredAsNotMatching", temp, ExternalPredicateObjectFilter.this, getId(), null);
 							}
 						}
 					} else {
@@ -96,11 +88,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 							next = temp;
 						} else {
 							if (validationExecutionLogger.isEnabled()) {
-								validationExecutionLogger.log(depth(),
-										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
-												+ ":IgnoredAsMatching",
-										temp, ExternalPredicateObjectFilter.this,
-										getId(), null);
+								validationExecutionLogger.log(depth(), ExternalPredicateObjectFilter.this.getClass().getSimpleName() + ":IgnoredAsMatching", temp, ExternalPredicateObjectFilter.this, getId(), null);
 							}
 						}
 					}
@@ -112,9 +100,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 
 			private boolean matches(Value subject) {
 				if (subject.isResource()) {
-					return filterOnObject.stream()
-							.anyMatch(object -> connection.hasStatement((Resource) subject, filterOnPredicate, object,
-									true, dataGraph));
+					return filterOnObject.stream().anyMatch(object -> connection.hasStatement((Resource) subject, filterOnPredicate, object, true, dataGraph));
 				}
 				return false;
 			}
@@ -154,18 +140,15 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> "
-					+ getId() + " [label=\"filter source\"]").append("\n");
+			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
 		} else {
-			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]")
-					.append("\n");
+			stringBuilder.append(System.identityHashCode(connection) + " -> " + getId() + " [label=\"filter source\"]").append("\n");
 		}
 
 		parent.getPlanAsGraphvizDot(stringBuilder);
@@ -193,8 +176,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 	}
 
 	public enum FilterOn {
-		activeTarget,
-		value
+		activeTarget, value
 	}
 
 	@Override
@@ -209,23 +191,9 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
-			return returnMatching == that.returnMatching &&
-					((MemoryStoreConnection) connection).getSail()
-							.equals(((MemoryStoreConnection) that.connection).getSail())
-					&&
-					filterOnObject.equals(that.filterOnObject) &&
-					filterOnPredicate.equals(that.filterOnPredicate) &&
-					filterOn == that.filterOn &&
-					Arrays.equals(dataGraph, that.dataGraph) &&
-					parent.equals(that.parent);
+			return returnMatching == that.returnMatching && ((MemoryStoreConnection) connection).getSail().equals(((MemoryStoreConnection) that.connection).getSail()) && filterOnObject.equals(that.filterOnObject) && filterOnPredicate.equals(that.filterOnPredicate) && filterOn == that.filterOn && Arrays.equals(dataGraph, that.dataGraph) && parent.equals(that.parent);
 		} else {
-			return returnMatching == that.returnMatching &&
-					connection.equals(that.connection) &&
-					filterOnObject.equals(that.filterOnObject) &&
-					filterOnPredicate.equals(that.filterOnPredicate) &&
-					filterOn == that.filterOn &&
-					Arrays.equals(dataGraph, that.dataGraph) &&
-					parent.equals(that.parent);
+			return returnMatching == that.returnMatching && connection.equals(that.connection) && filterOnObject.equals(that.filterOnObject) && filterOnPredicate.equals(that.filterOnPredicate) && filterOn == that.filterOn && Arrays.equals(dataGraph, that.dataGraph) && parent.equals(that.parent);
 		}
 	}
 
@@ -234,23 +202,15 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection) {
-			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnObject, filterOnPredicate,
-					filterOn, parent, returnMatching, Arrays.hashCode(dataGraph));
+			return Objects.hash(((MemoryStoreConnection) connection).getSail(), filterOnObject, filterOnPredicate, filterOn, parent, returnMatching, Arrays.hashCode(dataGraph));
 
 		} else {
-			return Objects.hash(connection, filterOnObject, filterOnPredicate, filterOn, parent, returnMatching,
-					Arrays.hashCode(dataGraph));
+			return Objects.hash(connection, filterOnObject, filterOnPredicate, filterOn, parent, returnMatching, Arrays.hashCode(dataGraph));
 		}
 	}
 
 	@Override
 	public String toString() {
-		return "ExternalPredicateObjectFilter{" +
-				"filterOnObject=" + filterOnObject +
-				", filterOnPredicate=" + filterOnPredicate +
-				", filterOn=" + filterOn +
-				", parent=" + parent +
-				", returnMatching=" + returnMatching +
-				'}';
+		return "ExternalPredicateObjectFilter{" + "filterOnObject=" + filterOnObject + ", filterOnPredicate=" + filterOnPredicate + ", filterOn=" + filterOn + ", parent=" + parent + ", returnMatching=" + returnMatching + '}';
 	}
 }

@@ -7,17 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.Stream;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 /**
  * @author Håvard Ottestad
@@ -267,20 +267,17 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 		printed = true;
 		left.getPlanAsGraphvizDot(stringBuilder);
 
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(left.getId() + " -> " + getId() + " [label=\"left\"];").append("\n");
 		stringBuilder.append(right.getId() + " -> " + getId() + " [label=\"right\"];").append("\n");
 		right.getPlanAsGraphvizDot(stringBuilder);
 
 		if (discardedRight != null) {
-			stringBuilder.append(getId() + " -> " + (discardedRight).getId() + " [label=\"discardedRight\"];")
-					.append("\n");
+			stringBuilder.append(getId() + " -> " + (discardedRight).getId() + " [label=\"discardedRight\"];").append("\n");
 
 		}
 		if (discardedLeft != null) {
-			stringBuilder.append(getId() + " -> " + (discardedLeft).getId() + " [label=\"discardedLeft\"];")
-					.append("\n");
+			stringBuilder.append(getId() + " -> " + (discardedLeft).getId() + " [label=\"discardedLeft\"];").append("\n");
 		}
 
 		if (joined != null) {
@@ -312,8 +309,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 	@Override
 	public void close() {
 
-		if ((discardedLeft == null || discardedLeft.isClosed()) && (discardedRight == null || discardedRight.isClosed())
-				&& (joined == null || joined.isClosed())) {
+		if ((discardedLeft == null || discardedLeft.isClosed()) && (discardedRight == null || discardedRight.isClosed()) && (joined == null || joined.isClosed())) {
 			iterator.close();
 			iterator = null;
 		}
@@ -359,9 +355,7 @@ public class InnerJoin implements MultiStreamPlanNode, PlanNode {
 
 	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
-		Stream.of(joined, discardedLeft, discardedRight, left, right)
-				.filter(Objects::nonNull)
-				.forEach(p -> p.receiveLogger(validationExecutionLogger));
+		Stream.of(joined, discardedLeft, discardedRight, left, right).filter(Objects::nonNull).forEach(p -> p.receiveLogger(validationExecutionLogger));
 	}
 
 	@Override

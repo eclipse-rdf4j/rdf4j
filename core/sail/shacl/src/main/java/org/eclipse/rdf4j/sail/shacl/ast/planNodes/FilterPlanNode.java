@@ -8,13 +8,13 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Objects;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Objects;
 
 /**
  * @author Håvard Ottestad
@@ -97,9 +97,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 							trueNode.push(temp);
 						} else {
 							if (validationExecutionLogger.isEnabled()) {
-								validationExecutionLogger.log(FilterPlanNode.this.depth(),
-										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp,
-										FilterPlanNode.this, getId(), null);
+								validationExecutionLogger.log(FilterPlanNode.this.depth(), FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsTrue.next()", temp, FilterPlanNode.this, getId(), null);
 							}
 						}
 					} else {
@@ -107,10 +105,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 							falseNode.push(temp);
 						} else {
 							if (validationExecutionLogger.isEnabled()) {
-								validationExecutionLogger.log(FilterPlanNode.this.depth(),
-										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp,
-										FilterPlanNode.this,
-										getId(), null);
+								validationExecutionLogger.log(FilterPlanNode.this.depth(), FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp, FilterPlanNode.this, getId(), null);
 							}
 						}
 					}
@@ -164,8 +159,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		if (trueNode != null) {
 			stringBuilder.append(getId() + " -> " + trueNode.getId() + " [label=\"true values\"]").append("\n");

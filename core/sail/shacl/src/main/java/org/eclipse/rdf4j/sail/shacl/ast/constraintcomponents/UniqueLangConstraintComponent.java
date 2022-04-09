@@ -8,10 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -38,6 +34,10 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
 public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	public UniqueLangConstraintComponent() {
@@ -54,44 +54,25 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		String targetVarPrefix = "target_";
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope, connectionsGroup.getRdfsSubClassOfReasoner());
 		String query = effectiveTarget.getQuery(false);
 
 		StatementMatcher.Variable value1 = new StatementMatcher.Variable("value1");
 
-		String pathQuery1 = getTargetChain().getPath()
-				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value1,
-						connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
-				.orElseThrow(IllegalStateException::new);
+		String pathQuery1 = getTargetChain().getPath().map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value1, connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)).orElseThrow(IllegalStateException::new);
 
 		query += pathQuery1;
 
 		StatementMatcher.Variable value2 = new StatementMatcher.Variable("value2");
 
-		String pathQuery2 = getTargetChain().getPath()
-				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value2,
-						connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
-				.orElseThrow(IllegalStateException::new);
+		String pathQuery2 = getTargetChain().getPath().map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value2, connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)).orElseThrow(IllegalStateException::new);
 
-		query += String.join("\n", "",
-				"FILTER(",
-				"	EXISTS {",
-				"		" + pathQuery2,
-				"		FILTER(",
-				"			lang(?" + value2.getName() + ") != \"\" && ",
-				"			lang(?" + value1.getName() + ") != \"\" && ",
-				"			?" + value1.getName() + " != ?" + value2.getName() + " && ",
-				"			lang(?" + value1.getName() + ") = lang(?" + value2.getName() + ")",
-				"		)",
-				"	}",
-				")");
+		query += String.join("\n", "", "FILTER(", "	EXISTS {", "		" + pathQuery2, "		FILTER(", "			lang(?" + value2.getName() + ") != \"\" && ", "			lang(?" + value1.getName() + ") != \"\" && ", "			?" + value1.getName() + " != ?" + value2.getName() + " && ", "			lang(?" + value1.getName() + ") = lang(?" + value2.getName() + ")", "		)", "	}", ")");
 
 		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
 
@@ -105,14 +86,11 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings,
-			PlanNodeProvider overrideTargetNode, Scope scope) {
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope) {
 //		assert !negateChildren : "There are no subplans!";
 //		assert !negatePlan;
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner());
 		Optional<Path> path = getTargetChain().getPath();
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
@@ -122,30 +100,16 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		if (overrideTargetNode != null) {
 
-			PlanNode targets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
-					validationSettings.getDataGraph(), scope,
-					EffectiveTarget.Extend.right, false, null);
+			PlanNode targets = effectiveTarget.extend(overrideTargetNode.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(), scope, EffectiveTarget.Extend.right, false, null);
 
-			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
-					targets,
-					connectionsGroup.getBaseConnection(),
-					validationSettings.getDataGraph(), path.get()
-							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
-			);
+			PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(targets, connectionsGroup.getBaseConnection(), validationSettings.getDataGraph(), path.get().getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider), false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true, validationSettings.getDataGraph()));
 
 			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
 			return Unique.getInstance(new TrimToTarget(nonUniqueTargetLang), false);
 		}
 
 		if (connectionsGroup.getStats().wasEmptyBeforeTransaction()) {
-			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),
-					scope, false, null);
+			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false, null);
 
 			PlanNode addedByPath = path.get().getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
@@ -155,17 +119,13 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			return Unique.getInstance(new TrimToTarget(nonUniqueTargetLang), false);
 		}
 
-		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope,
-				false, null);
+		PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false, null);
 
 		PlanNode addedByPath = path.get().getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
-		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
-				validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
+		addedByPath = effectiveTarget.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
 
-		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope,
-				EffectiveTarget.Extend.left, false,
-				null);
+		addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope, EffectiveTarget.Extend.left, false, null);
 
 		PlanNode mergeNode = UnionNode.getInstance(addedTargets, addedByPath);
 
@@ -173,17 +133,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		PlanNode allRelevantTargets = Unique.getInstance(mergeNode, false);
 
-		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(
-				allRelevantTargets,
-				connectionsGroup.getBaseConnection(),
-				validationSettings.getDataGraph(), path.get()
-						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-				false,
-				null,
-				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-						validationSettings.getDataGraph())
-		);
+		PlanNode relevantTargetsWithPath = new BulkedExternalInnerJoin(allRelevantTargets, connectionsGroup.getBaseConnection(), validationSettings.getDataGraph(), path.get().getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider), false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true, validationSettings.getDataGraph()));
 
 		PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
 
@@ -194,9 +144,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
 		if (scope == Scope.propertyShape) {
-			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
+			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner()).getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
 			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		}

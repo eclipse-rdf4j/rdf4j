@@ -7,15 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.ArrayDeque;
-import java.util.Objects;
-import java.util.Queue;
-
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayDeque;
+import java.util.Objects;
+import java.util.Queue;
 
 public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implements PushablePlanNode {
 	private final Logger logger = LoggerFactory.getLogger(BufferedPlanNode.class);
@@ -71,9 +71,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 				calculateNext();
 				ValidationTuple tuple = buffer.remove();
 				if (validationExecutionLogger.isEnabled()) {
-					validationExecutionLogger.log(depth(),
-							parent.getClass().getSimpleName() + ":Buffered:" + name + ".next()", tuple, parent,
-							getId(), null);
+					validationExecutionLogger.log(depth(), parent.getClass().getSimpleName() + ":Buffered:" + name + ".next()", tuple, parent, getId(), null);
 				}
 				return tuple;
 			}
@@ -104,8 +102,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 		printed = true;
 		parent.getPlanAsGraphvizDot(stringBuilder);
 
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 	}
 
 	@Override

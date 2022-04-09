@@ -8,14 +8,14 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
+import org.apache.commons.text.StringEscapeUtils;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.sail.SailException;
+
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-
-import org.apache.commons.text.StringEscapeUtils;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Pops the last target off of the target chain and into the value.
@@ -44,8 +44,7 @@ public class TargetChainPopper implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final private CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent
-					.iterator();
+			final private CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 			Iterator<ValidationTuple> iterator = Collections.emptyIterator();
 
 			public void calculateNext() {
@@ -91,8 +90,7 @@ public class TargetChainPopper implements PlanNode {
 			return;
 		}
 		printed = true;
-		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];")
-				.append("\n");
+		stringBuilder.append(getId() + " [label=\"" + StringEscapeUtils.escapeJava(this.toString()) + "\"];").append("\n");
 
 		stringBuilder.append(parent.getId() + " -> " + getId()).append("\n");
 		parent.getPlanAsGraphvizDot(stringBuilder);

@@ -8,12 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -43,6 +37,12 @@ import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 	Value hasValue;
@@ -67,12 +67,9 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings,
-			PlanNodeProvider overrideTargetNode, Scope scope) {
+	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup, ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope) {
 
-		EffectiveTarget target = getTargetChain().getEffectiveTarget("_target", scope,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget target = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner());
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		if (scope == Scope.propertyShape) {
@@ -82,36 +79,20 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
-						EffectiveTarget.Extend.right,
-						false, null);
+				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope, EffectiveTarget.Extend.right, false, null);
 
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, true,
-						null);
+				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, true, null);
 				PlanNode addedByPath = path.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
-				addedByPath = target.getTargetFilter(connectionsGroup,
-						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
-				addedByPath = target.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope,
-						EffectiveTarget.Extend.left, false,
-						null);
+				addedByPath = target.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
+				addedByPath = target.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope, EffectiveTarget.Extend.left, false, null);
 
 				addedTargets = UnionNode.getInstance(addedByPath, addedTargets);
 				addedTargets = Unique.getInstance(addedTargets, false);
 			}
 
-			PlanNode joined = new BulkedExternalLeftOuterJoin(
-					addedTargets,
-					connectionsGroup.getBaseConnection(),
-					validationSettings.getDataGraph(),
-					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
-			);
+			PlanNode joined = new BulkedExternalLeftOuterJoin(addedTargets, connectionsGroup.getBaseConnection(), validationSettings.getDataGraph(), path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider), false, null, (b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true, validationSettings.getDataGraph()));
 
 			PlanNode invalidTargets = new GroupByFilter(joined, group -> {
 				return group.stream().map(ValidationTuple::getValue).noneMatch(v -> hasValue.equals(v));
@@ -125,16 +106,12 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 
 			if (overrideTargetNode != null) {
 				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
-						EffectiveTarget.Extend.right,
-						false, null);
+				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope, EffectiveTarget.Extend.right, false, null);
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
-						null);
+				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false, null);
 			}
 
-			PlanNode falseNode = new ValueInFilter(addedTargets, new HashSet<>(Collections.singletonList(hasValue)))
-					.getFalseNode(UnBufferedPlanNode.class);
+			PlanNode falseNode = new ValueInFilter(addedTargets, new HashSet<>(Collections.singletonList(hasValue))).getFalseNode(UnBufferedPlanNode.class);
 
 			return falseNode;
 
@@ -147,9 +124,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
 		if (scope == Scope.propertyShape) {
-			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
-					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
+			PlanNode allTargetsPlan = getTargetChain().getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner()).getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
 			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		}
@@ -157,82 +132,58 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject, StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope, StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		List<StatementMatcher> statementMatchers = Collections.emptyList();
 
 		if (getTargetChain().getPath().isPresent()) {
 			Path path = getTargetChain().getPath().get();
 
-			statementMatchers = path
-					.getStatementMatcher(subject, new StatementMatcher.Variable(hasValue), rdfsSubClassOfReasoner)
-					.collect(Collectors.toList());
+			statementMatchers = path.getStatementMatcher(subject, new StatementMatcher.Variable(hasValue), rdfsSubClassOfReasoner).collect(Collectors.toList());
 		}
 
 		if (scope == Scope.propertyShape) {
 			Path path = getTargetChain().getPath().get();
 
 			if (hasValue.isIRI()) {
-				return SparqlFragment.bgp("BIND(<" + hasValue + "> as ?" + object.getName() + ")\n"
-						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
-								stableRandomVariableProvider),
-						statementMatchers);
+				return SparqlFragment.bgp("BIND(<" + hasValue + "> as ?" + object.getName() + ")\n" + path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner, stableRandomVariableProvider), statementMatchers);
 			}
 			if (hasValue.isLiteral()) {
-				return SparqlFragment.bgp("BIND(" + hasValue.toString() + " as ?" + object.getName() + ")\n"
-						+ path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner,
-								stableRandomVariableProvider),
-						statementMatchers);
+				return SparqlFragment.bgp("BIND(" + hasValue.toString() + " as ?" + object.getName() + ")\n" + path.getTargetQueryFragment(subject, object, rdfsSubClassOfReasoner, stableRandomVariableProvider), statementMatchers);
 			}
 
-			throw new UnsupportedOperationException(
-					"value was unsupported type: " + hasValue.getClass().getSimpleName());
+			throw new UnsupportedOperationException("value was unsupported type: " + hasValue.getClass().getSimpleName());
 
 		} else {
 			if (hasValue.isIRI()) {
-				return SparqlFragment.filterCondition("?" + object.getName() + " = <" + hasValue + ">",
-						statementMatchers);
+				return SparqlFragment.filterCondition("?" + object.getName() + " = <" + hasValue + ">", statementMatchers);
 			} else if (hasValue.isLiteral()) {
 				return SparqlFragment.filterCondition("?" + object.getName() + " = " + hasValue, statementMatchers);
 			}
-			throw new UnsupportedOperationException(
-					"value was unsupported type: " + hasValue.getClass().getSimpleName());
+			throw new UnsupportedOperationException("value was unsupported type: " + hasValue.getClass().getSimpleName());
 
 		}
 	}
 
 	@Override
-	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
+	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
 
 		String targetVarPrefix = "target_";
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope, connectionsGroup.getRdfsSubClassOfReasoner());
 		String query = effectiveTarget.getQuery(false);
 
 		if (scope == Scope.nodeShape) {
 
-			query += "FILTER(?" + effectiveTarget.getTargetVar().getName() + " != "
-					+ stringRepresentationOfValue(hasValue) + ")\n";
+			query += "FILTER(?" + effectiveTarget.getTargetVar().getName() + " != " + stringRepresentationOfValue(hasValue) + ")\n";
 
 		} else {
 			StatementMatcher.Variable value = new StatementMatcher.Variable("value");
 
-			String pathQuery = getTargetChain().getPath()
-					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
-					.orElseThrow(IllegalStateException::new);
+			String pathQuery = getTargetChain().getPath().map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value, connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)).orElseThrow(IllegalStateException::new);
 
-			query += "FILTER( " +
-					"NOT EXISTS{" +
-					"	BIND(" + stringRepresentationOfValue(hasValue) + " as ?" + value.getName() + ")\n" +
-					pathQuery +
-					"})";
+			query += "FILTER( " + "NOT EXISTS{" + "	BIND(" + stringRepresentationOfValue(hasValue) + " as ?" + value.getName() + ")\n" + pathQuery + "})";
 
 		}
 
