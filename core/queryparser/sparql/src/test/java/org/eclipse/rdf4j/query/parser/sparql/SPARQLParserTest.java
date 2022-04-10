@@ -41,7 +41,6 @@ import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
-import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -442,6 +441,18 @@ public class SPARQLParserTest {
 	@Test
 	public void testGroupByProjectionHandling_Aggregate_SimpleExpr2() {
 		String query = "SELECT (COUNT(?s) as ?count) ?o \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_Aggregate_Constant() {
+		String query = "SELECT (COUNT(?s) as ?count) (<foo:constant> as ?constant) \n"
 				+ "WHERE {\n"
 				+ "	?s ?p ?o \n"
 				+ "} GROUP BY ?o";

@@ -17,7 +17,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
@@ -636,14 +635,16 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		if (group != null) {
 			for (ProjectionElem elem : projElemList.getElements()) {
 				if (!elem.hasAggregateOperatorInExpression()) {
-					// non-aggregate projection elem is only allowed to be a simple var or constant (see
+					// non-aggregate projection elem is only allowed to be a constant or a simple expression (see
 					// https://www.w3.org/TR/sparql11-query/#aggregateRestrictions)
 					ExtensionElem extElem = elem.getSourceExpression();
 					if (extElem != null) {
 						ValueExpr expr = extElem.getExpr();
-						throw new VisitorException(
-								"non-aggregate expression '" + expr
-										+ "' not allowed in projection when using GROUP BY.");
+						if (!(expr instanceof ValueConstant)) {
+							throw new VisitorException(
+									"non-aggregate expression '" + expr
+											+ "' not allowed in projection when using GROUP BY.");
+						}
 
 					} else {
 						Set<String> groupNames = group.getBindingNames();
@@ -657,7 +658,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 												+ "' in projection not present in GROUP BY.");
 							}
 						} else {
-							// projection element is simple var or constant. Must be present in GROUP BY.
+							// projection element is simple var. Must be present in GROUP BY.
 							if (!groupNames.contains(elem.getTargetName())) {
 								throw new VisitorException(
 										"variable '" + elem.getTargetName()
