@@ -67,7 +67,8 @@ class MemorySailStore implements SailStore {
 
 	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
 	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
-	public static final MemResource[] EMPTY_CONTEXT = new MemResource[0];
+	public static final MemResource[] EMPTY_CONTEXT = {};
+	public static final MemResource[] NULL_CONTEXT = { null };
 	private final static Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
 
 	private final MemStatementIteratorCache iteratorCache = new MemStatementIteratorCache(10);
@@ -224,7 +225,10 @@ class MemorySailStore implements SailStore {
 		if (contexts.length == 0) {
 			memContexts = EMPTY_CONTEXT;
 			smallestList = statements;
-		} else if (contexts.length == 1 && contexts[0] != null) {
+		} else if (contexts.length == 1 && contexts[0] == null) {
+			memContexts = NULL_CONTEXT;
+			smallestList = statements;
+		} else if (contexts.length == 1) {
 			MemResource memContext = valueFactory.getMemResource(contexts[0]);
 			if (memContext == null) {
 				// non-existent context
@@ -691,7 +695,7 @@ class MemorySailStore implements SailStore {
 			MemResource memSubj = valueFactory.getOrCreateMemResource(subj);
 			MemIRI memPred = valueFactory.getOrCreateMemURI(pred);
 			MemValue memObj = valueFactory.getOrCreateMemValue(obj);
-			MemResource memContext = (context == null) ? null : valueFactory.getOrCreateMemResource(context);
+			MemResource memContext = context == null ? null : valueFactory.getOrCreateMemResource(context);
 
 			if (memSubj.hasStatements() && memPred.hasStatements() && memObj.hasStatements()
 					&& (memContext == null || memContext.hasStatements())) {
