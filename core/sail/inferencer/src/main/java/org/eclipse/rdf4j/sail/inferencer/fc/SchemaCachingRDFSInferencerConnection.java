@@ -65,8 +65,9 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	 */
 	private boolean schemaChange;
 
-	SchemaCachingRDFSInferencerConnection(SchemaCachingRDFSInferencer sail,
-			InferencerConnection connection) {
+	private long addedInferredStatementsCount = 0;
+
+	SchemaCachingRDFSInferencerConnection(SchemaCachingRDFSInferencer sail, InferencerConnection connection) {
 
 		super(connection);
 		connection.addConnectionListener(this);
@@ -103,8 +104,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE));
 			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.DATATYPE)) {
-			sail.addSubClassOfStatement(
-					sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
+			sail.addSubClassOfStatement(sail.getValueFactory().createStatement(subject, RDFS.SUBCLASSOF, RDFS.LITERAL));
 			schemaChange = true;
 		} else if (predicate.equals(RDF.TYPE) && object.equals(RDFS.CONTAINERMEMBERSHIPPROPERTY)) {
 			sail.addSubPropertyOfStatement(
@@ -127,8 +127,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	private boolean inferredCleared = false;
 
 	@Override
-	public void clearInferred(Resource... contexts)
-			throws SailException {
+	public void clearInferred(Resource... contexts) throws SailException {
+		logger.debug("Clearing all inferred statements");
 		super.clearInferred(contexts);
 		inferredCleared = true;
 	}
@@ -136,8 +136,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	private long originalSchemaSize = -1;
 
 	@Override
-	public void commit()
-			throws SailException {
+	public void commit() throws SailException {
 		super.commit();
 
 		statementsRemoved = false;
@@ -147,8 +146,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		sail.releaseExclusiveWriteLock();
 	}
 
-	void doInferencing()
-			throws SailException {
+	void doInferencing() throws SailException {
+		logger.debug("Do inferencing");
 		if (!sail.usesPredefinedSchema() && schemaChange) {
 			regenerateCacheAndInferenceMaps(true);
 			inferredCleared = true;
@@ -158,26 +157,36 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			return;
 		}
 
-		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(
-				null, null, null, false)) {
+		logger.debug("Forward chain all explicit statements");
+		long count = 0;
+
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
+				null, false)) {
 			while (statements.hasNext()) {
 				Statement next = statements.next();
-				addStatement(false, next.getSubject(), next.getPredicate(), next.getObject(),
-						next.getContext());
+				addStatement(false, next.getSubject(), next.getPredicate(), next.getObject(), next.getContext());
+				if (logger.isDebugEnabled()) {
+					if (++count % 1000000 == 0) {
+						logger.debug("Forward chained {} statements", count);
+					}
+				}
 			}
 		}
 		inferredCleared = false;
 
+		logger.debug("Inferencing complete");
+
 	}
 
 	private void regenerateCacheAndInferenceMaps(boolean addInferredStatements) {
+		logger.debug("Regenerate cache and inference maps");
 		sail.clearInferenceTables();
 		if (addInferredStatements) {
 			addAxiomStatements();
 		}
 
-		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(
-				null, null, null, sail.useInferredToCreateSchema)) {
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
+				null, sail.useInferredToCreateSchema)) {
 			while (statements.hasNext()) {
 				Statement next = statements.next();
 				processForSchemaCache(sail.getValueFactory()
@@ -185,12 +194,19 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			}
 		}
 		sail.calculateInferenceMaps(this, addInferredStatements);
-
 		originalSchemaSize = sail.getSchemaSize();
 	}
 
 	boolean addInferredStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
+		if (logger.isTraceEnabled()) {
+			logger.trace("Adding inferred statement: <{}> <{}> <{}> <{}>", subj, pred, obj, Arrays.toString(contexts));
+		}
+		if (logger.isDebugEnabled()) {
+			if (++addedInferredStatementsCount % 1000000 == 0) {
+				logger.debug("Added {} inferred statements", addedInferredStatementsCount);
+			}
+		}
 		return super.addInferredStatement(subj, pred, obj, contexts);
 	}
 
@@ -202,15 +218,17 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts)
-			throws SailException {
+	public void addStatement(Resource subject, IRI predicate, Value object, Resource... contexts) throws SailException {
 		addStatement(true, subject, predicate, object, contexts);
 	}
 
 	// actuallyAdd
-	private void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object,
-			Resource... context)
+	private void addStatement(boolean actuallyAdd, Resource subject, IRI predicate, Value object, Resource... context)
 			throws SailException {
+
+		if (logger.isTraceEnabled()) {
+			logger.trace("Adding statement: <{}> <{}> <{}> <{}>", subject, predicate, object, Arrays.toString(context));
+		}
 
 		Resource[] inferredContext;
 		if (sail.isAddInferredStatementsToDefaultContext()) {
@@ -218,98 +236,98 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		} else {
 			inferredContext = context;
 		}
+		if (!(schemaChange && actuallyAdd)) {
+			sail.acquireExclusiveWriteLock();
+			if (!sail.usesPredefinedSchema()) {
+				processForSchemaCache(sail.getValueFactory().createStatement(subject, predicate, object));
+			}
 
-		sail.acquireExclusiveWriteLock();
-		if (!sail.usesPredefinedSchema()) {
-			processForSchemaCache(sail.getValueFactory().createStatement(subject, predicate, object));
-		}
+			if (sail.useAllRdfsRules) {
+				addInferredStatementInternal(subject, RDF.TYPE, RDFS.RESOURCE, inferredContext);
 
-		if (sail.useAllRdfsRules) {
-			addInferredStatementInternal(subject, RDF.TYPE, RDFS.RESOURCE, inferredContext);
+				if (object instanceof Resource) {
+					addInferredStatementInternal((Resource) object, RDF.TYPE, RDFS.RESOURCE, inferredContext);
+				}
+			}
+
+			if (predicate.getNamespace().equals(RDF.NAMESPACE) && predicate.getLocalName().charAt(0) == '_') {
+
+				try {
+					int i = Integer.parseInt(predicate.getLocalName().substring(1));
+					if (i >= 1) {
+						addInferredStatementInternal(subject, RDFS.MEMBER, object, inferredContext);
+						addInferredStatementInternal(predicate, RDF.TYPE, RDFS.RESOURCE, inferredContext);
+						addInferredStatementInternal(predicate, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY,
+								inferredContext);
+						addInferredStatementInternal(predicate, RDF.TYPE, RDF.PROPERTY, inferredContext);
+						addInferredStatementInternal(predicate, RDFS.SUBPROPERTYOF, predicate, inferredContext);
+						addInferredStatementInternal(predicate, RDFS.SUBPROPERTYOF, RDFS.MEMBER, inferredContext);
+
+					}
+				} catch (NumberFormatException e) {
+					// Ignore exception.
+
+					// Means that the predicate started with rdf:_ but does not
+					// comply with the container membership format of rdf:_nnn
+					// and we can safely ignore this exception since it just means
+					// that we didn't need to infer anything about container membership
+				}
+
+			}
+
+			if (predicate.equals(RDF.TYPE)) {
+				if (!(object instanceof Resource)) {
+					throw new SailException("Expected object to a a Resource: " + object.toString());
+				}
+
+				sail.resolveTypes((Resource) object)
+						.stream()
+						.peek(inferredType -> {
+							if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+								addInferredStatementInternal(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, inferredContext);
+							}
+						})
+						.filter(inferredType -> !inferredType.equals(object))
+						.forEach(inferredType -> addInferredStatementInternal(subject, RDF.TYPE, inferredType,
+								inferredContext));
+			}
+
+			sail.resolveProperties(predicate)
+					.stream()
+					.filter(inferredProperty -> !inferredProperty.equals(predicate))
+					.filter(inferredPropery -> inferredPropery instanceof IRI)
+					.map(inferredPropery -> ((IRI) inferredPropery))
+					.forEach(inferredProperty -> addInferredStatementInternal(subject, inferredProperty, object,
+							inferredContext));
 
 			if (object instanceof Resource) {
-				addInferredStatementInternal((Resource) object, RDF.TYPE, RDFS.RESOURCE, inferredContext);
+				sail.resolveRangeTypes(predicate)
+						.stream()
+						.peek(inferredType -> {
+							if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+								addInferredStatementInternal(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE,
+										inferredContext);
+							}
+						})
+						.forEach(inferredType -> addInferredStatementInternal(((Resource) object), RDF.TYPE,
+								inferredType, inferredContext));
 			}
-		}
 
-		if (predicate.getNamespace().equals(RDF.NAMESPACE) && predicate.getLocalName().charAt(0) == '_') {
-
-			try {
-				int i = Integer.parseInt(predicate.getLocalName().substring(1));
-				if (i >= 1) {
-					addInferredStatementInternal(subject, RDFS.MEMBER, object, inferredContext);
-
-					addInferredStatementInternal(predicate, RDF.TYPE, RDFS.RESOURCE, inferredContext);
-					addInferredStatementInternal(predicate, RDF.TYPE, RDFS.CONTAINERMEMBERSHIPPROPERTY,
-							inferredContext);
-					addInferredStatementInternal(predicate, RDF.TYPE, RDF.PROPERTY, inferredContext);
-					addInferredStatementInternal(predicate, RDFS.SUBPROPERTYOF, predicate, inferredContext);
-					addInferredStatementInternal(predicate, RDFS.SUBPROPERTYOF, RDFS.MEMBER, inferredContext);
-
-				}
-			} catch (NumberFormatException e) {
-				// Ignore exception.
-
-				// Means that the predicate started with rdf:_ but does not
-				// comply with the container membership format of rdf:_nnn
-				// and we can safely ignore this exception since it just means
-				// that we didn't need to infer anything about container membership
-			}
+			sail.resolveDomainTypes(predicate)
+					.stream()
+					.peek(inferredType -> {
+						if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
+							addInferredStatementInternal(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, inferredContext);
+						}
+					})
+					.forEach(inferredType -> addInferredStatementInternal((subject), RDF.TYPE, inferredType,
+							inferredContext));
 
 		}
 
 		if (actuallyAdd) {
 			connection.addStatement(subject, predicate, object, context);
-
 		}
-
-		if (predicate.equals(RDF.TYPE)) {
-			if (!(object instanceof Resource)) {
-				throw new SailException("Expected object to a a Resource: " + object.toString());
-			}
-
-			sail.resolveTypes((Resource) object).stream().peek(inferredType -> {
-				if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-					addInferredStatementInternal(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, inferredContext);
-				}
-			})
-					.filter(inferredType -> !inferredType.equals(object))
-					.forEach(
-							inferredType -> addInferredStatementInternal(subject, RDF.TYPE, inferredType,
-									inferredContext));
-		}
-
-		sail.resolveProperties(predicate)
-				.stream()
-				.filter(inferredProperty -> !inferredProperty.equals(predicate))
-				.filter(inferredPropery -> inferredPropery instanceof IRI)
-				.map(inferredPropery -> ((IRI) inferredPropery))
-				.forEach(inferredProperty -> addInferredStatementInternal(subject, inferredProperty, object,
-						inferredContext));
-
-		if (object instanceof Resource) {
-			sail.resolveRangeTypes(predicate)
-					.stream()
-					.peek(inferredType -> {
-						if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-							addInferredStatementInternal(((Resource) object), RDFS.SUBCLASSOF, RDFS.RESOURCE,
-									inferredContext);
-						}
-					})
-					.forEach(inferredType -> addInferredStatementInternal(((Resource) object), RDF.TYPE, inferredType,
-							inferredContext));
-		}
-
-		sail.resolveDomainTypes(predicate)
-				.stream()
-				.peek(inferredType -> {
-					if (sail.useAllRdfsRules && inferredType.equals(RDFS.CLASS)) {
-						addInferredStatementInternal(subject, RDFS.SUBCLASSOF, RDFS.RESOURCE, inferredContext);
-					}
-				})
-				.forEach(inferredType -> addInferredStatementInternal((subject), RDF.TYPE, inferredType,
-						inferredContext));
-
 	}
 
 	void addAxiomStatements() {
@@ -749,8 +767,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void rollback()
-			throws SailException {
+	public void rollback() throws SailException {
 
 		super.rollback();
 
@@ -767,15 +784,13 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void begin()
-			throws SailException {
+	public void begin() throws SailException {
 		this.begin(sail.getDefaultIsolationLevel());
 	}
 
 	@Override
-	public void begin(IsolationLevel level)
-			throws SailException {
-
+	public void begin(IsolationLevel level) throws SailException {
+		addedInferredStatementsCount = 0;
 		if (level == null) {
 			level = sail.getDefaultIsolationLevel();
 		}
@@ -792,8 +807,8 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	@Override
-	public void flushUpdates()
-			throws SailException {
+	public void flushUpdates() throws SailException {
+		logger.debug("Flush updates");
 		if (statementsRemoved) {
 			logger.debug("full recomputation needed, starting inferencing from scratch");
 			clearInferred();

@@ -672,28 +672,30 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			if (contexts.length == 0) {
 				if (!hasStatement(explicitOnlyDataset, subj, pred, obj, NULL_CTX)) {
 					// only add inferred statements that aren't already explicit
-					if (!hasStatement(inferredOnlyDataset, subj, pred, obj, NULL_CTX)) {
+					boolean notHasStatement = !hasStatement(inferredOnlyDataset, subj, pred, obj, NULL_CTX);
+					inferredOnlySink.approve(subj, pred, obj, null);
+					if (notHasStatement) {
 						// only report inferred statements that don't already
 						// exist
 						addStatementInternal(subj, pred, obj, contexts);
 						notifyStatementAdded(vf.createStatement(subj, pred, obj));
 						modified = true;
 					}
-					inferredOnlySink.approve(subj, pred, obj, null);
 				}
 			} else {
 				for (Resource ctx : contexts) {
 					if (!hasStatement(explicitOnlyDataset, subj, pred, obj, ctx)) {
 						// only add inferred statements that aren't already
 						// explicit
-						if (!hasStatement(inferredOnlyDataset, subj, pred, obj, ctx)) {
+						boolean notHasStatement = !hasStatement(inferredOnlyDataset, subj, pred, obj, ctx);
+						inferredOnlySink.approve(subj, pred, obj, ctx);
+						if (notHasStatement) {
 							// only report inferred statements that don't
 							// already exist
 							addStatementInternal(subj, pred, obj, ctx);
 							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
 							modified = true;
 						}
-						inferredOnlySink.approve(subj, pred, obj, ctx);
 					}
 				}
 			}

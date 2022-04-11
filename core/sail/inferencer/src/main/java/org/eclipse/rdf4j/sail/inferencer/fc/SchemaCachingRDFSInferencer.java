@@ -34,6 +34,8 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * <p>
@@ -53,6 +55,8 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
  * @author Håvard Mikkelsen Ottestad
  */
 public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
+
+	private static final Logger logger = LoggerFactory.getLogger(SchemaCachingRDFSInferencer.class);
 
 	// An optional predifinedSchema that the user has provided
 	Repository predefinedSchema;
@@ -162,6 +166,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	void clearInferenceTables() {
+		logger.debug("Clear inference tables");
 		acquireExclusiveWriteLock();
 		properties.clear();
 		types.clear();
@@ -220,6 +225,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			List<Statement> tboxStatments = new ArrayList<>();
 
 			if (predefinedSchema != null) {
+				logger.debug("Initializing with a predefined schema.");
 
 				try (RepositoryConnection schemaConnection = predefinedSchema.getConnection()) {
 					schemaConnection.begin();
@@ -337,6 +343,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	void calculateInferenceMaps(SchemaCachingRDFSInferencerConnection conn, boolean addInferred) {
+		logger.debug("Calculate inference maps.");
 		calculateSubClassOf(subClassOfStatements);
 		properties.forEach(predicate -> {
 			if (addInferred) {
@@ -346,28 +353,25 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		});
 		calculateSubPropertyOf(subPropertyOfStatements);
 
-		calculateRangeDomain(rangeStatements, calculatedRange);
-		calculateRangeDomain(domainStatements, calculatedDomain);
+		calculateDomainAndRange(rangeStatements, calculatedRange);
+		calculateDomainAndRange(domainStatements, calculatedDomain);
 
 		if (addInferred) {
-			calculatedTypes.forEach((subClass, superClasses) -> {
-				conn.addInferredStatementInternal(subClass, RDFS.SUBCLASSOF, subClass);
+			logger.debug("Add inferred rdfs:subClassOf statements");
 
+			calculatedTypes.forEach((subClass, superClasses) -> {
 				superClasses.forEach(superClass -> {
 					conn.addInferredStatementInternal(subClass, RDFS.SUBCLASSOF, superClass);
-					conn.addInferredStatementInternal(superClass, RDFS.SUBCLASSOF, superClass);
 
 				});
 			});
 		}
 		if (addInferred) {
-			calculatedProperties.forEach((sub, sups) -> {
-				conn.addInferredStatementInternal(sub, RDFS.SUBPROPERTYOF, sub);
+			logger.debug("Add inferred rdfs:subPropertyOf statements");
 
+			calculatedProperties.forEach((sub, sups) -> {
 				sups.forEach(sup -> {
 					conn.addInferredStatementInternal(sub, RDFS.SUBPROPERTYOF, sup);
-					conn.addInferredStatementInternal(sup, RDFS.SUBPROPERTYOF, sup);
-
 				});
 			});
 		}
@@ -438,6 +442,9 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	private void calculateSubClassOf(Collection<Statement> subClassOfStatements) {
+		logger.debug("Calculate rdfs:subClassOf inference map.");
+
+		logger.debug("Fill initial maps");
 		types.forEach(type -> {
 			if (!calculatedTypes.containsKey(type)) {
 				calculatedTypes.put(type, new HashSet<>());
@@ -462,26 +469,30 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		// newSize is the size of the current application of the function
 		// Fixed point is reached when they are the same.
 		// Eg. Two consecutive applications return the same number of subclasses
+		logger.debug("Run until fixed point");
 		long prevSize = 0;
-		final long[] newSize = { -1 };
-		while (prevSize != newSize[0]) {
+		long newSize = -1;
+		while (prevSize != newSize) {
 
-			prevSize = newSize[0];
+			prevSize = newSize;
 
-			newSize[0] = 0;
+			newSize = calculatedTypes.values()
+					.stream()
+					.mapToInt(value -> {
+						new ArrayList<>(value)
+								.stream()
+								.map(this::resolveTypes)
+								.forEach(value::addAll);
+						return value.size();
+					})
+					.sum();
 
-			calculatedTypes.forEach((key, value) -> {
-				List<Resource> temp = new ArrayList<>();
-				value.forEach(superClass -> temp.addAll(resolveTypes(superClass)));
-
-				value.addAll(temp);
-				newSize[0] += value.size();
-			});
-
+			logger.debug("Fixed point iteration new size {}", newSize);
 		}
 	}
 
 	private void calculateSubPropertyOf(Collection<Statement> subPropertyOfStatemenets) {
+		logger.debug("Calculate rdfs:subPropertyOf inference map.");
 
 		subPropertyOfStatemenets.forEach(s -> {
 			Resource subClass = s.getSubject();
@@ -498,31 +509,40 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 		});
 
+		calculatedProperties.forEach((k, v) -> v.add(k));
+
 		// Fixed point approach to finding all sub-properties.
 		// prevSize is the size of the previous application of the function
 		// newSize is the size of the current application of the function
 		// Fixed point is reached when they are the same.
+		logger.debug("Run until fixed point");
+
 		long prevSize = 0;
-		final long[] newSize = { -1 };
-		while (prevSize != newSize[0]) {
+		long newSize = -1;
+		while (prevSize != newSize) {
 
-			prevSize = newSize[0];
+			prevSize = newSize;
 
-			newSize[0] = 0;
+			newSize = calculatedProperties.values()
+					.stream()
+					.mapToInt(value -> {
+						new ArrayList<>(value)
+								.stream()
+								.map(this::resolveProperties)
+								.forEach(value::addAll);
+						return value.size();
+					})
+					.sum();
 
-			calculatedProperties.forEach((key, value) -> {
-				List<Resource> temp = new ArrayList<>();
-				value.forEach(superProperty -> temp.addAll(resolveProperties(superProperty)));
-
-				value.addAll(temp);
-				newSize[0] += value.size();
-			});
-
+			logger.debug("Fixed point iteration new size {}", newSize);
 		}
+
 	}
 
-	private void calculateRangeDomain(Collection<Statement> rangeOrDomainStatements,
+	private void calculateDomainAndRange(Collection<Statement> rangeOrDomainStatements,
 			Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
+
+		logger.debug("Calculate rdfs:domain and rdfs:range inference map.");
 
 		rangeOrDomainStatements.forEach(s -> {
 			Resource predicate = s.getSubject();
@@ -544,15 +564,14 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 		calculatedProperties.keySet()
 				.stream()
-				.filter(
-						key -> !calculatedRangeOrDomain.containsKey(key))
-				.forEach(
-						key -> calculatedRangeOrDomain.put(key, new HashSet<>()));
+				.filter(key -> !calculatedRangeOrDomain.containsKey(key))
+				.forEach(key -> calculatedRangeOrDomain.put(key, new HashSet<>()));
 
 		// Fixed point approach to finding all ranges or domains.
 		// prevSize is the size of the previous application of the function
 		// newSize is the size of the current application of the function
 		// Fixed point is reached when they are the same.
+		logger.debug("Run until fixed point");
 		long prevSize = 0;
 		final long[] newSize = { -1 };
 		while (prevSize != newSize[0]) {
@@ -580,7 +599,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 				newSize[0] += value.size();
 			});
-
+			logger.debug("Fixed point iteration new size {}", newSize[0]);
 		}
 	}
 
@@ -593,18 +612,6 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			List<IsolationLevel> supported = this.getSupportedIsolationLevels();
 			return IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.READ_COMMITTED, supported);
 		}
-	}
-
-	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
-		List<IsolationLevel> supported = super.getSupportedIsolationLevels();
-		List<IsolationLevel> levels = new ArrayList<>(supported.size());
-		for (IsolationLevel level : supported) {
-			if (level.isCompatibleWith(IsolationLevels.READ_COMMITTED)) {
-				levels.add(level);
-			}
-		}
-		return levels;
 	}
 
 	/**
