@@ -21,8 +21,8 @@ For details on what’s new and how to upgrade, see the [release and upgrade not
 
 ## RDF4J 4.0.0 Milestone 3
 
-RDF4J 4.0.0 Milestone 3 is the second milestone build of our upcoming 4.0 release. Java 11 or later is required. 
-For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/4.0.0-M3).
+RDF4J 4.0.0 Milestone 3 is the third and final milestone build of our upcoming 4.0 release. Java 11 or later is required. 
+For details on what’s new and how to upgrade, see the [release and upgrade notes](/release-notes/4.0.0-m3).
 
 - [RDF4J 4.0.0-M3 SDK (zip)](http://www.eclipse.org/downloads/download.php?file=/rdf4j/eclipse-rdf4j-4.0.0-M3-sdk.zip)<br/>
   Full Eclipse RDF4J SDK, containing all libraries, RDF4J Server, Workbench, and Console applications, and Javadoc API.
