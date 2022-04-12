@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.mdbTxnMtNextPgno;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
@@ -588,8 +587,7 @@ class TripleStore implements Closeable {
 
 	private boolean requiresResize() {
 		if (autoGrow) {
-			long nextPageNo = mdbTxnMtNextPgno(writeTxn);
-			return mapSize - (nextPageNo + 10) * pageSize < pageSize;
+			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0);
 		} else {
 			return false;
 		}
@@ -724,10 +722,10 @@ class TripleStore implements Closeable {
 				while ((r = it.next()) != null) {
 					if (requiresResize()) {
 						// resize map if required
-						mdb_txn_commit(writeTxn);
-						mapSize = Math.max(mapSize * 2, mapSize + pageSize);
-						mdb_env_set_mapsize(env, mapSize);
-						mdb_txn_begin(env, NULL, 0, pp);
+						E(mdb_txn_commit(writeTxn));
+						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+						E(mdb_env_set_mapsize(env, mapSize));
+						E(mdb_txn_begin(env, NULL, 0, pp));
 						writeTxn = pp.get(0);
 					}
 
@@ -771,8 +769,8 @@ class TripleStore implements Closeable {
 					long stamp = readTxnRef.lock().writeLock();
 					try {
 						readTxnRef.deactivate();
-						mapSize *= 2;
-						mdb_env_set_mapsize(env, mapSize);
+						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+						E(mdb_env_set_mapsize(env, mapSize));
 						// restart write transaction
 						try (MemoryStack stack = stackPush()) {
 							PointerBuffer pp = stack.mallocPointer(1);
