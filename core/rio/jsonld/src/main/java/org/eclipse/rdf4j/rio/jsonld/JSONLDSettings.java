@@ -5,9 +5,12 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.helpers;
+package org.eclipse.rdf4j.rio.jsonld;
 
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
+import org.eclipse.rdf4j.rio.helpers.ClassRioSetting;
+import org.eclipse.rdf4j.rio.helpers.RioSettingImpl;
 
 import com.github.jsonldjava.core.DocumentLoader;
 

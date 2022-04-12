@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.eclipse.rdf4j.rio.helpers.SimpleParseLocationListener;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
-import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
+import org.eclipse.rdf4j.rio.turtle.TurtleParserSettings;
 import org.junit.Before;
 import org.junit.Test;
 

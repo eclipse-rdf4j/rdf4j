@@ -6,11 +6,14 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  ******************************************************************************/
 
-package org.eclipse.rdf4j.rio.helpers;
+package org.eclipse.rdf4j.rio.binary;
 
 import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
+import org.eclipse.rdf4j.rio.helpers.LongRioSetting;
+import org.eclipse.rdf4j.rio.helpers.StringRioSetting;
 
 /**
  * WriterSettings for the binary RDF writer.
