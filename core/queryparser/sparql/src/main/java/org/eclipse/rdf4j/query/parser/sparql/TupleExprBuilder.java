@@ -17,7 +17,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
@@ -633,34 +632,38 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		result = new Projection(result, projElemList);
-
 		if (group != null) {
 			for (ProjectionElem elem : projElemList.getElements()) {
 				if (!elem.hasAggregateOperatorInExpression()) {
-					Set<String> groupNames = group.getBindingNames();
-
+					// non-aggregate projection elem is only allowed to be a constant or a simple expression (see
+					// https://www.w3.org/TR/sparql11-query/#aggregateRestrictions)
 					ExtensionElem extElem = elem.getSourceExpression();
 					if (extElem != null) {
 						ValueExpr expr = extElem.getExpr();
-
-						VarCollector collector = new VarCollector();
-						expr.visit(collector);
-
-						for (Var var : collector.getCollectedVars()) {
-							if (!groupNames.contains(var.getName())) {
-								throw new VisitorException(
-										"variable '" + var.getName() + "' in projection not present in GROUP BY.");
-
-							}
+						if (!(expr instanceof ValueConstant)) {
+							throw new VisitorException(
+									"non-aggregate expression '" + expr
+											+ "' not allowed in projection when using GROUP BY.");
 						}
-					} else {
-						if (!groupNames.contains(elem.getTargetName())) {
-							throw new VisitorException(
-									"variable '" + elem.getTargetName() + "' in projection not present in GROUP BY.");
-						} else if (!groupNames.contains(elem.getSourceName())) {
-							throw new VisitorException(
-									"variable '" + elem.getSourceName() + "' in projection not present in GROUP BY.");
 
+					} else {
+						Set<String> groupNames = group.getBindingNames();
+
+						if (!elem.getSourceName().equals(elem.getTargetName())) {
+							// projection element is a SELECT expression using a simple var (e.g. (?a AS ?b)).
+							// Source var must be present in GROUP BY.
+							if (!groupNames.contains(elem.getSourceName())) {
+								throw new VisitorException(
+										"variable '" + elem.getSourceName()
+												+ "' in projection not present in GROUP BY.");
+							}
+						} else {
+							// projection element is simple var. Must be present in GROUP BY.
+							if (!groupNames.contains(elem.getTargetName())) {
+								throw new VisitorException(
+										"variable '" + elem.getTargetName()
+												+ "' in projection not present in GROUP BY.");
+							}
 						}
 					}
 				}

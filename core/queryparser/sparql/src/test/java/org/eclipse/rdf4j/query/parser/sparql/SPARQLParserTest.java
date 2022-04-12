@@ -8,13 +8,13 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.List;
 
@@ -41,9 +41,9 @@ import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author jeen
@@ -55,7 +55,7 @@ public class SPARQLParserTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		parser = new SPARQLParser();
 	}
@@ -63,7 +63,7 @@ public class SPARQLParserTest {
 	/**
 	 * @throws java.lang.Exception
 	 */
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
 		parser = null;
 	}
@@ -78,8 +78,7 @@ public class SPARQLParserTest {
 
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
 
-		assertNotNull(q);
-		assertEquals(simpleSparqlQuery, q.getSourceString());
+		assertThat(q.getSourceString()).isEqualTo(simpleSparqlQuery);
 	}
 
 	@Test
@@ -90,7 +89,7 @@ public class SPARQLParserTest {
 			ParsedUpdate u = parser.parseUpdate(insertDataString, null);
 			fail("should have resulted in parse exception");
 		} catch (MalformedQueryException e) {
-			assertTrue(e.getMessage().contains("line 2,"));
+			assertThat(e.getMessage()).contains("line 2,");
 		}
 
 	}
@@ -103,7 +102,7 @@ public class SPARQLParserTest {
 			ParsedUpdate u = parser.parseUpdate(deleteDataString, null);
 			fail("should have resulted in parse exception");
 		} catch (MalformedQueryException e) {
-			assertTrue(e.getMessage().contains("line 2,"));
+			assertThat(e.getMessage()).contains("line 2,");
 		}
 	}
 
@@ -171,7 +170,7 @@ public class SPARQLParserTest {
 		List<ProjectionElem> elements = projectionElemList.getElements();
 		assertNotNull(elements);
 
-		assertEquals("projection should contain all three variables", 3, elements.size());
+		assertThat(elements).hasSize(3);
 	}
 
 	@Test
@@ -380,5 +379,86 @@ public class SPARQLParserTest {
 		Var subClassOfObjectVar = ((StatementPattern) union.getLeftArg()).getObjectVar();
 
 		assertThat(subClassOfObjectVar).isEqualTo(commentObjectVar);
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_NoAggregate() {
+		String query = "SELECT DISTINCT ?s (?o AS ?o1) \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?s ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_Aggregate_NonSimpleExpr() {
+		String query = "SELECT (COUNT(?s) as ?count) (?o + ?s AS ?o1) \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?o";
+
+		assertThatExceptionOfType(MalformedQueryException.class).isThrownBy(() -> parser.parseQuery(query, null))
+				.withMessageStartingWith("non-aggregate expression 'MathExpr (+)");
+
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_Aggregate_Alias() {
+		String query = "SELECT (COUNT(?s) as ?count) (?o AS ?o1) \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_Aggregate_Alias2() {
+		String query = "SELECT (COUNT(?s) as ?count) (?o AS ?o1) \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?p";
+
+		assertThatExceptionOfType(MalformedQueryException.class).isThrownBy(() -> parser.parseQuery(query, null))
+				.withMessageStartingWith("variable 'o' in projection not present in GROUP BY.");
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_Aggregate_SimpleExpr() {
+		String query = "SELECT (COUNT(?s) as ?count) ?o \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?p";
+
+		assertThatExceptionOfType(MalformedQueryException.class).isThrownBy(() -> parser.parseQuery(query, null))
+				.withMessageStartingWith("variable 'o' in projection not present in GROUP BY.");
+
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_Aggregate_SimpleExpr2() {
+		String query = "SELECT (COUNT(?s) as ?count) ?o \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_Aggregate_Constant() {
+		String query = "SELECT (COUNT(?s) as ?count) (<foo:constant> as ?constant) \n"
+				+ "WHERE {\n"
+				+ "	?s ?p ?o \n"
+				+ "} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+
 	}
 }
