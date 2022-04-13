@@ -950,7 +950,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (expr instanceof CompareAll) {
 			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Exists) {
-			return new QueryValueEvaluationStep.Minimal(this, expr);
+			return prepare((Exists) expr, context);
 		} else if (expr instanceof If) {
 			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof ListMemberOperator) {
@@ -1869,6 +1869,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
 			return BooleanLiteral.valueOf(iter.hasNext());
 		}
+	}
+
+	private QueryValueEvaluationStep prepare(Exists node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep subQuery = precompile(node.getSubQuery(), context);
+		return new QueryValueEvaluationStep() {
+
+			@Override
+			public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+				try (CloseableIteration<BindingSet, QueryEvaluationException> iter = subQuery.evaluate(bindings)) {
+					return BooleanLiteral.valueOf(iter.hasNext());
+				}
+			}
+		};
 	}
 
 	@Override
