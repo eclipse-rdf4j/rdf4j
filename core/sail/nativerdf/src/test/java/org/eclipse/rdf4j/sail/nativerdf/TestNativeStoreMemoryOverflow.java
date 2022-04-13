@@ -11,7 +11,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -104,7 +104,7 @@ public class TestNativeStoreMemoryOverflow {
 		testCon.close();
 	}
 
-	private static final class DynamicIteration implements Iteration<Statement, RuntimeException> {
+	private static final class DynamicIteration implements CloseableIteration<Statement, RuntimeException> {
 
 		private final int size;
 
@@ -121,6 +121,11 @@ public class TestNativeStoreMemoryOverflow {
 			this.predicate = predicate;
 			this.object = object;
 			this.vf = vf;
+		}
+
+		@Override
+		public void close() throws RuntimeException {
+
 		}
 
 		@Override

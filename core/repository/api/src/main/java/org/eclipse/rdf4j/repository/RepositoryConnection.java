@@ -13,7 +13,7 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -974,7 +974,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be added to the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	<E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
+	<E extends Exception> void add(CloseableIteration<? extends Statement, E> statements, Resource... contexts)
 			throws RepositoryException, E;
 
 	/**
@@ -991,7 +991,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	default void add(RepositoryResult<Statement> statements, Resource... contexts)
 			throws RepositoryException {
-		add((Iteration<Statement, RepositoryException>) statements, contexts);
+		add((CloseableIteration<Statement, RepositoryException>) statements, contexts);
 	}
 
 	/**
@@ -1045,7 +1045,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be removed from the repository, for example because the
 	 *                             repository is not writable.
 	 */
-	<E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
+	<E extends Exception> void remove(CloseableIteration<? extends Statement, E> statements, Resource... contexts)
 			throws RepositoryException, E;
 
 	/**
@@ -1062,7 +1062,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	default void remove(RepositoryResult<Statement> statements, Resource... contexts)
 			throws RepositoryException {
-		remove((Iteration<Statement, RepositoryException>) statements, contexts);
+		remove((CloseableIteration<Statement, RepositoryException>) statements, contexts);
 	}
 
 	/**

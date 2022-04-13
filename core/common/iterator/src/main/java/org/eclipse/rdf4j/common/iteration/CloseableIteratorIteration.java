@@ -18,28 +18,13 @@ import java.util.Objects;
 public class CloseableIteratorIteration<K extends Iterator<? extends E>, E, X extends Exception>
 		extends AbstractCloseableIteration<E, X> {
 
-	private K iter;
-
-	/**
-	 * Creates an uninitialized CloseableIteratorIteration, needs to be initialized by calling
-	 * {@link #setIterator(Iterator)} before it can be used.
-	 */
-	public CloseableIteratorIteration() {
-	}
+	private final K iter;
 
 	/**
 	 * Creates a CloseableIteratorIteration that wraps the supplied iterator.
 	 */
 	public CloseableIteratorIteration(K iter) {
-		setIterator(iter);
-	}
-
-	protected void setIterator(K iter) {
 		this.iter = Objects.requireNonNull(iter, "Iterator was null");
-	}
-
-	protected boolean hasIterator() {
-		return iter != null;
 	}
 
 	@Override

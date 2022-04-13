@@ -13,7 +13,7 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
-import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -78,7 +77,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 * If false then the following add methods will call {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}.
 	 *
 	 * @see #add(Iterable, Resource...)
-	 * @see #add(Iteration, Resource...)
+	 * @see #add(CloseableIteration, Resource...)
 	 * @see #add(Statement, Resource...)
 	 * @see #add(File, String, RDFFormat, Resource...)
 	 * @see #add(InputStream, String, RDFFormat, Resource...)
@@ -115,7 +114,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 *
 	 * @see #clear(Resource...)
 	 * @see #remove(Iterable, Resource...)
-	 * @see #remove(Iteration, Resource...)
+	 * @see RepositoryConnection#remove(CloseableIteration, Resource...)
 	 * @see #remove(Statement, Resource...)
 	 * @see #remove(Resource, IRI, Value, Resource...)
 	 * @return <code>true</code> to delegate remove methods, <code>false</code> to call
@@ -164,7 +163,8 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
-	public <E extends Exception> void add(Iteration<? extends Statement, E> statementIter, Resource... contexts)
+	public <E extends Exception> void add(CloseableIteration<? extends Statement, E> statementIter,
+			Resource... contexts)
 			throws RepositoryException, E {
 		if (isDelegatingAdd()) {
 			getDelegate().add(statementIter, contexts);
@@ -298,7 +298,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
-	public boolean isActive() throws UnknownTransactionStateException, RepositoryException {
+	public boolean isActive() throws RepositoryException {
 		return getDelegate().isActive();
 	}
 
@@ -355,7 +355,8 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	}
 
 	@Override
-	public <E extends Exception> void remove(Iteration<? extends Statement, E> statementIter, Resource... contexts)
+	public <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statementIter,
+			Resource... contexts)
 			throws RepositoryException, E {
 		if (isDelegatingRemove()) {
 			getDelegate().remove(statementIter, contexts);

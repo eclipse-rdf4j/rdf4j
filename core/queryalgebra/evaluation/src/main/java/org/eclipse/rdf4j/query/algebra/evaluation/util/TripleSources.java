@@ -8,10 +8,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIterationIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -36,11 +34,11 @@ public class TripleSources {
 	TripleSources() {
 	}
 
-	public static Iteration<Resource, QueryEvaluationException> listResources(final Resource subj,
+	public static CloseableIteration<Resource, QueryEvaluationException> listResources(final Resource subj,
 			final TripleSource store) throws QueryEvaluationException {
 		return new ConvertingIteration<>(
 				new FilterIteration<CloseableIteration<? extends Value, QueryEvaluationException>, Value, QueryEvaluationException>(
-						CloseableIterationIteration.of(list(subj, store))) {
+						list(subj, store)) {
 
 					@Override
 					protected boolean accept(Value v) throws QueryEvaluationException {
@@ -55,14 +53,19 @@ public class TripleSources {
 		};
 	}
 
-	public static Iteration<Value, QueryEvaluationException> list(final Resource subj,
+	public static CloseableIteration<Value, QueryEvaluationException> list(final Resource subj,
 			final TripleSource store) throws QueryEvaluationException {
 		if (subj == null) {
 			throw new NullPointerException("RDF list subject cannot be null");
 		}
-		return new Iteration<>() {
+		return new CloseableIteration<>() {
 
 			Resource list = subj;
+
+			@Override
+			public void close() throws QueryEvaluationException {
+
+			}
 
 			@Override
 			public boolean hasNext() throws QueryEvaluationException {

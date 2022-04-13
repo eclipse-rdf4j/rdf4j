@@ -11,8 +11,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 
 /**
  * Wraps an Iteration as an Iterator. If the Iteration is a CloseableIteration then this.close() will close it and it
@@ -22,9 +21,9 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
  */
 public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 
-	private final Iteration<? extends E, ? extends RuntimeException> iteration;
+	private final CloseableIteration<? extends E, ? extends RuntimeException> iteration;
 
-	public CloseableIterationIterator(Iteration<? extends E, ? extends RuntimeException> iteration) {
+	public CloseableIterationIterator(CloseableIteration<? extends E, ? extends RuntimeException> iteration) {
 		this.iteration = iteration;
 	}
 
@@ -49,6 +48,6 @@ public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 
 	@Override
 	public void close() throws IOException {
-		Iterations.closeCloseable(iteration);
+		iteration.close();
 	}
 }

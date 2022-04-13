@@ -14,7 +14,7 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -82,7 +82,7 @@ public class TransactionalRepositoryConnection extends RepositoryConnectionWrapp
 
 	@Override
 	public <E extends Exception> void add(
-			Iteration<? extends Statement, E> statementIter, Resource... contexts)
+			CloseableIteration<? extends Statement, E> statementIter, Resource... contexts)
 			throws RepositoryException, E {
 		throwExceptionIfReadonly();
 		super.add(statementIter, contexts);
@@ -130,7 +130,7 @@ public class TransactionalRepositoryConnection extends RepositoryConnectionWrapp
 
 	@Override
 	public <E extends Exception> void remove(
-			Iteration<? extends Statement, E> statementIter, Resource... contexts)
+			CloseableIteration<? extends Statement, E> statementIter, Resource... contexts)
 			throws RepositoryException, E {
 		throwExceptionIfReadonly();
 		super.remove(statementIter, contexts);

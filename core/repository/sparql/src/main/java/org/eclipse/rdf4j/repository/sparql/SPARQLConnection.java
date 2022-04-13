@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
@@ -92,16 +91,16 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	private final SPARQLProtocolSession client;
 
-	private ModelFactory modelFactory = new DynamicModelFactory();
+	private final ModelFactory modelFactory = new DynamicModelFactory();
 
 	private StringBuilder sparqlTransaction;
 
-	private Object transactionLock = new Object();
+	private final Object transactionLock = new Object();
 
 	private Model pendingAdds;
 	private Model pendingRemoves;
 
-	private int maxPendingSize = DEFAULT_MAX_PENDING_SIZE;
+	private final int maxPendingSize = DEFAULT_MAX_PENDING_SIZE;
 
 	private final boolean quadMode;
 	private boolean silentClear;
@@ -886,7 +885,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	}
 
 	@Override
-	public boolean isActive() throws UnknownTransactionStateException, RepositoryException {
+	public boolean isActive() throws RepositoryException {
 		synchronized (transactionLock) {
 			return sparqlTransaction != null;
 		}

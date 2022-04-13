@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.base.AbstractBNode;
 
 /**
  * A MemoryStore-specific extension of BNodeImpl giving it node properties.

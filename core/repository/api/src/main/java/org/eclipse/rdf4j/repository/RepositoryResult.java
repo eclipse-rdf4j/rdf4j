@@ -7,16 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository;
 
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Iterator;
-import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
 
 /**
@@ -65,7 +60,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 
 	@Override
 	protected final void handleClose() throws RepositoryException {
-		Iterations.closeCloseable(wrappedIter);
+		wrappedIter.close();
 	}
 
 	/**

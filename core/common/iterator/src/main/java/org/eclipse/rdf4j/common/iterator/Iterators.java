@@ -99,13 +99,12 @@ public class Iterators {
 	 *
 	 * @param iter The iterator to close.
 	 */
-	public static void closeSilently(Iterator<?> iter) {
-		if (iter instanceof Closeable) {
-			try {
-				((Closeable) iter).close();
-			} catch (IOException ioe) {
-				// ignore
-			}
+	public static void closeSilently(Closeable iter) {
+		try {
+			iter.close();
+		} catch (IOException ioe) {
+			// ignore
 		}
+
 	}
 }

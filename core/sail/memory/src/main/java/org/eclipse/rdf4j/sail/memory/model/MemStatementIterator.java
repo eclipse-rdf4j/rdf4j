@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.memory.model;
 import java.util.Arrays;
 import java.util.Iterator;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.sail.SailException;
@@ -127,6 +126,24 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 					iteratorCache);
 		} else {
 			return new MemStatementIterator<>(smallestList, subj, pred, obj, explicit, snapshot, memContexts);
+		}
+	}
+
+	public static boolean cacheAwareHasStatement(MemStatementList smallestList, MemResource subj, MemIRI pred,
+			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts,
+			MemStatementIteratorCache iteratorCache) {
+
+		if (smallestList.size() > MemStatementIterator.MIN_SIZE_TO_CONSIDER_FOR_CACHE) {
+			try (CacheAwareIteration<SailException> exceptionCacheAwareIteration = new CacheAwareIteration<>(
+					new MemStatementIterator<>(smallestList, subj, pred, obj, explicit, snapshot, memContexts),
+					iteratorCache)) {
+				return exceptionCacheAwareIteration.hasNext();
+			}
+		} else {
+			try (MemStatementIterator<SailException> exceptionMemStatementIterator = new MemStatementIterator<>(
+					smallestList, subj, pred, obj, explicit, snapshot, memContexts)) {
+				return exceptionMemStatementIterator.hasNext();
+			}
 		}
 	}
 
@@ -311,22 +328,30 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 		private Exception e;
 
 		private CacheAwareIteration(MemStatementIterator<X> memStatementIterator,
-				MemStatementIteratorCache iteratorCache) {
-			if (iteratorCache.shouldBeCached(memStatementIterator)) {
-				CloseableIteratorIteration<Iterator<MemStatement>, MemStatement, X> cachedIterator = null;
-				try {
-					cachedIterator = iteratorCache.getCachedIterator(memStatementIterator);
-				} catch (Exception e) {
-					this.e = e;
+				MemStatementIteratorCache iteratorCache) throws X {
+			try {
+				if (iteratorCache.shouldBeCached(memStatementIterator)) {
+					CloseableIteratorIteration<Iterator<MemStatement>, MemStatement, X> cachedIterator = null;
+					try {
+						cachedIterator = iteratorCache.getCachedIterator(memStatementIterator);
+					} catch (Exception e) {
+						this.e = e;
+					}
+					this.cachedIterator = cachedIterator;
+					this.memStatementIterator = null;
+				} else {
+					this.memStatementIterator = memStatementIterator;
+					this.cachedIterator = null;
 				}
-				this.cachedIterator = cachedIterator;
-				this.memStatementIterator = null;
-			} else {
-				this.memStatementIterator = memStatementIterator;
-				this.cachedIterator = null;
+
+				this.iteratorCache = iteratorCache;
+			} catch (Throwable t) {
+				memStatementIterator.close();
+				if (t instanceof RuntimeException)
+					throw t;
+				throw t;
 			}
 
-			this.iteratorCache = iteratorCache;
 		}
 
 		@Override

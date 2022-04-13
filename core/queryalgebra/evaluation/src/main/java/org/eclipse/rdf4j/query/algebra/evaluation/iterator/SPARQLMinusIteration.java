@@ -13,7 +13,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -131,7 +130,7 @@ public class SPARQLMinusIteration<X extends Exception>
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(getRightArg());
+			getRightArg().close();
 		}
 	}
 

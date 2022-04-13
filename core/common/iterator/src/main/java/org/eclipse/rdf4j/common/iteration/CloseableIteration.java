@@ -8,13 +8,14 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.NoSuchElementException;
 import java.util.stream.Stream;
 
 /**
- * An {@link Iteration} that can be closed to free resources that it is holding. CloseableIterations automatically free
- * their resources when exhausted. If not read until exhaustion or if you want to make sure the iteration is properly
- * closed, any code using the iterator should be placed in a try-with-resources block, closing the iteration
- * automatically, e.g.:
+ * An {@link CloseableIteration} that can be closed to free resources that it is holding. CloseableIterations
+ * automatically free their resources when exhausted. If not read until exhaustion or if you want to make sure the
+ * iteration is properly closed, any code using the iterator should be placed in a try-with-resources block, closing the
+ * iteration automatically, e.g.:
  *
  * <pre>
  *
@@ -26,7 +27,7 @@ import java.util.stream.Stream;
  * }
  * </pre>
  */
-public interface CloseableIteration<E, X extends Exception> extends Iteration<E, X>, AutoCloseable {
+public interface CloseableIteration<E, X extends Exception> extends AutoCloseable {
 
 	/**
 	 * Closes this iteration, freeing any resources that it is holding. If the iteration has already been closed then
@@ -38,4 +39,32 @@ public interface CloseableIteration<E, X extends Exception> extends Iteration<E,
 	default Stream<E> stream() {
 		return Iterations.stream(this);
 	}
+
+	/**
+	 * Returns <var>true</var> if the iteration has more elements. (In other words, returns <var>true</var> if
+	 * {@link #next} would return an element rather than throwing a <var>NoSuchElementException</var>.)
+	 *
+	 * @return <var>true</var> if the iteration has more elements.
+	 * @throws X
+	 */
+	boolean hasNext() throws X;
+
+	/**
+	 * Returns the next element in the iteration.
+	 *
+	 * @return the next element in the iteration.
+	 * @throws NoSuchElementException if the iteration has no more elements or if it has been closed.
+	 */
+	E next() throws X;
+
+	/**
+	 * Removes from the underlying collection the last element returned by the iteration (optional operation). This
+	 * method can be called only once per call to next.
+	 *
+	 * @throws UnsupportedOperationException if the remove operation is not supported by this Iteration.
+	 * @throws IllegalStateException         If the Iteration has been closed, or if <var>next()</var> has not yet been
+	 *                                       called, or <var>remove()</var> has already been called after the last call
+	 *                                       to <var>next()</var>.
+	 */
+	void remove() throws X;
 }

@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -48,7 +47,6 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.memory.model.MemBNode;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
-import org.eclipse.rdf4j.sail.memory.model.MemLiteral;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
 import org.eclipse.rdf4j.sail.memory.model.MemStatement;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementIterator;
@@ -402,16 +400,15 @@ class MemorySailStore implements SailStore {
 			boolean readLock = false;
 			try {
 				readLock = statementListLockManager.lockReadLock();
-				try (LookAheadIteration<MemStatement, SailException> hasNextIteration = MemStatementIterator
-						.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot,
-								memContexts, iteratorCache)) {
-					boolean hasNext = hasNextIteration.hasNext();
-					if (!hasNext) {
-						return EMPTY_ITERATION;
-					} else {
-						return HAS_NEXT_ITERATION;
-					}
+				boolean hasNext = MemStatementIterator.cacheAwareHasStatement(smallestList, subj, pred, obj, explicit,
+						snapshot, memContexts, iteratorCache);
+
+				if (!hasNext) {
+					return EMPTY_ITERATION;
+				} else {
+					return HAS_NEXT_ITERATION;
 				}
+
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);
 			} finally {

@@ -8,9 +8,7 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 
-import org.eclipse.rdf4j.model.impl.ContextStatement;
 import org.eclipse.rdf4j.model.impl.GenericContextStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
