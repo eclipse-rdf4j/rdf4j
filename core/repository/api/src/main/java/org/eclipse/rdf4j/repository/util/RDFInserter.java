@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
  * @author jeen
  */
 public class RDFInserter extends AbstractRDFInserter {
+	private static final Resource[] NULL_CONTEXT = { null };
 
 	/*-----------*
 	 * Variables *
@@ -60,7 +61,10 @@ public class RDFInserter extends AbstractRDFInserter {
 		if (enforcesContext()) {
 			con.add(subj, pred, obj, contexts);
 		} else {
-			con.add(subj, pred, obj, ctxt);
+			if (ctxt == null) {
+				con.add(subj, pred, obj, NULL_CONTEXT);
+			} else
+				con.add(subj, pred, obj, ctxt);
 		}
 	}
 }

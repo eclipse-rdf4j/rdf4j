@@ -11,6 +11,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 
 import org.eclipse.rdf4j.model.impl.ContextStatement;
+import org.eclipse.rdf4j.model.impl.GenericContextStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,7 +19,7 @@ import org.slf4j.LoggerFactory;
  * A MemStatement is a Statement which contains context information and a flag indicating whether the statement is
  * explicit or inferred.
  */
-public class MemStatement extends ContextStatement {
+public class MemStatement extends GenericContextStatement<MemResource, MemIRI, MemValue> {
 
 	private static final Logger logger = LoggerFactory.getLogger(MemStatement.class);
 
@@ -73,26 +74,6 @@ public class MemStatement extends ContextStatement {
 	/*---------*
 	 * Methods *
 	 *---------*/
-
-	@Override
-	public MemResource getSubject() {
-		return (MemResource) super.getSubject();
-	}
-
-	@Override
-	public MemIRI getPredicate() {
-		return (MemIRI) super.getPredicate();
-	}
-
-	@Override
-	public MemValue getObject() {
-		return (MemValue) super.getObject();
-	}
-
-	@Override
-	public MemResource getContext() {
-		return (MemResource) super.getContext();
-	}
 
 	public void setSinceSnapshot(int snapshot) {
 		sinceSnapshot = snapshot;

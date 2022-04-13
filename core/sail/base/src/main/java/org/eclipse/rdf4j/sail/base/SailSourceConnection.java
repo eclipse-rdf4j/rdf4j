@@ -681,10 +681,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);
 			}
 			boolean modified = false;
-			if (contexts.length == 0) {
-				if (!hasStatement(explicitOnlyDataset, subj, pred, obj)) {
+			if (contexts.length == 0 || contexts.length == 1 && contexts[0] == null) {
+				if (!hasStatement(explicitOnlyDataset, subj, pred, obj, NULL_CTX)) {
 					// only add inferred statements that aren't already explicit
-					boolean notHasStatement = !hasStatement(inferredOnlyDataset, subj, pred, obj);
+					boolean notHasStatement = !hasStatement(inferredOnlyDataset, subj, pred, obj, NULL_CTX);
 					inferredOnlySink.approve(vf.createStatement(subj, pred, obj));
 					if (notHasStatement) {
 						// only report inferred statements that don't already
@@ -697,10 +697,17 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				}
 			} else {
 				for (Resource ctx : contexts) {
-					if (!hasStatement(explicitOnlyDataset, subj, pred, obj, ctx)) {
+					Resource[] contextsToCheck;
+					if (contexts.length == 1) {
+						contextsToCheck = contexts;
+					} else {
+						contextsToCheck = new Resource[] { ctx };
+					}
+
+					if (!hasStatement(explicitOnlyDataset, subj, pred, obj, contextsToCheck)) {
 						// only add inferred statements that aren't already
 						// explicit
-						boolean notHasStatement = !hasStatement(inferredOnlyDataset, subj, pred, obj, ctx);
+						boolean notHasStatement = !hasStatement(inferredOnlyDataset, subj, pred, obj, contextsToCheck);
 						inferredOnlySink.approve(vf.createStatement(subj, pred, obj, ctx));
 						if (notHasStatement) {
 							// only report inferred statements that don't
@@ -719,14 +726,21 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
 			throws SailException {
-		if (contexts.length == 0) {
+		if (contexts.length == 0 || (contexts.length == 1 && contexts[0] == null)) {
 			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
 				notifyStatementAdded(vf.createStatement(subj, pred, obj));
 			}
 			sink.approve(subj, pred, obj, null);
 		} else {
 			for (Resource ctx : contexts) {
-				if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, ctx)) {
+				Resource[] contextsToCheck;
+				if (contexts.length == 1) {
+					contextsToCheck = contexts;
+				} else {
+					contextsToCheck = new Resource[] { ctx };
+				}
+
+				if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, contextsToCheck)) {
 					notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
 				}
 				sink.approve(subj, pred, obj, ctx);

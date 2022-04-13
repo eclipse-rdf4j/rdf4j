@@ -39,7 +39,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		implements SailConnectionListener {
 
 	private static final Logger logger = LoggerFactory.getLogger(SchemaCachingRDFSInferencerConnection.class);
-	private static final Resource[] DEFAULT_CONTEXT = {};
+	private static final Resource[] DEFAULT_CONTEXT = { null };
 
 	private final SchemaCachingRDFSInferencer sail;
 
@@ -342,428 +342,569 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 		Statement statement = vf.createStatement(RDF.ALT, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.ALT, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.ALT, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.ALT, RDFS.SUBCLASSOF, RDFS.CONTAINER);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.ALT, RDFS.SUBCLASSOF, RDF.ALT);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.BAG, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.BAG, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.BAG, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.BAG, RDFS.SUBCLASSOF, RDFS.CONTAINER);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.BAG, RDFS.SUBCLASSOF, RDF.BAG);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.LIST, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.LIST, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.LIST, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.LIST, RDFS.SUBCLASSOF, RDF.LIST);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.PROPERTY, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.PROPERTY, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.PROPERTY, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.PROPERTY, RDFS.SUBCLASSOF, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SEQ, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SEQ, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SEQ, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SEQ, RDFS.SUBCLASSOF, RDFS.CONTAINER);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SEQ, RDFS.SUBCLASSOF, RDF.SEQ);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.STATEMENT, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.STATEMENT, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.STATEMENT, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.STATEMENT, RDFS.SUBCLASSOF, RDF.STATEMENT);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.XMLLITERAL, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.XMLLITERAL, RDF.TYPE, RDFS.DATATYPE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.XMLLITERAL, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.XMLLITERAL, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.XMLLITERAL, RDFS.SUBCLASSOF, RDFS.LITERAL);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.XMLLITERAL, RDFS.SUBCLASSOF, RDF.XMLLITERAL);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.FIRST, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.FIRST, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.FIRST, RDFS.DOMAIN, RDF.LIST);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.FIRST, RDFS.RANGE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.FIRST, RDFS.SUBPROPERTYOF, RDF.FIRST);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.NIL, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.NIL, RDF.TYPE, RDF.LIST);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.OBJECT, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.OBJECT, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.OBJECT, RDFS.DOMAIN, RDF.STATEMENT);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.OBJECT, RDFS.RANGE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.OBJECT, RDFS.SUBPROPERTYOF, RDF.OBJECT);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.PREDICATE, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.PREDICATE, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.PREDICATE, RDFS.DOMAIN, RDF.STATEMENT);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.PREDICATE, RDFS.RANGE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.PREDICATE, RDFS.SUBPROPERTYOF, RDF.PREDICATE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.REST, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.REST, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.REST, RDFS.DOMAIN, RDF.LIST);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.REST, RDFS.RANGE, RDF.LIST);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.REST, RDFS.SUBPROPERTYOF, RDF.REST);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SUBJECT, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SUBJECT, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SUBJECT, RDFS.DOMAIN, RDF.STATEMENT);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SUBJECT, RDFS.RANGE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.SUBJECT, RDFS.SUBPROPERTYOF, RDF.SUBJECT);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.TYPE, RDFS.DOMAIN, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.TYPE, RDFS.RANGE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.TYPE, RDFS.SUBPROPERTYOF, RDF.TYPE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.VALUE, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.VALUE, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.VALUE, RDFS.DOMAIN, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.VALUE, RDFS.RANGE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDF.VALUE, RDFS.SUBPROPERTYOF, RDF.VALUE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CLASS, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CLASS, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CLASS, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CLASS, RDFS.SUBCLASSOF, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CONTAINER, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CONTAINER, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CONTAINER, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CONTAINER, RDFS.SUBCLASSOF, RDFS.CONTAINER);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF,
 				RDFS.CONTAINERMEMBERSHIPPROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.CONTAINERMEMBERSHIPPROPERTY, RDFS.SUBCLASSOF, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DATATYPE, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DATATYPE, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DATATYPE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DATATYPE, RDFS.SUBCLASSOF, RDFS.DATATYPE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DATATYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.LITERAL, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.LITERAL, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.LITERAL, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.LITERAL, RDFS.SUBCLASSOF, RDFS.LITERAL);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.RESOURCE, RDF.TYPE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.COMMENT, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.COMMENT, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.COMMENT, RDFS.DOMAIN, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.COMMENT, RDFS.RANGE, RDFS.LITERAL);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.COMMENT, RDFS.SUBPROPERTYOF, RDFS.COMMENT);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DOMAIN, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DOMAIN, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DOMAIN, RDFS.DOMAIN, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DOMAIN, RDFS.RANGE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.DOMAIN, RDFS.SUBPROPERTYOF, RDFS.DOMAIN);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.ISDEFINEDBY, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.ISDEFINEDBY, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.ISDEFINEDBY, RDFS.DOMAIN, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.ISDEFINEDBY, RDFS.RANGE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.ISDEFINEDBY, RDFS.SUBPROPERTYOF, RDFS.SEEALSO);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.ISDEFINEDBY, RDFS.SUBPROPERTYOF, RDFS.ISDEFINEDBY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.LABEL, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.LABEL, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.LABEL, RDFS.DOMAIN, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.LABEL, RDFS.RANGE, RDFS.LITERAL);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.LABEL, RDFS.SUBPROPERTYOF, RDFS.LABEL);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.MEMBER, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.MEMBER, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.MEMBER, RDFS.DOMAIN, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.MEMBER, RDFS.RANGE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.MEMBER, RDFS.SUBPROPERTYOF, RDFS.MEMBER);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.RANGE, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.RANGE, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.RANGE, RDFS.DOMAIN, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.RANGE, RDFS.RANGE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.RANGE, RDFS.SUBPROPERTYOF, RDFS.RANGE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SEEALSO, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SEEALSO, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SEEALSO, RDFS.DOMAIN, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SEEALSO, RDFS.RANGE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SEEALSO, RDFS.SUBPROPERTYOF, RDFS.SEEALSO);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBCLASSOF, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBCLASSOF, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBCLASSOF, RDFS.DOMAIN, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBCLASSOF, RDFS.RANGE, RDFS.CLASS);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBCLASSOF, RDFS.SUBPROPERTYOF, RDFS.SUBCLASSOF);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDF.TYPE, RDFS.RESOURCE);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDF.TYPE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDFS.DOMAIN, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDFS.RANGE, RDF.PROPERTY);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 		statement = vf.createStatement(RDFS.SUBPROPERTYOF, RDFS.SUBPROPERTYOF, RDFS.SUBPROPERTYOF);
 		processForSchemaCache(statement);
-		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(), DEFAULT_CONTEXT);
+		addInferredStatementInternal(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				DEFAULT_CONTEXT);
 
 	}
 
