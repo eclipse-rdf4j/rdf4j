@@ -76,9 +76,9 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		private final Filter node;
 		private final QueryEvaluationContext context;
 
-		public RetainedVariableFilteredQueryEvaluationContext(Filter node, QueryEvaluationContext context) {
+		public RetainedVariableFilteredQueryEvaluationContext(Filter node, QueryEvaluationContext contextToFilter) {
 			this.node = node;
-			this.context = context;
+			this.context = contextToFilter;
 		}
 
 		@Override
@@ -94,9 +94,9 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		@Override
 		public Predicate<BindingSet> hasBinding(String variableName) {
 			if (isVariableInScope(variableName)) {
-				return QueryEvaluationContext.super.hasBinding(variableName);
+				return context.hasBinding(variableName);
 			} else {
-				return null;
+				return (bs) -> false;
 			}
 		}
 
@@ -107,28 +107,24 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		@Override
 		public java.util.function.Function<BindingSet, Binding> getBinding(String variableName) {
 			if (isVariableInScope(variableName)) {
-				return QueryEvaluationContext.super.getBinding(variableName);
+				return context.getBinding(variableName);
 			} else {
-				return null;
+				return (bs) -> null;
 			}
 		}
 
 		@Override
 		public java.util.function.Function<BindingSet, Value> getValue(String variableName) {
 			if (isVariableInScope(variableName)) {
-				return QueryEvaluationContext.super.getValue(variableName);
+				return context.getValue(variableName);
 			} else {
-				return null;
+				return (bs) -> null;
 			}
 		}
 
 		@Override
 		public BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
-			if (isVariableInScope(variableName)) {
-				return QueryEvaluationContext.super.setBinding(variableName);
-			} else {
-				return null;
-			}
+			return context.setBinding(variableName);
 		}
 	}
 
