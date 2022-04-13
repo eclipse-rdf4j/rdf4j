@@ -221,7 +221,7 @@ public abstract class TupleQueryResultTest {
 		con.commit();
 
 		for (int evaluateCount = 0; evaluateCount < 1000; evaluateCount++) {
-			try (ByteArrayOutputStream stream = new ByteArrayOutputStream();
+			try (ByteArrayOutputStream stream = new ByteArrayOutputStream(191226);
 					RepositoryConnection nextCon = rep.getConnection()) {
 				TupleQueryResultWriter sparqlWriter = QueryResultIO.createTupleWriter(TupleQueryResultFormat.SPARQL,
 						stream);

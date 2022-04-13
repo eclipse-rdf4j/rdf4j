@@ -183,8 +183,9 @@ public abstract class AbstractQueryPreparer implements QueryPreparer {
 		@Override
 		public void evaluate(TupleQueryResultHandler handler)
 				throws QueryEvaluationException, TupleQueryResultHandlerException {
-			TupleQueryResult queryResult = evaluate();
-			QueryResults.report(queryResult, handler);
+			try (TupleQueryResult queryResult = evaluate()) {
+				QueryResults.report(queryResult, handler);
+			}
 		}
 
 		@Override

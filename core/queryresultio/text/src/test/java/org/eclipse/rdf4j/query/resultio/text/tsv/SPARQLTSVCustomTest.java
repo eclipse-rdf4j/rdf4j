@@ -46,10 +46,12 @@ public class SPARQLTSVCustomTest {
 	@Test
 	public void testSES2126QuotedLiteralIntegerAsStringExplicitType() throws Exception {
 		List<String> bindingNames = Arrays.asList("test");
-		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
+		String result;
+		try (TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
 				Arrays.asList(new ListBindingSet(bindingNames,
-						SimpleValueFactory.getInstance().createLiteral("1", XSD.STRING))));
-		String result = writeTupleResult(tqr);
+						SimpleValueFactory.getInstance().createLiteral("1", XSD.STRING))))) {
+			result = writeTupleResult(tqr);
+		}
 		assertEquals("?test\n\"1\"^^<http://www.w3.org/2001/XMLSchema#string>\n", result);
 	}
 
@@ -61,9 +63,11 @@ public class SPARQLTSVCustomTest {
 	@Test
 	public void testSES2126QuotedLiteralIntegerAsStringImplicitType() throws Exception {
 		List<String> bindingNames = Arrays.asList("test");
-		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
-				Arrays.asList(new ListBindingSet(bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))));
-		String result = writeTupleResult(tqr);
+		String result;
+		try (TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
+				Arrays.asList(new ListBindingSet(bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))))) {
+			result = writeTupleResult(tqr);
+		}
 		assertEquals("?test\n\"1\"\n", result);
 	}
 

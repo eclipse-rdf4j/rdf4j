@@ -824,10 +824,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	private void forceCloseActiveOperations() throws SailException {
-		if (isActiveOperation() && !debugEnabled) {
+		for (int i = 0; i < 10 && isActiveOperation() && !debugEnabled; i++) {
 			System.gc();
 			try {
-				Thread.sleep(10);
+				Thread.sleep(1);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 			}
