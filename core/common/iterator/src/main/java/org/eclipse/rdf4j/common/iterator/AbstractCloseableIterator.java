@@ -11,7 +11,6 @@ package org.eclipse.rdf4j.common.iterator;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * @author MJAHale
@@ -25,7 +24,7 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	/**
 	 * Flag indicating whether this iteration has been closed.
 	 */
-	private final AtomicBoolean closed = new AtomicBoolean(false);
+	private boolean closed = false;
 
 	/*---------*
 	 * Methods *
@@ -37,7 +36,7 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	 * @return <var>true</var> if the Iterator has been closed, <var>false</var> otherwise.
 	 */
 	public final boolean isClosed() {
-		return closed.get();
+		return closed;
 	}
 
 	/**
@@ -45,7 +44,8 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	 */
 	@Override
 	public final void close() throws IOException {
-		if (closed.compareAndSet(false, true)) {
+		if (!closed) {
+			closed = true;
 			handleClose();
 		} else {
 			handleAlreadyClosed();
@@ -56,7 +56,7 @@ public abstract class AbstractCloseableIterator<E> implements Iterator<E>, Close
 	 * Called by {@link #close} when it is called for the first time. This method is only called once on each iteration.
 	 * By default, this method does nothing.
 	 *
-	 * @throws X
+	 * @throws IOException
 	 */
 	protected void handleClose() throws IOException {
 	}

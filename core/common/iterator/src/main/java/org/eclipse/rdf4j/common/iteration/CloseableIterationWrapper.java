@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 
 public abstract class CloseableIterationWrapper<T extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
 		extends AbstractCloseableIteration<E, X> {
@@ -40,7 +41,7 @@ public abstract class CloseableIterationWrapper<T extends CloseableIteration<? e
 			return false;
 		} else if (Thread.currentThread().isInterrupted()) {
 			close();
-			return false;
+			throw new CancellationException("The iteration has been interrupted.");
 		}
 		preHasNext();
 		boolean result = wrappedIter.hasNext();
@@ -84,7 +85,7 @@ public abstract class CloseableIterationWrapper<T extends CloseableIteration<? e
 			throw new IllegalStateException("The iteration has been closed.");
 		} else if (Thread.currentThread().isInterrupted()) {
 			close();
-			throw new IllegalStateException("The iteration has been interrupted.");
+			throw new CancellationException("The iteration has been interrupted.");
 		}
 		try {
 			wrappedIter.remove();

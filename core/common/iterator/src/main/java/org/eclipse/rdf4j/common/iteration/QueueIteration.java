@@ -11,6 +11,7 @@ import java.lang.ref.WeakReference;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -97,13 +98,17 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 				}
 			}
 			// Proactively close if interruption didn't propagate an exception to the catch clause below
-			if (done.get() || Thread.currentThread().isInterrupted()) {
+			if (done.get()) {
 				close();
 			}
+			if (Thread.currentThread().isInterrupted()) {
+				close();
+				throw new CancellationException("The iteration has been interrupted.");
+			}
 		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
 			close();
-			throw e;
+			throw new CancellationException(e.getMessage());
+
 		}
 	}
 

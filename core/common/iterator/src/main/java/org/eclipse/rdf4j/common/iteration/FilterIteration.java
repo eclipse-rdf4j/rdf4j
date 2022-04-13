@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 
 /**
  * A CloseableIteration that wraps another Iteration, applying a filter on the objects that are returned. Subclasses
@@ -47,7 +48,7 @@ public abstract class FilterIteration<K extends CloseableIteration<? extends E, 
 			return false;
 		} else if (Thread.currentThread().isInterrupted()) {
 			close();
-			return false;
+			throw new CancellationException("The iteration has been interrupted.");
 		}
 
 		findNextElement();
@@ -117,7 +118,7 @@ public abstract class FilterIteration<K extends CloseableIteration<? extends E, 
 			throw new IllegalStateException("The iteration has been closed.");
 		} else if (Thread.currentThread().isInterrupted()) {
 			close();
-			throw new IllegalStateException("The iteration has been interrupted.");
+			throw new CancellationException("The iteration has been interrupted.");
 		}
 		try {
 			wrappedIter.remove();

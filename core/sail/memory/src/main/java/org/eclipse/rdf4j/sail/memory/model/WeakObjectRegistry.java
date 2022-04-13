@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.lang.ref.WeakReference;
 import java.util.AbstractSet;
 import java.util.Arrays;
@@ -18,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.concurrent.locks.AbstractReadWriteLockManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -309,8 +312,17 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 
 		// StampedLock for handling writers.
 		private volatile boolean writeLocked;
-		private final AtomicBoolean writeLock = new AtomicBoolean();
 
+		private static final VarHandle WRITE_LOCKED;
+		static {
+			try {
+				WRITE_LOCKED = MethodHandles.lookup()
+						.in(AdderBasedReadWriteLock.class)
+						.findVarHandle(AdderBasedReadWriteLock.class, "writeLocked", boolean.class);
+			} catch (ReflectiveOperationException e) {
+				throw new Error(e);
+			}
+		}
 		// LongAdder for handling readers. When the count is equal then there are no active readers.
 		private final LongAdder readersLocked = new LongAdder();
 		private final LongAdder readersUnlocked = new LongAdder();
@@ -344,7 +356,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 			// Acquire a write-lock.
 			boolean writeLocked;
 			do {
-				writeLocked = writeLock.compareAndSet(false, true);
+				writeLocked = WRITE_LOCKED.compareAndSet(this, false, true);
 				if (writeLocked) {
 					this.writeLocked = true;
 				}
@@ -368,7 +380,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 		public void unlockWriter(boolean writeLocked) {
 			if (writeLocked) {
 				this.writeLocked = false;
-				this.writeLock.set(false);
 			} else {
 				throw new IllegalMonitorStateException();
 			}

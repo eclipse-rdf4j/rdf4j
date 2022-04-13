@@ -528,7 +528,7 @@ class MemorySailStore implements SailStore {
 		int nextSnapshot = currentSnapshot;
 		for (int i = lastStmtPos; i >= 0; i--) {
 			if (Thread.currentThread().isInterrupted()) {
-				break;
+				return;
 			}
 
 			// As we are running in the background, yield the write lock frequently to other writers.

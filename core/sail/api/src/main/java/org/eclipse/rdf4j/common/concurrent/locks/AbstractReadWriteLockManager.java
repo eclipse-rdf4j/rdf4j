@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -31,7 +33,17 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 //	final StampedLock stampedLock = new StampedLock();
 
 	volatile boolean writeLocked;
-	private final AtomicBoolean writeLock = new AtomicBoolean();
+
+	private static final VarHandle WRITE_LOCKED;
+	static {
+		try {
+			WRITE_LOCKED = MethodHandles.lookup()
+					.in(AbstractReadWriteLockManager.class)
+					.findVarHandle(AbstractReadWriteLockManager.class, "writeLocked", boolean.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
+		}
+	}
 
 	// LongAdder for handling readers. When the count is equal then there are no active readers.
 	final LongAdder readersLocked = new LongAdder();
@@ -291,15 +303,12 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	void unlockWrite(boolean writeLocked) {
 		assert writeLocked;
 		assert this.writeLocked;
-		assert writeLock.get();
-
 		this.writeLocked = false;
-		writeLock.set(false);
 	}
 
 	private boolean writeLockInterruptibly() throws InterruptedException {
 
-		boolean writeLocked = false;
+		boolean writeLocked;
 		do {
 			if (Thread.interrupted()) {
 				throw new InterruptedException();
@@ -375,12 +384,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	}
 
 	private boolean writeLock() {
-		boolean success = writeLock.compareAndSet(false, true);
-		if (success) {
-			writeLocked = true;
-			return true;
-		}
-		return false;
+		return WRITE_LOCKED.compareAndSet(this, false, true);
 
 	}
 
