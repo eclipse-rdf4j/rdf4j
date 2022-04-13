@@ -7,14 +7,25 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import java.util.function.BiConsumer;
+import java.util.function.Predicate;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationException> {
 
@@ -40,6 +51,84 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		} catch (ValueExprEvaluationException e) {
 			// failed to evaluate condition
 			return false;
+		}
+	}
+
+	public static boolean isPartOfSubQuery(QueryModelNode node) {
+		if (node instanceof SubQueryValueOperator) {
+			return true;
+		}
+
+		QueryModelNode parent = node.getParentNode();
+		if (parent == null) {
+			return false;
+		} else {
+			return isPartOfSubQuery(parent);
+		}
+	}
+
+	/**
+	 * This is used to make sure that no variable is seen by the filter that are not in scope. Historically important in
+	 * subquery cases.
+	 *
+	 */
+	public static final class RetainedVariableFilteredQueryEvaluationContext implements QueryEvaluationContext {
+		private final Filter node;
+		private final QueryEvaluationContext context;
+
+		public RetainedVariableFilteredQueryEvaluationContext(Filter node, QueryEvaluationContext context) {
+			this.node = node;
+			this.context = context;
+		}
+
+		@Override
+		public Literal getNow() {
+			return context.getNow();
+		}
+
+		@Override
+		public Dataset getDataset() {
+			return context.getDataset();
+		}
+
+		@Override
+		public Predicate<BindingSet> hasBinding(String variableName) {
+			if (isVariableInScope(variableName)) {
+				return QueryEvaluationContext.super.hasBinding(variableName);
+			} else {
+				return null;
+			}
+		}
+
+		boolean isVariableInScope(String variableName) {
+			return node.getBindingNames().contains(variableName);
+		}
+
+		@Override
+		public java.util.function.Function<BindingSet, Binding> getBinding(String variableName) {
+			if (isVariableInScope(variableName)) {
+				return QueryEvaluationContext.super.getBinding(variableName);
+			} else {
+				return null;
+			}
+		}
+
+		@Override
+		public java.util.function.Function<BindingSet, Value> getValue(String variableName) {
+			if (isVariableInScope(variableName)) {
+				return QueryEvaluationContext.super.getValue(variableName);
+			} else {
+				return null;
+			}
+		}
+
+		@Override
+		public BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
+			if (isVariableInScope(variableName)) {
+				return QueryEvaluationContext.super.setBinding(variableName);
+			} else {
+				return null;
+			}
 		}
 	}
 
