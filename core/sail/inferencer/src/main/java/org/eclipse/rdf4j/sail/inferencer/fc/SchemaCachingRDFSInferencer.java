@@ -88,13 +88,13 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	private final Collection<Statement> domainStatements = new HashSet<>();
 
 	// Forward chained schema cache as lookup tables
-	private final Map<Resource, ConcurrentHashMap.KeySetView<Resource, Boolean>> calculatedTypes = new HashMap<>();
+	private final Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
 
-	private final Map<Resource, ConcurrentHashMap.KeySetView<Resource, Boolean>> calculatedProperties = new HashMap<>();
+	private final Map<Resource, Set<Resource>> calculatedProperties = new HashMap<>();
 
-	private final Map<Resource, ConcurrentHashMap.KeySetView<Resource, Boolean>> calculatedRange = new HashMap<>();
+	private final Map<Resource, Set<Resource>> calculatedRange = new HashMap<>();
 
-	private final Map<Resource, ConcurrentHashMap.KeySetView<Resource, Boolean>> calculatedDomain = new HashMap<>();
+	private final Map<Resource, Set<Resource>> calculatedDomain = new HashMap<>();
 
 	// The inferencer has been instantiated from another inferencer and shares it's schema with that one
 	private boolean sharedSchema;
@@ -301,33 +301,37 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 		ret.sharedSchema = true;
 
-		sailToInstantiateFrom.calculatedTypes.forEach((key, value) -> value.forEach(v -> {
-			if (!ret.calculatedTypes.containsKey(key)) {
-				ret.calculatedTypes.put(key, ConcurrentHashMap.newKeySet());
-			}
-			ret.calculatedTypes.get(key).add(v);
-		}));
+		sailToInstantiateFrom.calculatedTypes
+				.forEach((key, value) -> {
+					if (!ret.calculatedTypes.containsKey(key)) {
+						ret.calculatedTypes.put(key, new HashSet<>());
+					}
+					ret.calculatedTypes.get(key).addAll(value);
+				});
 
-		sailToInstantiateFrom.calculatedProperties.forEach((key, value) -> value.forEach(v -> {
-			if (!ret.calculatedProperties.containsKey(key)) {
-				ret.calculatedProperties.put(key, ConcurrentHashMap.newKeySet());
-			}
-			ret.calculatedProperties.get(key).add(v);
-		}));
+		sailToInstantiateFrom.calculatedProperties
+				.forEach((key, value) -> {
+					if (!ret.calculatedProperties.containsKey(key)) {
+						ret.calculatedProperties.put(key, new HashSet<>());
+					}
+					ret.calculatedProperties.get(key).addAll(value);
+				});
 
-		sailToInstantiateFrom.calculatedRange.forEach((key, value) -> value.forEach(v -> {
-			if (!ret.calculatedRange.containsKey(key)) {
-				ret.calculatedRange.put(key, ConcurrentHashMap.newKeySet());
-			}
-			ret.calculatedRange.get(key).add(v);
-		}));
+		sailToInstantiateFrom.calculatedRange
+				.forEach((key, value) -> {
+					if (!ret.calculatedRange.containsKey(key)) {
+						ret.calculatedRange.put(key, new HashSet<>());
+					}
+					ret.calculatedRange.get(key).addAll(value);
+				});
 
-		sailToInstantiateFrom.calculatedDomain.forEach((key, value) -> value.forEach(v -> {
-			if (!ret.calculatedDomain.containsKey(key)) {
-				ret.calculatedDomain.put(key, ConcurrentHashMap.newKeySet());
-			}
-			ret.calculatedDomain.get(key).add(v);
-		}));
+		sailToInstantiateFrom.calculatedDomain
+				.forEach((key, value) -> {
+					if (!ret.calculatedDomain.containsKey(key)) {
+						ret.calculatedDomain.put(key, new HashSet<>());
+					}
+					ret.calculatedDomain.get(key).addAll(value);
+				});
 
 		return ret;
 
@@ -453,7 +457,9 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 				values.add(type);
 				calculatedTypes.put(type, values);
 			} else {
-				calculatedTypes.get(type).add(type);
+				Set<Resource> resources = calculatedTypes.get(type);
+				assert resources instanceof ConcurrentHashMap.KeySetView;
+				resources.add(type);
 			}
 
 		});
@@ -464,7 +470,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 			if (!calculatedTypes.containsKey(subClass)) {
 
-				ConcurrentHashMap.KeySetView<Resource, Boolean> values = ConcurrentHashMap.newKeySet();
+				Set<Resource> values = ConcurrentHashMap.newKeySet();
 				values.add(RDFS.RESOURCE);
 				values.add(subClass);
 				values.add(superClass);
@@ -526,10 +532,10 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		}
 	}
 
-	private Stream<Map.Entry<Resource, ConcurrentHashMap.KeySetView<Resource, Boolean>>> getStream(
-			Map<Resource, ConcurrentHashMap.KeySetView<Resource, Boolean>> map) {
+	private Stream<Map.Entry<Resource, Set<Resource>>> getStream(
+			Map<Resource, Set<Resource>> map) {
 
-		Set<Map.Entry<Resource, ConcurrentHashMap.KeySetView<Resource, Boolean>>> entries = map.entrySet();
+		Set<Map.Entry<Resource, Set<Resource>>> entries = map.entrySet();
 
 		if (entries.size() > 100) {
 			return entries.parallelStream();
@@ -601,7 +607,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	private void calculateDomainAndRange(Collection<Statement> rangeOrDomainStatements,
-			Map<Resource, ConcurrentHashMap.KeySetView<Resource, Boolean>> calculatedRangeOrDomain) {
+			Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
 
 		StopWatch stopWatch = null;
 		if (logger.isDebugEnabled()) {
@@ -720,5 +726,37 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	boolean usesPredefinedSchema() {
 		return predefinedSchema != null || sharedSchema;
+	}
+
+	public void forFastInstantiate() {
+		/*
+		 * // Schema cache private final Collection<Resource> properties = new HashSet<>();
+		 * 
+		 * private final Collection<Resource> types = new HashSet<>();
+		 * 
+		 * private final Collection<Statement> subClassOfStatements = new HashSet<>();
+		 * 
+		 * private final Collection<Statement> subPropertyOfStatements = new HashSet<>();
+		 * 
+		 * private final Collection<Statement> rangeStatements = new HashSet<>();
+		 * 
+		 * private final Collection<Statement> domainStatements = new HashSet<>();
+		 * 
+		 * // Forward chained schema cache as lookup tables private final Map<Resource, Set<Resource>> calculatedTypes =
+		 * new HashMap<>();
+		 * 
+		 * private final Map<Resource, Set<Resource>> calculatedProperties = new HashMap<>();
+		 * 
+		 * private final Map<Resource, Set<Resource>> calculatedRange = new HashMap<>();
+		 * 
+		 * private final Map<Resource, Set<Resource>> calculatedDomain = new HashMap<>();
+		 * 
+		 */
+
+		calculatedTypes.replaceAll((k, v) -> new HashSet<>(v));
+		calculatedProperties.replaceAll((k, v) -> new HashSet<>(v));
+		calculatedRange.replaceAll((k, v) -> new HashSet<>(v));
+		calculatedDomain.replaceAll((k, v) -> new HashSet<>(v));
+
 	}
 }

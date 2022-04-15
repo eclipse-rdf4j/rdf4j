@@ -46,17 +46,17 @@ class SailSourceBranch implements SailSource {
 	/**
 	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
 	 */
-	private final ArrayDeque<Changeset> changes = new ArrayDeque<>();
+	private final ArrayDeque<Changeset> changes = new ArrayDeque<>(0);
 
 	/**
 	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this {@link SailSource}.
 	 */
-	private final Collection<Changeset> pending = new ArrayList<>();
+	private final Collection<Changeset> pending = new ArrayList<>(0);
 
 	/**
 	 * Set of open {@link SailDataset} for this {@link SailSource}.
 	 */
-	private final Collection<SailDataset> observers = new ArrayList<>();
+	private final Collection<SailDataset> observers = new ArrayList<>(1);
 
 	/**
 	 * The underly {@link SailSource} this {@link SailSource} is derived from.

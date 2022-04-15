@@ -29,7 +29,7 @@ public class SimpleNode implements Node {
 
 	public SimpleNode(int id) {
 		this.id = id;
-		children = new ArrayList<>();
+		children = new ArrayList<>(2);
 	}
 
 	public SimpleNode(SyntaxTreeBuilder parser, int id) {
@@ -57,12 +57,19 @@ public class SimpleNode implements Node {
 
 	@Override
 	public void jjtAddChild(Node n, int i) {
-		while (i >= children.size()) {
-			// Add dummy nodes
-			children.add(null);
+		if (i == children.size()) {
+			children.add(n);
+		} else if (i >= children.size()) {
+			while (i > children.size()) {
+				// Add dummy nodes
+				children.add(null);
+			}
+			children.add(n);
+		} else {
+
+			children.set(i, n);
 		}
 
-		children.set(i, n);
 	}
 
 	@Override
@@ -227,4 +234,5 @@ public class SimpleNode implements Node {
 	public void setScopeChange(boolean isScopeChange) {
 		this.isScopeChange = isScopeChange;
 	}
+
 }

@@ -7,9 +7,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -35,6 +39,15 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
  * @author David Huynh
  */
 public class MemValueFactory extends AbstractValueFactory {
+
+	private final static Set<IRI> vocabularySet = Stream.of(
+			RDF.all,
+			RDFS.all,
+			Arrays.stream(CoreDatatype.XSD.values()).map(CoreDatatype::getIri).collect(Collectors.toList()),
+			Arrays.stream(CoreDatatype.GEO.values()).map(CoreDatatype::getIri).collect(Collectors.toList())
+	)
+			.flatMap(Collection::stream)
+			.collect(Collectors.toSet());
 
 	/*------------*
 	 * Attributes *
@@ -75,7 +88,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * {@link RDF#TYPE}).
 	 *
 	 */
-	private final IdentityHashMap<IRI, MemIRI> vocabulariesCache = new IdentityHashMap<>();
+	private final IdentityHashMap<IRI, MemIRI> vocabulariesCache = new IdentityHashMap<>(vocabularySet.size());
 
 //	private final Cache<Value, MemLiteral> literalCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
 //	private final Cache<Value, MemIRI> iriCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
@@ -87,20 +100,8 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	private void initializeVocabulariesCache() {
-		for (IRI iri : RDF.all) {
+		for (IRI iri : vocabularySet) {
 			vocabulariesCache.computeIfAbsent(iri, this::getOrCreateMemURI);
-		}
-
-		for (IRI iri : RDFS.all) {
-			vocabulariesCache.computeIfAbsent(iri, this::getOrCreateMemURI);
-		}
-
-		for (CoreDatatype value : CoreDatatype.XSD.values()) {
-			vocabulariesCache.computeIfAbsent(value.getIri(), this::getOrCreateMemURI);
-		}
-
-		for (CoreDatatype value : CoreDatatype.GEO.values()) {
-			vocabulariesCache.computeIfAbsent(value.getIri(), this::getOrCreateMemURI);
 		}
 	}
 

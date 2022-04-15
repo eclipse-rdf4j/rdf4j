@@ -333,8 +333,7 @@ class GraphComparisons {
 
 	private static Partitioning hashBNodes(Model m, Partitioning partitioning) {
 		if (partitioning == null) {
-			final Set<BNode> blankNodes = getBlankNodes(m);
-			partitioning = new Partitioning(blankNodes);
+			partitioning = new Partitioning(getBlankNodes(m));
 		}
 
 		if (!partitioning.getNodes().isEmpty()) {
@@ -361,6 +360,22 @@ class GraphComparisons {
 			} while (!partitioning.isFullyDistinguished());
 		}
 		return partitioning;
+	}
+
+	protected static HashCode hashTuple(HashCode hashCodes1, HashCode hashCodes2) {
+		return Hashing.combineOrdered(List.of(hashCodes1, hashCodes2));
+	}
+
+	protected static HashCode hashBag(HashCode hashCodes1, HashCode hashCodes2) {
+		return Hashing.combineUnordered(List.of(hashCodes1, hashCodes2));
+	}
+
+	protected static HashCode hashTuple(HashCode hashCodes1, HashCode hashCodes2, HashCode hashCode3) {
+		return Hashing.combineOrdered(List.of(hashCodes1, hashCodes2, hashCode3));
+	}
+
+	protected static HashCode hashBag(HashCode hashCodes1, HashCode hashCodes2, HashCode hashCode3) {
+		return Hashing.combineUnordered(List.of(hashCodes1, hashCodes2, hashCode3));
 	}
 
 	protected static HashCode hashTuple(HashCode... hashCodes) {

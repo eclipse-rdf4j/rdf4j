@@ -151,6 +151,14 @@ public class ValidationResult {
 			return Collections.emptySet();
 		}
 
+		if (context.length == 1) {
+			Resource c = context[0];
+			if (c == null) {
+				return Set.of(RDF4J.NIL);
+			}
+			return Set.of(c);
+		}
+
 		return Arrays.stream(context)
 				.map(c -> c == null ? RDF4J.NIL : c)
 				.collect(Collectors.toSet());

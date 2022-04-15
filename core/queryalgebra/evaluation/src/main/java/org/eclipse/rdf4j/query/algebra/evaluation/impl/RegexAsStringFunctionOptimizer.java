@@ -38,13 +38,15 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new RegexAsStringFunctionVisitor());
+		tupleExpr.visit(new RegexAsStringFunctionVisitor(vf));
 	}
 
-	protected class RegexAsStringFunctionVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+	private static class RegexAsStringFunctionVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private final ValueFactory vf;
 
-		protected RegexAsStringFunctionVisitor() {
+		public RegexAsStringFunctionVisitor(ValueFactory vf) {
 			super(false);
+			this.vf = vf;
 		}
 
 		@Override

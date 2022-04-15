@@ -1,7 +1,6 @@
 package org.eclipse.rdf4j.model.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.eclipse.rdf4j.model.util.GraphComparisons.hashBag;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 
@@ -106,21 +105,21 @@ public class GraphComparisonsTest {
 		HashCode hash2 = hashFunction.hashString("efgh", Charsets.UTF_8);
 		HashCode hash3 = hashFunction.hashString("ijkl", Charsets.UTF_8);
 
-		HashCode sequence12 = hashBag(hash1, hash2);
-		HashCode sequence21 = hashBag(hash2, hash1);
+		HashCode sequence12 = GraphComparisons.hashBag(hash1, hash2);
+		HashCode sequence21 = GraphComparisons.hashBag(hash2, hash1);
 
 		// hashBag is commutative
 		assertThat(sequence12).isEqualTo(sequence21);
 
 		// hashBag is associative
-		assertThat(hashBag(hash1, hashBag(hash2, hash3)))
-				.isEqualTo(hashBag(hashBag(hash1, hash2), hash3))
-				.isEqualTo(hashBag(hash1, hash2, hash3));
+		assertThat(GraphComparisons.hashBag(hash1, GraphComparisons.hashBag(hash2, hash3)))
+				.isEqualTo(GraphComparisons.hashBag(GraphComparisons.hashBag(hash1, hash2), hash3))
+				.isEqualTo(GraphComparisons.hashBag(hash1, hash2, hash3));
 	}
 
 	/**
 	 * Graph from example 4.9 in http://aidanhogan.com/docs/rdf-canonicalisation.pdf
-	 * 
+	 *
 	 */
 	private Model buildExample49Model() {
 		// @formatter:off

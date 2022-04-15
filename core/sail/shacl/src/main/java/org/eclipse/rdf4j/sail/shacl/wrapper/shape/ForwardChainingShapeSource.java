@@ -98,6 +98,8 @@ public class ForwardChainingShapeSource implements ShapeSource {
 						shaclVocabularyGraph));
 				connection.commit();
 			}
+			schemaCachingRDFSInferencer.forFastInstantiate();
+
 			return schemaCachingRDFSInferencer;
 		} catch (IOException e) {
 			throw new IllegalStateException("Resource could not be read: shacl-sparql-inference/shaclVocabulary.ttl",

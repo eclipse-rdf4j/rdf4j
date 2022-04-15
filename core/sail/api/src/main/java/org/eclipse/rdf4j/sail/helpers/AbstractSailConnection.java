@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -92,22 +93,22 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private final LongAdder iterationsOpened = new LongAdder();
 	private final LongAdder iterationsClosed = new LongAdder();
 
-	private final Map<SailBaseIteration, Throwable> activeIterationsDebug = new ConcurrentHashMap<>();
+	private final Map<SailBaseIteration, Throwable> activeIterationsDebug;
 
 	/**
 	 * Statements that are currently being removed, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, Collection<Statement>> removed = new IdentityHashMap<>();
+	private final Map<UpdateContext, Collection<Statement>> removed = new IdentityHashMap<>(0);
 
 	/**
 	 * Statements that are currently being added, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, Collection<Statement>> added = new IdentityHashMap<>();
+	private final Map<UpdateContext, Collection<Statement>> added = new IdentityHashMap<>(0);
 
 	/**
 	 * Used to indicate a removed statement from all contexts.
 	 */
-	private final BNode wildContext = SimpleValueFactory.getInstance().createBNode();
+	private static final BNode wildContext = SimpleValueFactory.getInstance().createBNode();
 
 	private IsolationLevel transactionIsolationLevel;
 
@@ -123,6 +124,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 		this.sailBase = sailBase;
 		isOpen = true;
 		txnActive = false;
+		if (debugEnabled) {
+			activeIterationsDebug = new ConcurrentHashMap<>();
+		} else {
+			activeIterationsDebug = Collections.emptyMap();
+		}
 	}
 
 	/*---------*

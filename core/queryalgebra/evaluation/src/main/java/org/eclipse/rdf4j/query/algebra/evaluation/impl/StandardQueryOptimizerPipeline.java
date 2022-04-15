@@ -58,7 +58,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	 */
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		return Arrays.asList(
+		return List.of(
 				BINDING_ASSIGNER,
 				BINDING_SET_ASSIGNMENT_INLINER,
 				new ConstantOptimizer(strategy),

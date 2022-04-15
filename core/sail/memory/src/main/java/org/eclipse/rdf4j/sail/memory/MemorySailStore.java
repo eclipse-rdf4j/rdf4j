@@ -578,24 +578,32 @@ class MemorySailStore implements SailStore {
 	}
 
 	protected void scheduleSnapshotCleanup() {
-		synchronized (snapshotCleanupThreadLockObject) {
-			Thread toCheckSnapshotCleanupThread = snapshotCleanupThread;
-			if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
-				Runnable runnable = () -> {
-					try {
-						// sleep for 10 seconds because we don't need to start snapshot cleanup immediately
-						Thread.sleep(10 * 1000);
-						cleanSnapshots();
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						logger.info("snapshot cleanup interrupted");
-					}
-				};
+		// we don't schedule snapshot cleanup on small memory stores
+		if (statements.size() < 1000) {
+			return;
+		}
 
-				toCheckSnapshotCleanupThread = snapshotCleanupThread = new Thread(runnable,
-						"MemoryStore snapshot cleanup");
-				toCheckSnapshotCleanupThread.setDaemon(true);
-				toCheckSnapshotCleanupThread.start();
+		Thread toCheckSnapshotCleanupThread = snapshotCleanupThread;
+		if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
+			synchronized (snapshotCleanupThreadLockObject) {
+				toCheckSnapshotCleanupThread = snapshotCleanupThread;
+				if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
+					Runnable runnable = () -> {
+						try {
+							// sleep for 10 seconds because we don't need to start snapshot cleanup immediately
+							Thread.sleep(10 * 1000);
+							cleanSnapshots();
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							logger.info("snapshot cleanup interrupted");
+						}
+					};
+
+					toCheckSnapshotCleanupThread = snapshotCleanupThread = new Thread(runnable,
+							"MemoryStore snapshot cleanup");
+					toCheckSnapshotCleanupThread.setDaemon(true);
+					toCheckSnapshotCleanupThread.start();
+				}
 			}
 		}
 	}
