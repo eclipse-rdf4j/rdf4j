@@ -33,6 +33,16 @@ import org.lwjgl.util.lmdb.MDBVal;
  */
 final class LmdbUtil {
 
+	/**
+	 * Minimum free space in an LMDB db before automatically resizing the map.
+	 */
+	static final long MIN_FREE_SPACE = 524_288; // 512 KiB
+
+	/**
+	 * Minimum size an LMDB db is automatically grown.
+	 */
+	static final long MIN_AUTOGROW_SIZE = 1_048_576; // 1024 KiB
+
 	private LmdbUtil() {
 	}
 
@@ -125,8 +135,36 @@ final class LmdbUtil {
 	 * }</code>
 	 * </pre>
 	 */
-	static long mdbTxnMtNextPgno(long txn) {
+	private static long mdbTxnMtNextPgno(long txn) {
 		return MemoryUtil.memGetAddress(txn + 2 * Pointer.POINTER_SIZE);
+	}
+
+	/**
+	 * Determines if a resize of the current map size for an LMDB db is required.
+	 *
+	 * @param mapSize      the current map size
+	 * @param pageSize     the page size
+	 * @param txn          a transaction handle
+	 * @param requiredSize the minimum required size
+	 * @return <code>true</code> if map should be resized, else <code>false</code>
+	 */
+	static boolean requiresResize(long mapSize, long pageSize, long txn, long requiredSize) {
+		long nextPageNo = mdbTxnMtNextPgno(txn);
+		return mapSize - nextPageNo * pageSize < Math.max(requiredSize, LmdbUtil.MIN_FREE_SPACE);
+	}
+
+	/**
+	 * Computes a new map size for auto-growing an existing LMDB db.
+	 *
+	 * @param mapSize      the current map size
+	 * @param pageSize     the page size
+	 * @param requiredSize the minimum required size
+	 * @return the new map size
+	 */
+	static long autoGrowMapSize(long mapSize, long pageSize, long requiredSize) {
+		mapSize = Math.max(mapSize * 2, Math.max(requiredSize, MIN_AUTOGROW_SIZE));
+		// align map size to page size
+		return mapSize % pageSize == 0 ? mapSize : mapSize + (mapSize / pageSize + 1) * pageSize;
 	}
 
 	@FunctionalInterface

@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.mdbTxnMtNextPgno;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -66,8 +65,8 @@ final class TxnRecordCache {
 			E(mdb_env_create(pp));
 			env = pp.get(0);
 
-			mdb_env_set_maxdbs(env, 2);
-			mdb_env_set_mapsize(env, mapSize);
+			E(mdb_env_set_maxdbs(env, 2));
+			E(mdb_env_set_mapsize(env, mapSize));
 
 			int flags = MDB_NOTLS | MDB_NOSYNC | MDB_NOMETASYNC;
 
@@ -78,13 +77,13 @@ final class TxnRecordCache {
 
 			MDBStat stat = MDBStat.malloc(stack);
 			readTransaction(env, (stack2, txn) -> {
-				mdb_stat(txn, dbiExplicit, stat);
+				E(mdb_stat(txn, dbiExplicit, stat));
 				pageSize = stat.ms_psize();
 				return null;
 			});
 
 			// directly start a write transaction
-			mdb_txn_begin(env, NULL, 0, pp);
+			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
 		}
 	}
@@ -94,9 +93,9 @@ final class TxnRecordCache {
 		FileUtils.deleteDirectory(dbDir.toFile());
 	}
 
-	protected void commit() {
+	protected void commit() throws IOException {
 		if (writeTxn != 0) {
-			mdb_txn_commit(writeTxn);
+			E(mdb_txn_commit(writeTxn));
 			writeTxn = 0;
 		}
 	}
@@ -110,15 +109,14 @@ final class TxnRecordCache {
 	}
 
 	protected boolean update(long[] quad, boolean explicit, boolean add) throws IOException {
-		long nextPageNo = mdbTxnMtNextPgno(writeTxn);
-		if (mapSize - (nextPageNo + 10) * pageSize < pageSize) {
+		if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
 			// resize map if required
-			mdb_txn_commit(writeTxn);
-			mapSize = Math.max(mapSize * 2, mapSize + pageSize);
-			mdb_env_set_mapsize(env, mapSize);
+			E(mdb_txn_commit(writeTxn));
+			mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+			E(mdb_env_set_mapsize(env, mapSize));
 			try (MemoryStack stack = stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
-				mdb_txn_begin(env, NULL, 0, pp);
+				E(mdb_txn_begin(env, NULL, 0, pp));
 				writeTxn = pp.get(0);
 			}
 		}
@@ -140,21 +138,21 @@ final class TxnRecordCache {
 			if (add) {
 				if (!found || explicit && foundImplicit) {
 					if (explicit && foundImplicit) {
-						mdb_del(writeTxn, dbiInferred, keyVal, dataVal);
+						E(mdb_del(writeTxn, dbiInferred, keyVal, dataVal));
 					}
 					// mark as add
 					dataVal.mv_data(stack.bytes((byte) 1));
-					mdb_put(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal, 0);
+					E(mdb_put(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal, 0));
 				}
 				return !found;
 			} else {
 				if (foundExplicit && explicit || foundImplicit && !explicit) {
 					// simply delete quad from cache
-					mdb_del(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal);
+					E(mdb_del(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal));
 				} else {
 					// mark as remove
 					dataVal.mv_data(stack.bytes((byte) 0));
-					mdb_put(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal, 0);
+					E(mdb_put(writeTxn, explicit ? dbiExplicit : dbiInferred, keyVal, dataVal, 0));
 				}
 				return true;
 			}
