@@ -13,7 +13,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -21,6 +20,7 @@ import java.util.concurrent.FutureTask;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -107,6 +107,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private TransactionSetting[] transactionSettingsRaw = new TransactionSetting[0];
 	private volatile boolean closed;
 
+	private StopWatch transactionStopWatch;
+
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, SailConnection previousStateConnection,
 			SailConnection serializableConnection, SailConnection previousStateSerializableConnection,
 			SailRepositoryConnection shapesRepoConnection) {
@@ -140,6 +142,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	public void begin(IsolationLevel level) throws SailException {
 		if (closed) {
 			throw new SailException("Connection is closed");
+		}
+
+		if (sail.isPerformanceLogging()) {
+			transactionStopWatch = StopWatch.createStarted();
 		}
 
 		currentIsolationLevel = level;
@@ -239,16 +245,22 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
-			long before = getTimeStamp();
+			StopWatch stopWatch = getStopWatch();
 			previousStateConnection.commit();
 			super.commit();
 			shapesRepoConnection.commit();
 
 			if (sail.isPerformanceLogging()) {
-				logger.info("commit() excluding validation and cleanup took {} ms", getTimeStamp() - before);
+				stopWatch.stop();
+				logger.info("commit() excluding validation and cleanup took {}", stopWatch);
 			}
 		} finally {
 			cleanup();
+		}
+
+		if (sail.isPerformanceLogging()) {
+			transactionStopWatch.stop();
+			logger.info("transaction took {}", transactionStopWatch);
 		}
 	}
 
@@ -347,12 +359,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private void cleanup() {
-		long before = 0;
+		StopWatch stopWatch = getStopWatch();
 
 		try {
-			if (sail.isPerformanceLogging()) {
-				before = System.currentTimeMillis();
-			}
 
 			logger.debug("Cleanup");
 
@@ -387,7 +396,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 			if (sail.isPerformanceLogging()) {
-				logger.info("cleanup() took {} ms", System.currentTimeMillis() - before);
+				stopWatch.stop();
+				logger.info("cleanup() took {}", stopWatch);
 			}
 		}
 
@@ -468,14 +478,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private ValidationReport performValidation(List<ContextWithShapes> shapes, boolean validateEntireBaseSail,
 			ConnectionsGroup connectionsGroup) throws InterruptedException {
-		long beforeValidation = 0;
-
-		if (sail.isPerformanceLogging()) {
-			beforeValidation = System.currentTimeMillis();
-		}
+		StopWatch validationStopWatch = null;
 
 		try {
-			Stream<Callable<ValidationResultIterator>> callableStream = shapes.stream()
+			StopWatch validationPlanStopWatch = getStopWatch();
+
+			List<ValidationContainer> validationPlans = shapes.stream()
 					.flatMap(contextWithShapes -> contextWithShapes.getShapes()
 							.stream()
 							.map(shape -> new ValidationContainer(shape,
@@ -484,6 +492,17 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 													sail.isLogValidationPlans(), validateEntireBaseSail,
 													sail.isPerformanceLogging())))))
 					.filter(ValidationContainer::hasPlanNode)
+					.collect(Collectors.toList());
+
+			if (sail.isPerformanceLogging()) {
+				validationPlanStopWatch.stop();
+				logger.info("Generating validation plans took {}", validationPlanStopWatch);
+			}
+
+			validationStopWatch = getStopWatch();
+
+			Stream<Callable<ValidationResultIterator>> callableStream = validationPlans
+					.stream()
 					.map(validationContainer -> validationContainer::performValidation);
 
 			List<ValidationResultIterator> validationResultIterators;
@@ -546,8 +565,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		} finally {
 			if (sail.isPerformanceLogging()) {
-				logger.info("Actual validation and generating plans took {} ms",
-						System.currentTimeMillis() - beforeValidation);
+				validationStopWatch.stop();
+				logger.info("Validation took {}", validationStopWatch);
 			}
 		}
 	}
@@ -565,20 +584,16 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		assert !isBulkValidation();
 		assert isValidationEnabled();
 
-		long before = 0;
-		if (sail.isPerformanceLogging()) {
-			before = System.currentTimeMillis();
-		}
+		StopWatch stopWatch = getStopWatch();
 
 		List<Future<Object>> futures = Collections.emptyList();
 
+		boolean useRdfsSubClassOfReasoner = rdfsSubClassOfReasoner != null && !rdfsSubClassOfReasoner.isEmpty();
+
 		try {
 			futures = Stream.of(addedStatementsSet, removedStatementsSet).map(set -> (Callable<Object>) () -> {
-				Set<Statement> otherSet;
 				Sail repository;
 				if (set == addedStatementsSet) {
-					otherSet = removedStatementsSet;
-
 					if (addedStatements != null && addedStatements != sail.getBaseSail()) {
 						addedStatements.shutDown();
 					}
@@ -586,11 +601,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					addedStatements = getNewMemorySail();
 					repository = addedStatements;
 
-					set.forEach(stats::added);
-
+					stats.added(!set.isEmpty());
 				} else {
-					otherSet = addedStatementsSet;
-
 					if (removedStatements != null) {
 						removedStatements.shutDown();
 						removedStatements = null;
@@ -599,27 +611,31 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					removedStatements = getNewMemorySail();
 					repository = removedStatements;
 
-					set.forEach(stats::removed);
+					stats.removed(!set.isEmpty());
 				}
 
 				try (SailConnection connection = repository.getConnection()) {
 					connection.begin(IsolationLevels.NONE);
-					set.stream().filter(statement -> !otherSet.contains(statement)).forEach(statement -> {
-						connection.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-								statement.getContext());
+					set
+							.forEach(statement -> {
+								connection.addStatement(statement.getSubject(), statement.getPredicate(),
+										statement.getObject(),
+										statement.getContext());
 
-						if (rdfsSubClassOfReasoner != null) {
-							List<Statement> forwardChained = rdfsSubClassOfReasoner.forwardChain(statement);
-							if (forwardChained != null) {
-								forwardChained.forEach(s -> {
-									if (!Thread.currentThread().isInterrupted()) {
-										connection.addStatement(s.getSubject(), s.getPredicate(), s.getObject(),
-												s.getContext());
+								if (useRdfsSubClassOfReasoner) {
+									List<Statement> forwardChained = rdfsSubClassOfReasoner.forwardChain(statement);
+									if (forwardChained != null) {
+										forwardChained
+												.forEach(s -> {
+													if (!Thread.currentThread().isInterrupted()) {
+														connection.addStatement(s.getSubject(), s.getPredicate(),
+																s.getObject(),
+																s.getContext());
+													}
+												});
 									}
-								});
-							}
-						}
-					});
+								}
+							});
 
 					if (Thread.interrupted()) {
 						throw new InterruptedException();
@@ -671,7 +687,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		if (sail.isPerformanceLogging()) {
-			logger.info("fillAddedAndRemovedStatementRepositories() took {} ms", System.currentTimeMillis() - before);
+			stopWatch.stop();
+			logger.info("fillAddedAndRemovedStatementRepositories() {}took {}",
+					useRdfsSubClassOfReasoner ? "with rdfs:subClassOf reasoning " : "", stopWatch);
 		}
 
 	}
@@ -738,14 +756,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		prepareHasBeenCalled = true;
 
-		long before = 0;
+		StopWatch stopWatch = getStopWatch();
 		flush();
 
 		try {
-
-			if (sail.isPerformanceLogging()) {
-				before = System.currentTimeMillis();
-			}
 
 			boolean useSerializableValidation = shouldUseSerializableValidation() && !isBulkValidation();
 
@@ -837,8 +851,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		} finally {
 
 			if (sail.isPerformanceLogging()) {
-				logger.info("prepare() including validation (excluding flushing and super.prepare()) took {} ms",
-						System.currentTimeMillis() - before);
+				stopWatch.stop();
+				logger.info("prepare() took {}", stopWatch);
 			}
 
 			// if the thread has been interrupted we should try to return quickly
@@ -924,9 +938,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			throw new IllegalStateException("Detected changes after prepare() has been called.");
 		}
 		checkIfShapesRefreshIsNeeded(statement);
-		boolean add = addedStatementsSet.add(statement);
-		if (!add) {
-			removedStatementsSet.remove(statement);
+
+		boolean previouslyRemoved = removedStatementsSet.remove(statement);
+		if (!previouslyRemoved) {
+			addedStatementsSet.add(statement);
 		}
 
 		checkTransactionalValidationLimit();
@@ -940,9 +955,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 		checkIfShapesRefreshIsNeeded(statement);
 
-		boolean add = removedStatementsSet.add(statement);
-		if (!add) {
-			addedStatementsSet.remove(statement);
+		boolean previouslyAdded = addedStatementsSet.remove(statement);
+
+		if (!previouslyAdded) {
+			removedStatementsSet.add(statement);
 		}
 
 		checkTransactionalValidationLimit();
@@ -1021,11 +1037,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		return transactionSettings;
 	}
 
-	private long getTimeStamp() {
+	private StopWatch getStopWatch() {
 		if (sail.isPerformanceLogging()) {
-			return System.currentTimeMillis();
+			return StopWatch.createStarted();
 		}
-		return 0;
+		return null;
 	}
 
 	private class ValidationContainer {
@@ -1059,7 +1075,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		public ValidationResultIterator performValidation() throws InterruptedException {
-			long before = getTimeStamp();
+			StopWatch stopWatch = getStopWatch();
 
 			handlePreLogging();
 
@@ -1070,7 +1086,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						sail.getEffectiveValidationResultsLimitPerConstraint());
 				return validationResults;
 			} finally {
-				handlePostLogging(before, validationResults);
+				handlePostLogging(stopWatch, validationResults);
 			}
 		}
 
@@ -1080,7 +1096,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 		}
 
-		private void handlePostLogging(long before, ValidationResultIterator validationResults) {
+		private void handlePostLogging(StopWatch stopWatch, ValidationResultIterator validationResults) {
 			if (validationExecutionLogger.isEnabled()) {
 				validationExecutionLogger.flush();
 			}
@@ -1088,8 +1104,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			if (validationResults != null) {
 
 				if (sail.isPerformanceLogging()) {
-					long after = System.currentTimeMillis();
-					logger.info("Execution of plan took {} ms for:\n{}\n", (after - before), getShape().toString());
+					stopWatch.stop();
+					logger.debug("Execution of plan took {} for:\n{}\n", stopWatch, getShape().toString());
 				}
 
 				if (validationExecutionLogger.isEnabled()) {

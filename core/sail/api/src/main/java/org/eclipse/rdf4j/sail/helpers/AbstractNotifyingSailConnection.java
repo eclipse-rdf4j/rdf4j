@@ -33,37 +33,28 @@ public abstract class AbstractNotifyingSailConnection extends AbstractSailConnec
 
 	@Override
 	public void addConnectionListener(SailConnectionListener listener) {
-		synchronized (listeners) {
-			listeners.add(listener);
-		}
+		listeners.add(listener);
 	}
 
 	@Override
 	public void removeConnectionListener(SailConnectionListener listener) {
-		synchronized (listeners) {
-			listeners.remove(listener);
-		}
+		listeners.remove(listener);
 	}
 
 	protected boolean hasConnectionListeners() {
-		synchronized (listeners) {
-			return !listeners.isEmpty();
-		}
+		return !listeners.isEmpty();
 	}
 
 	protected void notifyStatementAdded(Statement st) {
-		synchronized (listeners) {
-			for (SailConnectionListener listener : listeners) {
-				listener.statementAdded(st);
-			}
+		for (SailConnectionListener listener : listeners) {
+			listener.statementAdded(st);
 		}
+
 	}
 
 	protected void notifyStatementRemoved(Statement st) {
-		synchronized (listeners) {
-			for (SailConnectionListener listener : listeners) {
-				listener.statementRemoved(st);
-			}
+		for (SailConnectionListener listener : listeners) {
+			listener.statementRemoved(st);
 		}
 	}
 }

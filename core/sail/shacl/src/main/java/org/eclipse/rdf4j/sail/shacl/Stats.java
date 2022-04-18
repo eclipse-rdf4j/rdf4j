@@ -23,12 +23,12 @@ public class Stats {
 	private boolean hasRemoved;
 	private Boolean emptyIncludingCurrentTransaction;
 
-	public void added(Statement statement) {
-		hasAdded = true;
+	public void added(boolean hasAdded) {
+		this.hasAdded = hasAdded;
 	}
 
-	public void removed(Statement statement) {
-		hasRemoved = true;
+	public void removed(boolean hasRemoved) {
+		this.hasRemoved = hasRemoved;
 	}
 
 	/**

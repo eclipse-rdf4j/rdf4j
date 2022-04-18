@@ -584,7 +584,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);
 		}
 		addStatementInternal(subj, pred, obj, contexts);
-
 	}
 
 	@Override
@@ -727,10 +726,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
 			throws SailException {
 		if (contexts.length == 0 || (contexts.length == 1 && contexts[0] == null)) {
-			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
-				notifyStatementAdded(vf.createStatement(subj, pred, obj));
+			if (hasConnectionListeners()) {
+				if (!hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
+					notifyStatementAdded(vf.createStatement(subj, pred, obj));
+					sink.approve(subj, pred, obj, null);
+				}
+			} else {
+				sink.approve(subj, pred, obj, null);
 			}
-			sink.approve(subj, pred, obj, null);
 		} else {
 			for (Resource ctx : contexts) {
 				Resource[] contextsToCheck;
@@ -740,10 +743,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 					contextsToCheck = new Resource[] { ctx };
 				}
 
-				if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, contextsToCheck)) {
-					notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
+				if (hasConnectionListeners()) {
+					if (!hasStatement(dataset, subj, pred, obj, contextsToCheck)) {
+						notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
+						sink.approve(subj, pred, obj, ctx);
+					}
+				} else {
+					sink.approve(subj, pred, obj, ctx);
 				}
-				sink.approve(subj, pred, obj, ctx);
 			}
 		}
 	}

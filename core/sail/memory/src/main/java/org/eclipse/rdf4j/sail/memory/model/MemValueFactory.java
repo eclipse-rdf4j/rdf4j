@@ -368,20 +368,17 @@ public class MemValueFactory extends AbstractValueFactory {
 		}
 
 		MemIRI memIRI = vocabulariesCache.get(uri);
+
 		if (memIRI == null) {
-			memIRI = null; // iriCache.getIfPresent(uri);
-			if (memIRI == null) {
-				memIRI = iriRegistry.getOrAdd(uri, () -> {
+			memIRI = iriRegistry.getOrAdd(uri, () -> {
 
-					String namespace = uri.getNamespace();
+				String namespace = uri.getNamespace();
 
-					String sharedNamespace = namespaceRegistry.getOrAdd(namespace, () -> namespace);
+				String sharedNamespace = namespaceRegistry.getOrAdd(namespace, () -> namespace);
 
-					// Create a MemURI and add it to the registry
-					return new MemIRI(this, sharedNamespace, uri.getLocalName());
-				});
-//				iriCache.put(uri, memIRI);
-			}
+				// Create a MemURI and add it to the registry
+				return new MemIRI(this, sharedNamespace, uri.getLocalName());
+			});
 		}
 
 		return memIRI;

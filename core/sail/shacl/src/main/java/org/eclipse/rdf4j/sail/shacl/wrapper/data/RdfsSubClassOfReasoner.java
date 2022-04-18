@@ -21,6 +21,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -148,10 +149,7 @@ public class RdfsSubClassOfReasoner {
 	}
 
 	public static RdfsSubClassOfReasoner createReasoner(ShaclSailConnection shaclSailConnection) {
-		long before = 0;
-		if (shaclSailConnection.sail.isPerformanceLogging()) {
-			before = System.currentTimeMillis();
-		}
+		StopWatch stopWatch = getStopWatch(shaclSailConnection.sail.isPerformanceLogging());
 
 		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = new RdfsSubClassOfReasoner();
 
@@ -168,16 +166,21 @@ public class RdfsSubClassOfReasoner {
 
 		rdfsSubClassOfReasoner.calculateSubClassOf(rdfsSubClassOfReasoner.subClassOfStatements);
 		if (shaclSailConnection.sail.isPerformanceLogging()) {
-			logger.info("RdfsSubClassOfReasoner.createReasoner() took {} ms", System.currentTimeMillis() - before);
+			stopWatch.stop();
+			logger.info("RdfsSubClassOfReasoner.createReasoner() took {}", stopWatch);
 		}
 		return rdfsSubClassOfReasoner;
+	}
+
+	private static StopWatch getStopWatch(boolean performanceLogging) {
+		if (performanceLogging) {
+			return StopWatch.createStarted();
+		}
+		return null;
 	}
 
 	public boolean isEmpty() {
 		return subClassOfStatements.isEmpty() && forwardChainCache.isEmpty() && backwardsChainCache.isEmpty();
 	}
+
 }
-
-/*
-
- */
