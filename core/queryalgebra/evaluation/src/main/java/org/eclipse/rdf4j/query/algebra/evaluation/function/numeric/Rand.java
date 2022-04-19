@@ -35,4 +35,9 @@ public class Rand implements Function {
 		return valueFactory.createLiteral(Math.random());
 	}
 
+	@Override
+	public boolean mustReturnDifferentResult() {
+		return true;
+	}
+
 }
