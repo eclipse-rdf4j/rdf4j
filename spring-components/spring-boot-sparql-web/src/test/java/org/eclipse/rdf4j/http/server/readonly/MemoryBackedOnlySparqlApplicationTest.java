@@ -60,17 +60,17 @@ public class MemoryBackedOnlySparqlApplicationTest {
 	@Test
 	public void testSPARQLRepository() throws QueryInterruptedException, RepositoryException,
 			MalformedQueryException, IOException {
-		TestSPARQLRepository rep = new TestSPARQLRepository("http://localhost:" + port + "/sparql/");
-		rep.init();
 		String query = "SELECT * WHERE { ?s ?p ?o }";
-		SPARQLProtocolSession session = rep.createSPARQLProtocolSession();
-		try (TupleQueryResult sendTupleQuery = session.sendTupleQuery(QueryLanguage.SPARQL, query, null, false,
-				new WeakReference<>(this))) {
+		TestSPARQLRepository rep = new TestSPARQLRepository("http://localhost:" + port + "/sparql/");
+		try (
+				SPARQLProtocolSession session = rep.createSPARQLProtocolSession();
+				TupleQueryResult sendTupleQuery = session.sendTupleQuery(QueryLanguage.SPARQL, query, null, false,
+						new WeakReference<>(this))) {
+
 			while (sendTupleQuery.hasNext()) {
 				assertNotNull(sendTupleQuery.next());
 			}
 		} finally {
-			session.close();
 			rep.shutDown();
 		}
 	}

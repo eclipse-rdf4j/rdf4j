@@ -128,32 +128,26 @@ public abstract class TupleQueryResultTest {
 	}
 
 	private void addData() throws IOException, UnsupportedRDFormatException, RDFParseException, RepositoryException {
-		InputStream defaultGraph = TupleQueryResultTest.class.getResourceAsStream("/testcases/default-graph-1.ttl");
-		try {
+		try (InputStream defaultGraph = TupleQueryResultTest.class
+				.getResourceAsStream("/testcases/default-graph-1.ttl")) {
 			con.add(defaultGraph, "", RDFFormat.TURTLE);
-		} finally {
-			defaultGraph.close();
 		}
 	}
 
 	@Test
 	public void testGetBindingNames() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate();
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate()) {
 			List<String> headers = result.getBindingNames();
 
 			assertThat(headers.get(0)).isEqualTo("P").as("first header element");
 			assertThat(headers.get(1)).isEqualTo("D").as("second header element");
-		} finally {
-			result.close();
 		}
 	}
 
 	@Test
 	public void testIterator() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate();
 
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate()) {
 			int count = 0;
 			while (result.hasNext()) {
 				result.next();
@@ -161,35 +155,27 @@ public abstract class TupleQueryResultTest {
 			}
 
 			assertTrue("query should have multiple results.", count > 1);
-		} finally {
-			result.close();
 		}
 	}
 
 	@Test
 	public void testIsEmpty() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(emptyResultQuery).evaluate();
 
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(emptyResultQuery).evaluate()) {
 			assertFalse("Query result should be empty", result.hasNext());
-		} finally {
-			result.close();
 		}
 	}
 
 	@Test
 	public void testCountMatchesAllSelect() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery("SELECT * WHERE {?s ?p ?o}").evaluate();
-		long size = con.size();
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery("SELECT * WHERE {?s ?p ?o}").evaluate()) {
+			long size = con.size();
 			for (int i = 0; i < size; i++) {
 				assertTrue(result.hasNext());
 				BindingSet next = result.next();
 				assertNotNull(next);
 			}
 			assertFalse("Query result should be empty", result.hasNext());
-		} finally {
-			result.close();
 		}
 	}
 

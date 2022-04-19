@@ -275,10 +275,8 @@ public class IOUtil {
 	 */
 	public static Properties readProperties(InputStream in, Properties defaults) throws IOException {
 		Properties result = new Properties(defaults);
-		try {
+		try (in) {
 			result.load(in);
-		} finally {
-			in.close();
 		}
 		return result;
 	}
@@ -315,10 +313,8 @@ public class IOUtil {
 			props = all;
 		}
 
-		try {
+		try (out) {
 			props.store(out, null);
-		} finally {
-			out.close();
 		}
 	}
 
@@ -330,16 +326,8 @@ public class IOUtil {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public static void writeStream(InputStream in, File file) throws IOException {
-		FileOutputStream out = new FileOutputStream(file);
-
-		try {
+		try (FileOutputStream out = new FileOutputStream(file)) {
 			transfer(in, out);
-		} finally {
-			try {
-				out.flush();
-			} finally {
-				out.close();
-			}
 		}
 	}
 

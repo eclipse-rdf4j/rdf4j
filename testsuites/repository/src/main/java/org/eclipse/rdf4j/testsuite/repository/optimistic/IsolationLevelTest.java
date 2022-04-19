@@ -82,18 +82,15 @@ public class IsolationLevelTest {
 	}
 
 	protected boolean isSupported(IsolationLevels level) throws RepositoryException {
-		RepositoryConnection con = store.getConnection();
-		try {
-			con.begin(level);
-			return true;
+		try (RepositoryConnection con = store.getConnection()) {
+			try {
+				con.begin(level);
+				return true;
+			} finally {
+				con.rollback();
+			}
 		} catch (UnknownTransactionStateException e) {
 			return false;
-		} finally {
-			try {
-				con.rollback();
-			} finally {
-				con.close();
-			}
 		}
 	}
 
@@ -342,8 +339,7 @@ public class IsolationLevelTest {
 		final CountDownLatch changed = new CountDownLatch(1);
 		Thread writer = new Thread(() -> {
 			try {
-				RepositoryConnection write = store.getConnection();
-				try {
+				try (RepositoryConnection write = store.getConnection()) {
 					start.countDown();
 					start.await();
 					write.begin(level);
@@ -357,8 +353,6 @@ public class IsolationLevelTest {
 					insertTestStatement(write, 2);
 					write.commit();
 					changed.countDown();
-				} finally {
-					write.close();
 				}
 			} catch (Throwable e) {
 				fail("Writer failed", e);

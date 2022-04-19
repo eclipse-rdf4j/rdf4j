@@ -259,7 +259,7 @@ public class InnerJoinTest {
 	}
 
 	@SafeVarargs
-	private final void verify(List<ValidationTuple> actual, List<String>... expect) {
+	private void verify(List<ValidationTuple> actual, List<String>... expect) {
 
 		Set<ValidationTuple> collect = Arrays.stream(expect)
 				.map(strings -> strings.stream()

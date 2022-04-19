@@ -160,14 +160,8 @@ public class SimpleSAXParser {
 	 * @param file The file containing the XML to parse.
 	 */
 	public void parse(File file) throws SAXException, IOException {
-		InputStream in = new FileInputStream(file);
-		try {
+		try (InputStream in = new FileInputStream(file)) {
 			parse(in);
-		} finally {
-			try {
-				in.close();
-			} catch (IOException ignore) {
-			}
 		}
 	}
 

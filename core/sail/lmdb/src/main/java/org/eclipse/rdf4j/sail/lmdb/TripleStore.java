@@ -670,7 +670,7 @@ class TripleStore implements Closeable {
 	private Map<Long, Long> removeTriples(RecordIterator iter, boolean explicit) throws IOException {
 		final Map<Long, Long> perContextCounts = new HashMap<>();
 
-		try (MemoryStack stack = MemoryStack.stackPush()) {
+		try (iter; MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyValue = MDBVal.callocStack(stack);
 			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);
 
@@ -687,8 +687,7 @@ class TripleStore implements Closeable {
 					continue;
 				}
 
-				for (int i = 0; i < indexes.size(); i++) {
-					TripleIndex index = indexes.get(i);
+				for (TripleIndex index : indexes) {
 					keyBuf.clear();
 					index.toKey(keyBuf, quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX], quad[CONTEXT_IDX]);
 					keyBuf.flip();
@@ -698,10 +697,8 @@ class TripleStore implements Closeable {
 					E(mdb_del(writeTxn, index.getDB(explicit), keyValue, null));
 				}
 
-				perContextCounts.merge(quad[CONTEXT_IDX], 1L, (c, one) -> c + one);
+				perContextCounts.merge(quad[CONTEXT_IDX], 1L, Long::sum);
 			}
-		} finally {
-			iter.close();
 		}
 
 		return perContextCounts;

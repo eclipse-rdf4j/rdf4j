@@ -51,7 +51,7 @@ public class AutoClosingIterationTest {
 
 		CloseableIterationForTesting iterator = getIterator(Arrays.asList("a", "b", "c"));
 
-		try {
+		try (iterator) {
 			List<String> collect = iterator
 					.stream()
 					.filter(s -> {
@@ -61,8 +61,6 @@ public class AutoClosingIterationTest {
 					.collect(Collectors.toList());
 		} catch (Throwable ignored) {
 
-		} finally {
-			iterator.close();
 		}
 
 		assertTrue(iterator.closed);

@@ -975,13 +975,13 @@ public abstract class AbstractParserHandlingTest {
 		assertEquals("Unexpected number of warnings", expectedWarnings, testListener.getWarnings().size());
 	}
 
-	private final Model getTestModel(String datatypeValue, IRI datatypeURI) {
+	private Model getTestModel(String datatypeValue, IRI datatypeURI) {
 		Model result = new LinkedHashModel();
 		result.add(vf.createStatement(vf.createBNode(), DC.DESCRIPTION, vf.createLiteral(datatypeValue, datatypeURI)));
 		return result;
 	}
 
-	private final Model getTestModel(String languageValue, String languageTag) {
+	private Model getTestModel(String languageValue, String languageTag) {
 		Model result = new LinkedHashModel();
 		result.add(vf.createStatement(vf.createBNode(), RDFS.COMMENT, vf.createLiteral(languageValue, languageTag)));
 		return result;

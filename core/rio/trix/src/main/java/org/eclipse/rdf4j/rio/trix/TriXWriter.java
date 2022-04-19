@@ -196,7 +196,7 @@ public class TriXWriter extends AbstractRDFWriter implements CharSink {
 		}
 	}
 
-	private static final boolean contextsEquals(Resource context1, Resource context2) {
+	private static boolean contextsEquals(Resource context1, Resource context2) {
 		if (context1 == null) {
 			return context2 == null;
 		} else {

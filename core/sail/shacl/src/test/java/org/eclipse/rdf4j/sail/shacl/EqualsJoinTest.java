@@ -121,7 +121,7 @@ public class EqualsJoinTest {
 	}
 
 	@SafeVarargs
-	private final void verify(List<ValidationTuple> actual, List<String>... expect) {
+	private void verify(List<ValidationTuple> actual, List<String>... expect) {
 
 //		System.out.println(actual);
 

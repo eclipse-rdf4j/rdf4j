@@ -180,7 +180,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 		}
 	}
 
-	private final Repository createRepository() throws Exception {
+	private Repository createRepository() throws Exception {
 		Repository repo = newRepository();
 		try (RepositoryConnection con = repo.getConnection()) {
 			con.clear();
@@ -384,11 +384,8 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 	}
 
 	private String readUpdateString() throws IOException {
-		InputStream stream = new URL(requestFile).openStream();
-		try {
+		try (InputStream stream = new URL(requestFile).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 }

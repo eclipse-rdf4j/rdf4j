@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
  * <p>
  * Please note that the datasets from {@link RDFTestDataset} are fairly large files
  * </p>
- * 
+ *
  * @author Frens Jan Rumph
  */
 public class RDFSizeBenchmarks {
@@ -114,8 +114,9 @@ public class RDFSizeBenchmarks {
 		String fileName = path.getName();
 		RDFFormat inputFormat = Rio.getParserFormatForFileName(fileName)
 				.orElseThrow(() -> new IllegalArgumentException("No format available for " + fileName));
-		InputStream is = new BufferedInputStream(new FileInputStream(path));
-		reportSize(fileName, is, description, inputFormat, outputFormat, writerConfig);
+		try (InputStream is = new BufferedInputStream(new FileInputStream(path))) {
+			reportSize(fileName, is, description, inputFormat, outputFormat, writerConfig);
+		}
 	}
 
 	private static void reportSize(String dataset, InputStream is, String description, RDFFormat inputFormat,
@@ -135,11 +136,7 @@ public class RDFSizeBenchmarks {
 				.set(VERIFY_URI_SYNTAX, false));
 
 		Instant start = Instant.now();
-		try {
-			parser.parse(is);
-		} finally {
-			is.close();
-		}
+		parser.parse(is);
 		Instant end = Instant.now();
 		Duration duration = Duration.between(start, end);
 

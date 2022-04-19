@@ -497,8 +497,7 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append(" WHERE { [] foaf:name ?name;");
 		queryBuilder.append("            foaf:mbox ?mbox. }");
 
-		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder.toString())
-				.evaluate()) {
+		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder.toString()).evaluate()) {
 			assertThat(result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			while (result.hasNext()) {
@@ -554,8 +553,7 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append(" SELECT ?person");
 		queryBuilder.append(" WHERE { ?person foaf:name \"").append(Александър.getLabel()).append("\". }");
 
-		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder.toString())
-				.evaluate()) {
+		try (TupleQueryResult result = testCon.prepareTupleQuery(queryBuilder.toString()).evaluate()) {
 			assertThat(result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 			while (result.hasNext()) {
@@ -637,8 +635,7 @@ public abstract class RepositoryConnectionTest {
 		queryBuilder.append(" WHERE { [] foaf:name ?name;\n");
 		queryBuilder.append("            foaf:mbox ?mbox.}");
 
-		try (GraphQueryResult result = testCon.prepareGraphQuery(queryBuilder.toString())
-				.evaluate()) {
+		try (GraphQueryResult result = testCon.prepareGraphQuery(queryBuilder.toString()).evaluate()) {
 			assertThat(result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
 
@@ -1542,7 +1539,7 @@ public abstract class RepositoryConnectionTest {
 	@Test
 	public void testInferredStatementCount() throws Exception {
 		assertThat(testCon.isEmpty()).isTrue();
-		int inferred = getTotalStatementCount(testCon);
+		long inferred = getTotalStatementCount(testCon);
 
 		IRI root = vf.createIRI("urn:root");
 
@@ -1726,39 +1723,20 @@ public abstract class RepositoryConnectionTest {
 		assertThat(size(g2)).isEqualTo(1);
 	}
 
-	private int size(IRI defaultGraph) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+	private long size(IRI defaultGraph) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		TupleQuery qry = testCon.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * { ?s ?p ?o }");
 		SimpleDataset dataset = new SimpleDataset();
 		dataset.addDefaultGraph(defaultGraph);
 		qry.setDataset(dataset);
-		TupleQueryResult result = qry.evaluate();
-		try {
-			int count = 0;
-			while (result.hasNext()) {
-				result.next();
-				count++;
-			}
-			return count;
-		} finally {
-			result.close();
+		try (TupleQueryResult result = qry.evaluate()) {
+			return result.stream().count();
 		}
 	}
 
-	private int getTotalStatementCount(RepositoryConnection connection) throws RepositoryException {
-		CloseableIteration<? extends Statement, RepositoryException> iter = connection.getStatements(null, null, null,
-				true);
-
-		try {
-			int size = 0;
-
-			while (iter.hasNext()) {
-				iter.next();
-				++size;
-			}
-
-			return size;
-		} finally {
-			iter.close();
+	private long getTotalStatementCount(RepositoryConnection connection) throws RepositoryException {
+		try (CloseableIteration<? extends Statement, RepositoryException> iter = connection.getStatements(null, null,
+				null, true)) {
+			return iter.stream().count();
 		}
 	}
 

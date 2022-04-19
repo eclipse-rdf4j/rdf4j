@@ -253,11 +253,8 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	}
 
 	private String readUpdateString() throws IOException {
-		InputStream stream = new URL(requestFileURL).openStream();
-		try {
+		try (InputStream stream = new URL(requestFileURL).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 
@@ -387,13 +384,10 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		TupleQuery manifestNameQuery = con.prepareTupleQuery(
 				"SELECT ?ManifestName WHERE { ?ManifestURL rdfs:label ?ManifestName .}");
 		manifestNameQuery.setBinding("ManifestURL", manifestRep.getValueFactory().createIRI(manifestFileURL));
-		TupleQueryResult manifestNames = manifestNameQuery.evaluate();
-		try {
+		try (TupleQueryResult manifestNames = manifestNameQuery.evaluate()) {
 			if (manifestNames.hasNext()) {
 				return manifestNames.next().getValue("ManifestName").stringValue();
 			}
-		} finally {
-			manifestNames.close();
 		}
 
 		// Derive name from manifest URL
