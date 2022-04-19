@@ -958,7 +958,7 @@ public class TurtleParser extends AbstractRDFParser {
 					BasicParserSettings.VERIFY_RELATIVE_URIS);
 		}
 
-		String namespace = null;
+		String namespace;
 
 		if (c == ':') {
 			// qname using default namespace

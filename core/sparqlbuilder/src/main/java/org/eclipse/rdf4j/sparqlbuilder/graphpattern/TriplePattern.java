@@ -102,8 +102,6 @@ public interface TriplePattern extends GraphPattern {
 		return andHas(Rdf.iri(predicate), objects);
 	}
 
-	;
-
 	/**
 	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Boolean and converts them to
 	 * BooleanLiterals
@@ -130,8 +128,6 @@ public interface TriplePattern extends GraphPattern {
 		return andHas(Rdf.iri(predicate), objects);
 	}
 
-	;
-
 	/**
 	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Numbers and converts them to
 	 * NumberLiterals
@@ -157,8 +153,6 @@ public interface TriplePattern extends GraphPattern {
 	default TriplePattern andHas(IRI predicate, Number... objects) {
 		return andHas(Rdf.iri(predicate), objects);
 	}
-
-	;
 
 	/**
 	 * Add a property path with an object list describing this triple pattern's subject

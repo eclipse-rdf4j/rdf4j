@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -42,6 +43,11 @@ public class LinearTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private Repository repo;
@@ -365,14 +371,14 @@ public class LinearTest {
 
 	private int size(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean inf, Resource... ctx)
 			throws Exception {
-		try (RepositoryResult<Statement> statements = con.getStatements(subj, pred, obj, inf, ctx);) {
+		try (RepositoryResult<Statement> statements = con.getStatements(subj, pred, obj, inf, ctx)) {
 			return QueryResults.asList(statements).size();
 		}
 	}
 
 	private List<Value> eval(String var, RepositoryConnection con, String qry) throws Exception {
 		TupleQuery tq = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS);
-		try (TupleQueryResult result = tq.evaluate();) {
+		try (TupleQueryResult result = tq.evaluate()) {
 			List<Value> list = new ArrayList<>();
 			while (result.hasNext()) {
 				list.add(result.next().getValue(var));

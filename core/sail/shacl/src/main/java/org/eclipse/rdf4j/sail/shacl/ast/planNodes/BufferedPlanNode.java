@@ -35,7 +35,7 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
-		return new CloseableIteration<ValidationTuple, SailException>() {
+		return new CloseableIteration<>() {
 
 			{
 				parent.init();
@@ -72,8 +72,8 @@ public class BufferedPlanNode<T extends MultiStreamPlanNode & PlanNode> implemen
 				ValidationTuple tuple = buffer.remove();
 				if (validationExecutionLogger.isEnabled()) {
 					validationExecutionLogger.log(depth(),
-							parent.getClass().getSimpleName() + ":Buffered:" + name + ".next()", tuple, parent,
-							getId(), null);
+							parent.getClass().getSimpleName() + ":Buffered:" + name + ".next()", tuple, parent, getId(),
+							null);
 				}
 				return tuple;
 			}

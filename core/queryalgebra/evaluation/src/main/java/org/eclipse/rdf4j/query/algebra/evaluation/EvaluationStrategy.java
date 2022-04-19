@@ -159,10 +159,10 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	}
 
 	default <T> Set<T> makeSet() {
-		return new HashSet<T>();
+		return new HashSet<>();
 	}
 
 	default <T> Queue<T> makeQueue() {
-		return new ArrayDeque<T>();
+		return new ArrayDeque<>();
 	}
 }

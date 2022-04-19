@@ -316,7 +316,7 @@ public class BasicTests extends SPARQLBaseTest {
 					Assertions.assertEquals(bs.getValue("person"), iri("http://example.org/", "a"));
 					Assertions.assertEquals(bs.getValue("interest").stringValue(), "SPARQL 1.1 Basic Federated Query");
 					numberOfResults.incrementAndGet();
-				};
+				}
 			});
 
 			Assertions.assertTrue(started.get());
@@ -362,7 +362,7 @@ public class BasicTests extends SPARQLBaseTest {
 				public void handleSolution(BindingSet bs) throws TupleQueryResultHandlerException {
 					Assertions.assertEquals(bs.getValue("person"), iri("http://example.org/", "a"));
 					numberOfResults.incrementAndGet();
-				};
+				}
 			});
 
 			Assertions.assertTrue(started.get());
@@ -401,7 +401,7 @@ public class BasicTests extends SPARQLBaseTest {
 				@Override
 				public void handleSolution(BindingSet bs) throws TupleQueryResultHandlerException {
 					throw new IllegalStateException("Expected empty result");
-				};
+				}
 			});
 
 			Assertions.assertTrue(started.get());
@@ -445,7 +445,7 @@ public class BasicTests extends SPARQLBaseTest {
 				@Override
 				public void handleSolution(BindingSet bs) throws TupleQueryResultHandlerException {
 					throw new IllegalStateException("Expected empty result");
-				};
+				}
 			});
 
 			Assertions.assertTrue(started.get());

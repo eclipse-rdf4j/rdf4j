@@ -147,9 +147,10 @@ public class ProtocolIT {
 	 */
 	@Test
 	public void testSPARQLselect() throws Exception {
-		TupleQueryResult queryResult = evaluateTupleQuery(TestServer.REPOSITORY_URL, "select * where{ ?X ?P ?Y }",
-				QueryLanguage.SPARQL);
-		QueryResultIO.writeTuple(queryResult, TupleQueryResultFormat.SPARQL, System.out);
+		try (TupleQueryResult queryResult = evaluateTupleQuery(TestServer.REPOSITORY_URL, "select * where{ ?X ?P ?Y }",
+				QueryLanguage.SPARQL)) {
+			QueryResultIO.writeTuple(queryResult, TupleQueryResultFormat.SPARQL, System.out);
+		}
 	}
 
 	/**

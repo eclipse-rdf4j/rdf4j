@@ -22,11 +22,8 @@ public class PatternIterator<S extends Statement> implements Iterator<S> {
 	private final Iterator<S> filteredIter;
 
 	private final Value subj;
-
 	private final Value pred;
-
 	private final Value obj;
-
 	private final Value[] contexts;
 
 	private S nextElement;

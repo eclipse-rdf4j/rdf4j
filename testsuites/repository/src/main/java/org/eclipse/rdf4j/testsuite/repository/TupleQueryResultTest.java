@@ -18,7 +18,9 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Random;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -32,7 +34,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+import org.eclipse.rdf4j.sail.SailException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -46,6 +50,11 @@ public abstract class TupleQueryResultTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private Repository rep;
@@ -210,8 +219,8 @@ public abstract class TupleQueryResultTest {
 		con.commit();
 
 		for (int evaluateCount = 0; evaluateCount < 1000; evaluateCount++) {
-			try (ByteArrayOutputStream stream = new ByteArrayOutputStream();
-					RepositoryConnection nextCon = rep.getConnection();) {
+			try (ByteArrayOutputStream stream = new ByteArrayOutputStream(191226);
+					RepositoryConnection nextCon = rep.getConnection()) {
 				TupleQueryResultWriter sparqlWriter = QueryResultIO.createTupleWriter(TupleQueryResultFormat.SPARQL,
 						stream);
 				TupleQuery tupleQuery = nextCon.prepareTupleQuery(QueryLanguage.SPARQL,

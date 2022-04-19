@@ -15,5 +15,5 @@ public enum QueryType {
 	ASK,
 	UPDATE,
 	GET_STATEMENTS,
-	UNKNOWN;
+	UNKNOWN
 }

@@ -314,8 +314,7 @@ public class QueryManager {
 		try {
 			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,
 					new SimpleDataset());
-			tupleExpr = strategy
-					.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());
+			tupleExpr = strategy.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());
 			return tupleExpr.toString();
 		} catch (SailException e) {
 			throw new FedXException("Unable to retrieve query plan: " + e.getMessage());

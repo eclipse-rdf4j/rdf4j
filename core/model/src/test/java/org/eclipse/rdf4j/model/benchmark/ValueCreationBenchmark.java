@@ -46,7 +46,7 @@ public class ValueCreationBenchmark {
 	// private ValueFactory factory=SimpleValueFactory.getInstance();
 	private ValueFactory factory = new BenchmarkValueFactory();
 
-	private IRI iri = factory.createIRI("http://example.com/name");;
+	private IRI iri = factory.createIRI("http://example.com/name");
 
 	private XMLGregorianCalendar calendar = calendar("2020-10-22T15:53:12.345Z");
 	private Date date = new Date();

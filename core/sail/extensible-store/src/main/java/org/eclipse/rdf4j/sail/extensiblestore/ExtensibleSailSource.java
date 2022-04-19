@@ -145,13 +145,13 @@ class ExtensibleSailSource implements SailSource {
 
 			@Override
 			public CloseableIteration<? extends Namespace, SailException> getNamespaces() {
-				return new CloseableIteratorIteration<Namespace, SailException>(namespaceStore.iterator());
+				return new CloseableIteratorIteration<>(namespaceStore.iterator());
 //				return new EmptyIteration<>();
 			}
 
 			@Override
 			public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
-				return new CloseableIteration<Resource, SailException>() {
+				return new CloseableIteration<>() {
 					CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null, null);
 
 					Set<Resource> contexts = new HashSet<>();

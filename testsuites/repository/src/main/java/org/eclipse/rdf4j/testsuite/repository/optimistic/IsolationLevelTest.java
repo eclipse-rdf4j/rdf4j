@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -46,6 +47,11 @@ public class IsolationLevelTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private final Logger logger = LoggerFactory.getLogger(IsolationLevelTest.class);
@@ -156,7 +162,7 @@ public class IsolationLevelTest {
 	 */
 	private void readPending(IsolationLevel level) throws RepositoryException {
 		clear(store);
-		try (RepositoryConnection con = store.getConnection();) {
+		try (RepositoryConnection con = store.getConnection()) {
 			con.begin(level);
 			con.add(RDF.NIL, RDF.TYPE, RDF.LIST);
 			assertEquals(1, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));
@@ -170,7 +176,7 @@ public class IsolationLevelTest {
 	 */
 	private void rollbackTriple(IsolationLevel level) throws RepositoryException {
 		clear(store);
-		try (RepositoryConnection con = store.getConnection();) {
+		try (RepositoryConnection con = store.getConnection()) {
 			con.begin(level);
 			con.add(RDF.NIL, RDF.TYPE, RDF.LIST);
 			con.rollback();
@@ -187,7 +193,7 @@ public class IsolationLevelTest {
 		final CountDownLatch begin = new CountDownLatch(1);
 		final CountDownLatch uncommitted = new CountDownLatch(1);
 		Thread writer = new Thread(() -> {
-			try (RepositoryConnection write = store.getConnection();) {
+			try (RepositoryConnection write = store.getConnection()) {
 				start.countDown();
 				start.await();
 				write.begin(level);
@@ -200,7 +206,7 @@ public class IsolationLevelTest {
 			}
 		});
 		Thread reader = new Thread(() -> {
-			try (RepositoryConnection read = store.getConnection();) {
+			try (RepositoryConnection read = store.getConnection()) {
 				start.countDown();
 				start.await();
 				begin.await();
@@ -238,7 +244,7 @@ public class IsolationLevelTest {
 		final CountDownLatch observed = new CountDownLatch(1);
 		final CountDownLatch changed = new CountDownLatch(1);
 		Thread writer = new Thread(() -> {
-			try (RepositoryConnection write = store.getConnection();) {
+			try (RepositoryConnection write = store.getConnection()) {
 				start.countDown();
 				start.await();
 				write.begin(level);
@@ -257,7 +263,7 @@ public class IsolationLevelTest {
 			}
 		});
 		Thread reader = new Thread(() -> {
-			try (RepositoryConnection read = store.getConnection();) {
+			try (RepositoryConnection read = store.getConnection()) {
 				start.countDown();
 				start.await();
 				begin.await();
@@ -294,7 +300,7 @@ public class IsolationLevelTest {
 	 */
 	private void snapshotRead(IsolationLevel level) throws RepositoryException {
 		clear(store);
-		try (RepositoryConnection con = store.getConnection();) {
+		try (RepositoryConnection con = store.getConnection()) {
 			con.begin(level);
 			int size = 1;
 			for (int i = 0; i < size; i++) {
@@ -302,7 +308,7 @@ public class IsolationLevelTest {
 			}
 			int counter = 0;
 			try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(null, null,
-					null, false);) {
+					null, false)) {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
 					counter++;
@@ -359,7 +365,7 @@ public class IsolationLevelTest {
 			}
 		});
 		Thread reader = new Thread(() -> {
-			try (RepositoryConnection read = store.getConnection();) {
+			try (RepositoryConnection read = store.getConnection()) {
 				start.countDown();
 				start.await();
 				begin.await();
@@ -398,7 +404,7 @@ public class IsolationLevelTest {
 		final ValueFactory vf = store.getValueFactory();
 		final IRI subj = vf.createIRI("http://test#s");
 		final IRI pred = vf.createIRI("http://test#p");
-		try (RepositoryConnection prep = store.getConnection();) {
+		try (RepositoryConnection prep = store.getConnection()) {
 			prep.begin(level);
 			prep.add(subj, pred, vf.createLiteral(1));
 			prep.commit();
@@ -412,7 +418,7 @@ public class IsolationLevelTest {
 		t2.join();
 		t1.join();
 		assertNotFailed();
-		try (RepositoryConnection check = store.getConnection();) {
+		try (RepositoryConnection check = store.getConnection()) {
 			check.begin(level);
 			Literal lit = readLiteral(check, subj, pred);
 			int val = lit.intValue();
@@ -427,7 +433,7 @@ public class IsolationLevelTest {
 	protected Thread incrementBy(final CountDownLatch start, final CountDownLatch observed, final IsolationLevels level,
 			final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
 		return new Thread(() -> {
-			try (RepositoryConnection con = store.getConnection();) {
+			try (RepositoryConnection con = store.getConnection()) {
 				start.countDown();
 				start.await();
 				con.begin(level);
@@ -450,7 +456,7 @@ public class IsolationLevelTest {
 	}
 
 	private void clear(Repository store) throws RepositoryException {
-		try (RepositoryConnection con = store.getConnection();) {
+		try (RepositoryConnection con = store.getConnection()) {
 			con.begin();
 			con.clear();
 			con.commit();
@@ -460,7 +466,7 @@ public class IsolationLevelTest {
 	protected long count(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean includeInferred,
 			Resource... contexts) throws RepositoryException {
 		try (CloseableIteration<Statement, RepositoryException> stmts = con.getStatements(subj, pred, obj,
-				includeInferred, contexts);) {
+				includeInferred, contexts)) {
 			long counter = 0;
 			while (stmts.hasNext()) {
 				stmts.next();
@@ -472,7 +478,7 @@ public class IsolationLevelTest {
 
 	protected Literal readLiteral(RepositoryConnection con, final IRI subj, final IRI pred) throws RepositoryException {
 		try (CloseableIteration<? extends Statement, RepositoryException> stmts = con.getStatements(subj, pred, null,
-				false);) {
+				false)) {
 			if (!stmts.hasNext()) {
 				return null;
 			}

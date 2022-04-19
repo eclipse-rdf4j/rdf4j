@@ -25,9 +25,7 @@ public class NotValuesIn implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public NotValuesIn(PlanNode parent, PlanNode notIn) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-
-		this.parent = parent;
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.notIn = notIn;
 	}
 
@@ -78,7 +76,6 @@ public class NotValuesIn implements PlanNode {
 
 			@Override
 			public void localClose() throws SailException {
-
 				parentIterator.close();
 			}
 

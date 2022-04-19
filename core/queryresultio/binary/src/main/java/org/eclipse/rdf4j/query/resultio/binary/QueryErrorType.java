@@ -22,5 +22,5 @@ public enum QueryErrorType {
 	/**
 	 * Constant used for identifying a query evaluation error.
 	 */
-	QUERY_EVALUATION_ERROR;
+	QUERY_EVALUATION_ERROR
 }

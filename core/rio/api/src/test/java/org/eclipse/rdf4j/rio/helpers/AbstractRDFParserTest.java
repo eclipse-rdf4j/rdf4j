@@ -51,7 +51,7 @@ public class AbstractRDFParserTest {
 		public Resource getBNode(String id) {
 			return createNode(id);
 		}
-	};
+	}
 
 	@Before
 	public void setUp() throws Exception {

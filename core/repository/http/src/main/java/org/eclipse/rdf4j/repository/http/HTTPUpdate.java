@@ -39,7 +39,7 @@ public class HTTPUpdate extends AbstractHTTPUpdate {
 	public void execute() throws UpdateExecutionException {
 		try {
 			if (httpCon.getRepository().useCompatibleMode()) {
-				if (httpCon.isAutoCommit()) {
+				if (!httpCon.isActive()) {
 					// execute update immediately
 					SPARQLProtocolSession client = getHttpClient();
 					try {

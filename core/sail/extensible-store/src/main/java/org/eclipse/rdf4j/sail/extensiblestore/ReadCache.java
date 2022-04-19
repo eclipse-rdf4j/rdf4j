@@ -72,7 +72,7 @@ public class ReadCache implements DataStructureInterface {
 
 		long localCacheTicket = cacheTicket;
 
-		return new CloseableIteration<ExtensibleStatement, SailException>() {
+		return new CloseableIteration<>() {
 
 			CloseableIteration<? extends ExtensibleStatement, SailException> statements = delegate.getStatements(
 					subject,

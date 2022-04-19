@@ -79,7 +79,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				if (queryInfo.getResultHandler().isPresent()) {
 					// pass through result to configured handler, and return an empty iteration as marker result
 					tQuery.evaluate(queryInfo.getResultHandler().get());
-					resultHolder.set(new EmptyIteration<BindingSet, QueryEvaluationException>());
+					resultHolder.set(new EmptyIteration<>());
 				} else {
 					resultHolder.set(tQuery.evaluate());
 				}

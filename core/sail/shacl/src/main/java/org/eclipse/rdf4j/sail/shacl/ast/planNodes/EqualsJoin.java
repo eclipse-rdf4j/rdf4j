@@ -21,11 +21,8 @@ public class EqualsJoin implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public EqualsJoin(PlanNode left, PlanNode right, boolean useAsFilter) {
-		left = PlanNodeHelper.handleSorting(this, left);
-		right = PlanNodeHelper.handleSorting(this, right);
-
-		this.left = left;
-		this.right = right;
+		this.left = PlanNodeHelper.handleSorting(this, left);
+		this.right = PlanNodeHelper.handleSorting(this, right);
 		this.useAsFilter = useAsFilter;
 
 	}
@@ -98,8 +95,11 @@ public class EqualsJoin implements PlanNode {
 
 			@Override
 			public void localClose() throws SailException {
-				leftIterator.close();
-				rightIterator.close();
+				try {
+					leftIterator.close();
+				} finally {
+					rightIterator.close();
+				}
 			}
 
 			@Override

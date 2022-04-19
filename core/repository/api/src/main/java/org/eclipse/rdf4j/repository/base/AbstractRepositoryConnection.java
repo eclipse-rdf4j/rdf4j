@@ -163,7 +163,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws RepositoryException {
-		try (RepositoryResult<Statement> stIter = getStatements(subj, pred, obj, includeInferred, contexts);) {
+		try (RepositoryResult<Statement> stIter = getStatements(subj, pred, obj, includeInferred, contexts)) {
 			return stIter.hasNext();
 		}
 	}
@@ -231,9 +231,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 			// RDFInserter only throws wrapped RepositoryExceptions
 			throw (RepositoryException) e.getCause();
-		} catch (RDFParseException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -261,9 +258,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 			// RDFInserter only throws wrapped RepositoryExceptions
 			throw (RepositoryException) e.getCause();
-		} catch (RDFParseException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -291,9 +285,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 			// RDFInserter only throws wrapped RepositoryExceptions
 			throw (RepositoryException) e.getCause();
-		} catch (RDFParseException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -360,9 +351,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 			// RDFInserter only throws wrapped RepositoryExceptions
 			throw (RepositoryException) e.getCause();
-		} catch (RDFParseException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (IOException | RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -380,9 +368,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				addWithoutCommit(st, contexts);
 			}
 			conditionalCommit(localTransaction);
-		} catch (RepositoryException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -404,9 +389,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				}
 
 				conditionalCommit(localTransaction);
-			} catch (RepositoryException e) {
-				conditionalRollback(localTransaction);
-				throw e;
 			} catch (RuntimeException e) {
 				conditionalRollback(localTransaction);
 				throw e;
@@ -451,9 +433,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 			}
 
 			conditionalCommit(localTransaction);
-		} catch (RepositoryException e) {
-			conditionalRollback(localTransaction);
-			throw e;
 		} catch (RuntimeException e) {
 			conditionalRollback(localTransaction);
 			throw e;
@@ -472,9 +451,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				}
 
 				conditionalCommit(localTransaction);
-			} catch (RepositoryException e) {
-				conditionalRollback(localTransaction);
-				throw e;
 			} catch (RuntimeException e) {
 				conditionalRollback(localTransaction);
 				throw e;

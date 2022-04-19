@@ -129,7 +129,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 	public void setUp() throws Exception {
 		dataRep = createRepository();
 
-		try (RepositoryConnection conn = dataRep.getConnection();) {
+		try (RepositoryConnection conn = dataRep.getConnection()) {
 			conn.clear();
 
 			if (inputDefaultGraphURI != null) {
@@ -149,7 +149,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 
 		expectedResultRepo = createRepository();
 
-		try (RepositoryConnection conn = expectedResultRepo.getConnection();) {
+		try (RepositoryConnection conn = expectedResultRepo.getConnection()) {
 			conn.clear();
 
 			if (resultDefaultGraphURI != null) {

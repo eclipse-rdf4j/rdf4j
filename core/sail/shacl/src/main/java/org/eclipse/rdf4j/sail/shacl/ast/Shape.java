@@ -110,8 +110,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		this.contexts = shape.contexts;
 	}
 
-	public void populate(ShaclProperties properties, ShapeSource shapeSource,
-			Cache cache, ShaclSail shaclSail) {
+	public void populate(ShaclProperties properties, ShapeSource shapeSource, Cache cache,
+			ShaclSail shaclSail) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
 		this.id = properties.getId();

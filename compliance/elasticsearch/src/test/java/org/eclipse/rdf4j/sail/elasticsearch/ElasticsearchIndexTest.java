@@ -131,6 +131,9 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 		} finally {
 			super.tearDown();
 		}
+
+		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);
+
 	}
 
 	@Test
@@ -354,7 +357,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		// now add the statements through the repo
 		// add statements with context
-		try (SailRepositoryConnection connection = repository.getConnection();) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());
@@ -405,7 +408,7 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 		// now add the statements through the repo
 		// add statements with context
-		try (SailRepositoryConnection connection = repository.getConnection();) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(statementContext111, statementContext111.getContext());
 			connection.add(statementContext121, statementContext121.getContext());

@@ -14,5 +14,5 @@ package org.eclipse.rdf4j.federated.endpoint;
  */
 public enum EndpointClassification {
 	Local,
-	Remote;
+	Remote
 }

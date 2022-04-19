@@ -249,7 +249,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	@Override
 	@Deprecated
 	public void setAutoCommit(boolean autoCommit) throws RepositoryException {
-		boolean wasAutoCommit = isAutoCommit();
+		boolean wasAutoCommit = !isActive();
 		getDelegate().setAutoCommit(autoCommit);
 
 		if (activated && wasAutoCommit != autoCommit) {

@@ -23,7 +23,7 @@ public class StatementSource extends AbstractQueryModelNode {
 	public static enum StatementSourceType {
 		LOCAL,
 		REMOTE,
-		REMOTE_POSSIBLY;
+		REMOTE_POSSIBLY
 	}
 
 	protected String id;

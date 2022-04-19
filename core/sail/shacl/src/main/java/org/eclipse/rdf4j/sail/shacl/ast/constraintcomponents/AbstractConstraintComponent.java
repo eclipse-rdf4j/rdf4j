@@ -64,8 +64,7 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode,
-			Scope scope) {
+			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope) {
 		logger.error("Transactional validation for {} has not been implemented", getConstraintComponent());
 		return EmptyNode.getInstance();
 	}
@@ -93,8 +92,7 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+			StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}

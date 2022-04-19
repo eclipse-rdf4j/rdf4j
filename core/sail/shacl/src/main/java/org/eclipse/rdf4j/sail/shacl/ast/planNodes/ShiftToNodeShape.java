@@ -28,8 +28,7 @@ public class ShiftToNodeShape implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ShiftToNodeShape(PlanNode parent) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-		this.parent = parent;
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		// this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
