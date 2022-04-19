@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -143,7 +144,7 @@ class TripleStore implements Closeable {
 
 	private final TxnStatusFile txnStatusFile;
 
-	private volatile RecordCache updatedTriplesCache;
+	private volatile SortedRecordCache updatedTriplesCache;
 
 	/*--------------*
 	 * Constructors *
@@ -790,33 +791,50 @@ class TripleStore implements Closeable {
 	public Map<Integer, Long> removeTriplesByContext(int subj, int pred, int obj, int context, boolean explicit)
 			throws IOException {
 		byte flags = explicit ? EXPLICIT_FLAG : 0;
-		RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG);
-		return removeTriples(iter);
+		try (RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG)) {
+			return removeTriples(iter);
+		}
 	}
 
 	private Map<Integer, Long> removeTriples(RecordIterator iter) throws IOException {
-		final Map<Integer, Long> perContextCounts = new HashMap<>();
 
 		byte[] data = iter.next();
 		if (data == null) {
 			// no triples to remove
-			return perContextCounts;
+			return Collections.emptyMap();
 		}
+
+		final HashMap<Integer, Long> perContextCounts = new HashMap<>();
 
 		// Store the values that need to be removed in a tmp file and then
 		// iterate over this file to set the REMOVED flag
-		RecordCache removedTriplesCache = new SequentialRecordCache(dir, RECORD_LENGTH);
+		RecordCache removedTriplesCache = new InMemRecordCache();
 		try {
-			while (data != null) {
-				if ((data[FLAG_IDX] & REMOVED_FLAG) == 0) {
-					data[FLAG_IDX] |= REMOVED_FLAG;
-					removedTriplesCache.storeRecord(data);
-					int context = ByteArrayUtil.getInt(data, CONTEXT_IDX);
-					perContextCounts.merge(context, 1L, (c, one) -> c + one);
+			try (iter) {
+				while (data != null) {
+					if ((data[FLAG_IDX] & REMOVED_FLAG) == 0) {
+						data[FLAG_IDX] |= REMOVED_FLAG;
+						removedTriplesCache.storeRecord(data);
+						int context = ByteArrayUtil.getInt(data, CONTEXT_IDX);
+						perContextCounts.merge(context, 1L, Long::sum);
+					}
+					data = iter.next();
+
+					if (removedTriplesCache instanceof InMemRecordCache
+							&& removedTriplesCache.getRecordCount() % 1024 == 0) {
+						Runtime runtime = Runtime.getRuntime();
+						long allocatedMemory = runtime.totalMemory() - runtime.freeMemory();
+						long presumableFreeMemory = runtime.maxMemory() - allocatedMemory;
+
+						if (presumableFreeMemory < 1024 * 1024 * 128) {
+							InMemRecordCache old = (InMemRecordCache) removedTriplesCache;
+							removedTriplesCache = new SequentialRecordCache(dir, RECORD_LENGTH);
+							removedTriplesCache.storeRecords(old);
+							old.clear();
+						}
+					}
 				}
-				data = iter.next();
 			}
-			iter.close();
 
 			updatedTriplesCache.storeRecords(removedTriplesCache);
 
