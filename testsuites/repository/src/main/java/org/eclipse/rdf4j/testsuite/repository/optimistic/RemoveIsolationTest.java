@@ -50,7 +50,7 @@ public class RemoveIsolationTest {
 
 	private ValueFactory f;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+	private final IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
 
 	@Before
 	public void setUp() throws Exception {

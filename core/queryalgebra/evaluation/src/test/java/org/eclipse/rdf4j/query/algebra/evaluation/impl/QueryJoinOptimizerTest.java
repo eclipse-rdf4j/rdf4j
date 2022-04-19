@@ -229,7 +229,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	class StatementFinder extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private List<StatementPattern> statements = new ArrayList<>();
+		private final List<StatementPattern> statements = new ArrayList<>();
 
 		@Override
 		public void meet(StatementPattern st) {

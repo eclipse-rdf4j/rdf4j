@@ -30,9 +30,9 @@ import org.slf4j.LoggerFactory;
  */
 public class LuceneIndexLocationTest {
 
-	private Logger log = LoggerFactory.getLogger(getClass());
+	private final Logger log = LoggerFactory.getLogger(getClass());
 
-	private String luceneIndexPath = "sail-index";
+	private final String luceneIndexPath = "sail-index";
 
 	@Rule
 	public TemporaryFolder tmpFolder = new TemporaryFolder();
@@ -43,7 +43,7 @@ public class LuceneIndexLocationTest {
 
 	RepositoryConnection connection;
 
-	private ValueFactory vf = SimpleValueFactory.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	/**
 	 * Set up memory storage located within temporary folder

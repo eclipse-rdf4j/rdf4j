@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 
 public class StrictEvaluationStrategyFactory extends AbstractEvaluationStrategyFactory
-		implements EvaluationStrategyFactory, FederatedServiceResolverClient {
+		implements FederatedServiceResolverClient {
 
 	private FederatedServiceResolver serviceResolver;
 

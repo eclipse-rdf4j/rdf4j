@@ -33,7 +33,7 @@ import org.junit.Test;
 public class NTriplesUtilTest {
 
 	private StringBuilder appendable;
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	@Before
 	public void setUp() throws Exception {

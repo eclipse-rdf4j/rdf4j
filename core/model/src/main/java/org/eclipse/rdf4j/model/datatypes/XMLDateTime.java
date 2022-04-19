@@ -31,7 +31,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	 *-----------*/
 
 	/** The raw dateTime string that was used to initialize this object. */
-	private String dateTimeString;
+	private final String dateTimeString;
 
 	/** Flag indicating whether the year is positive or negative. */
 	private boolean isNegativeYear;

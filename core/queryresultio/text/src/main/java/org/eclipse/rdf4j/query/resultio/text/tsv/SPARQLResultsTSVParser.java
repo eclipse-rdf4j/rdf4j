@@ -29,7 +29,7 @@ import com.opencsv.bean.CsvToBeanBuilder;
  * @author Jeen Broekstra
  * @author Andrew Rucker Jones
  */
-public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser implements TupleQueryResultParser {
+public class SPARQLResultsTSVParser extends AbstractTupleQueryResultParser {
 
 	@Override
 	public TupleQueryResultFormat getTupleQueryResultFormat() {

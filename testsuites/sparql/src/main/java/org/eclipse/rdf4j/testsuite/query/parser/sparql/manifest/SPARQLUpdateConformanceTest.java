@@ -75,13 +75,13 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 	protected Repository expectedResultRepo;
 
-	private IRI inputDefaultGraph;
+	private final IRI inputDefaultGraph;
 
-	private Map<String, IRI> inputNamedGraphs;
+	private final Map<String, IRI> inputNamedGraphs;
 
-	private IRI resultDefaultGraph;
+	private final IRI resultDefaultGraph;
 
-	private Map<String, IRI> resultNamedGraphs;
+	private final Map<String, IRI> resultNamedGraphs;
 
 	protected final Dataset dataset;
 

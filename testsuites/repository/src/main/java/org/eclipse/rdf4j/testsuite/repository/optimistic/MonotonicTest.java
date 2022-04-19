@@ -49,9 +49,9 @@ public class MonotonicTest {
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+	private final IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
 
-	private String NS = "http://rdf.example.org/";
+	private final String NS = "http://rdf.example.org/";
 
 	private ValueFactory lf;
 

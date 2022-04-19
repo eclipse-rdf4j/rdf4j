@@ -44,31 +44,31 @@ public abstract class TurtleParserTestCase {
 	/**
 	 * Base directory for W3C Turtle tests
 	 */
-	private static String TEST_W3C_FILE_BASE_PATH = "/testcases/turtle/tests-ttl-w3c-20170126/";
+	private static final String TEST_W3C_FILE_BASE_PATH = "/testcases/turtle/tests-ttl-w3c-20170126/";
 
-	private static String TEST_W3C_MANIFEST_URL = TEST_W3C_FILE_BASE_PATH + "manifest.ttl";
+	private static final String TEST_W3C_MANIFEST_URL = TEST_W3C_FILE_BASE_PATH + "manifest.ttl";
 
-	private static String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/TurtleTests/manifest.ttl#";
+	private static final String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/TurtleTests/manifest.ttl#";
 
-	private static String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/TurtleTests/";
+	private static final String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/TurtleTests/";
 
-	private static String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
+	private static final String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
 
-	private static String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
+	private static final String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
 
 	/**
 	 * Base directory for N-Triples compatibility tests that are part of the Turtle test-suite.
 	 */
-	private static String TURTLE_NTRIPLES_FILE_BASE_PATH = "/testcases/turtle/tests-nt/";
+	private static final String TURTLE_NTRIPLES_FILE_BASE_PATH = "/testcases/turtle/tests-nt/";
 
 	/**
 	 * Manifest for N-Triples compatibility tests that are part of the Turtle test-suite.
 	 */
-	private static String TURTLE_NTRIPLES_MANIFEST_URL = "/testcases/turtle/tests-nt/manifest.ttl";
+	private static final String TURTLE_NTRIPLES_MANIFEST_URL = "/testcases/turtle/tests-nt/manifest.ttl";
 
-	private static String TURTLE_NTRIPLES_MANIFEST_URI_BASE = "https://dvcs.w3.org/hg/rdf/raw-file/default/rdf-turtle/tests-nt/manifest.ttl#";
+	private static final String TURTLE_NTRIPLES_MANIFEST_URI_BASE = "https://dvcs.w3.org/hg/rdf/raw-file/default/rdf-turtle/tests-nt/manifest.ttl#";
 
-	private static String TURTLE_NTRIPLES_TEST_URI_BASE = "https://dvcs.w3.org/hg/rdf/raw-file/default/rdf-turtle/tests-nt/";
+	private static final String TURTLE_NTRIPLES_TEST_URI_BASE = "https://dvcs.w3.org/hg/rdf/raw-file/default/rdf-turtle/tests-nt/";
 
 	/*--------------------*
 	 * Static initializer *

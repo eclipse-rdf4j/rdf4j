@@ -29,7 +29,7 @@ public abstract class HashFunctionTest {
 
 	private String expectedDigest;
 
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	@Test
 	public void testEvaluate() {

@@ -33,7 +33,7 @@ public abstract class AbstractNotifyingSail extends AbstractSail implements Noti
 	/**
 	 * Objects that should be notified of changes to the data in this Sail.
 	 */
-	private Set<SailChangedListener> sailChangedListeners = new HashSet<>(0);
+	private final Set<SailChangedListener> sailChangedListeners = new HashSet<>(0);
 
 	/*---------*
 	 * Methods *

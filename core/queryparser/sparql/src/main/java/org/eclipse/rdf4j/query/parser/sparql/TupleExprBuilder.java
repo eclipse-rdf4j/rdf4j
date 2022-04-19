@@ -1601,9 +1601,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	private class VarReplacer extends AbstractQueryModelVisitor<VisitorException> {
 
-		private Var toBeReplaced;
+		private final Var toBeReplaced;
 
-		private Var replacement;
+		private final Var replacement;
 
 		public VarReplacer(Var toBeReplaced, Var replacement) {
 			this.toBeReplaced = toBeReplaced;
@@ -2477,7 +2477,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	static class AggregateCollector extends AbstractQueryModelVisitor<VisitorException> {
 
-		private Collection<AggregateOperator> operators = new ArrayList<>();
+		private final Collection<AggregateOperator> operators = new ArrayList<>();
 
 		public Collection<AggregateOperator> getOperators() {
 			return operators;
@@ -2533,9 +2533,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	static class AggregateOperatorReplacer extends AbstractQueryModelVisitor<VisitorException> {
 
-		private Var replacement;
+		private final Var replacement;
 
-		private AggregateOperator operator;
+		private final AggregateOperator operator;
 
 		public AggregateOperatorReplacer(AggregateOperator operator, Var replacement) {
 			this.operator = operator;

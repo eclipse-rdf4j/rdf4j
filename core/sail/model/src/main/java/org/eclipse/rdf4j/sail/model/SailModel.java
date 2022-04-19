@@ -54,7 +54,7 @@ public class SailModel extends AbstractModel {
 
 	private UUID connKey;
 
-	private boolean includeInferred;
+	private final boolean includeInferred;
 
 	public SailModel(SailConnection conn, boolean includeInferred) {
 		this.conn = conn;

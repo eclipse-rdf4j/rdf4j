@@ -115,12 +115,12 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 	@Override
 	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-		return Arrays.asList(ReindexPlugin.class);
+		return List.of(ReindexPlugin.class);
 	}
 
 	@Override
 	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return Arrays.asList(ReindexPlugin.class);
+		return List.of(ReindexPlugin.class);
 	}
 
 	@After

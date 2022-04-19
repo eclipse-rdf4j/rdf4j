@@ -82,11 +82,11 @@ public abstract class CustomGraphQueryInferencerTest {
 
 	private String delete;
 
-	private String resourceFolder;
+	private final String resourceFolder;
 
-	private Expectation testData;
+	private final Expectation testData;
 
-	private QueryLanguage language;
+	private final QueryLanguage language;
 
 	protected void runTest(final CustomGraphQueryInferencer inferencer) throws RepositoryException, RDFParseException,
 			IOException, MalformedQueryException, UpdateExecutionException {

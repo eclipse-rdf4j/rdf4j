@@ -98,7 +98,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
  */
 public class TransactionController extends AbstractController implements DisposableBean {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public TransactionController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_POST, "PUT", "DELETE" });

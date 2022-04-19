@@ -46,7 +46,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
  *
  * @author Peter Ansell
  */
-abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implements QueryResultWriter, CharSink {
+abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implements CharSink {
 
 	private static final JsonFactory JSON_FACTORY = new JsonFactory();
 

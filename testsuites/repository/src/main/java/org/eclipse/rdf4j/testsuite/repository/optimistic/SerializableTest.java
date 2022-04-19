@@ -59,9 +59,9 @@ public class SerializableTest {
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.SERIALIZABLE;
+	private final IsolationLevel level = IsolationLevels.SERIALIZABLE;
 
-	private String NS = "http://rdf.example.org/";
+	private final String NS = "http://rdf.example.org/";
 
 	private ValueFactory lf;
 

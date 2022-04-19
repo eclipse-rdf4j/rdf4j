@@ -16,7 +16,7 @@ public class SPARQLRepositoryFactoryTest {
 
 	private final String queryEndpointUrl = "http://example.org/sparql";
 
-	private SPARQLRepositoryFactory factory = new SPARQLRepositoryFactory();
+	private final SPARQLRepositoryFactory factory = new SPARQLRepositoryFactory();
 
 	@Test
 	public void testGetRepository() {

@@ -35,10 +35,10 @@ import com.github.jsonldjava.utils.JsonUtils;
  * format is inspired by Newline Delimited JSON format<a>http://ndjson.org/</a>. Even though each line is a separate
  * JSON-LD document, the whole document is treated as a single RDF document, having one single BNodes context to
  * preserve BNodes identifiers.
- * 
+ *
  * @author Desislava Hristova
  */
-public class NDJSONLDParser extends JSONLDParser implements RDFParser {
+public class NDJSONLDParser extends JSONLDParser {
 
 	/**
 	 * Default constructor

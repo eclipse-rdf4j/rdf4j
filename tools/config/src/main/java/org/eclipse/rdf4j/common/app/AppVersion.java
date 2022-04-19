@@ -50,7 +50,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * The version's build, if any.
 	 */
-	private String build;
+	private final String build;
 
 	/**
 	 * Construct an uninitialized AppVersion.

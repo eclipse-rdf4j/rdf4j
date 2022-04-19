@@ -33,7 +33,7 @@ public class ElasticsearchQuery implements SearchQuery {
 
 	private final QueryBuilder qb;
 
-	private ElasticsearchIndex index;
+	private final ElasticsearchIndex index;
 
 	public ElasticsearchQuery(SearchRequestBuilder request, QueryBuilder qb, ElasticsearchIndex index) {
 		this.request = request;

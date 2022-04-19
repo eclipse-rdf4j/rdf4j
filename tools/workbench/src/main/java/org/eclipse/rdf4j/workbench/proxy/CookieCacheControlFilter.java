@@ -91,7 +91,7 @@ public class CookieCacheControlFilter implements Filter {
 
 	private class CacheAwareResponse extends HttpServletResponseWrapper {
 
-		private HttpServletRequest req;
+		private final HttpServletRequest req;
 
 		private boolean controlCookieAdded;
 

@@ -1559,13 +1559,13 @@ public abstract class RepositoryConnectionTest {
 
 		// load data
 		testCon.add(bob, name, nameBob, context1);
-		assertThat(Iterations.asList(testCon.getContextIDs())).isEqualTo(Arrays.asList((Resource) context1));
+		assertThat(Iterations.asList(testCon.getContextIDs())).isEqualTo(List.of((Resource) context1));
 
 		testCon.remove(bob, name, nameBob, context1);
 		assertThat(Iterations.asList(testCon.getContextIDs())).isEmpty();
 
 		testCon.add(bob, name, nameBob, context2);
-		assertThat(Iterations.asList(testCon.getContextIDs())).isEqualTo(Arrays.asList((Resource) context2));
+		assertThat(Iterations.asList(testCon.getContextIDs())).isEqualTo(List.of((Resource) context2));
 	}
 
 	@Test

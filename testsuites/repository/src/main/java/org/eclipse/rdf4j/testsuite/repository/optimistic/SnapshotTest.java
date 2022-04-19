@@ -52,9 +52,9 @@ public class SnapshotTest {
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT;
+	private final IsolationLevel level = IsolationLevels.SNAPSHOT;
 
-	private String NS = "http://rdf.example.org/";
+	private final String NS = "http://rdf.example.org/";
 
 	private ValueFactory lf;
 

@@ -27,7 +27,7 @@ public class RDFStarUtil {
 	 */
 	public static final String TRIPLE_PREFIX = "urn:rdf4j:triple:";
 
-	private static ValueFactory VF = SimpleValueFactory.getInstance();
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
 	/**
 	 * Converts the supplied value from RDF-star to an RDF-compatible representation.

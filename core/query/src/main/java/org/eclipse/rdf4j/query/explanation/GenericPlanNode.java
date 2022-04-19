@@ -229,7 +229,7 @@ public class GenericPlanNode {
 		this.algorithm = algorithm;
 	}
 
-	private static int prettyBoxDrawingType = 0;
+	private static final int prettyBoxDrawingType = 0;
 
 	/**
 	 * Human readable string. Do not attempt to parse this.

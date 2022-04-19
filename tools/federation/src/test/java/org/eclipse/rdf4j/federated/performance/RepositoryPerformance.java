@@ -51,7 +51,7 @@ public class RepositoryPerformance {
 
 		private static final int MAX_INSTANCES = Integer.MAX_VALUE;
 		private static final int N_QUERIES = 100;
-		private ExecutorService executor = Executors.newFixedThreadPool(30);
+		private final ExecutorService executor = Executors.newFixedThreadPool(30);
 
 		private final IRI type;
 
@@ -239,7 +239,7 @@ public class RepositoryPerformance {
 		} catch (Exception e) {
 			System.out.println("Error while performing RemoteRepository test: " + e.getMessage());
 		}
-//		} 
+//		}
 
 		System.out.println("done");
 

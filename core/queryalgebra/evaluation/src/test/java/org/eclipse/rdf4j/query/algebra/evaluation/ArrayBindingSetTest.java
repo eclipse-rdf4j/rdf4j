@@ -24,7 +24,7 @@ public class ArrayBindingSetTest {
 	private final MapBindingSet mbs = new MapBindingSet();
 	private final ArrayBindingSet qbs = new ArrayBindingSet("foo");
 
-	private ValueFactory vf = SimpleValueFactory.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Before
 	public void setup() {

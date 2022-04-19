@@ -251,7 +251,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 		String query = "select * { service <" + getRepositoryUrl(1) + "> { ?s ?p ?o . Bind(str(?o) as ?val) .  } }";
 
 		// add some data to the remote endpoint (we don't care about the exact contents)
-		prepareTest(null, Arrays.asList("/testcases-service/data13.ttl"));
+		prepareTest(null, List.of("/testcases-service/data13.ttl"));
 		try (RepositoryConnection conn = localRepository.getConnection()) {
 			TupleQuery tq = conn.prepareTupleQuery(query);
 			TupleQueryResult tqr = tq.evaluate();
@@ -281,7 +281,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 		// clears the repository and adds new data
 		try {
-			prepareTest("/testcases-service/simple-default-graph.ttl", Arrays.asList("/testcases-service/simple.ttl"));
+			prepareTest("/testcases-service/simple-default-graph.ttl", List.of("/testcases-service/simple.ttl"));
 		} catch (Exception e1) {
 			fail(e1.getMessage());
 		}
@@ -335,7 +335,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	@Test
 	public void test1() throws Exception {
-		prepareTest("/testcases-service/data01.ttl", Arrays.asList("/testcases-service/data01endpoint.ttl"));
+		prepareTest("/testcases-service/data01.ttl", List.of("/testcases-service/data01endpoint.ttl"));
 		execute("/testcases-service/service01.rq", "/testcases-service/service01.srx", false);
 	}
 
@@ -355,7 +355,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	@Test
 	public void test4() throws Exception {
-		prepareTest("/testcases-service/data04.ttl", Arrays.asList("/testcases-service/data04endpoint.ttl"));
+		prepareTest("/testcases-service/data04.ttl", List.of("/testcases-service/data04endpoint.ttl"));
 		execute("/testcases-service/service04.rq", "/testcases-service/service04.srx", false);
 	}
 
@@ -368,7 +368,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 
 	@Test
 	public void test6() throws Exception {
-		prepareTest(null, Arrays.asList("/testcases-service/data06endpoint1.ttl"));
+		prepareTest(null, List.of("/testcases-service/data06endpoint1.ttl"));
 		execute("/testcases-service/service06.rq", "/testcases-service/service06.srx", false);
 	}
 
@@ -382,21 +382,21 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	@Test
 	public void test8() throws Exception {
 		/* test where the SERVICE expression is to be evaluated as ASK request */
-		prepareTest("/testcases-service/data08.ttl", Arrays.asList("/testcases-service/data08endpoint.ttl"));
+		prepareTest("/testcases-service/data08.ttl", List.of("/testcases-service/data08endpoint.ttl"));
 		execute("/testcases-service/service08.rq", "/testcases-service/service08.srx", false);
 	}
 
 	@Test
 	public void test9() throws Exception {
 		/* test where the service endpoint is bound at runtime through BIND */
-		prepareTest(null, Arrays.asList("/testcases-service/data09endpoint.ttl"));
+		prepareTest(null, List.of("/testcases-service/data09endpoint.ttl"));
 		execute("/testcases-service/service09.rq", "/testcases-service/service09.srx", false);
 	}
 
 	@Test
 	public void test10() throws Exception {
 		/* test how we deal with blank node */
-		prepareTest("/testcases-service/data10.ttl", Arrays.asList("/testcases-service/data10endpoint.ttl"));
+		prepareTest("/testcases-service/data10.ttl", List.of("/testcases-service/data10endpoint.ttl"));
 		execute("/testcases-service/service10.rq", "/testcases-service/service10.srx", false);
 	}
 
@@ -404,7 +404,7 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	public void test11() throws Exception {
 		/* test vectored join with more intermediate results */
 		// clears the repository and adds new data + execute
-		prepareTest("/testcases-service/data11.ttl", Arrays.asList("/testcases-service/data11endpoint.ttl"));
+		prepareTest("/testcases-service/data11.ttl", List.of("/testcases-service/data11endpoint.ttl"));
 		execute("/testcases-service/service11.rq", "/testcases-service/service11.srx", false);
 	}
 
@@ -429,28 +429,28 @@ public class SPARQLServiceEvaluationTest extends TestCase {
 	@Test
 	public void test13() throws Exception {
 		/* test for bug SES-899: cross product is required */
-		prepareTest(null, Arrays.asList("/testcases-service/data13.ttl"));
+		prepareTest(null, List.of("/testcases-service/data13.ttl"));
 		execute("/testcases-service/service13.rq", "/testcases-service/service13.srx", false);
 	}
 
 	@Test
 	public void testEmptyServiceBlock() throws Exception {
 		/* test for bug SES-900: nullpointer for empty service block */
-		prepareTest(null, Arrays.asList("/testcases-service/data13.ttl"));
+		prepareTest(null, List.of("/testcases-service/data13.ttl"));
 		execute("/testcases-service/service14.rq", "/testcases-service/service14.srx", false);
 	}
 
 	@Test
 	public void testNotProjectedCount() throws Exception {
 		/* test projection of subqueries - SES-1000 */
-		prepareTest(null, Arrays.asList("/testcases-service/data17endpoint1.ttl"));
+		prepareTest(null, List.of("/testcases-service/data17endpoint1.ttl"));
 		execute("/testcases-service/service17.rq", "/testcases-service/service17.srx", false);
 	}
 
 	@Test
 	public void testNonAsciiCharHandling() throws Exception {
 		/* SES-1056 */
-		prepareTest(null, Arrays.asList("/testcases-service/data18endpoint1.rdf"));
+		prepareTest(null, List.of("/testcases-service/data18endpoint1.rdf"));
 		execute("/testcases-service/service18.rq", "/testcases-service/service18.srx", false);
 	}
 

@@ -18,7 +18,7 @@ public class SailLockedException extends SailException {
 
 	private String lockedBy;
 
-	private String requestedBy;
+	private final String requestedBy;
 
 	private LockManager manager;
 

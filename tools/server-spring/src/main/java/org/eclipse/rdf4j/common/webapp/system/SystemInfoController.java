@@ -28,7 +28,7 @@ public class SystemInfoController implements Controller {
 
 	private AppConfiguration config;
 
-	private ServerInfo server;
+	private final ServerInfo server;
 
 	public SystemInfoController() {
 		server = new ServerInfo();
@@ -68,11 +68,11 @@ public class SystemInfoController implements Controller {
 
 	public static class ServerInfo {
 
-		private String os;
+		private final String os;
 
-		private String java;
+		private final String java;
 
-		private String user;
+		private final String user;
 
 		public ServerInfo() {
 			os = System.getProperty("os.name") + " " + System.getProperty("os.version") + " ("
@@ -97,11 +97,11 @@ public class SystemInfoController implements Controller {
 
 	public static class MemoryInfo {
 
-		private int maximum;
+		private final int maximum;
 
-		private int used;
+		private final int used;
 
-		private float percentageInUse;
+		private final float percentageInUse;
 
 		public MemoryInfo() {
 			Runtime runtime = Runtime.getRuntime();

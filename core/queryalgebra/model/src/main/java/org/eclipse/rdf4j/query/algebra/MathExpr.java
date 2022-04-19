@@ -22,7 +22,7 @@ public class MathExpr extends BinaryValueOperator {
 		MULTIPLY("*"),
 		DIVIDE("/");
 
-		private String symbol;
+		private final String symbol;
 
 		MathOp(String symbol) {
 			this.symbol = symbol;

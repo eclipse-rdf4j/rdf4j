@@ -66,7 +66,7 @@ public class ProtocolIT {
 
 	private static TestServer server;
 
-	private static ValueFactory vf = SimpleValueFactory.getInstance();
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@BeforeClass
 	public static void startServer() throws Exception {

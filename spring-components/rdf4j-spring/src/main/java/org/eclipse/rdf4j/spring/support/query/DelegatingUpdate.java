@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.UpdateExecutionException;
  * @author Florian Kleedorfer
  */
 public abstract class DelegatingUpdate implements Update {
-	private Update delegate;
+	private final Update delegate;
 
 	public DelegatingUpdate(Update delegate) {
 		this.delegate = delegate;

@@ -57,7 +57,7 @@ public abstract class AbstractIRI implements IRI {
 
 		private static final long serialVersionUID = 2209156550690548467L;
 
-		private String iri;
+		private final String iri;
 
 		private int split;
 

@@ -30,8 +30,8 @@ public class ResultCachingTupleQuery extends DelegatingTupleQuery {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
 	private WeakReference<ResultCache<Integer, ReusableTupleQueryResult>> localResultCacheRef;
-	private ResultCache<Integer, ReusableTupleQueryResult> globalResultCache;
-	private ResultCacheProperties properties;
+	private final ResultCache<Integer, ReusableTupleQueryResult> globalResultCache;
+	private final ResultCacheProperties properties;
 
 	public ResultCachingTupleQuery(
 			TupleQuery delegate,

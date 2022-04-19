@@ -23,7 +23,7 @@ public interface RdfBlankNode extends RdfResource {
 	 * a labeled blank node, of the form "_:<code>label</code>"
 	 */
 	class LabeledBlankNode implements RdfBlankNode {
-		private String label;
+		private final String label;
 
 		LabeledBlankNode(String label) {
 			this.label = label;
@@ -53,7 +53,7 @@ public interface RdfBlankNode extends RdfResource {
 	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes"> Blank node syntax</a>
 	 */
 	class PropertiesBlankNode implements RdfBlankNode {
-		private RdfPredicateObjectListCollection predicateObjectLists = Rdf.predicateObjectListCollection();
+		private final RdfPredicateObjectListCollection predicateObjectLists = Rdf.predicateObjectListCollection();
 
 		PropertiesBlankNode(RdfPredicate predicate, RdfObject... objects) {
 			andHas(predicate, objects);

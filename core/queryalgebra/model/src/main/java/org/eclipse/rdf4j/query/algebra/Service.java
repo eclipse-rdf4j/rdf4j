@@ -32,7 +32,7 @@ public class Service extends UnaryTupleOperator {
 	/* a string representation of the inner expression (e.g. extracted during parsing) */
 	private String serviceExpressionString;
 
-	private Set<String> serviceVars;
+	private final Set<String> serviceVars;
 
 	/* the prefix declarations, potentially null */
 	private Map<String, String> prefixDeclarations;
@@ -46,7 +46,7 @@ public class Service extends UnaryTupleOperator {
 
 	private String preparedAskQueryString;
 
-	private boolean silent;
+	private final boolean silent;
 
 	/*--------------*
 	 * Constructors *
@@ -227,7 +227,8 @@ public class Service extends UnaryTupleOperator {
 		return res;
 	}
 
-	private static Pattern subselectPattern = Pattern.compile("SELECT.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+	private static final Pattern subselectPattern = Pattern.compile("SELECT.*",
+			Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
 	private void initPreparedQueryString() {
 

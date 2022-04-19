@@ -25,7 +25,7 @@ public class TripleRefCollector extends AbstractQueryModelVisitor<RuntimeExcepti
 		return collector.getTripleRefs();
 	}
 
-	private Map<String, Object> tripleRefs = new HashMap<>();
+	private final Map<String, Object> tripleRefs = new HashMap<>();
 
 	public Map<String, Object> getTripleRefs() {
 		return tripleRefs;

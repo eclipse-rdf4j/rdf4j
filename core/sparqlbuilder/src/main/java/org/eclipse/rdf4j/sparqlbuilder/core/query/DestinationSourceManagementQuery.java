@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
  */
 public abstract class DestinationSourceManagementQuery<T extends DestinationSourceManagementQuery<T>>
 		extends GraphManagementQuery<DestinationSourceManagementQuery<T>> {
-	private static String DEFAULT = "DEFAULT";
-	private static String TO = "TO";
+	private static final String DEFAULT = "DEFAULT";
+	private static final String TO = "TO";
 
 	private Optional<Iri> from = Optional.empty();
 	private Optional<Iri> to = Optional.empty();

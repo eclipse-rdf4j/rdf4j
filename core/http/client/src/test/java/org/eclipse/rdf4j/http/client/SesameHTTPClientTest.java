@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 @Disabled("FIXME: Migrate this test to Apache HTTP Client 4 methods")
 public class SesameHTTPClientTest {
 
-	private RDF4JProtocolSession httpClient = new RDF4JProtocolSession(null, null);
+	private final RDF4JProtocolSession httpClient = new RDF4JProtocolSession(null, null);
 
 	@Test
 	public void setUsernameAndPassword_should_succeed_with_server_url_but_no_query_url() {

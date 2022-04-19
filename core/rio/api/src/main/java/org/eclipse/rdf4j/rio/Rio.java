@@ -207,7 +207,7 @@ public class Rio {
 	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
 	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
-	 * 
+	 *
 	 * @since 3.5.0
 	 */
 	public static Model parse(InputStream in, RDFFormat dataFormat, Resource... contexts)
@@ -230,7 +230,7 @@ public class Rio {
 	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
 	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
-	 * 
+	 *
 	 * @since 4.0.0
 	 */
 	public static Model parse(InputStream in, RDFFormat dataFormat, ParserConfig settings, Resource... contexts)
@@ -277,7 +277,7 @@ public class Rio {
 	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
 	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
-	 * 
+	 *
 	 * @since 4.0.0
 	 */
 	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
@@ -363,7 +363,7 @@ public class Rio {
 	 * @throws IOException                  If an I/O error occurred while reading from the reader.
 	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
-	 * 
+	 *
 	 * @since 3.5.0
 	 */
 	public static Model parse(Reader reader, RDFFormat dataFormat, Resource... contexts)
@@ -387,7 +387,7 @@ public class Rio {
 	 * @throws IOException                  If an I/O error occurred while reading from the reader.
 	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
-	 * 
+	 *
 	 * @since 4.0.0
 	 */
 	public static Model parse(Reader reader, RDFFormat dataFormat, ParserConfig settings, Resource... contexts)
@@ -744,7 +744,7 @@ public class Rio {
 		String outputFile = args[1];
 
 		try (FileOutputStream outStream = new FileOutputStream(outputFile);
-				FileInputStream inStream = new FileInputStream(inputFile);) {
+				FileInputStream inStream = new FileInputStream(inputFile)) {
 			createParser(getParserFormatForFileName(inputFile).orElse(RDFFormat.RDFXML))
 					.setRDFHandler(
 							createWriter(getWriterFormatForFileName(outputFile).orElse(RDFFormat.RDFXML), outStream))

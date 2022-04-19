@@ -42,7 +42,7 @@ import com.fasterxml.jackson.core.JsonToken;
  *
  * @author Peter Ansell
  */
-public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
+public class RDFJSONParser extends AbstractRDFParser {
 
 	private final RDFFormat actualFormat;
 

@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
  */
 public class Prefix implements QueryElement {
 	private static final String PREFIX = "PREFIX";
-	private String label;
-	private Iri iri;
+	private final String label;
+	private final Iri iri;
 
 	Prefix(String alias, Iri iri) {
 		this.label = alias;

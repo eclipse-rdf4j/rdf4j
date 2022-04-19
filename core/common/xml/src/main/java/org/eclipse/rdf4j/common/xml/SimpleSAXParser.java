@@ -64,7 +64,7 @@ public class SimpleSAXParser {
 	/**
 	 * The XMLReader to use for parsing the XML.
 	 */
-	private XMLReader xmlReader;
+	private final XMLReader xmlReader;
 
 	/**
 	 * The listener to report the events to.
@@ -210,7 +210,7 @@ public class SimpleSAXParser {
 		/**
 		 * StringBuilder used to collect text during parsing.
 		 */
-		private StringBuilder charBuf = new StringBuilder(512);
+		private final StringBuilder charBuf = new StringBuilder(512);
 
 		/**
 		 * The tag name of a deferred start tag.

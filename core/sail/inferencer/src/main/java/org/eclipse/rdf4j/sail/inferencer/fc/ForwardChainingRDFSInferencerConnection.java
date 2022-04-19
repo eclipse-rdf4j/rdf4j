@@ -46,17 +46,17 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	/**
 	 * Flags indicating which rules should be evaluated.
 	 */
-	private boolean[] checkRule = new boolean[RDFSRules.RULECOUNT];
+	private final boolean[] checkRule = new boolean[RDFSRules.RULECOUNT];
 
 	/**
 	 * Flags indicating which rules should be evaluated next iteration.
 	 */
-	private boolean[] checkRuleNextIter = new boolean[RDFSRules.RULECOUNT];
+	private final boolean[] checkRuleNextIter = new boolean[RDFSRules.RULECOUNT];
 
 	/**
 	 * The number of inferred statements per rule.
 	 */
-	private int[] ruleCount = new int[RDFSRules.RULECOUNT];
+	private final int[] ruleCount = new int[RDFSRules.RULECOUNT];
 
 	/*--------------*
 	 * Constructors *

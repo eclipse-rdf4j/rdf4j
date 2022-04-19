@@ -40,9 +40,9 @@ import org.junit.Test;
  */
 public abstract class AbstractNTriplesParserUnitTest {
 
-	private static String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
+	private static final String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
 
-	private static String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
+	private static final String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
 
 	@Test
 	public void testNTriplesFile() throws Exception {
@@ -493,7 +493,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				"http://example/");
 		assertEquals(2, model.size());
 		assertEquals(new TreeSet<>(Arrays.asList("o:1", "o:2")), Models.objectStrings(model));
-		assertEquals(Arrays.asList(commentStr), cc.comments);
+		assertEquals(List.of(commentStr), cc.comments);
 	}
 
 	@Test

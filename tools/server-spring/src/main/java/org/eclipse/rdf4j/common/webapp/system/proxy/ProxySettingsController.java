@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
 public class ProxySettingsController {
 
 	// FIXME: fix this non-implementation
-	private ProxySettings PROXY_SETTINGS = null;
+	private final ProxySettings PROXY_SETTINGS = null;
 
 	private void setProxies(Map<String, Object> params, HttpServletResponse response) throws IOException {
 		boolean useProxies = HttpServerUtil.isTrue(HttpServerUtil.getPostDataParameter(params, "connection"));

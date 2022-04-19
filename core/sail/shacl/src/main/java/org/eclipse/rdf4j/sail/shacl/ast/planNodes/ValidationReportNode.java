@@ -25,7 +25,6 @@ public class ValidationReportNode implements PlanNode {
 
 	public ValidationReportNode(PlanNode parent, Function<ValidationTuple, ValidationResult> validationResultFunction) {
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
-		;
 		this.validationResultFunction = validationResultFunction;
 	}
 

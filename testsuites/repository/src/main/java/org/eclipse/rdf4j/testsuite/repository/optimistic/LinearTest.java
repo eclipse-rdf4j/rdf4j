@@ -56,9 +56,9 @@ public class LinearTest {
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.READ_COMMITTED;
+	private final IsolationLevel level = IsolationLevels.READ_COMMITTED;
 
-	private String NS = "http://rdf.example.org/";
+	private final String NS = "http://rdf.example.org/";
 
 	private ValueFactory lf;
 

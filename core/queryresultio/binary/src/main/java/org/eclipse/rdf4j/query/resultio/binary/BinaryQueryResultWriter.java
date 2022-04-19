@@ -68,15 +68,15 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 	/**
 	 * The output stream to write the results table to.
 	 */
-	private DataOutputStream out;
+	private final DataOutputStream out;
 
-	private CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();
+	private final CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();
 
 	/**
 	 * Map containing the namespace IDs (Integer objects) that have been defined in the document, stored using the
 	 * concerning namespace (Strings).
 	 */
-	private Map<String, Integer> namespaceTable = new HashMap<>(32);
+	private final Map<String, Integer> namespaceTable = new HashMap<>(32);
 
 	private int nextNamespaceID;
 

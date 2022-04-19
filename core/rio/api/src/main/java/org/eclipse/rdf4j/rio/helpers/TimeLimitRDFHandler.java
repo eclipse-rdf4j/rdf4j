@@ -96,7 +96,7 @@ public class TimeLimitRDFHandler extends RDFHandlerWrapper {
 
 	private static class InterruptTask extends TimerTask {
 
-		private WeakReference<TimeLimitRDFHandler> handlerRef;
+		private final WeakReference<TimeLimitRDFHandler> handlerRef;
 
 		InterruptTask(TimeLimitRDFHandler handler) {
 			this.handlerRef = new WeakReference<>(handler);

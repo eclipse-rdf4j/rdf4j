@@ -46,13 +46,13 @@ public abstract class TriGParserTestCase {
 	/**
 	 * Base directory for W3C TriG tests
 	 */
-	private static String TEST_W3C_FILE_BASE_PATH = "/testcases/trig/";
+	private static final String TEST_W3C_FILE_BASE_PATH = "/testcases/trig/";
 
-	private static String TEST_W3C_MANIFEST_URL = TEST_W3C_FILE_BASE_PATH + "manifest.ttl";
+	private static final String TEST_W3C_MANIFEST_URL = TEST_W3C_FILE_BASE_PATH + "manifest.ttl";
 
-	private static String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/TriGTests/manifest.ttl#";
+	private static final String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/TriGTests/manifest.ttl#";
 
-	private static String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/TriGTests/";
+	private static final String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/TriGTests/";
 
 	private static final Logger logger = LoggerFactory.getLogger(TriGParserTestCase.class);
 

@@ -34,7 +34,7 @@ public abstract class AbstractForwardChainingInferencerConnection extends Infere
 	 * Variables *
 	 *-----------*/
 
-	private Sail sail;
+	private final Sail sail;
 
 	/**
 	 * true if the base Sail reported removed statements.

@@ -26,7 +26,7 @@ import com.google.common.collect.Lists;
  *
  */
 public class ExclusiveArbitraryLengthPath extends ArbitraryLengthPath
-		implements ExclusiveTupleExpr, ExclusiveTupleExprRenderer {
+		implements ExclusiveTupleExprRenderer {
 
 	private static final long serialVersionUID = 5743134085306940200L;
 

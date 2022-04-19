@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * @author Andreas Schwarte
  *
  */
-public class NJoin extends NTuple implements TupleExpr {
+public class NJoin extends NTuple {
 
 	private static final long serialVersionUID = -8646701006458860154L;
 

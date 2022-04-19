@@ -58,7 +58,7 @@ import org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings;
  * An implementation of the RDFWriter interface that writes RDF documents in Turtle format. The Turtle format is defined
  * in <a href="http://www.dajobe.org/2004/01/turtle/">in this document</a>.
  */
-public class TurtleWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
+public class TurtleWriter extends AbstractRDFWriter implements CharSink {
 
 	private static final int LINE_WRAP = 80;
 

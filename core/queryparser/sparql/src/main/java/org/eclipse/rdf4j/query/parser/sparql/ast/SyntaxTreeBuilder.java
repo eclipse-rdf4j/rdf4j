@@ -117,7 +117,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[0] = jj_gen;
-				;
 			}
 			jj_consume_token(0);
 			jjtree.closeNodeScope(jjtn000, true);
@@ -183,7 +182,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[1] = jj_gen;
-				;
 			}
 			jjtree.closeNodeScope(jjtn000, true);
 			jjtc000 = false;
@@ -281,7 +279,6 @@ public class SyntaxTreeBuilder
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case BASE:
 			case PREFIX:
-				;
 				break;
 			default:
 				jj_la1[2] = jj_gen;
@@ -402,7 +399,6 @@ public class SyntaxTreeBuilder
 			label_2: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case FROM:
-					;
 					break;
 				default:
 					jj_la1[5] = jj_gen;
@@ -419,7 +415,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[6] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -470,7 +465,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[7] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -532,7 +526,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[9] = jj_gen;
-				;
 			}
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case STAR:
@@ -550,7 +543,6 @@ public class SyntaxTreeBuilder
 					case LPAREN:
 					case VAR1:
 					case VAR2:
-						;
 						break;
 					default:
 						jj_la1[10] = jj_gen;
@@ -662,7 +654,6 @@ public class SyntaxTreeBuilder
 			label_4: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case FROM:
-					;
 					break;
 				default:
 					jj_la1[13] = jj_gen;
@@ -679,7 +670,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[14] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -724,7 +714,6 @@ public class SyntaxTreeBuilder
 			if (jj_2_1(2)) {
 				ConstructClause();
 			} else {
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -792,7 +781,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[15] = jj_gen;
-			;
 		}
 		jj_consume_token(RBRACE);
 	}
@@ -807,7 +795,6 @@ public class SyntaxTreeBuilder
 			label_5: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case FROM:
-					;
 					break;
 				default:
 					jj_la1[16] = jj_gen;
@@ -822,7 +809,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[17] = jj_gen;
-				;
 			}
 			SolutionModifier();
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
@@ -832,7 +818,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[18] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -911,7 +896,6 @@ public class SyntaxTreeBuilder
 					case VAR1:
 					case VAR2:
 					case TRIPLE_OPEN:
-						;
 						break;
 					default:
 						jj_la1[20] = jj_gen;
@@ -967,7 +951,6 @@ public class SyntaxTreeBuilder
 			label_7: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case FROM:
-					;
 					break;
 				default:
 					jj_la1[22] = jj_gen;
@@ -984,7 +967,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[23] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -1038,7 +1020,6 @@ public class SyntaxTreeBuilder
 					break;
 				default:
 					jj_la1[24] = jj_gen;
-					;
 				}
 				IRIref();
 				break;
@@ -1095,7 +1076,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[26] = jj_gen;
-				;
 			}
 			GroupGraphPattern();
 		} catch (Throwable jjte000) {
@@ -1148,7 +1128,6 @@ public class SyntaxTreeBuilder
 					switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 					case VAR1:
 					case VAR2:
-						;
 						break;
 					default:
 						jj_la1[27] = jj_gen;
@@ -1161,7 +1140,6 @@ public class SyntaxTreeBuilder
 					switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 					case LPAREN:
 					case NIL:
-						;
 						break;
 					default:
 						jj_la1[28] = jj_gen;
@@ -1292,7 +1270,6 @@ public class SyntaxTreeBuilder
 			case STRING_LITERAL_LONG1:
 			case STRING_LITERAL_LONG2:
 			case TRIPLE_OPEN:
-				;
 				break;
 			default:
 				jj_la1[31] = jj_gen;
@@ -1314,7 +1291,6 @@ public class SyntaxTreeBuilder
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case VAR1:
 				case VAR2:
-					;
 					break;
 				default:
 					jj_la1[32] = jj_gen;
@@ -1334,7 +1310,6 @@ public class SyntaxTreeBuilder
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case LPAREN:
 			case NIL:
-				;
 				break;
 			default:
 				jj_la1[34] = jj_gen;
@@ -1416,7 +1391,6 @@ public class SyntaxTreeBuilder
 					case STRING_LITERAL_LONG1:
 					case STRING_LITERAL_LONG2:
 					case TRIPLE_OPEN:
-						;
 						break;
 					default:
 						jj_la1[35] = jj_gen;
@@ -1551,7 +1525,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[38] = jj_gen;
-			;
 		}
 		switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 		case HAVING:
@@ -1559,7 +1532,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[39] = jj_gen;
-			;
 		}
 		switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 		case ORDER:
@@ -1567,7 +1539,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[40] = jj_gen;
-			;
 		}
 		switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 		case LIMIT:
@@ -1576,7 +1547,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[41] = jj_gen;
-			;
 		}
 	}
 
@@ -1650,7 +1620,6 @@ public class SyntaxTreeBuilder
 				case PNAME_LN:
 				case VAR1:
 				case VAR2:
-					;
 					break;
 				default:
 					jj_la1[42] = jj_gen;
@@ -1762,7 +1731,6 @@ public class SyntaxTreeBuilder
 				case PNAME_LN:
 				case VAR1:
 				case VAR2:
-					;
 					break;
 				default:
 					jj_la1[43] = jj_gen;
@@ -1879,7 +1847,6 @@ public class SyntaxTreeBuilder
 					break;
 				default:
 					jj_la1[44] = jj_gen;
-					;
 				}
 				jj_consume_token(RPAREN);
 				break;
@@ -1995,7 +1962,6 @@ public class SyntaxTreeBuilder
 					break;
 				default:
 					jj_la1[47] = jj_gen;
-					;
 				}
 				BrackettedExpression();
 				break;
@@ -2111,7 +2077,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[49] = jj_gen;
-				;
 			}
 			break;
 		case OFFSET:
@@ -2122,7 +2087,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[50] = jj_gen;
-				;
 			}
 			break;
 		default:
@@ -2262,7 +2226,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[53] = jj_gen;
-			;
 		}
 		switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 		case LBRACE:
@@ -2278,13 +2241,11 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[54] = jj_gen;
-				;
 			}
 			GraphPattern();
 			break;
 		default:
 			jj_la1[55] = jj_gen;
-			;
 		}
 	}
 
@@ -2326,7 +2287,6 @@ public class SyntaxTreeBuilder
 					switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 					case FILTER:
 					case BIND:
-						;
 						break;
 					default:
 						jj_la1[56] = jj_gen;
@@ -2339,7 +2299,6 @@ public class SyntaxTreeBuilder
 						break;
 					default:
 						jj_la1[57] = jj_gen;
-						;
 					}
 					switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 					case LPAREN:
@@ -2372,7 +2331,6 @@ public class SyntaxTreeBuilder
 						break;
 					default:
 						jj_la1[58] = jj_gen;
-						;
 					}
 				}
 				break;
@@ -2386,7 +2344,6 @@ public class SyntaxTreeBuilder
 						break;
 					default:
 						jj_la1[59] = jj_gen;
-						;
 					}
 					switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 					case LPAREN:
@@ -2419,12 +2376,10 @@ public class SyntaxTreeBuilder
 						break;
 					default:
 						jj_la1[60] = jj_gen;
-						;
 					}
 					switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 					case FILTER:
 					case BIND:
-						;
 						break;
 					default:
 						jj_la1[61] = jj_gen;
@@ -2489,7 +2444,6 @@ public class SyntaxTreeBuilder
 		TriplesSameSubjectPath();
 		label_18: while (true) {
 			if (jj_2_2(2)) {
-				;
 			} else {
 				break label_18;
 			}
@@ -2502,7 +2456,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[64] = jj_gen;
-			;
 		}
 	}
 
@@ -2510,7 +2463,6 @@ public class SyntaxTreeBuilder
 		TriplesSameSubject();
 		label_19: while (true) {
 			if (jj_2_3(2)) {
-				;
 			} else {
 				break label_19;
 			}
@@ -2523,7 +2475,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[65] = jj_gen;
-			;
 		}
 	}
 
@@ -2690,7 +2641,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[68] = jj_gen;
-			;
 		}
 	}
 
@@ -2752,7 +2702,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[69] = jj_gen;
-				;
 			}
 			VarOrIRIref();
 			t = GroupGraphPattern();
@@ -2958,7 +2907,6 @@ public class SyntaxTreeBuilder
 			label_20: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case COMMA:
-					;
 					break;
 				default:
 					jj_la1[71] = jj_gen;
@@ -3024,7 +2972,6 @@ public class SyntaxTreeBuilder
 					break;
 				default:
 					jj_la1[73] = jj_gen;
-					;
 				}
 				break;
 			default:
@@ -3087,12 +3034,10 @@ public class SyntaxTreeBuilder
 					break;
 				default:
 					jj_la1[75] = jj_gen;
-					;
 				}
 				break;
 			default:
 				jj_la1[76] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -3137,7 +3082,6 @@ public class SyntaxTreeBuilder
 			label_21: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case COMMA:
-					;
 					break;
 				default:
 					jj_la1[77] = jj_gen;
@@ -3230,7 +3174,6 @@ public class SyntaxTreeBuilder
 					break;
 				default:
 					jj_la1[78] = jj_gen;
-					;
 				}
 				break;
 			default:
@@ -3314,12 +3257,10 @@ public class SyntaxTreeBuilder
 					break;
 				default:
 					jj_la1[81] = jj_gen;
-					;
 				}
 				break;
 			default:
 				jj_la1[82] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -3364,7 +3305,6 @@ public class SyntaxTreeBuilder
 			label_22: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case COMMA:
-					;
 					break;
 				default:
 					jj_la1[83] = jj_gen;
@@ -3424,7 +3364,6 @@ public class SyntaxTreeBuilder
 			label_23: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case PIPE:
-					;
 					break;
 				default:
 					jj_la1[84] = jj_gen;
@@ -3476,7 +3415,6 @@ public class SyntaxTreeBuilder
 			label_24: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case SLASH:
-					;
 					break;
 				default:
 					jj_la1[85] = jj_gen;
@@ -3531,7 +3469,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[86] = jj_gen;
-				;
 			}
 			PathPrimary();
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
@@ -3542,7 +3479,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[87] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -3636,7 +3572,6 @@ public class SyntaxTreeBuilder
 				label_25: while (true) {
 					switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 					case PIPE:
-						;
 						break;
 					default:
 						jj_la1[89] = jj_gen;
@@ -3648,7 +3583,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[90] = jj_gen;
-				;
 			}
 			jj_consume_token(RPAREN);
 			break;
@@ -3989,7 +3923,6 @@ public class SyntaxTreeBuilder
 				case STRING_LITERAL_LONG1:
 				case STRING_LITERAL_LONG2:
 				case TRIPLE_OPEN:
-					;
 					break;
 				default:
 					jj_la1[98] = jj_gen;
@@ -4066,7 +3999,6 @@ public class SyntaxTreeBuilder
 				case STRING_LITERAL_LONG1:
 				case STRING_LITERAL_LONG2:
 				case TRIPLE_OPEN:
-					;
 					break;
 				default:
 					jj_la1[99] = jj_gen;
@@ -4684,7 +4616,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[112] = jj_gen;
-			;
 		}
 	}
 
@@ -4732,7 +4663,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[113] = jj_gen;
-			;
 		}
 	}
 
@@ -4932,7 +4862,6 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[115] = jj_gen;
-			;
 		}
 	}
 
@@ -4952,7 +4881,6 @@ public class SyntaxTreeBuilder
 			case DECIMAL_NEGATIVE:
 			case DOUBLE_POSITIVE:
 			case DOUBLE_NEGATIVE:
-				;
 				break;
 			default:
 				jj_la1[116] = jj_gen;
@@ -5039,7 +4967,6 @@ public class SyntaxTreeBuilder
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case STAR:
 			case SLASH:
-				;
 				break;
 			default:
 				jj_la1[118] = jj_gen;
@@ -5215,7 +5142,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[120] = jj_gen;
-				;
 			}
 			PrimaryExpression();
 			break;
@@ -5419,7 +5345,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[125] = jj_gen;
-				;
 			}
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case STAR:
@@ -5567,7 +5492,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[127] = jj_gen;
-				;
 			}
 			Expression();
 			jj_consume_token(RPAREN);
@@ -5619,7 +5543,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[128] = jj_gen;
-				;
 			}
 			Expression();
 			jj_consume_token(RPAREN);
@@ -5671,7 +5594,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[129] = jj_gen;
-				;
 			}
 			Expression();
 			jj_consume_token(RPAREN);
@@ -5723,7 +5645,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[130] = jj_gen;
-				;
 			}
 			Expression();
 			jj_consume_token(RPAREN);
@@ -5775,7 +5696,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[131] = jj_gen;
-				;
 			}
 			Expression();
 			jj_consume_token(RPAREN);
@@ -5827,7 +5747,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[132] = jj_gen;
-				;
 			}
 			Expression();
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
@@ -5839,7 +5758,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[133] = jj_gen;
-				;
 			}
 			jj_consume_token(RPAREN);
 		} catch (Throwable jjte000) {
@@ -6973,7 +6891,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[140] = jj_gen;
-				;
 			}
 			jj_consume_token(RPAREN);
 		} catch (Throwable jjte000) {
@@ -7338,7 +7255,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[141] = jj_gen;
-				;
 			}
 			jj_consume_token(RPAREN);
 		} catch (Throwable jjte000) {
@@ -7644,7 +7560,6 @@ public class SyntaxTreeBuilder
 			label_30: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case COMMA:
-					;
 					break;
 				default:
 					jj_la1[142] = jj_gen;
@@ -8401,7 +8316,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[144] = jj_gen;
-				;
 			}
 			jj_consume_token(RPAREN);
 		} catch (Throwable jjte000) {
@@ -8547,7 +8461,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[146] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -8982,7 +8895,6 @@ public class SyntaxTreeBuilder
 					break;
 				default:
 					jj_la1[159] = jj_gen;
-					;
 				}
 				IRIref();
 				break;
@@ -9083,12 +8995,10 @@ public class SyntaxTreeBuilder
 			break;
 		default:
 			jj_la1[161] = jj_gen;
-			;
 		}
 		label_31: while (true) {
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case GRAPH:
-				;
 				break;
 			default:
 				jj_la1[162] = jj_gen;
@@ -9101,7 +9011,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[163] = jj_gen;
-				;
 			}
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case LPAREN:
@@ -9134,7 +9043,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[164] = jj_gen;
-				;
 			}
 		}
 	}
@@ -9179,7 +9087,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[165] = jj_gen;
-				;
 			}
 			jj_consume_token(RBRACE);
 		} catch (Throwable jjte000) {
@@ -9276,7 +9183,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[168] = jj_gen;
-				;
 			}
 			IRIref();
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
@@ -9286,7 +9192,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[169] = jj_gen;
-				;
 			}
 		} catch (Throwable jjte000) {
 			if (jjtc000) {
@@ -9335,7 +9240,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[170] = jj_gen;
-				;
 			}
 			GraphRefAll();
 		} catch (Throwable jjte000) {
@@ -9385,7 +9289,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[171] = jj_gen;
-				;
 			}
 			GraphRefAll();
 		} catch (Throwable jjte000) {
@@ -9435,7 +9338,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[172] = jj_gen;
-				;
 			}
 			GraphOrDefault();
 			jj_consume_token(TO);
@@ -9487,7 +9389,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[173] = jj_gen;
-				;
 			}
 			GraphOrDefault();
 			jj_consume_token(TO);
@@ -9539,7 +9440,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[174] = jj_gen;
-				;
 			}
 			GraphOrDefault();
 			jj_consume_token(TO);
@@ -9591,7 +9491,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[175] = jj_gen;
-				;
 			}
 			GraphRef();
 		} catch (Throwable jjte000) {
@@ -9849,7 +9748,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[176] = jj_gen;
-				;
 			}
 			IRIref();
 		} catch (Throwable jjte000) {
@@ -9982,7 +9880,6 @@ public class SyntaxTreeBuilder
 				break;
 			default:
 				jj_la1[177] = jj_gen;
-				;
 			}
 			switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 			case DELETE:
@@ -9993,7 +9890,6 @@ public class SyntaxTreeBuilder
 					break;
 				default:
 					jj_la1[178] = jj_gen;
-					;
 				}
 				break;
 			case INSERT:
@@ -10007,7 +9903,6 @@ public class SyntaxTreeBuilder
 			label_32: while (true) {
 				switch ((jj_ntk == -1) ? jj_ntk() : jj_ntk) {
 				case USING:
-					;
 					break;
 				default:
 					jj_la1[180] = jj_gen;
@@ -11084,10 +10979,10 @@ public class SyntaxTreeBuilder
 		}
 	}
 
-	private java.util.List<int[]> jj_expentries = new java.util.ArrayList<>();
+	private final java.util.List<int[]> jj_expentries = new java.util.ArrayList<>();
 	private int[] jj_expentry;
 	private int jj_kind = -1;
-	private int[] jj_lasttokens = new int[100];
+	private final int[] jj_lasttokens = new int[100];
 	private int jj_endpos;
 
 	private void jj_add_error_token(int kind, int pos) {

@@ -511,7 +511,7 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 
 		private Resource nextLi;
 
-		private Value value;
+		private final Value value;
 
 		// type == null means that we use <rdf:Description>
 		private IRI type = null;

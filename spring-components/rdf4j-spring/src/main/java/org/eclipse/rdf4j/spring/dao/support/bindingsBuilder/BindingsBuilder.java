@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
  * @author Florian Kleedorfer
  */
 public class BindingsBuilder implements MutableBindings {
-	private Map<String, Value> bindings;
+	private final Map<String, Value> bindings;
 
 	public BindingsBuilder() {
 		this.bindings = new HashMap<>();

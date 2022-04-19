@@ -110,7 +110,7 @@ public class AbstractSailTest {
 	class SailGetConnectionTask implements Runnable {
 
 		private final AbstractSail sail;
-		private CountDownLatch connectionObtained;
+		private final CountDownLatch connectionObtained;
 
 		public SailGetConnectionTask(AbstractSail sail, CountDownLatch connectionObtained) {
 			this.sail = sail;

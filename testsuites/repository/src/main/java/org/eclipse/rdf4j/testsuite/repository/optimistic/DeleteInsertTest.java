@@ -40,13 +40,13 @@ public class DeleteInsertTest {
 
 	private Repository repo;
 
-	private String NS = "http://example.org/";
+	private final String NS = "http://example.org/";
 
 	private RepositoryConnection con;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+	private final IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
 
-	private ClassLoader cl = getClass().getClassLoader();
+	private final ClassLoader cl = getClass().getClassLoader();
 
 	@Before
 	public void setUp() throws Exception {

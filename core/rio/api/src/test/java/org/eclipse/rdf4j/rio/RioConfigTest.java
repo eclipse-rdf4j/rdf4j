@@ -19,9 +19,9 @@ public class RioConfigTest {
 
 	private RioConfig config;
 
-	private String key = "org.eclipse.rdf4j.rio.rioconfig.test";
+	private final String key = "org.eclipse.rdf4j.rio.rioconfig.test";
 
-	private BooleanRioSetting testSetting = new BooleanRioSetting(key, "test setting", true);
+	private final BooleanRioSetting testSetting = new BooleanRioSetting(key, "test setting", true);
 
 	@Before
 	public void setUp() throws Exception {

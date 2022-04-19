@@ -53,9 +53,9 @@ public class BlankNodeVarProcessor extends AbstractASTVisitor {
 
 		private int anonVarNo = 1;
 
-		private Map<String, String> conversionMap = new HashMap<>();
+		private final Map<String, String> conversionMap = new HashMap<>();
 
-		private Set<String> usedBNodeIDs = new HashSet<>();
+		private final Set<String> usedBNodeIDs = new HashSet<>();
 
 		private String createAnonVarName() {
 			return "_anon_" + anonVarNo++;

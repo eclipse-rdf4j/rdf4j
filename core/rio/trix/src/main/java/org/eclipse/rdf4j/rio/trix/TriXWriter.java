@@ -43,7 +43,7 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
  *
  * @author Arjohn Kampman
  */
-public class TriXWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
+public class TriXWriter extends AbstractRDFWriter implements CharSink {
 
 	private final XMLWriter xmlWriter;
 

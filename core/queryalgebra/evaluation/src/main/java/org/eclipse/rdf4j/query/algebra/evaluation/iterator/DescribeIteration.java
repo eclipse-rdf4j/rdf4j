@@ -60,7 +60,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private Mode currentMode = Mode.OUTGOING_LINKS;
 
-	private Iteration<BindingSet, QueryEvaluationException> sourceIter;
+	private final Iteration<BindingSet, QueryEvaluationException> sourceIter;
 
 	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter, EvaluationStrategy strategy,
 			Set<String> describeExprNames, BindingSet parentBindings) {

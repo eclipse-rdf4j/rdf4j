@@ -35,7 +35,7 @@ public class Compare extends BinaryValueOperator {
 		/** greater than */
 		GT(">");
 
-		private String symbol;
+		private final String symbol;
 
 		CompareOp(String symbol) {
 			this.symbol = symbol;

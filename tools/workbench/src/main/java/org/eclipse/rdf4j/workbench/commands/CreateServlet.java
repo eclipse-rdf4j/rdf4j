@@ -82,7 +82,7 @@ public class CreateServlet extends TransformationServlet {
 			builder.transform(xslPath, "create.xsl");
 		}
 		builder.start(federate ? new String[] { "id", "description", "location" } : new String[] {});
-		builder.link(Arrays.asList(INFO));
+		builder.link(List.of(INFO));
 		if (federate) {
 			for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
 				String identity = info.getId();

@@ -16,11 +16,11 @@ import javax.servlet.ServletContext;
 
 public class BasicServletConfig implements ServletConfig {
 
-	private String name;
+	private final String name;
 
-	private ServletContext context;
+	private final ServletContext context;
 
-	private ConcurrentHashMap<String, String> params;
+	private final ConcurrentHashMap<String, String> params;
 
 	public BasicServletConfig(String name, ServletContext context) {
 		this.name = name;

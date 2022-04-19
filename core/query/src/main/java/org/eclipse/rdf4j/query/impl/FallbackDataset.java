@@ -33,9 +33,9 @@ public class FallbackDataset implements Dataset, Serializable {
 		return new FallbackDataset(primary, fallback);
 	}
 
-	private Dataset primary;
+	private final Dataset primary;
 
-	private Dataset fallback;
+	private final Dataset fallback;
 
 	private FallbackDataset(Dataset primary, Dataset secondary) {
 		assert primary != null;

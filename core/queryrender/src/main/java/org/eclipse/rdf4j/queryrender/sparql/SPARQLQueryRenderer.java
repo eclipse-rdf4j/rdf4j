@@ -32,7 +32,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	/**
 	 * The query renderer
 	 */
-	private SparqlTupleExprRenderer mRenderer = new SparqlTupleExprRenderer();
+	private final SparqlTupleExprRenderer mRenderer = new SparqlTupleExprRenderer();
 
 	/**
 	 * {@inheritDoc}

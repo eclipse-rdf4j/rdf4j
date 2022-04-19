@@ -117,7 +117,7 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected TupleQueryResult createTupleSingleVarMultipleBindingSets() {
-		List<String> bindingNames = Arrays.asList("a");
+		List<String> bindingNames = List.of("a");
 
 		MapBindingSet solution1 = new MapBindingSet(bindingNames.size());
 		solution1.addBinding("a", vf.createIRI("foo:bar"));
@@ -579,7 +579,7 @@ public abstract class AbstractQueryResultIOTest {
 		// this test is irrelevant as it will fail early
 		boolean supported = true;
 		try {
-			writer.startQueryResult(Arrays.asList("foo"));
+			writer.startQueryResult(List.of("foo"));
 		} catch (UnsupportedOperationException uoe) {
 			// Boolean writers are allowed to throw this for startQueryResult
 			supported = false;

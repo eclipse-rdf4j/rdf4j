@@ -153,7 +153,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 		}
 	}
 
-	private Map<Projection, SerializableParsedTupleQuery> queriesByProjection = new HashMap<>();
+	private final Map<Projection, SerializableParsedTupleQuery> queriesByProjection = new HashMap<>();
 
 	private AbstractSerializableParsedQuery currentQueryProfile = null;
 
@@ -161,7 +161,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	protected StringBuilder builder;
 
-	private Map<AbstractSerializableParsedQuery, Set<String>> renderedExtensionElements = Maps.newHashMap();
+	private final Map<AbstractSerializableParsedQuery, Set<String>> renderedExtensionElements = Maps.newHashMap();
 
 	private boolean insideFunction = false;
 

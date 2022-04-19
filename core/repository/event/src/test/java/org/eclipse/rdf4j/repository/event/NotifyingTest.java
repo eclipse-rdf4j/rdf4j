@@ -89,7 +89,7 @@ public class NotifyingTest {
 		}
 	}
 
-	static class UpdateStub extends AbstractUpdate implements Update {
+	static class UpdateStub extends AbstractUpdate {
 
 		@Override
 		public void execute() throws UpdateExecutionException {

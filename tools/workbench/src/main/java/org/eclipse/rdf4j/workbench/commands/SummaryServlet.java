@@ -40,7 +40,7 @@ public class SummaryServlet extends TransformationServlet {
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException, QueryResultHandlerException {
 		builder.transform(xslPath, "summary.xsl");
 		builder.start("id", "description", "location", "server", "size", "contexts");
-		builder.link(Arrays.asList(INFO));
+		builder.link(List.of(INFO));
 		try (RepositoryConnection con = repository.getConnection()) {
 			String size = null;
 			String numContexts = null;

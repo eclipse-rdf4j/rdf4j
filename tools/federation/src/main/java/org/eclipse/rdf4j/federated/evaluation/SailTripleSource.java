@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  *
  */
-public class SailTripleSource extends TripleSourceBase implements TripleSource {
+public class SailTripleSource extends TripleSourceBase {
 
 	private static final Logger log = LoggerFactory.getLogger(SailTripleSource.class);
 

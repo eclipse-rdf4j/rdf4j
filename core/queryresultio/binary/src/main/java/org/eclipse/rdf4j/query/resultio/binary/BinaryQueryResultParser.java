@@ -67,7 +67,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 	private int formatVersion;
 
-	private CharsetDecoder charsetDecoder = StandardCharsets.UTF_8.newDecoder();
+	private final CharsetDecoder charsetDecoder = StandardCharsets.UTF_8.newDecoder();
 
 	private String[] namespaceArray = new String[32];
 

@@ -88,7 +88,7 @@ public abstract class SailConcurrencyTest {
 
 		private final CountDownLatch otherTxnCommitted;
 
-		private AtomicInteger targetSize = new AtomicInteger(MAX_STATEMENTS);
+		private final AtomicInteger targetSize = new AtomicInteger(MAX_STATEMENTS);
 
 		private final boolean rollback;
 

@@ -29,7 +29,7 @@ public class DAWGTestBooleanParser extends AbstractRDFHandler {
 	 * Variables *
 	 *-----------*/
 
-	private Model graph = new TreeModelFactory().createEmptyModel();
+	private final Model graph = new TreeModelFactory().createEmptyModel();
 
 	private boolean value;
 

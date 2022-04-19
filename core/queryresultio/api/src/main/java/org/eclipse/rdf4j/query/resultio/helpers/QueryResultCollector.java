@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
  *
  * @author Peter Ansell
  */
-public class QueryResultCollector implements QueryResultHandler, TupleQueryResultHandler, BooleanQueryResultHandler {
+public class QueryResultCollector implements TupleQueryResultHandler, BooleanQueryResultHandler {
 
 	private boolean hasBooleanSet = false;
 
@@ -38,7 +38,7 @@ public class QueryResultCollector implements QueryResultHandler, TupleQueryResul
 
 	private List<BindingSet> bindingSets = Collections.emptyList();
 
-	private List<String> links = new ArrayList<>();
+	private final List<String> links = new ArrayList<>();
 
 	public QueryResultCollector() {
 	}

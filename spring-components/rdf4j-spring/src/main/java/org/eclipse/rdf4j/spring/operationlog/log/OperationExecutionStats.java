@@ -15,9 +15,9 @@ import org.eclipse.rdf4j.query.Operation;
  * @author Florian Kleedorfer
  */
 public class OperationExecutionStats {
-	private int bindingsHashCode;
-	private String operation;
-	private long start;
+	private final int bindingsHashCode;
+	private final String operation;
+	private final long start;
 	private Long end = null;
 	private boolean failed = false;
 

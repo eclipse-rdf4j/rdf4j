@@ -42,7 +42,7 @@ import org.junit.Test;
 
 public abstract class AbstractLuceneSailIndexedPropertiesTest {
 
-	private static ValueFactory vf = SimpleValueFactory.getInstance();
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	protected LuceneSail sail;
 

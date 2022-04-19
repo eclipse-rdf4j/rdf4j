@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.sail.SailException;
 
 public class GeoRelationQuerySpecBuilder implements SearchQueryInterpreter {
 
-	private SearchIndex index;
+	private final SearchIndex index;
 
 	public GeoRelationQuerySpecBuilder(SearchIndex index) {
 		this.index = index;

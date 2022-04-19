@@ -40,7 +40,7 @@ import org.junit.Test;
  */
 public class JSONLDHierarchicalWriterTest {
 
-	private static SimpleValueFactory vf = SimpleValueFactory.getInstance();
+	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 	private Model model;
 	private WriterConfig writerConfig;
 

@@ -103,7 +103,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	/**
 	 * A filter filtering calls to SAX methods specifically for this parser.
 	 */
-	private SAXFilter saxFilter;
+	private final SAXFilter saxFilter;
 
 	/**
 	 * The base URI of the document. This variable is set when <var>parse(inputStream, baseURI)</var> is called and will
@@ -121,13 +121,13 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	/**
 	 * A stack of node- and property elements.
 	 */
-	private Stack<Object> elementStack = new Stack<>();
+	private final Stack<Object> elementStack = new Stack<>();
 
 	/**
 	 * A set containing URIs that have been generated as a result of rdf:ID attributes. These URIs should be unique
 	 * within a single document.
 	 */
-	private Set<IRI> usedIDs = new HashSet<>();
+	private final Set<IRI> usedIDs = new HashSet<>();
 
 	/*--------------*
 	 * Constructors *
@@ -1026,7 +1026,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	static class NodeElement {
 
-		private Resource resource;
+		private final Resource resource;
 
 		private boolean isVolatile = false;
 
@@ -1056,7 +1056,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	static class PropertyElement {
 
 		/** The property URI. */
-		private IRI uri;
+		private final IRI uri;
 
 		/** An optional reification identifier. */
 		private IRI reificationURI;
