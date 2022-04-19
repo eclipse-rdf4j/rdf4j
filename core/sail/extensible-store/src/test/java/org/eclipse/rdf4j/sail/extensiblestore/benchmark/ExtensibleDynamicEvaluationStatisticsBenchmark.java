@@ -51,7 +51,6 @@ public class ExtensibleDynamicEvaluationStatisticsBenchmark {
 		Options opt = new OptionsBuilder()
 				.include("ExtensibleDynamicEvaluationStatisticsBenchmark") // adapt to control which benchmark tests to
 																			// run
-				// .addProfiler("stack", "lines=20;period=1;top=20")
 				.forks(1)
 				.build();
 

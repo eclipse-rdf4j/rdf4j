@@ -43,7 +43,6 @@ public class TransactionsPerSecondBenchmarkFoaf extends BenchmarkBaseFoaf {
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("TransactionsPerSecondBenchmarkFoaf") // adapt to control which benchmark tests to run
-				// .addProfiler("stack", "lines=20;period=1;top=20")
 				.forks(1)
 				.build();
 
