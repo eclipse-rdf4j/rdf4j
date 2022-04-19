@@ -354,7 +354,7 @@ public abstract class AbstractGenericLuceneTest {
 		try (TupleQueryResult result = query.evaluate()) {
 
 			// check the results
-			BindingSet bindings = null;
+			BindingSet bindings;
 
 			// the first result is subject 1 and has a score
 			int results = 0;
@@ -416,7 +416,7 @@ public abstract class AbstractGenericLuceneTest {
 		try (TupleQueryResult result = query.evaluate()) {
 
 			// check the results
-			BindingSet bindings = null;
+			BindingSet bindings;
 
 			// the first result is subject 1 and has a score
 			int results = 0;
@@ -488,7 +488,7 @@ public abstract class AbstractGenericLuceneTest {
 		try (TupleQueryResult result = query.evaluate()) {
 
 			// check the results
-			BindingSet bindings = null;
+			BindingSet bindings;
 
 			// the first result is subject 1 and has a score
 			int results = 0;
@@ -700,7 +700,7 @@ public abstract class AbstractGenericLuceneTest {
 		// check the results
 		try (TupleQueryResult result = query.evaluate()) {
 			// check the results
-			BindingSet bindings = null;
+			BindingSet bindings;
 
 			// the first result is subject 1 and has a score
 			int results = 0;

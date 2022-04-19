@@ -222,7 +222,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 		if (!checkRule[rule]) {
 			return 0;
 		}
-		int nofInferred = 0;
+		int nofInferred;
 
 		nofInferred = applyRuleInternal(rule);
 
@@ -232,7 +232,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	protected int applyRuleInternal(int rule) throws SailException {
-		int result = 0;
+		int result;
 
 		switch (rule) {
 		case RDFSRules.Rdf1:

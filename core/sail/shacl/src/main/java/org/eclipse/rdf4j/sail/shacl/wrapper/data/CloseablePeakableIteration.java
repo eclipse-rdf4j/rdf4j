@@ -43,7 +43,7 @@ public class CloseablePeakableIteration<E, X extends Exception> implements Close
 
 	@Override
 	public E next() throws X {
-		E next = null;
+		E next;
 		if (peek != null) {
 			next = peek;
 			peek = null;

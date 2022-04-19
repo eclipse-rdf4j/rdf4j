@@ -632,7 +632,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 					}
 
 					// Check for lax-cardinality conditions
-					boolean laxCardinality = false;
+					boolean laxCardinality;
 					laxCardinalityQuery.setBinding("testURI", testURI);
 					laxCardinality = laxCardinalityQuery.evaluate();
 

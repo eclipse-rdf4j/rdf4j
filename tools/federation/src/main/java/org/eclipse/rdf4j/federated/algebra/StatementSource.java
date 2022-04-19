@@ -20,7 +20,7 @@ public class StatementSource extends AbstractQueryModelNode {
 
 	private static final long serialVersionUID = 1415552729436432653L;
 
-	public static enum StatementSourceType {
+	public enum StatementSourceType {
 		LOCAL,
 		REMOTE,
 		REMOTE_POSSIBLY

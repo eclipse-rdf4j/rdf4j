@@ -206,7 +206,7 @@ public abstract class AbstractServlet implements Servlet {
 	 */
 	protected TupleResultBuilder getTupleResultBuilder(HttpServletRequest req, HttpServletResponse resp,
 			OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
-		String contentType = null;
+		String contentType;
 		QueryResultWriter resultWriter = checkJSONP(req, outputStream);
 
 		if (resultWriter != null) {

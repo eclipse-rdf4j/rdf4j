@@ -43,7 +43,7 @@ public abstract class IntegerCastFunction extends CastFunction {
 				// decimals, floats and doubles must be processed
 				// separately, see
 				// http://www.w3.org/TR/xpath-functions/#casting-from-primitive-to-primitive
-				BigInteger integerValue = null;
+				BigInteger integerValue;
 				if (XSD.DECIMAL.equals(datatype) || XMLDatatypeUtil.isFloatingPointDatatype(datatype)) {
 					integerValue = literal.decimalValue().toBigInteger();
 				} else {

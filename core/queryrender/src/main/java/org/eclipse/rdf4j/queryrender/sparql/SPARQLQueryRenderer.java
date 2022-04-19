@@ -55,7 +55,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 		}
 		StringBuffer aBody = new StringBuffer(mRenderer.render(tupleExpr));
 
-		boolean aFirst = true;
+		boolean aFirst;
 
 		StringBuilder aQuery = new StringBuilder();
 

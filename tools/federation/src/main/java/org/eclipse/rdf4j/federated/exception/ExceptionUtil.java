@@ -125,7 +125,7 @@ public class ExceptionUtil {
 	 */
 	public static <E extends Exception> E changeExceptionMessage(String msgPrefix, E ex, Class<E> exClazz) {
 
-		Constructor<E> constructor = null;
+		Constructor<E> constructor;
 
 		try {
 			// try to find the constructor 'public Exception(String, Throwable)'

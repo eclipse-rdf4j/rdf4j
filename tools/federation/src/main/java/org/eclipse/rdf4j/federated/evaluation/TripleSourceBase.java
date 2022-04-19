@@ -94,7 +94,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				return;
 			case ASK:
 				monitorRemoteRequest();
-				boolean hasResults = false;
+				boolean hasResults;
 				try (RepositoryConnection _conn = conn) {
 					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
 					applyBindings(bQuery, queryBindings);

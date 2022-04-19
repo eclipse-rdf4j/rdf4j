@@ -3390,7 +3390,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 	public Token getNextToken() {
 		Token specialToken = null;
 		Token matchedToken;
-		int curPos = 0;
+		int curPos;
 
 		EOFLoop: for (;;) {
 			try {

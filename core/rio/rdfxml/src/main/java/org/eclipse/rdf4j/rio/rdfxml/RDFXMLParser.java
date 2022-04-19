@@ -442,7 +442,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 		if (!localName.equals("Description") || !namespaceURI.equals(RDF.NAMESPACE)) {
 			// element name is uri's type
-			IRI className = null;
+			IRI className;
 			if ("".equals(namespaceURI)) {
 				// No namespace, use base URI
 				className = buildResourceFromLocalName(localName);
@@ -501,7 +501,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 			}
 		}
 
-		Resource result = null;
+		Resource result;
 
 		if (id != null) {
 			result = buildURIFromID(id.getValue());
@@ -540,7 +540,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 		}
 
 		// Get the URI of the property
-		IRI propURI = null;
+		IRI propURI;
 		if (namespaceURI.isEmpty()) {
 			// no namespace URI
 			reportError("unqualified property element <" + qName + "> not allowed",
@@ -719,7 +719,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 			}
 		}
 
-		Resource result = null;
+		Resource result;
 
 		if (resource != null) {
 			result = resolveURI(resource.getValue());

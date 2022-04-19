@@ -70,7 +70,7 @@ public class SynchronousBoundJoin extends SynchronousJoin {
 		}
 
 		int nBindings;
-		List<BindingSet> bindings = null;
+		List<BindingSet> bindings;
 		while (!isClosed() && leftIter.hasNext()) {
 
 			/*

@@ -55,7 +55,7 @@ class HDTTriples extends HDTPart {
 		 *
 		 * @param value integer value
 		 */
-		private Order(int value) {
+		Order(int value) {
 			this.value = value;
 		}
 	}

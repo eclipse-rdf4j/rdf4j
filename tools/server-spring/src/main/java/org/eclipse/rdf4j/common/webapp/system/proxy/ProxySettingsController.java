@@ -79,7 +79,7 @@ public class ProxySettingsController {
 	private boolean checkPort(String proxyPort) throws IOException {
 		boolean result = false;
 
-		int port = -1;
+		int port;
 		if (!HttpServerUtil.isEmpty(proxyPort)) {
 			try {
 				port = Integer.parseInt(proxyPort);

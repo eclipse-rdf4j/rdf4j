@@ -48,7 +48,7 @@ abstract class HDTPart {
 			return value;
 		}
 
-		private Type(byte value) {
+		Type(byte value) {
 			this.value = value;
 		}
 	}
@@ -227,7 +227,7 @@ abstract class HDTPart {
 	 * @throws IOException
 	 */
 	protected int getIntegerProperty(Map<String, String> props, String prop, String name) throws IOException {
-		int len = 0;
+		int len;
 
 		String str = props.getOrDefault(prop, "0");
 		try {

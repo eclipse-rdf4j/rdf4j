@@ -63,7 +63,7 @@ public class RepositoryPerformance {
 
 			RepositoryConnection conn = null;
 			long testStart = System.currentTimeMillis();
-			long start = 0;
+			long start;
 
 			try {
 				System.out.println("Creating connection ...");

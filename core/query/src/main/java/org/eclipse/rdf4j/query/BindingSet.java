@@ -95,7 +95,7 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	@Override
 	int hashCode();
 
-	public default boolean isEmpty() {
+	default boolean isEmpty() {
 		return size() == 0;
 	}
 }

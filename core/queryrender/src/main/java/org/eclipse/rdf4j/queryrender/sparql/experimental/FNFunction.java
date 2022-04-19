@@ -19,7 +19,7 @@ import com.google.common.base.Strings;
  * in the fn: namespace. RDF4J immediately converts them into the URI representation when parsing. This leads to
  * failures, however, with some triple stores (like Blazegraph) that do not understand the URI representation of
  * built-ins and try to process them as custom URI functions.
- * 
+ *
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
@@ -53,7 +53,7 @@ enum FNFunction {
 	private final String name;
 	private final IRI uri;
 
-	private FNFunction(String name, IRI uri) {
+	FNFunction(String name, IRI uri) {
 		this.name = name;
 		this.uri = uri;
 	}

@@ -353,7 +353,7 @@ class TripleStore implements Closeable {
 				try {
 					addedBTree = addedIndex.getBTree();
 					sourceIter = sourceIndex.getBTree().iterateAll();
-					byte[] value = null;
+					byte[] value;
 					while ((value = sourceIter.next()) != null) {
 						addedBTree.insert(value);
 					}
@@ -656,7 +656,7 @@ class TripleStore implements Closeable {
 	}
 
 	public boolean storeTriple(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
-		boolean stAdded = false;
+		boolean stAdded;
 
 		byte[] data = getData(subj, pred, obj, context, 0);
 		byte[] storedData = indexes.get(0).getBTree().get(data);
@@ -951,7 +951,7 @@ class TripleStore implements Closeable {
 			}
 
 			try {
-				byte[] data = null;
+				byte[] data;
 				while ((data = iter.next()) != null) {
 					byte flags = data[FLAG_IDX];
 					boolean wasAdded = (flags & ADDED_FLAG) != 0;
@@ -1179,7 +1179,7 @@ class TripleStore implements Closeable {
 		@Override
 		public final int compareBTreeValues(byte[] key, byte[] data, int offset, int length) {
 			for (char field : fieldSeq) {
-				int fieldIdx = 0;
+				int fieldIdx;
 
 				switch (field) {
 				case 's':

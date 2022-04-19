@@ -69,7 +69,7 @@ public class Concat implements Function {
 			}
 		}
 
-		Literal result = null;
+		Literal result;
 
 		if (useDatatype) {
 			result = valueFactory.createLiteral(concatBuilder.toString(), XSD.STRING);

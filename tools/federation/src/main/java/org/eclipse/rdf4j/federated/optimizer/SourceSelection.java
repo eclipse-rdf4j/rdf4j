@@ -317,7 +317,7 @@ public class SourceSelection {
 		protected CloseableIteration<BindingSet, QueryEvaluationException> performTaskInternal() throws Exception {
 			try {
 				TripleSource t = endpoint.getTripleSource();
-				boolean hasResults = false;
+				boolean hasResults;
 				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo, queryInfo.getDataset());
 
 				SourceSelection sourceSelection = control.sourceSelection;

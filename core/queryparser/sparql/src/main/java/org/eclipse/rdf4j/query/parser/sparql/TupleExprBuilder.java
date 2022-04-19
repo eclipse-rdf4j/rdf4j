@@ -721,7 +721,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);
 		}
 
-		Group group = null;
+		Group group;
 		if (tupleExpr instanceof Group) {
 			group = (Group) tupleExpr;
 		} else {
@@ -1083,14 +1083,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		Group group = (Group) data;
 		TupleExpr arg = group.getArg();
 
-		Extension extension = null;
+		Extension extension;
 		if (arg instanceof Extension) {
 			extension = (Extension) arg;
 		} else {
 			extension = new Extension();
 		}
 
-		String name = null;
+		String name;
 		ValueExpr ve = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
 
 		boolean aliased = false;
@@ -2202,7 +2202,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public If visit(ASTIf node, Object data) throws VisitorException {
-		If result = null;
+		If result;
 
 		if (node.jjtGetNumChildren() < 3) {
 			throw new VisitorException("IF construction missing required number of arguments");
@@ -2227,7 +2227,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public ValueExpr visit(ASTIn node, Object data) throws VisitorException {
-		ValueExpr result = null;
+		ValueExpr result;
 		ValueExpr leftArg = (ValueExpr) data;
 		int listItemCount = node.jjtGetNumChildren();
 
@@ -2252,7 +2252,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public ValueExpr visit(ASTNotIn node, Object data) throws VisitorException {
-		ValueExpr result = null;
+		ValueExpr result;
 		ValueExpr leftArg = (ValueExpr) data;
 
 		int listItemCount = node.jjtGetNumChildren();
@@ -2330,7 +2330,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		Extension extension = new Extension();
 		extension.addElement(new ExtensionElem(ve, alias));
 
-		TupleExpr result = null;
+		TupleExpr result;
 		TupleExpr arg = graphPattern.buildTupleExpr();
 
 		// check if alias is not previously used.

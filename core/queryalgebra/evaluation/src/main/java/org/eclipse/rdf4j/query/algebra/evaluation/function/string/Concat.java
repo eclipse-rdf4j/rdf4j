@@ -66,7 +66,7 @@ public class Concat implements Function {
 			}
 		}
 
-		Literal result = null;
+		Literal result;
 
 		if (useLanguageTag) {
 			result = valueFactory.createLiteral(concatBuilder.toString(), commonLanguageTag);

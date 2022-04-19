@@ -67,7 +67,7 @@ public class DocumentUtil {
 
 	private static Document getDocument(URL location, boolean validating, boolean namespaceAware, Schema schema)
 			throws IOException {
-		Document result = null;
+		Document result;
 
 		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 		factory.setValidating(validating);

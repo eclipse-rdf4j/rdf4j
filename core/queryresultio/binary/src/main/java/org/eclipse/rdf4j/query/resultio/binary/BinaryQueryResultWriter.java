@@ -250,7 +250,7 @@ public class BinaryQueryResultWriter extends AbstractQueryResultWriter implement
 		String label = literal.getLabel();
 		IRI datatype = literal.getDatatype();
 
-		int marker = PLAIN_LITERAL_RECORD_MARKER;
+		int marker;
 
 		if (Literals.isLanguageLiteral(literal)) {
 			marker = LANG_LITERAL_RECORD_MARKER;

@@ -71,16 +71,13 @@ public enum ActiveTransactionRegistry {
 	 * there if remote clients are gone
 	 */
 	private final ScheduledExecutorService cleaupSecondaryCacheScheduler;
-	private ScheduledFuture<?> cleanupTask = null;
+	private ScheduledFuture<?> cleanupTask;
 
 	private Cache<UUID, Transaction> getSecondaryCache() {
 		return secondaryCache;
 	}
 
-	/**
-	 * private constructor.
-	 */
-	private ActiveTransactionRegistry() {
+	ActiveTransactionRegistry() {
 		final String configuredValue = System.getProperty(Protocol.CACHE_TIMEOUT_PROPERTY);
 		if (configuredValue != null) {
 			try {

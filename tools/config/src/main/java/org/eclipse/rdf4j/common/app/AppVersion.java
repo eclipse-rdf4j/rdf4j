@@ -370,7 +370,7 @@ public class AppVersion implements Comparable<AppVersion> {
 		final boolean hasBuild = buildSeparator > -1;
 
 		String major = versionString.substring(0, minorSeparator);
-		String minor = null;
+		String minor;
 		String patch = null;
 		String milestone = null;
 		String modifier = null;

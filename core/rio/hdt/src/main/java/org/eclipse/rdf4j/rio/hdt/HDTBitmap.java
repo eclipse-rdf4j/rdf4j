@@ -48,7 +48,7 @@ class HDTBitmap extends HDTPart {
 
 	@Override
 	protected void parse(InputStream is) throws IOException {
-		long bytes = 0L;
+		long bytes;
 
 		// don't close CheckedInputStream, as it will close the underlying inputstream
 		try (UncloseableInputStream uis = new UncloseableInputStream(is);

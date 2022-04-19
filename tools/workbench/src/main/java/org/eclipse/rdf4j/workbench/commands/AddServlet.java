@@ -78,7 +78,7 @@ public class AddServlet extends TransformationServlet {
 			throw new BadRequestException("No Content-Type provided");
 		}
 
-		RDFFormat format = null;
+		RDFFormat format;
 		if ("autodetect".equals(contentType)) {
 			format = Rio.getParserFormatForFileName(contentFileName)
 					.orElseThrow(() -> new BadRequestException(
@@ -101,7 +101,7 @@ public class AddServlet extends TransformationServlet {
 			throw new BadRequestException("No Content-Type provided");
 		}
 
-		RDFFormat format = null;
+		RDFFormat format;
 		if ("autodetect".equals(contentType)) {
 			format = Rio.getParserFormatForFileName(url.getFile())
 					.orElseThrow(() -> new BadRequestException(

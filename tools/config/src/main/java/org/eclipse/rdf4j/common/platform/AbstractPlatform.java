@@ -26,7 +26,7 @@ public abstract class AbstractPlatform implements Platform {
 
 	@Override
 	public File getUserHome() {
-		File result = null;
+		File result;
 
 		String userHome = System.getProperty("user.home");
 		result = new File(userHome);

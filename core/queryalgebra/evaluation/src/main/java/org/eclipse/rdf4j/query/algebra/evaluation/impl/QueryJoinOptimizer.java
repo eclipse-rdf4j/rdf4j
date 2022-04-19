@@ -306,7 +306,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						maxJoinSize = joinSize;
 					}
 
-					List<TupleExpr[]> l = null;
+					List<TupleExpr[]> l;
 
 					if (joinSizes.containsKey(joinSize)) {
 						l = joinSizes.get(joinSize);
