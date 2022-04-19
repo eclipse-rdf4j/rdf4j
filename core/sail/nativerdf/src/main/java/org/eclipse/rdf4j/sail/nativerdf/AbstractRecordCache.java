@@ -137,5 +137,4 @@ abstract class AbstractRecordCache implements RecordCache {
 		return recordCount.get() <= maxRecords;
 	}
 
-
 }

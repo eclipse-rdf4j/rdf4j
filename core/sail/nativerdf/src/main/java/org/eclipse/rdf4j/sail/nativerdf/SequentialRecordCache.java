@@ -116,7 +116,6 @@ final class SequentialRecordCache extends AbstractRecordCache {
 		}
 	}
 
-
 	@Override
 	protected void clearInternal() throws IOException {
 		if (nioFile != null) {

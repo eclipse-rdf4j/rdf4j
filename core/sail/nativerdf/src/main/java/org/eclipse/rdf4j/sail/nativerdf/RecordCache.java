@@ -65,7 +65,6 @@ interface RecordCache {
 	 */
 	boolean isValid();
 
-
 	/**
 	 * Discards the cache, deleting any allocated files.
 	 */
