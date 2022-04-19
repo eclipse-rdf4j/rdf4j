@@ -935,10 +935,15 @@ public class QueryPlanRetrievalTest {
 	@Test
 	public void testWildcard() {
 
-		String expected = "StatementPattern (resultSizeEstimate=12)\n" +
-				"   Var (name=a)\n" +
-				"   Var (name=b)\n" +
-				"   Var (name=c)\n";
+		String expected = "Projection\n" +
+				"╠══ProjectionElemList\n" +
+				"║     ProjectionElem \"a\"\n" +
+				"║     ProjectionElem \"b\"\n" +
+				"║     ProjectionElem \"c\"\n" +
+				"╚══StatementPattern (resultSizeEstimate=12)\n" +
+				"      Var (name=a)\n" +
+				"      Var (name=b)\n" +
+				"      Var (name=c)\n";
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
