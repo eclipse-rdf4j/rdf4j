@@ -33,26 +33,31 @@ public interface QueryEvaluationContext {
 	public class Minimal implements QueryEvaluationContext {
 		public Minimal(Literal now, Dataset dataset) {
 			super();
-			this.now = now;
+			this.nowL = now;
+			// This is valid because the now field will never be read.
+			this.now = 0L;
 			this.dataset = dataset;
 		}
 
 		public Minimal(Dataset dataset) {
+			this.now = System.currentTimeMillis();
 			this.dataset = dataset;
 		}
 
-		private Literal now;
+		private final long now;
+		private Literal nowL;
 		private final Dataset dataset;
 
 		@Override
 		public Literal getNow() {
 			// creating a new date is expensive because it uses the XMLGregorianCalendar implementation which is very
-			// complex
-			if (now == null) {
-				now = SimpleValueFactory.getInstance().createLiteral(new Date());
+			// complex. This is thread safe even without a volatile because the literal is instantiated to the same
+			// value.
+			if (nowL == null) {
+				nowL = SimpleValueFactory.getInstance().createLiteral(new Date(now));
 			}
 
-			return now;
+			return nowL;
 		}
 
 		@Override
