@@ -49,6 +49,10 @@ class TripleStore implements Closeable {
 	 * Constants *
 	 *-----------*/
 
+	private static final int CHECK_MEMORY_PRESSURE_INTERVAL = isAssertionsEnabled() ? 3 : 1024;
+	private static final long MIN_FREE_MEMORY_BEFORE_OVERFLOW = isAssertionsEnabled() ? Long.MAX_VALUE
+			: 1024 * 1024 * 128;
+
 	/**
 	 * The default triple indexes.
 	 */
@@ -820,18 +824,13 @@ class TripleStore implements Closeable {
 					}
 					data = iter.next();
 
-					if (removedTriplesCache instanceof InMemRecordCache
-							&& removedTriplesCache.getRecordCount() % 1024 == 0) {
-						Runtime runtime = Runtime.getRuntime();
-						long allocatedMemory = runtime.totalMemory() - runtime.freeMemory();
-						long presumableFreeMemory = runtime.maxMemory() - allocatedMemory;
-
-						if (presumableFreeMemory < 1024 * 1024 * 128) {
-							InMemRecordCache old = (InMemRecordCache) removedTriplesCache;
-							removedTriplesCache = new SequentialRecordCache(dir, RECORD_LENGTH);
-							removedTriplesCache.storeRecords(old);
-							old.clear();
-						}
+					if (shouldOverflowToDisk(removedTriplesCache)) {
+						logger.debug("Overflowing RecordCache to disk due to low free mem.");
+						assert removedTriplesCache instanceof InMemRecordCache;
+						InMemRecordCache old = (InMemRecordCache) removedTriplesCache;
+						removedTriplesCache = new SequentialRecordCache(dir, RECORD_LENGTH);
+						removedTriplesCache.storeRecords(old);
+						old.clear();
 					}
 				}
 			}
@@ -853,6 +852,21 @@ class TripleStore implements Closeable {
 		}
 
 		return perContextCounts;
+	}
+
+	private boolean shouldOverflowToDisk(RecordCache removedTriplesCache) {
+		if (removedTriplesCache instanceof InMemRecordCache
+				&& removedTriplesCache.getRecordCount() % CHECK_MEMORY_PRESSURE_INTERVAL == 0) {
+			Runtime runtime = Runtime.getRuntime();
+			long allocatedMemory = runtime.totalMemory() - runtime.freeMemory();
+			long presumableFreeMemory = runtime.maxMemory() - allocatedMemory;
+
+			logger.trace("Free memory {} MB and required free memory {} MB", presumableFreeMemory / 1024 / 1024,
+					MIN_FREE_MEMORY_BEFORE_OVERFLOW / 1024 / 1024);
+			return presumableFreeMemory < MIN_FREE_MEMORY_BEFORE_OVERFLOW;
+		}
+
+		return false;
 	}
 
 	public void startTransaction() throws IOException {
@@ -1225,6 +1239,15 @@ class TripleStore implements Closeable {
 			}
 
 			return 0;
+		}
+	}
+
+	private static boolean isAssertionsEnabled() {
+		try {
+			assert false;
+			return false;
+		} catch (AssertionError ignored) {
+			return true;
 		}
 	}
 }

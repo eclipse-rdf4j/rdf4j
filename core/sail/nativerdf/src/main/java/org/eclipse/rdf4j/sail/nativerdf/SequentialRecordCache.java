@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -28,37 +30,53 @@ import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
  */
 final class SequentialRecordCache extends AbstractRecordCache {
 
-	private final static AtomicLong atomicLong = new AtomicLong();
-	private final static String UUID_PREFIX = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong TEMP_FILE_COUNTER = new AtomicLong();
+	private final static String TEMP_FILE_PREFIX = "txncache" + UUID.randomUUID().toString().replace("-", "");
+	private final static String TEMP_FILE_SUFFIX = ".dat";
+
+	private static final EnumSet<StandardOpenOption> FILE_OPEN_OPTIONS = EnumSet.of(
+			StandardOpenOption.READ,
+			StandardOpenOption.WRITE,
+			StandardOpenOption.CREATE_NEW,
+			StandardOpenOption.DELETE_ON_CLOSE
+	);
 
 	/**
 	 * Magic number "Sequential Record Cache" to detect whether the file is actually a sequential record cache file. The
 	 * first three bytes of the file should be equal to this magic number.
 	 */
-	private static final byte[] MAGIC_NUMBER = new byte[] { 's', 'r', 'c' };
+	private static final byte[] MAGIC_NUMBER = { 's', 'r', 'c' };
 
 	/**
 	 * The file format version number, stored as the fourth byte in sequential record cache files.
 	 */
 	private static final byte FILE_FORMAT_VERSION = 1;
 
+	// 3 bytes for magic number and 1 byte for file format version
 	private static final int HEADER_LENGTH = MAGIC_NUMBER.length + 1;
-	public static final EnumSet<StandardOpenOption> OPEN_OPTIONS = EnumSet.of(StandardOpenOption.READ,
-			StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW, StandardOpenOption.DELETE_ON_CLOSE);
-	public static final int BLOCK_SIZE = 1024 * 4;
-	public static final byte[] EMPTY_DATA = new byte[BLOCK_SIZE];
-	private final File cacheDir;
 
 	/*------------*
 	 * Attributes *
 	 *------------*/
 
-	private NioFile nioFile;
-
+	private final File cacheDir;
 	private final int recordSize;
-
 	private long currentSize;
 	private long extendedSize;
+
+	private NioFile nioFile;
+
+	private final static VarHandle NIO_FILE;
+
+	static {
+		try {
+			NIO_FILE = MethodHandles
+					.privateLookupIn(SequentialRecordCache.class, MethodHandles.lookup())
+					.findVarHandle(SequentialRecordCache.class, "nioFile", NioFile.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
+		}
+	}
 
 	/*--------------*
 	 * Constructors *
@@ -76,14 +94,32 @@ final class SequentialRecordCache extends AbstractRecordCache {
 
 	private void init() throws IOException {
 		if (nioFile == null) {
-			Path path = Paths.get(cacheDir.getCanonicalPath(),
-					"txncache" + UUID_PREFIX + atomicLong.incrementAndGet() + ".dat");
+			NioFile nioFileVolatile = (NioFile) NIO_FILE.getVolatile(this);
 
-			nioFile = new NioFile(path, OPEN_OPTIONS);
+			if (nioFileVolatile == null) {
+				Path path = Paths.get(cacheDir.getCanonicalPath(),
+						TEMP_FILE_PREFIX + TEMP_FILE_COUNTER.incrementAndGet() + TEMP_FILE_SUFFIX);
 
-			// Write file header
-			append(MAGIC_NUMBER);
-			append(FILE_FORMAT_VERSION);
+				boolean success;
+				do {
+					NioFile temp = new NioFile(path, FILE_OPEN_OPTIONS);
+					success = NIO_FILE.compareAndSet(this, null, temp);
+					if (!success) {
+						temp.delete();
+					} else {
+						// nioFile isn't volatile, even though we did a compare and set it might not be visible for us
+						// yet
+						nioFile = temp;
+					}
+				} while (!success);
+
+				// Write file header
+				append(MAGIC_NUMBER);
+				append(new byte[] { FILE_FORMAT_VERSION });
+			} else {
+				nioFile = nioFileVolatile;
+			}
+
 		}
 	}
 
@@ -100,14 +136,6 @@ final class SequentialRecordCache extends AbstractRecordCache {
 		nioFile.writeBytes(data, currentSize);
 		currentSize += data.length;
 	}
-
-	private void append(byte data) throws IOException {
-		append(new byte[] { data });
-	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	@Override
 	public void discard() throws IOException {
@@ -148,7 +176,7 @@ final class SequentialRecordCache extends AbstractRecordCache {
 		private final ByteBuffer readAheadBuffer;
 
 		{
-			readAheadBuffer = ByteBuffer.allocate(Math.max(recordSize, 4096 + recordSize));
+			readAheadBuffer = ByteBuffer.allocate(BLOCK_SIZE + recordSize);
 			readAheadBuffer.position(readAheadBuffer.limit());
 		}
 
@@ -160,10 +188,11 @@ final class SequentialRecordCache extends AbstractRecordCache {
 				// align with 4K boundary
 				if (readAheadBufferPosition == HEADER_LENGTH) {
 					readAheadBuffer.limit(readAheadBuffer.limit() - HEADER_LENGTH);
-				} else if (readAheadBufferPosition % 4096 != 0) {
-					readAheadBuffer.limit(4096 - (int) (readAheadBufferPosition % 4096) + readAheadBuffer.position());
+				} else if (readAheadBufferPosition % BLOCK_SIZE != 0) {
+					readAheadBuffer.limit(
+							BLOCK_SIZE - (int) (readAheadBufferPosition % BLOCK_SIZE) + readAheadBuffer.position());
 				} else {
-					readAheadBuffer.limit(4096 + readAheadBuffer.position());
+					readAheadBuffer.limit(BLOCK_SIZE + readAheadBuffer.position());
 				}
 
 				int read = nioFile.read(readAheadBuffer, readAheadBufferPosition);

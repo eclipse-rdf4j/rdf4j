@@ -20,6 +20,8 @@ import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
  */
 interface RecordCache {
 
+	int BLOCK_SIZE = 1024 * 4;
+
 	void setMaxRecords(long maxRecords);
 
 	/**
