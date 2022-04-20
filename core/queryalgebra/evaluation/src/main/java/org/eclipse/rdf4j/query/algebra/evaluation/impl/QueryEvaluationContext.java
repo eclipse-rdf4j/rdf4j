@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.Date;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -14,6 +16,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -31,12 +34,24 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 public interface QueryEvaluationContext {
 
 	public class Minimal implements QueryEvaluationContext {
-		// The now time in the unix epoch or zero
-		private final long nowInMillis;
-		// The now time as a literal, lazy set if not yet known.
-		private Literal nowInLiteral;
+		// Doubly checked locking is simpler but with Project Loom coming
+		// synchronized on this is less interesting.
+		private static final VarHandle HANDLE_TO_THE_NOW_LITERAL;
+		static {
+			try {
+				HANDLE_TO_THE_NOW_LITERAL = MethodHandles
+						.privateLookupIn(QueryEvaluationContext.Minimal.class, MethodHandles.lookup())
+						.findVarHandle(QueryEvaluationContext.Minimal.class, "nowInLiteral", Literal.class);
 
+			} catch (NoSuchFieldException | IllegalAccessException e) {
+				throw new UnsupportedOperationException("The nowInLiteral field is missing");
+			}
+		}
+		// The now time as a literal, lazy set if not yet known.
+		// No need for volatile as we use the varhandle for this.
+		private Literal nowInLiteral;
 		private final Dataset dataset;
+		private final ValueFactory vf;
 
 		/**
 		 * Set the shared now value to an prexisting object
@@ -47,30 +62,35 @@ public interface QueryEvaluationContext {
 		public Minimal(Literal now, Dataset dataset) {
 			super();
 			this.nowInLiteral = now;
-			// This is valid because the now field will never be read.
-			this.nowInMillis = 0L;
 			this.dataset = dataset;
+			this.vf = SimpleValueFactory.getInstance();
 		}
 
 		/**
 		 * @param dataset that a query should use to the evaluate
 		 */
 		public Minimal(Dataset dataset) {
-			this.nowInMillis = System.currentTimeMillis();
 			this.dataset = dataset;
+			this.vf = SimpleValueFactory.getInstance();
+		}
+
+		/**
+		 * @param dataset that a query should use to the evaluate
+		 */
+		public Minimal(Dataset dataset, ValueFactory vf) {
+			this.dataset = dataset;
+			this.vf = vf;
 		}
 
 		@Override
 		public Literal getNow() {
 			// creating a new date is expensive because it uses the XMLGregorianCalendar implementation which is very
-			// complex. So if the nowInLiteral value is null, then we construct a new one based on the long value set
-			// nowInMillis.
-			// This is thread safe even without a volatile because the literal is instantiated to the same
-			// value.
+			// complex.
 			if (nowInLiteral == null) {
-				nowInLiteral = SimpleValueFactory.getInstance().createLiteral(new Date(nowInMillis));
+				HANDLE_TO_THE_NOW_LITERAL.compareAndExchange(this, null,
+						vf.createLiteral(new Date()));
+				nowInLiteral = (Literal) HANDLE_TO_THE_NOW_LITERAL.getVolatile(this);
 			}
-
 			return nowInLiteral;
 		}
 

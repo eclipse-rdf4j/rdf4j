@@ -174,7 +174,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	// shared return value for successive calls of the NOW() function within the
 	// same query. Will be reset upon each new query being evaluated. See
 	// SES-869.
-	private Value sharedValueOfNow;
+	private Literal sharedValueOfNow;
 
 	private final long iterationCacheSyncThreshold;
 
@@ -314,7 +314,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
-		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory());
 		if (expr instanceof QueryRoot) {
 			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
 					.findAllVariablesUsedInQuery((QueryRoot) expr);
@@ -1370,7 +1370,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Deprecated(forRemoval = true)
 	public Value evaluate(Regex node, BindingSet bindings)
 			throws QueryEvaluationException {
-		return prepare(node, new QueryEvaluationContext.Minimal(dataset)).evaluate(bindings);
+		return prepare(node, new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset)).evaluate(bindings);
 	}
 
 	/**
