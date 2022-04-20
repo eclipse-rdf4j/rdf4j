@@ -31,33 +31,47 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 public interface QueryEvaluationContext {
 
 	public class Minimal implements QueryEvaluationContext {
+		// The now time in the unix epoch or zero
+		private final long nowInMillis;
+		// The now time as a literal, lazy set if not yet known.
+		private Literal nowInLiteral;
+
+		private final Dataset dataset;
+
+		/**
+		 * Set the shared now value to an prexisting object
+		 * 
+		 * @param now     that is shared.
+		 * @param dataset that a query should use to the evaluate
+		 */
 		public Minimal(Literal now, Dataset dataset) {
 			super();
-			this.nowL = now;
+			this.nowInLiteral = now;
 			// This is valid because the now field will never be read.
-			this.now = 0L;
+			this.nowInMillis = 0L;
 			this.dataset = dataset;
 		}
 
+		/**
+		 * @param dataset that a query should use to the evaluate
+		 */
 		public Minimal(Dataset dataset) {
-			this.now = System.currentTimeMillis();
+			this.nowInMillis = System.currentTimeMillis();
 			this.dataset = dataset;
 		}
-
-		private final long now;
-		private Literal nowL;
-		private final Dataset dataset;
 
 		@Override
 		public Literal getNow() {
 			// creating a new date is expensive because it uses the XMLGregorianCalendar implementation which is very
-			// complex. This is thread safe even without a volatile because the literal is instantiated to the same
+			// complex. So if the nowInLiteral value is null, then we construct a new one based on the long value set
+			// nowInMillis.
+			// This is thread safe even without a volatile because the literal is instantiated to the same
 			// value.
-			if (nowL == null) {
-				nowL = SimpleValueFactory.getInstance().createLiteral(new Date(now));
+			if (nowInLiteral == null) {
+				nowInLiteral = SimpleValueFactory.getInstance().createLiteral(new Date(nowInMillis));
 			}
 
-			return nowL;
+			return nowInLiteral;
 		}
 
 		@Override
