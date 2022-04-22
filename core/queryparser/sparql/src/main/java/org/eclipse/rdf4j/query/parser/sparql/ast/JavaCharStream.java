@@ -9,6 +9,8 @@
 /* JavaCCOptions:STATIC=false,SUPPORT_CLASS_VISIBILITY_PUBLIC=true */
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
+import java.io.IOException;
+
 /**
  * An implementation of interface CharStream, where the stream is assumed to contain only ASCII characters (with
  * java-like unicode escape processing).
@@ -17,6 +19,13 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 public class JavaCharStream {
 	/** Whether parser is static. */
 	public static final boolean staticFlag = false;
+	public static final IOException IO_EXCEPTION = new IOException() {
+		@Override
+		public synchronized Throwable fillInStackTrace() {
+			// no-op
+			return this;
+		}
+	};
 
 	static final int hexval(char c) throws java.io.IOException {
 		switch (c) {
@@ -144,7 +153,7 @@ public class JavaCharStream {
 		try {
 			if ((i = inputStream.read(nextCharBuf, maxNextCharInd, 4096 - maxNextCharInd)) == -1) {
 				inputStream.close();
-				throw new java.io.IOException();
+				throw IO_EXCEPTION;
 			} else {
 				maxNextCharInd += i;
 			}

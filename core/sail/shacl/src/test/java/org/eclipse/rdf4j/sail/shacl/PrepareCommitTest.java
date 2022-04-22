@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.util.Set;
@@ -33,13 +34,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class PrepareCommitTest {
 
-	@Test(expected = IllegalStateException.class)
+	@Test
 	public void testFailureWhenChangesAfterPrepare() throws IOException {
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			// due to optimizations in the ShaclSail, changes after prepare has run will only be detected if there is
@@ -51,20 +52,30 @@ public class PrepareCommitTest {
 			connection.begin();
 			connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
 			connection.prepare();
-			connection.removeStatements(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+			assertThrows(IllegalStateException.class, () -> {
+				try {
+					connection.removeStatements(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+
+				} catch (RepositoryException e) {
+					throw e.getCause();
+				}
+			});
+
 			connection.commit();
+
+		} finally {
+			shaclSail.shutDown();
 		}
 
-		shaclSail.shutDown();
 	}
 
 	@Test
 	public void testPrepareFollowedByRollback() throws IOException {
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclMinCountZero.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shaclMinCountZero.trig");
 		NotifyingSailConnection conn = shaclSail.getConnection();
 		try {
-			Model otherShaclData = Rio.parse(getClass().getResourceAsStream("/shacl.ttl"), "",
-					RDFFormat.TURTLE);
+			Model otherShaclData = Rio.parse(getClass().getResourceAsStream("/shacl.trig"), "",
+					RDFFormat.TRIG);
 			conn.begin();
 			conn.clear(RDF4J.SHACL_SHAPE_GRAPH);
 			otherShaclData.forEach(st -> conn.addStatement(st.getSubject(), st.getPredicate(), st.getObject(),
@@ -86,12 +97,13 @@ public class PrepareCommitTest {
 			assertThat(minCountValues).hasSize(1).allMatch(l -> l.intValue() == 0);
 		} finally {
 			conn.close();
+			shaclSail.shutDown();
 		}
 	}
 
 	@Test
 	public void testMultiplePrepare() throws IOException {
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			connection.begin();
@@ -111,7 +123,7 @@ public class PrepareCommitTest {
 
 	@Test
 	public void testWithoutPrepare() throws IOException {
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			connection.begin();
@@ -125,7 +137,7 @@ public class PrepareCommitTest {
 
 	@Test
 	public void testPrepareAfterRollback() throws IOException {
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
 
 		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
 			connection.begin();
@@ -147,7 +159,7 @@ public class PrepareCommitTest {
 
 	@Test
 	public void testAutomaticRollback() throws IOException {
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
 
 		BNode bNode = SimpleValueFactory.getInstance().createBNode();
 
@@ -178,7 +190,7 @@ public class PrepareCommitTest {
 
 	@Test
 	public void testAutomaticRollback2() throws IOException {
-		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.ttl");
+		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
 
 		boolean exception = false;
 		BNode bNode = SimpleValueFactory.getInstance().createBNode();
@@ -212,7 +224,7 @@ public class PrepareCommitTest {
 
 	@Test
 	public void testAutomaticRollbackRepository() throws IOException {
-		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.ttl", false);
+		SailRepository shaclSail = Utils.getInitializedShaclRepository("shacl.trig");
 
 		boolean exception = false;
 		BNode bNode = SimpleValueFactory.getInstance().createBNode();

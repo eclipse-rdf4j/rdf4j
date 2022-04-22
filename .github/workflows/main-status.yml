@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        jdk: [1.8, 11, 15]
+        jdk: [11, 15]
 
     steps:
     - uses: actions/checkout@v2

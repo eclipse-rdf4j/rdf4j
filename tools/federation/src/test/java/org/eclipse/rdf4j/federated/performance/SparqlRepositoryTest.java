@@ -47,7 +47,7 @@ public class SparqlRepositoryTest {
 			for (final IRI instance : list) {
 				tasks.add(executor.submit(() -> {
 					try {
-						Thread.sleep(new Random().nextInt(300));
+						Thread.sleep(new Random(543654324).nextInt(300));
 						BooleanQuery bq = conn.prepareBooleanQuery(QueryLanguage.SPARQL, "ASK { <"
 								+ instance.stringValue()
 								+ "> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/class/yago/PresidentsOfTheUnitedStates> }");

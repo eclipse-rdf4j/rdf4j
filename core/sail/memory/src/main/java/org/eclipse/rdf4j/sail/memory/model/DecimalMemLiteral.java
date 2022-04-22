@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
@@ -41,6 +42,11 @@ public class DecimalMemLiteral extends MemLiteral {
 	}
 
 	public DecimalMemLiteral(Object creator, String label, BigDecimal value, IRI datatype) {
+		super(creator, label, datatype);
+		this.value = value;
+	}
+
+	public DecimalMemLiteral(Object creator, String label, BigDecimal value, CoreDatatype datatype) {
 		super(creator, label, datatype);
 		this.value = value;
 	}

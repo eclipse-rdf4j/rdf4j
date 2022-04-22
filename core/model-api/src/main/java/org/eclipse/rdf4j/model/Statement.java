@@ -46,7 +46,7 @@ public interface Statement extends Serializable {
 	/**
 	 * Gets the context of this statement.
 	 *
-	 * @return The statement's context, or <tt>null</tt> in case of the null context or if not applicable.
+	 * @return The statement's context, or <var>null</var> in case of the null context or if not applicable.
 	 */
 	Resource getContext();
 

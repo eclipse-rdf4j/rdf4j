@@ -5,13 +5,10 @@ toc: true
 autonumbering: true
 ---
 
-The {{< javadoc-4m1 "rdf4j-spring" "spring/" >}} module allows for using an RDF4J repository as the data backend of a spring application.
-
-{{< tag " New in RDF4J 4.0 Milestone 1" >}}
-{{< tag " Experimental " >}}
+The {{< javadoc "rdf4j-spring" "spring/" >}} module allows for using an RDF4J repository as the data backend of a spring application.
 <!--more-->
 
-A self-contained demo application can be found at {{< javadoc-4m1 "rdf4j-spring-demo" "spring/demo" >}}
+A self-contained demo application can be found at {{< javadoc "rdf4j-spring-demo" "spring/demo" >}}
 
 ## Getting Started
 
@@ -42,15 +39,15 @@ rdf4j.spring.repository.inmemory.enabled=true
 ## Programming with RDF4J-Spring
 
 The main purpose of `rdf4j-spring` is to support accessing an RDF4J repository using the [DAO pattern](https://en.wikipedia.org/wiki/Data_access_object). 
-DAOs are subclasses of {{< javadoc-4m1 "RDF4JDao" "spring/dao/RDF4JDao.html" >}} and use 
-the {{< javadoc-4m1 "RDF4JTemplate" "/spring/support/RDF4JTemplate.html" >}} for accessing 
+DAOs are subclasses of {{< javadoc "RDF4JDao" "spring/dao/RDF4JDao.html" >}} and use 
+the {{< javadoc "RDF4JTemplate" "/spring/support/RDF4JTemplate.html" >}} for accessing 
 the [RDF4J repository configured for the application]({{< relref "spring.md#configuring-a-repository" >}}). 
 
 ### RDF4JTemplate
 
 The `RDF4JTemplate` is the class used to access a `Repository` in `rdf4j-spring`. A bean of this type is configured
 at start up and available for wiring into beans. The `RDF4JTemplate` accesses the `Repository` through a `RepositoryConnection` 
-that it obtains from a {{< javadoc-4m1 "RepositoryConnectionFactory" "spring/support/connectionFactory/RepositoryConnectionFactory.html" >}}. 
+that it obtains from a {{< javadoc "RepositoryConnectionFactory" "spring/support/connectionFactory/RepositoryConnectionFactory.html" >}}. 
 This indirection allows for using a connection pool, connect RDF4J to spring's transaction management, and provide 
 query logging to a file or exposing query statistics via JMX. These features can be enabled/disabled using 
 configuration properties (see [Configuration]({{< relref "spring.md#configuration" >}}))
@@ -91,17 +88,17 @@ int count = rdf4JTemplate
 ``` 
 
 The query, provided through the `tupleQuery` method, is executed with the call to `evaluateAndConvert()`, which returns 
-a {{< javadoc-4m1 "TupleQueryResultConverter" "spring/dao/support/operation/TupleQueryResultConverter.html" >}}. 
+a {{< javadoc "TupleQueryResultConverter" "spring/dao/support/operation/TupleQueryResultConverter.html" >}}. 
 The latter provides methods for converting the `TupleQueryResult` of the query into an object, an `Optional`, a `Map`, 
 `Set`, `List`, or `Stream`. In the example, we are just interested in the count as an `int` - one single object - so we use 
 the `toSingleton()` method and convert the value of the projection variable to an int. The conversion is done 
-using {{< javadoc-4m1 "TypeMappingUtils" "spring/util/TypeMappingUtils.html" >}}; the 
+using {{< javadoc "TypeMappingUtils" "spring/util/TypeMappingUtils.html" >}}; the 
 extraction of the variable's value from the `BindingSet bs` is done using 
-{{< javadoc-4m1 "QueryResultUtils" "spring/util/QueryResultUtils.html" >}}.
+{{< javadoc "QueryResultUtils" "spring/util/QueryResultUtils.html" >}}.
 
 #### Pre-binding variables
 
-For binding variables before executing a query or update, use the {{< javadoc-4m1 "OperationBuilder" "spring/dao/support/opbuilder/OperationBuilder.html" >}}
+For binding variables before executing a query or update, use the {{< javadoc "OperationBuilder" "spring/dao/support/opbuilder/OperationBuilder.html" >}}
 returned by the `tupleQuery()`, `graphQuery`, or `update` methods. It provides various `withBinding()` methods following 
 the builder pattern, allowing for binding variables, as illustrated in the following example.
 ```java
@@ -116,7 +113,7 @@ Set<IRI> artists = rdf4JTemplate
 
 #### Using the RepositoryConnection directly
 
-For using the {{< javadoc-4m1 "RepostoryConnection" "repository/RepositoryConnection.html" >}} directly, 
+For using the {{< javadoc "RepostoryConnection" "repository/RepositoryConnection.html" >}} directly, 
 without the need to generate a result, the `consumeConnection()` method is used:
 
 ```java 
@@ -156,7 +153,7 @@ Any spring bean that uses the `RDF4JTemplate` can be seen as a DAO and participa
 caching, etc. However, `rdf4j-spring` provides a few base classes that provide frequently used functionality.
 
 #### RDF4JDao
-{{< javadoc-4m1 "RDF4JDao" "spring/dao/RDF4JDao.html" >}} is a suitable base class for a general-purpose DAO. It provides 
+{{< javadoc "RDF4JDao" "spring/dao/RDF4JDao.html" >}} is a suitable base class for a general-purpose DAO. It provides 
 two functionalities to subclasses: 
     
 * The `RDF4JTemplate` is automatically wired into the bean and it is available through `getRDF4JTemplate()`
@@ -170,8 +167,8 @@ In the following example, we
 * annotate it with [`@Component`](https://docs.spring.io/spring-framework/docs/current/javadoc-api/index.html?org/springframework/core/io/package-summary.html) 
 so it gets auto-detected during Spring's component scan
 * create an inner class, `QUERY_KEYS`, as a container for `String` constants we use for query keys
-* implement the {{< javadoc-4m1 "prepareNamedSparqlSuppliers" "spring/support/RDF4JDao.html#prepareNamedSparqlSuppliers(org.eclipse.rdf4j.spring.dao.RDF4JDao.NamedSparqlSupplierPreparer)" >}} method and add one query
-* use the prepared query in a DAO method (`getArtistsWithoutPaintings()`). We access the prepared query with {{< javadoc-4m1 "getNamedTupleQuery(String)" "spring/support/RDF4JDao.html#getNamedTupleQuery(java.lang.String)" >}}, passing the constant we defined in `QUERY_KEYS`.
+* implement the {{< javadoc "prepareNamedSparqlSuppliers" "spring/support/RDF4JDao.html#prepareNamedSparqlSuppliers(org.eclipse.rdf4j.spring.dao.RDF4JDao.NamedSparqlSupplierPreparer)" >}} method and add one query
+* use the prepared query in a DAO method (`getArtistsWithoutPaintings()`). We access the prepared query with {{< javadoc "getNamedTupleQuery(String)" "spring/support/RDF4JDao.html#getNamedTupleQuery(java.lang.String)" >}}, passing the constant we defined in `QUERY_KEYS`.
 
   
 ```java
@@ -217,7 +214,7 @@ public class ArtistDao extends RDF4JDao {
 ```
 #### SimpleRDF4JCRUDDao
 
-The {{< javadoc-4m1 "SimpleRDF4JCRUDDao" "spring/dao/SimpleRDF4JCRUDDao.html" >}} is a suitable base class for a DAO for
+The {{< javadoc "SimpleRDF4JCRUDDao" "spring/dao/SimpleRDF4JCRUDDao.html" >}} is a suitable base class for a DAO for
 creating, reading, updating, and deleting one class of entities. It requires two type parameters, `ENTITY` and `ID`.
 It provides create, read, update, and delete functionality for the `ENTITY` class, using the `ID` class wherever the 
 entity's identifier is required. 
@@ -225,8 +222,8 @@ entity's identifier is required.
 Subclasses of `SimpleRDF4JCRUDDao` must implement a couple of template methods in order to customize the generic 
 behaviour for the specific entity and id classes.
 
-In the following, we use the entity {{< javadoc-4m1 "Artist" "spring/demo/model/Artist.html">}} (as used in the demo 
-application) as an example. Note that we define public constants of type {{< javadoc-4m1 "Variable" "sparqlbuilder/core/Variable.html" >}}, 
+In the following, we use the entity {{< javadoc "Artist" "spring/demo/model/Artist.html">}} (as used in the demo 
+application) as an example. Note that we define public constants of type {{< javadoc "Variable" "sparqlbuilder/core/Variable.html" >}}, 
 one corresponding to each of the entity's fields.
  
 ```java
@@ -244,7 +241,7 @@ public class Artist {
 }
 ``` 
 
-The {{< javadoc-4m1 "ArtistDao" "spring/demo/dao/ArtistDao.html">}} is shown in the following code snippets.
+The {{< javadoc "ArtistDao" "spring/demo/dao/ArtistDao.html">}} is shown in the following code snippets.
 
 We recommend to use `@Component` for auto-detection. Implementing the constructor is required. 
 ```java
@@ -274,7 +271,7 @@ The `populateBindingsForUpdate` method is called by the superclass to bind all n
 	}
 ```
 
-The `mapSolution` method converts a query solution, i.e., a {{< javadoc-4m1 "BindingSet" "query/BindingSet.html">}}, to an instance of the entity.
+The `mapSolution` method converts a query solution, i.e., a {{< javadoc "BindingSet" "query/BindingSet.html">}}, to an instance of the entity.
 ```java
 	@Override
 	protected Artist mapSolution(BindingSet querySolution) {
@@ -329,8 +326,8 @@ specified `artist` object; if it is null we generate a new `IRI` using `getRdf4J
 
 ##### Composite Keys
 
-If the entity uses a composite key, a class implementing {{< javadoc-4m1 "CompositeKey" "spring/dao/support/key/CompositeKey.html">}} 
-must be used for the `ID` type parameter. For a key consisting of two components, the {{< javadoc-4m1 "CompositeKey2" "spring/dao/support/key/CompositeKey2.html">}}
+If the entity uses a composite key, a class implementing {{< javadoc "CompositeKey" "spring/dao/support/key/CompositeKey.html">}} 
+must be used for the `ID` type parameter. For a key consisting of two components, the {{< javadoc "CompositeKey2" "spring/dao/support/key/CompositeKey2.html">}}
 class is available. If more components are needed, the key class can be modeled after that one.
 
 ##### RelationMapBuilder
@@ -351,7 +348,7 @@ Additional Functionality:
 
 #### RDF4JCRUDDao
 
-The {{< javadoc-4m1 "RDF4JCRUDDao" "spring/dao/RDF4JCRUDDao.html" >}} is essentially the same as the `SimpleRDF4JCRUDDao`, 
+The {{< javadoc "RDF4JCRUDDao" "spring/dao/RDF4JCRUDDao.html" >}} is essentially the same as the `SimpleRDF4JCRUDDao`, 
 with the one difference that it has three type parameters, `ENTITY`, `INPUT`, and `ID`. The class thus allows different 
 classes for input and output: creation and updates use `INPUT`, e.g. `save(INPUT)`, reading methods use `ENTITY`, e.g.
 `ENTITY getById(ID)`. 
@@ -365,7 +362,7 @@ needs to know when implementing the service layer with `rdf4j-spring` DAOs is th
 in spring's transaction management. The most straightforward way to do this is to use the [`@Transactional`](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/transaction/annotation/Transactional.html)
 method annotation, causing the service object to be wrapped with a proxy that takes care of transactionality. 
  
-The following code snippet, taken from the demo's {{< javadoc-4m1 "ArtService" "spring/demo/service/ArtService.html">}} class, 
+The following code snippet, taken from the demo's {{< javadoc "ArtService" "spring/demo/service/ArtService.html">}} class, 
 shows part of a simple service.  
  
 ```java
@@ -422,7 +419,7 @@ applications will have more than one test classes.
 
 The common approach is to have a configuration for tests that is shared by all tests, and this configuration prepares
 the spring context with all the required facilities. A minimal, shared test configuration is the following. Note that 
-it imports {{< javadoc-4m1 "RDF4JTestConfig" "spring/test/RDF4JTestConfig.html">}}:
+it imports {{< javadoc "RDF4JTestConfig" "spring/test/RDF4JTestConfig.html">}}:
 
 ```java
 @TestConfiguration
@@ -528,13 +525,13 @@ The following table shows all subsystems with their property prefixes, the packa
   
 | Subsystem | property prefix | package (links to reference) | Properties class |
 | --------- | ----------------| --------| -----------------|
-| [Repository]({{< relref "spring.md#repository" >}}) | `rdf4j.spring.repository.`| {{< javadoc-4m1 "org.eclipse.rdf4j.spring.repository" "spring/repository/package-summary.html" >}} | {{< javadoc "RemoteRepositoryProperties" "spring/repository/remote/RemoteRepositoryProperties.html">}} and {{< javadoc "InMemoryRepositoryProperties" "spring/repository/inmemory/InMemoryRepositoryProperties.html">}} |
-| [Transaction management]({{< relref "spring.md#transaction-management" >}}) | `rdf4j.spring.tx.` | {{< javadoc-4m1 "org.eclipse.rdf4j.spring.tx" "spring/tx/package-summary.html" >}} | {{< javadoc "TxProperties" "spring/tx/TxProperties.html">}} |
-| [Connection Pooling]({{< relref "spring.md#connection-pooling" >}}) | `rdf4j.spring.pool.` | {{< javadoc-4m1 "org.eclipse.rdf4j.spring.pool" "spring/pool/package-summary.html" >}} | {{< javadoc "PoolProperties" "spring/pool/PoolProperties.html">}} | 
-| [Operation caching]({{< relref "spring.md#operation-caching" >}}) | `rdf4j.spring.operationcache.` | {{< javadoc-4m1 "org.eclipse.rdf4j.spring.operationcache" "spring/operationcache/package-summary.html" >}} | {{< javadoc "OperationCacheProperties" "spring/operationcache/OperationCacheProperties.html">}} |      
-| [Operation logging]({{< relref "spring.md#operation-logging" >}}) | `rdf4j.spring.operationlog.` | {{< javadoc-4m1 "org.eclipse.rdf4j.spring.operationlog" "spring/operationlog/package-summary.html" >}} | {{< javadoc "OperationLogProperties" "spring/operationlog/OperationLogProperties.html">}} and {{< javadoc "OperationLogJmxProperties" "spring/operationlog/log/jmx/OperationLogJmxProperties.html">}} |
-| [Query result caching]({{< relref "spring.md#query-result-caching" >}}) | `rdf4j.spring.resultcache.` | {{< javadoc-4m1 "org.eclipse.rdf4j.spring.resultcache" "spring/resultcache/package-summary.html" >}} | {{< javadoc "ResultCacheProperties" "spring/resultcache/ResultCacheProperties.html">}} |         
-| [UUIDSource]({{< relref "spring.md#uuidsource" >}})| `rdf4j.spring.uuidsource.` |{{< javadoc-4m1 "org.eclipse.rdf4j.spring.uuidsource" "spring/uuidsource/package-summary.html" >}} | {{< javadoc "SimpleUUIDSourceProperties" "spring/uuidsource/simple/SimpleUUIDSourceProperties.html">}}, {{< javadoc "NoveltyCheckingUUIDSourceProperties" "spring/uuidsource/noveltychecking/NoveltyCheckingUUIDSourceProperties.html">}}, {{< javadoc "UUIDSequenceProperties" "spring/uuidsource/sequence/UUIDSequenceProperties.html">}}, and {{< javadoc "PredictableUUIDSourceProperties" "spring/uuidsource/predictable/PredictableUUIDSourceProperties.html">}}  | 
+| [Repository]({{< relref "spring.md#repository" >}}) | `rdf4j.spring.repository.`| {{< javadoc "org.eclipse.rdf4j.spring.repository" "spring/repository/package-summary.html" >}} | {{< javadoc "RemoteRepositoryProperties" "spring/repository/remote/RemoteRepositoryProperties.html">}} and {{< javadoc "InMemoryRepositoryProperties" "spring/repository/inmemory/InMemoryRepositoryProperties.html">}} |
+| [Transaction management]({{< relref "spring.md#transaction-management" >}}) | `rdf4j.spring.tx.` | {{< javadoc "org.eclipse.rdf4j.spring.tx" "spring/tx/package-summary.html" >}} | {{< javadoc "TxProperties" "spring/tx/TxProperties.html">}} |
+| [Connection Pooling]({{< relref "spring.md#connection-pooling" >}}) | `rdf4j.spring.pool.` | {{< javadoc "org.eclipse.rdf4j.spring.pool" "spring/pool/package-summary.html" >}} | {{< javadoc "PoolProperties" "spring/pool/PoolProperties.html">}} | 
+| [Operation caching]({{< relref "spring.md#operation-caching" >}}) | `rdf4j.spring.operationcache.` | {{< javadoc "org.eclipse.rdf4j.spring.operationcache" "spring/operationcache/package-summary.html" >}} | {{< javadoc "OperationCacheProperties" "spring/operationcache/OperationCacheProperties.html">}} |      
+| [Operation logging]({{< relref "spring.md#operation-logging" >}}) | `rdf4j.spring.operationlog.` | {{< javadoc "org.eclipse.rdf4j.spring.operationlog" "spring/operationlog/package-summary.html" >}} | {{< javadoc "OperationLogProperties" "spring/operationlog/OperationLogProperties.html">}} and {{< javadoc "OperationLogJmxProperties" "spring/operationlog/log/jmx/OperationLogJmxProperties.html">}} |
+| [Query result caching]({{< relref "spring.md#query-result-caching" >}}) | `rdf4j.spring.resultcache.` | {{< javadoc "org.eclipse.rdf4j.spring.resultcache" "spring/resultcache/package-summary.html" >}} | {{< javadoc "ResultCacheProperties" "spring/resultcache/ResultCacheProperties.html">}} |         
+| [UUIDSource]({{< relref "spring.md#uuidsource" >}})| `rdf4j.spring.uuidsource.` |{{< javadoc "org.eclipse.rdf4j.spring.uuidsource" "spring/uuidsource/package-summary.html" >}} | {{< javadoc "SimpleUUIDSourceProperties" "spring/uuidsource/simple/SimpleUUIDSourceProperties.html">}}, {{< javadoc "NoveltyCheckingUUIDSourceProperties" "spring/uuidsource/noveltychecking/NoveltyCheckingUUIDSourceProperties.html">}}, {{< javadoc "UUIDSequenceProperties" "spring/uuidsource/sequence/UUIDSequenceProperties.html">}}, and {{< javadoc "PredictableUUIDSourceProperties" "spring/uuidsource/predictable/PredictableUUIDSourceProperties.html">}}  | 
 
 These subsystems and their configuration are described in more detail below.
 
@@ -562,7 +559,7 @@ rdf4j.spring.tx.enabled=false
 
 Creating a `RepositoryConnection` has a certain overhead that many applications wish to avoid. `rdf4j-spring` allows for 
 pooling of such connections. Several configuration options, such as the maximum number of connections, are available
-(see {{< javadoc-4m1 "PoolProperties" "spring/pool/PoolProperties.html" >}}).
+(see {{< javadoc "PoolProperties" "spring/pool/PoolProperties.html" >}}).
 
 To enable, use
 ```properties
@@ -628,11 +625,11 @@ this requires a source of new, previously unused UUIDs for new entities created 
 unit tests, it is sometimes required that the UUIDs are generated in a predictable manner, so that actual results
 can be compared with expected results containing generated UUIDs.
 
-The UUIDSource subsystem provides different implementations of the {{< javadoc-4m1 "UUIDSource" "spring/support/UUIDSource.html">}} 
+The UUIDSource subsystem provides different implementations of the {{< javadoc "UUIDSource" "spring/support/UUIDSource.html">}} 
 interface. The configuration of this subsystem determines which implementation is wired into the `RDF4JTemplate` at
 start up and gets used by the application.
 
-In our opinion, the default implementation, {{< javadoc-4m1 "DefaultUUIDSource" "spring/support/DefaultUUIDSource.html">}} 
+In our opinion, the default implementation, {{< javadoc "DefaultUUIDSource" "spring/support/DefaultUUIDSource.html">}} 
 is sufficient for generating previously unused UUIDs. Collisions are possible but sufficiently unlikely, so using 
 any one of `noveltychecking`, `sequence`, and `simple` subsystems should not be necessary. 
 

@@ -4,26 +4,30 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
+  rdf4j:truncated false;
   sh:conforms false;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
   sh:result [ a sh:ValidationResult;
+      rsx:dataGraph rdf4j:nil;
+      rsx:shapesGraph rdf4j:nil;
       sh:focusNode ex:validPerson1;
-      sh:value ex:validPerson1;
-      sh:sourceConstraintComponent sh:OrConstraintComponent;
       sh:resultSeverity sh:Violation;
-      sh:sourceShape ex:PersonShape
+      sh:sourceConstraintComponent sh:OrConstraintComponent;
+      sh:sourceShape ex:PersonShape;
+      sh:value ex:validPerson1
     ] .
 
 ex:PersonShape a sh:NodeShape;
-  sh:targetClass ex:Person;
-  sh:or (ex:personShapeAge1Integer ex:personShapeAge2Long) .
+  sh:or (ex:personShapeAge1Integer ex:personShapeAge2Long);
+  sh:targetClass ex:Person .
 
 ex:personShapeAge1Integer a sh:PropertyShape;
-  sh:path ex:age1;
-  sh:datatype xsd:integer .
+  sh:datatype xsd:integer;
+  sh:path ex:age1 .
 
 ex:personShapeAge2Long a sh:PropertyShape;
-  sh:path ex:age2;
-  sh:datatype xsd:long .
+  sh:datatype xsd:long;
+  sh:path ex:age2 .

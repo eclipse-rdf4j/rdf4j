@@ -15,17 +15,17 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.eclipse.rdf4j.IsolationLevel;
-import org.eclipse.rdf4j.OpenRDFUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -204,9 +204,9 @@ class NativeSailStore implements SailStore {
 	/**
 	 * Creates a statement iterator based on the supplied pattern.
 	 *
-	 * @param subj     The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
-	 * @param pred     The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
-	 * @param obj      The object of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param subj     The subject of the pattern, or <var>null</var> to indicate a wildcard.
+	 * @param pred     The predicate of the pattern, or <var>null</var> to indicate a wildcard.
+	 * @param obj      The object of the pattern, or <var>null</var> to indicate a wildcard.
 	 * @param contexts The context(s) of the pattern. Note that this parameter is a vararg and as such is optional. If
 	 *                 no contexts are supplied the method operates on the entire repository.
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
@@ -454,7 +454,8 @@ class NativeSailStore implements SailStore {
 
 		private boolean addStatement(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 				throws SailException {
-			OpenRDFUtil.verifyContextNotNull(contexts);
+			Objects.requireNonNull(contexts,
+					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 			boolean result = false;
 			sinkStoreAccessLock.lock();
 			try {
@@ -493,7 +494,8 @@ class NativeSailStore implements SailStore {
 
 		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 				throws SailException {
-			OpenRDFUtil.verifyContextNotNull(contexts);
+			Objects.requireNonNull(contexts,
+					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 			sinkStoreAccessLock.lock();
 			try {

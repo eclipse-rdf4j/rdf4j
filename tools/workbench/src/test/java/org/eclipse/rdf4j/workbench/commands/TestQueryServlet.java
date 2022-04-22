@@ -19,7 +19,7 @@ import java.util.Collections;
 
 import javax.servlet.ServletException;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;

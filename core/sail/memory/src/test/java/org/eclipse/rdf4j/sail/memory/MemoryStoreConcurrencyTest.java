@@ -8,8 +8,8 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.SailConcurrencyTest;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.testsuite.sail.SailConcurrencyTest;
 
 /**
  * An extension of {@link SailConcurrencyTest} for testing the class {@link MemoryStore}.

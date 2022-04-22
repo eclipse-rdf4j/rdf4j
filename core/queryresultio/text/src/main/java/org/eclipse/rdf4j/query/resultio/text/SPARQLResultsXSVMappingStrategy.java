@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.text;
 
-import java.beans.PropertyDescriptor;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -19,7 +18,6 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 
-import com.opencsv.bean.BeanField;
 import com.opencsv.bean.MappingStrategy;
 
 /**
@@ -44,39 +42,9 @@ abstract public class SPARQLResultsXSVMappingStrategy implements MappingStrategy
 		return bindingNames;
 	}
 
-	@Deprecated
-	@Override
-	public PropertyDescriptor findDescriptor(int col) {
-		return null;
-	}
-
-	@Deprecated
-	@Override
-	public BeanField<BindingSet> findField(int col) {
-		return null;
-	}
-
-	@Deprecated
-	@Override
-	public int findMaxFieldIndex() {
-		return 0;
-	}
-
-	@Deprecated
-	@Override
-	public BindingSet createBean() {
-		return null;
-	}
-
 	@Override
 	public String[] generateHeader(BindingSet bean) {
 		throw new UnsupportedOperationException(WRITING_UNSUPPORTED);
-	}
-
-	@Deprecated
-	@Override
-	public Integer getColumnIndex(String name) {
-		return null;
 	}
 
 	@Override
@@ -109,17 +77,6 @@ abstract public class SPARQLResultsXSVMappingStrategy implements MappingStrategy
 
 		return dataType != null ? valueFactory.createLiteral(valueString, dataType)
 				: valueFactory.createLiteral(valueString);
-	}
-
-	@Deprecated
-	@Override
-	public BindingSet populateNewBeanWithIntrospection(String[] line) {
-		throw new UnsupportedOperationException("Please use populateNewBean() instead.");
-	}
-
-	@Deprecated
-	@Override
-	public void verifyLineLength(int numberOfFields) {
 	}
 
 	@Override

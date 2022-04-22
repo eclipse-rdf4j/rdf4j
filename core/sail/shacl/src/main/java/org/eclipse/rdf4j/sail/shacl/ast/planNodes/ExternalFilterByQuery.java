@@ -12,8 +12,10 @@ import java.util.Objects;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -36,11 +38,13 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 	private final SailConnection connection;
 	private final ParsedQuery query;
+	private final Dataset dataset;
 	private final StatementMatcher.Variable queryVariable;
 	private final Function<ValidationTuple, Value> filterOn;
 	private final String queryString;
 
-	public ExternalFilterByQuery(SailConnection connection, PlanNode parent, String queryFragment,
+	public ExternalFilterByQuery(SailConnection connection, Resource[] dataGraph, PlanNode parent,
+			String queryFragment,
 			StatementMatcher.Variable queryVariable,
 			Function<ValidationTuple, Value> filterOn) {
 		super(parent);
@@ -60,6 +64,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 			logger.error("Malformed query: \n{}", queryFragment);
 			throw e;
 		}
+		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 
 	}
 
@@ -73,7 +78,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 		bindings.addBinding(queryVariable.getName(), value);
 
 		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = connection.evaluate(
-				query.getTupleExpr(), query.getDataset(),
+				query.getTupleExpr(), dataset,
 				bindings, false)) {
 			return bindingSet.hasNext();
 		}
@@ -103,12 +108,14 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
 			return ((MemoryStoreConnection) connection).getSail()
-					.equals(((MemoryStoreConnection) that.connection).getSail())
+					.equals(((MemoryStoreConnection) that.connection).getSail()) &&
+					Objects.equals(dataset, that.dataset)
 					&& queryVariable.equals(that.queryVariable) && filterOn.equals(that.filterOn)
 					&& queryString.equals(that.queryString);
 		}
 
 		return connection.equals(that.connection) && queryVariable.equals(that.queryVariable)
+				&& Objects.equals(dataset, that.dataset)
 				&& filterOn.equals(that.filterOn) && queryString.equals(that.queryString);
 	}
 
@@ -116,9 +123,9 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 	public int hashCode() {
 		if (connection instanceof MemoryStoreConnection) {
 			return Objects.hash(super.hashCode(), ((MemoryStoreConnection) connection).getSail(), queryVariable,
-					filterOn, queryString);
+					filterOn, dataset, queryString);
 		}
 
-		return Objects.hash(super.hashCode(), connection, queryVariable, filterOn, queryString);
+		return Objects.hash(super.hashCode(), connection, queryVariable, filterOn, dataset, queryString);
 	}
 }

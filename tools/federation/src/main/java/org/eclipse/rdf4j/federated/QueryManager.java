@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.query.BooleanQuery;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
@@ -301,15 +303,18 @@ public class QueryManager {
 		if (!(query instanceof ParsedQuery)) {
 			throw new MalformedQueryException("Not a ParsedQuery: " + query.getClass());
 		}
+		Dataset dataset = ((ParsedQuery) query).getDataset();
+		FederationEvalStrategy strategy = federationContext.createStrategy(dataset);
 		// we use a dummy query info object here
-		QueryInfo qInfo = new QueryInfo(queryString, QueryType.SELECT,
-				federationContext.getConfig().getIncludeInferredDefault(), federationContext,
-				((ParsedQuery) query).getDataset());
+		QueryInfo qInfo = new QueryInfo(queryString, null, QueryType.SELECT,
+				federationContext.getConfig().getEnforceMaxQueryTime(),
+				federationContext.getConfig().getIncludeInferredDefault(), federationContext, strategy,
+				dataset);
 		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();
 		try {
 			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,
 					new SimpleDataset());
-			tupleExpr = federationContext.getStrategy()
+			tupleExpr = strategy
 					.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());
 			return tupleExpr.toString();
 		} catch (SailException e) {

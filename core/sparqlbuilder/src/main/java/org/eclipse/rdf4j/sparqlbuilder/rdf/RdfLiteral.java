@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.rdf;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
 import java.util.Optional;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 
 /**
@@ -78,6 +81,10 @@ public abstract class RdfLiteral<T> implements RdfValue {
 			ofType(dataType);
 		}
 
+		StringLiteral(String stringValue, IRI dataType) {
+			this(stringValue, iri(dataType));
+		}
+
 		StringLiteral(String stringValue, String languageTag) {
 			super(stringValue);
 			ofLanguage(languageTag);
@@ -89,6 +96,10 @@ public abstract class RdfLiteral<T> implements RdfValue {
 			return this;
 		}
 
+		public StringLiteral ofType(IRI dataType) {
+			return ofType(iri(dataType));
+		}
+
 		public StringLiteral ofLanguage(String languageTag) {
 			this.languageTag = Optional.ofNullable(languageTag);
 
@@ -98,13 +109,8 @@ public abstract class RdfLiteral<T> implements RdfValue {
 		@Override
 		public String getQueryString() {
 			StringBuilder literal = new StringBuilder();
-
-			if (value.contains("'") || value.contains("\"")) {
-				literal.append(SparqlBuilderUtils.getLongQuotedString(value));
-			} else {
-				literal.append(SparqlBuilderUtils.getQuotedString(value));
-			}
-
+			String escaped = SparqlBuilderUtils.getEscapedString(value);
+			literal.append(SparqlBuilderUtils.getQuotedString(escaped));
 			SparqlBuilderUtils.appendQueryElementIfPresent(dataType, literal, DATATYPE_SPECIFIER, null);
 			SparqlBuilderUtils.appendStringIfPresent(languageTag, literal, LANG_TAG_SPECIFIER, null);
 

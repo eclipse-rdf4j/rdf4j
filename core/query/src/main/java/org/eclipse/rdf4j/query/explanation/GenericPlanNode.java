@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -30,8 +32,13 @@ public class GenericPlanNode {
 
 	public static final String UNKNOWN = "UNKNOWN";
 
-	private final String UUID = "UUID_" + java.util.UUID.randomUUID().toString().replace("-", "");
+	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
+
 	private final static String newLine = System.getProperty("line.separator");
+
+	private final String id = "UUID_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 
 	// The name of the node, eg. "Join" or "Join (HashJoinIteration)".
 	private String type;
@@ -94,7 +101,7 @@ public class GenericPlanNode {
 	 * The cost estimate that the query planner calculated for this node. Value has no meaning outside of this
 	 * explanation and is only used to compare and order the nodes in the query plan.
 	 *
-	 * @return
+	 * @return a cost estimate as a double value
 	 */
 	public Double getCostEstimate() {
 		return costEstimate;
@@ -109,7 +116,7 @@ public class GenericPlanNode {
 	/**
 	 * The number of results that this node was estimated to produce.
 	 *
-	 * @return
+	 * @return result size estimate
 	 */
 	public Double getResultSizeEstimate() {
 		return resultSizeEstimate;
@@ -124,7 +131,7 @@ public class GenericPlanNode {
 	/**
 	 * The actual number of results that this node produced while the query was executed.
 	 *
-	 * @return
+	 * @return number of results that this query produced
 	 */
 	public Long getResultSizeActual() {
 		return resultSizeActual;
@@ -139,7 +146,7 @@ public class GenericPlanNode {
 	/**
 	 * The total time in milliseconds that this node-tree (all children and so on) used while the query was executed.
 	 *
-	 * @return
+	 * @return time in milliseconds that was used to execute the query
 	 */
 	public Double getTotalTimeActual() {
 		// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child plans
@@ -175,7 +182,6 @@ public class GenericPlanNode {
 	/**
 	 * The time that this node used by itself (eg. totalTimeActual - sum of plans[0..n].totalTimeActual)
 	 *
-	 * @return
 	 */
 	public Double getSelfTimeActual() {
 
@@ -228,7 +234,7 @@ public class GenericPlanNode {
 	/**
 	 * Human readable string. Do not attempt to parse this.
 	 *
-	 * @return
+	 * @return an unparsable string
 	 */
 	@Override
 	public String toString() {
@@ -428,7 +434,7 @@ public class GenericPlanNode {
 
 		if (newScope != null && newScope) {
 			sb.append("subgraph cluster_")
-					.append(getUUID())
+					.append(getID())
 					.append(" {")
 					.append(newLine)
 					.append("   color=grey")
@@ -440,7 +446,7 @@ public class GenericPlanNode {
 		String selfTimeColor = getProportionalRedColor(maxSelfTime, getSelfTimeActual());
 
 		sb
-				.append(getUUID())
+				.append(getID())
 				.append(" [label=")
 				.append("<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" >");
 
@@ -474,9 +480,9 @@ public class GenericPlanNode {
 			}
 
 			sb.append("   ")
-					.append(getUUID())
+					.append(getID())
 					.append(" -> ")
-					.append(p.getUUID())
+					.append(p.getID())
 					.append(" [label=\"")
 					.append(linkLabel)
 					.append("\"]")
@@ -511,7 +517,7 @@ public class GenericPlanNode {
 	}
 
 	@JsonIgnore
-	public String getUUID() {
-		return UUID;
+	public String getID() {
+		return id;
 	}
 }

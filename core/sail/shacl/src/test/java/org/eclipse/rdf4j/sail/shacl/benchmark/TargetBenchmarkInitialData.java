@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
@@ -53,14 +52,11 @@ import ch.qos.logback.classic.Logger;
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class TargetBenchmarkInitialData {
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	@Param({ "1", "1000", "100000" })
 	public int existingTargets = 10;
 
-	@Param({ "shaclDatatypeSparqlTarget.ttl", "shaclDatatypeTargetFilter.ttl" })
+	@Param({ "shaclDatatypeSparqlTarget.trig", "shaclDatatypeTargetFilter.trig" })
 	public String shape;
 
 	public int NUMBER_OF_TRANSACTIONS = 10;
@@ -75,7 +71,6 @@ public class TargetBenchmarkInitialData {
 	public void trialSetup() throws InterruptedException {
 		Logger root = (Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName());
 		root.setLevel(ch.qos.logback.classic.Level.INFO);
-		System.setProperty("org.eclipse.rdf4j.sail.shacl.experimentalSparqlValidation", "true");
 
 		transactions = new ArrayList<>(NUMBER_OF_TRANSACTIONS);
 

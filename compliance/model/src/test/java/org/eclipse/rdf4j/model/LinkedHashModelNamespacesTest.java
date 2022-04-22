@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model;
 
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.testsuite.model.ModelNamespacesTest;
 
 /**
  * Tests for {@link Namespace} support in {@link LinkedHashModel} using the abstract tests defined in

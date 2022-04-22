@@ -4,10 +4,10 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-sail</artifactId>
-		<version>3.7.8-SNAPSHOT</version>
+		<version>4.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-sail-lucene</artifactId>
-	<name>RDF4J Lucene Sail Index</name>
+	<name>RDF4J: Lucene Sail Index</name>
 	<description>StackableSail implementation offering full-text search on literals, based on Apache Lucene.</description>
 	<dependencies>
 		<dependency>
@@ -42,12 +42,6 @@
 		</dependency>
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
-			<artifactId>lucene-spatial</artifactId>
-			<version>${lucene.version}</version>
-			<optional>true</optional>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-spatial-extras</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
@@ -56,7 +50,6 @@
 			<artifactId>lucene-backward-codecs</artifactId>
 			<version>${lucene.version}</version>
 			<scope>runtime</scope>
-			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -73,12 +66,6 @@
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-sail-memory</artifactId>
-			<version>${project.version}</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>${project.groupId}</groupId>
-			<artifactId>rdf4j-queryparser-serql</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
 		</dependency>

@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.model.Namespace;
 public class FN {
 
 	/**
-	 * The XPath functions namespace ( <tt>	http://www.w3.org/2005/xpath-functions#</tt>).
+	 * The XPath functions namespace ( <var> http://www.w3.org/2005/xpath-functions#</var>).
 	 */
 	public static final String NAMESPACE = "http://www.w3.org/2005/xpath-functions#";
 

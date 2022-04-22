@@ -28,7 +28,7 @@ public class DatasetRepositoryFactory implements RepositoryFactory {
 	public static final String REPOSITORY_TYPE = "openrdf:DatasetRepository";
 
 	/**
-	 * Returns the repository's type: <tt>openrdf:DatasetRepository</tt>.
+	 * Returns the repository's type: <var>openrdf:DatasetRepository</var>.
 	 */
 	@Override
 	public String getRepositoryType() {

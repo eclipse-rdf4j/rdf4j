@@ -48,7 +48,7 @@ public class TestNativeStoreUpgrade {
 		File dataDir = tmpDir.getRoot();
 		NativeStore store = new NativeStore(dataDir);
 		try {
-			store.initialize();
+			store.init();
 			try (NotifyingSailConnection con = store.getConnection()) {
 				ValueFactory vf = store.getValueFactory();
 				con.begin();
@@ -79,7 +79,7 @@ public class TestNativeStoreUpgrade {
 		assertFalse(new File(dataDir, "nativerdf.ver").exists());
 		NativeStore store = new NativeStore(dataDir);
 		try {
-			store.initialize();
+			store.init();
 			// we expect init to still succeed, but the store not to be marked as upgraded. See SES-2244.
 			assertFalse(new File(dataDir, "nativerdf.ver").exists());
 		} finally {
@@ -91,7 +91,7 @@ public class TestNativeStoreUpgrade {
 	public void assertValue(File dataDir) throws SailException {
 		NativeStore store = new NativeStore(dataDir);
 		try {
-			store.initialize();
+			store.init();
 			try (NotifyingSailConnection con = store.getConnection()) {
 				ValueFactory vf = store.getValueFactory();
 				CloseableIteration<? extends Statement, SailException> iter;

@@ -1,3 +1,11 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
 import java.util.Collections;
@@ -11,10 +19,6 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ast.Cache;
 import org.eclipse.rdf4j.sail.shacl.ast.NodeShape;
@@ -29,19 +33,22 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class RSXTargetShape extends Target {
 
 	private final Shape targetShape;
 
-	public RSXTargetShape(Resource targetShape, RepositoryConnection connection, ShaclSail shaclSail) {
+	public RSXTargetShape(Resource targetShape, ShapeSource shapeSource, ShaclSail shaclSail) {
 
-		ShaclProperties p = new ShaclProperties(targetShape, connection);
+		ShaclProperties p = new ShaclProperties(targetShape, shapeSource);
 
 		if (p.getType() == SHACL.NODE_SHAPE) {
-			this.targetShape = NodeShape.getInstance(p, connection, new Cache(), false, shaclSail);
+			this.targetShape = NodeShape.getInstance(p, shapeSource, new Cache(), false, shaclSail);
 		} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
-			this.targetShape = PropertyShape.getInstance(p, connection, new Cache(), shaclSail);
+			this.targetShape = PropertyShape.getInstance(p, shapeSource, new Cache(), shaclSail);
 		} else {
 			throw new IllegalStateException("Unknown shape type for " + p.getId());
 		}
@@ -61,12 +68,13 @@ public class RSXTargetShape extends Target {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope) {
-		return getAddedRemovedInner(connectionsGroup, scope, connectionsGroup.getAddedStatements());
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			ConstraintComponent.Scope scope) {
+		return getAddedRemovedInner(connectionsGroup, dataGraph, scope);
 	}
 
-	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, ConstraintComponent.Scope scope,
-			SailConnection connection) {
+	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			ConstraintComponent.Scope scope) {
 
 		StatementMatcher.Variable object = new StatementMatcher.Variable("temp1");
 
@@ -82,7 +90,7 @@ public class RSXTargetShape extends Target {
 
 		return Unique.getInstance(new TargetChainRetriever(
 				connectionsGroup,
-				statementMatchers,
+				dataGraph, statementMatchers,
 				statementMatchers,
 				query,
 				vars,
@@ -101,13 +109,14 @@ public class RSXTargetShape extends Target {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, PlanNode parent) {
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+			PlanNode parent) {
 
 		String query = getTargetQueryFragment(null, new StatementMatcher.Variable("temp1"),
 				connectionsGroup.getRdfsSubClassOfReasoner(), new StatementMatcher.StableRandomVariableProvider());
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
-		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), parent, query,
+		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query,
 				new StatementMatcher.Variable("temp1"),
 				ValidationTuple::getActiveTarget)
 						.getTrueNode(UnBufferedPlanNode.class);

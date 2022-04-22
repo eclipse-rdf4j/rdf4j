@@ -57,7 +57,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(LeftJoin theJoin) throws Exception {
@@ -65,7 +65,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Union theOp) throws Exception {
@@ -73,7 +73,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Difference theOp) throws Exception {
@@ -81,7 +81,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(Intersection theOp) throws Exception {
@@ -89,7 +89,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(final Filter theFilter) throws Exception {
@@ -116,7 +116,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	}
 
 	/**
-	 * @inheritDoc
+	 * {@inheritDoc}
 	 */
 	@Override
 	public void meet(StatementPattern thePattern) throws Exception {

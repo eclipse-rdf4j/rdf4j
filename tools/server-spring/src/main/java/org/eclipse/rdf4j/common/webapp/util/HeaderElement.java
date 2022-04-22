@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.common.text.StringUtil;
 
 /**
  * An element in an HTTP header value. An HTTP header element has a value and zero or more parameters consisting of a
- * key and a value. An example header element is <tt>audio/*; q=0.2</tt>.
+ * key and a value. An example header element is <var>audio/*; q=0.2</var>.
  */
 public class HeaderElement {
 

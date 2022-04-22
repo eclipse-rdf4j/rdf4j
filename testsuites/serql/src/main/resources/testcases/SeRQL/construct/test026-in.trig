@@ -1,8 +1,0 @@
-# Input file for SeRQL CfwQuery test
-<foo:contextA> {
-	<foo:subj> <foo:predA> "A"
-}
-
-<foo:contextB> {
-	<foo:subj> <foo:predB> "B" .
-}

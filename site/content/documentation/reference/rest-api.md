@@ -125,7 +125,7 @@ Queries on a specific repository with ID `<ID>` can be evaluated by sending requ
 Parameters:
 
 - `query`: The query to evaluate.
-- `queryLn` (optional): Specifies the query language that is used for the query. Acceptable values are strings denoting the query languages supported by the server, i.e. “serql” for SeRQL queries and “sparql” for SPARQL queries. If not specified, the server assumes the query is a SPARQL query.
+- `queryLn` (optional): Specifies the query language that is used for the query. Acceptable values are strings denoting the query languages supported by the server. If not specified, the server assumes the query is a SPARQL query.
 - `infer` (optional): Specifies whether inferred statements should be included in the query evaluation. Inferred statements are included by default. Specifying any value other than “true” (ignoring case) restricts the query evluation to explicit statements only.
 - `$<varname>` (optional): specifies variable bindings. Variables appearing in the query can be bound to a specific value outside the actual query using this option. The value should be an N-Triples encoded RDF value.
 - `timeout` (optional): specifies a maximum query execution time, in whole seconds. The value should be an integer. A setting of 0 or a negative number indicates unlimited query time (the default).
@@ -139,11 +139,11 @@ Request headers:
 - `Content-Type`: specifies the mediatype of a POST request body. Possible values are “application/x-www-form-urlencoded” (for a SPARQL query or update encoded as a form parameter), “application/sparql-query” (for an unencoded SPARQL query string) or “application/sparql-update” (for an unencoded SPARQL update string).
 
 ### Request examples
-#### Evaluate a SeRQL-select query on repository “mem-ref”
+#### Evaluate a SPARQL select query on repository “mem-ref”
 
 Request:
 
-    GET /rdf4j-server/repositories/mem-rdf?query=select%20%3Cfoo:bar%3E&queryLn=serql HTTP/1.1
+    GET /rdf4j-server/repositories/mem-rdf?query=select%20%2A%20%7B%7D&queryLn=sparql HTTP/1.1
     Host: localhost
     Accept: application/sparql-results+xml, */*;q=0.5
 
@@ -155,16 +155,12 @@ Response:
     <?xml version='1.0' encoding='UTF-8'?>
     <sparql xmlns='http://www.w3.org/2005/sparql-results#'>
       <head>
-             <variable name='&lt;foo:bar&gt;'/>
       </head>
-      <results ordered='false' distinct='false'>
-             <result>
-                    <binding name='&lt;foo:bar&gt;'>
-                      <uri>foo:bar</uri>
-                    </binding>
-             </result>
+      <results>
       </results>
     </sparql>
+
+(note that in this example the query result is empty)
 
 #### Evaluate a SPARQL-construct query on repository “mem-rdf” using a POST request
 
@@ -888,12 +884,12 @@ Response:
 
 ### The QUERY operation
 
-The `QUERY` operation executes a SPARQL or SeRQL query on the repository as part of the current transaction, and returns the result as an RDF document.
+The `QUERY` operation executes a SPARQL query on the repository as part of the current transaction, and returns the result as an RDF document.
 
 Parameters:
 
 - `query`: The query to evaluate.
-- `queryLn` (optional): Specifies the query language that is used for the query. Acceptable values are strings denoting the query languages supported by the server, i.e. `serql` for SeRQL queries and `sparql` for SPARQL queries. If not specified, the server assumes the query is a SPARQL query.
+- `queryLn` (optional): Specifies the query language that is used for the query. Acceptable values are strings denoting the query languages supported by the server, e.g. `sparql` for SPARQL queries. If not specified, the server assumes the query is a SPARQL query.
 - `infer` (optional): Specifies whether inferred statements should be included in the query evaluation. Inferred statements are included by default. Specifying any value other than `true` (ignoring case) restricts the query evaluation to explicit statements only.
 
 Request Headers:

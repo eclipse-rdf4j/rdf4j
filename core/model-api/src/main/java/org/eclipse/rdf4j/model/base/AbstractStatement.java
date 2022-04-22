@@ -10,10 +10,7 @@ package org.eclipse.rdf4j.model.base;
 
 import java.util.Objects;
 
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
 
 /**
  * Base class for {@link Statement}, offering common functionality.
@@ -40,8 +37,14 @@ public abstract class AbstractStatement implements Statement {
 	}
 
 	@Override
-	public int hashCode() { // TODO inline Objects.hash() to avoid array creation?
-		return Objects.hash(getSubject(), getPredicate(), getObject(), getContext());
+	public int hashCode() {
+		// Inlined Objects.hash(getSubject(), getPredicate(), getObject(), getContext()) to avoid array creationg
+		int result = 1;
+		result = 31 * result + (getSubject() == null ? 0 : getSubject().hashCode());
+		result = 31 * result + (getPredicate() == null ? 0 : getPredicate().hashCode());
+		result = 31 * result + (getObject() == null ? 0 : getObject().hashCode());
+		result = 31 * result + (getContext() == null ? 0 : getContext().hashCode());
+		return result;
 	}
 
 	@Override
@@ -52,44 +55,6 @@ public abstract class AbstractStatement implements Statement {
 				+ ", " + getObject()
 				+ (getContext() == null ? "" : ", " + getContext())
 				+ ")";
-	}
-
-	static class GenericStatement extends AbstractStatement {
-
-		private static final long serialVersionUID = -4116676621136121342L;
-
-		private Resource subject;
-		private IRI predicate;
-		private Value object;
-		private Resource context;
-
-		GenericStatement(Resource subject, IRI predicate, Value object, Resource context) {
-			this.subject = subject;
-			this.predicate = predicate;
-			this.object = object;
-			this.context = context;
-		}
-
-		@Override
-		public Resource getSubject() {
-			return subject;
-		}
-
-		@Override
-		public IRI getPredicate() {
-			return predicate;
-		}
-
-		@Override
-		public Value getObject() {
-			return object;
-		}
-
-		@Override
-		public Resource getContext() {
-			return context;
-		}
-
 	}
 
 }

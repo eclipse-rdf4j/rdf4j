@@ -103,7 +103,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	/**
 	 * Creates a new XMLDateTime object for the supplied xsd:dateTime string value.
 	 *
-	 * @param dateTimeString An xsd:dateTime lexical value, for example <tt>1999-05-31T13:20:00-05:00</tt>.
+	 * @param dateTimeString An xsd:dateTime lexical value, for example <var>1999-05-31T13:20:00-05:00</var>.
 	 * @throws IllegalArgumentException if the supplied lexical value does not constitute a valid xsd:dateTime.
 	 */
 	public XMLDateTime(String dateTimeString) {
@@ -377,7 +377,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	}
 
 	/**
-	 * Converts an integer to a string, enforcing the resulting string to have at least <tt>minDigits</tt> digits by
+	 * Converts an integer to a string, enforcing the resulting string to have at least <var>minDigits</var> digits by
 	 * prepending zeros if it has less than that amount of digits.
 	 */
 	private String int2string(int iValue, int minDigits) {
@@ -400,7 +400,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	/**
 	 * Returns the xsd:dateTime string-representation of this object.
 	 *
-	 * @return An xsd:dateTime value, e.g. <tt>1999-05-31T13:20:00-05:00</tt>.
+	 * @return An xsd:dateTime value, e.g. <var>1999-05-31T13:20:00-05:00</var>.
 	 */
 	@Override
 	public String toString() {
@@ -447,7 +447,7 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	/**
 	 * Compares this DateTime object to another DateTime object.
 	 *
-	 * @throws ClassCastException If <tt>other</tt> is not a DateTime object.
+	 * @throws ClassCastException If <var>other</var> is not a DateTime object.
 	 */
 	@Override
 	public int compareTo(XMLDateTime otherDT) {

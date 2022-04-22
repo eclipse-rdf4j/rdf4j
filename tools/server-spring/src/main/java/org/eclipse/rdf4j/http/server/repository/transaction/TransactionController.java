@@ -28,6 +28,8 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.USING_GRAPH_PARAM_NAME;
 import static org.eclipse.rdf4j.http.protocol.Protocol.USING_NAMED_GRAPH_PARAM_NAME;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -348,8 +350,8 @@ public class TransactionController extends AbstractController implements Disposa
 		String queryStr = null;
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_QUERY_MIME_TYPE)) {
-			final String encoding = request.getCharacterEncoding() != null ? request.getCharacterEncoding() : "UTF-8";
-			queryStr = IOUtils.toString(request.getInputStream(), encoding);
+			Charset charset = getCharset(request);
+			queryStr = IOUtils.toString(request.getInputStream(), charset);
 		} else {
 			queryStr = request.getParameter(QUERY_PARAM_NAME);
 		}
@@ -404,6 +406,11 @@ public class TransactionController extends AbstractController implements Disposa
 		model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD
 		// requests.
 		return new ModelAndView(view, model);
+	}
+
+	private static Charset getCharset(HttpServletRequest request) {
+		return request.getCharacterEncoding() != null ? Charset.forName(request.getCharacterEncoding())
+				: StandardCharsets.UTF_8;
 	}
 
 	private Query getQuery(Transaction txn, String queryStr, HttpServletRequest request, HttpServletResponse response)
@@ -523,9 +530,8 @@ public class TransactionController extends AbstractController implements Disposa
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_UPDATE_MIME_TYPE)) {
 			try {
-				final String encoding = request.getCharacterEncoding() != null ? request.getCharacterEncoding()
-						: "UTF-8";
-				sparqlUpdateString = IOUtils.toString(request.getInputStream(), encoding);
+				Charset charset = getCharset(request);
+				sparqlUpdateString = IOUtils.toString(request.getInputStream(), charset);
 			} catch (IOException e) {
 				logger.warn("error reading sparql update string from request body", e);
 				throw new ClientHTTPException(SC_BAD_REQUEST,

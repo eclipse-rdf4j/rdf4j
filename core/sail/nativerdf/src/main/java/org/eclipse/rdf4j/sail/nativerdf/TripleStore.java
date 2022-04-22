@@ -36,8 +36,8 @@ import org.slf4j.LoggerFactory;
 /**
  * File-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of four integer
  * IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer to the statement's
- * subject, predicate, object and context. The ID <tt>0</tt> is used to represent the "null" context and doesn't map to
- * an actual RDF value.
+ * subject, predicate, object and context. The ID <var>0</var> is used to represent the "null" context and doesn't map
+ * to an actual RDF value.
  *
  * @author Arjohn Kampman
  */
@@ -726,13 +726,10 @@ class TripleStore implements Closeable {
 	/**
 	 * Remove triples
 	 *
-	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param context  The context for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
-	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
-	 *                 the pattern.
+	 * @param subj    The subject for the pattern, or <var>-1</var> for a wildcard.
+	 * @param pred    The predicate for the pattern, or <var>-1</var> for a wildcard.
+	 * @param obj     The object for the pattern, or <var>-1</var> for a wildcard.
+	 * @param context The context for the pattern, or <var>-1</var> for a wildcard.
 	 * @return The number of triples that were removed.
 	 * @throws IOException
 	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int)} instead.
@@ -746,13 +743,10 @@ class TripleStore implements Closeable {
 	/**
 	 * Remove triples by context
 	 *
-	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param context  The context for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
-	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
-	 *                 the pattern.
+	 * @param subj    The subject for the pattern, or <var>-1</var> for a wildcard.
+	 * @param pred    The predicate for the pattern, or <var>-1</var> for a wildcard.
+	 * @param obj     The object for the pattern, or <var>-1</var> for a wildcard.
+	 * @param context The context for the pattern, or <var>-1</var> for a wildcard.
 	 * @return A mapping of each modified context to the number of statements removed in that context.
 	 * @throws IOException
 	 * @since 2.5.3
@@ -765,13 +759,13 @@ class TripleStore implements Closeable {
 	/**
 	 * Remove triples
 	 *
-	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param context  The context for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
-	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
-	 *                 the pattern.
+	 * @param subj     The subject for the pattern, or <var>-1</var> for a wildcard.
+	 * @param pred     The predicate for the pattern, or <var>-1</var> for a wildcard.
+	 * @param obj      The object for the pattern, or <var>-1</var> for a wildcard.
+	 * @param context  The context for the pattern, or <var>-1</var> for a wildcard.
+	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <var>true</var>
+	 *                 removes explicit statements that match the pattern, <var>false</var> removes inferred statements
+	 *                 that match the pattern.
 	 * @return The number of triples that were removed.
 	 * @throws IOException
 	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int, boolean)} instead.
@@ -783,13 +777,13 @@ class TripleStore implements Closeable {
 	}
 
 	/**
-	 * @param subj     The subject for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param pred     The predicate for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param obj      The object for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param context  The context for the pattern, or <tt>-1</tt> for a wildcard.
-	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <tt>true</tt> removes
-	 *                 explicit statements that match the pattern, <tt>false</tt> removes inferred statements that match
-	 *                 the pattern.
+	 * @param subj     The subject for the pattern, or <var>-1</var> for a wildcard.
+	 * @param pred     The predicate for the pattern, or <var>-1</var> for a wildcard.
+	 * @param obj      The object for the pattern, or <var>-1</var> for a wildcard.
+	 * @param context  The context for the pattern, or <var>-1</var> for a wildcard.
+	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; <var>true</var>
+	 *                 removes explicit statements that match the pattern, <var>false</var> removes inferred statements
+	 *                 that match the pattern.
 	 * @return A mapping of each modified context to the number of statements removed in that context.
 	 * @throws IOException
 	 */

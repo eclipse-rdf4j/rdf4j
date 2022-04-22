@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 
 /**
  * @version 1.0
@@ -16,7 +17,7 @@ import org.eclipse.rdf4j.model.IRI;
  */
 public class GEO {
 
-	public static final String NAMESPACE = "http://www.opengis.net/ont/geosparql#";
+	public static final String NAMESPACE = CoreDatatype.GEO.NAMESPACE;
 
 	public static final IRI AS_WKT;
 
@@ -26,6 +27,6 @@ public class GEO {
 
 	static {
 		AS_WKT = Vocabularies.createIRI(NAMESPACE, "asWKT");
-		WKT_LITERAL = Vocabularies.createIRI(NAMESPACE, "wktLiteral");
+		WKT_LITERAL = CoreDatatype.GEO.WKT_LITERAL.getIri();
 	}
 }

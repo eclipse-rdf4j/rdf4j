@@ -1,5 +1,6 @@
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
@@ -8,6 +9,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+import org.junit.Assert;
 import org.junit.Test;
 
 public class Section17Test extends BaseExamples {
@@ -17,7 +19,9 @@ public class Section17Test extends BaseExamples {
 		Variable attributeIRI = SparqlBuilder.var("attribute_iri");
 		Iri type = rdf.iri("type");
 		Expression in = Expressions.in(attributeIRI, type);
-		p(in);
+		Assert.assertThat(in.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"?attribute_iri IN ( rdf:type )"
+		));
 	}
 
 	@Test
@@ -26,6 +30,8 @@ public class Section17Test extends BaseExamples {
 		Variable attributeIRI = SparqlBuilder.var("attribute_iri");
 		Iri type = rdf.iri("type");
 		Expression notIn = Expressions.notIn(attributeIRI, type);
-		p(notIn);
+		Assert.assertThat(notIn.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
+				"?attribute_iri NOT IN ( rdf:type )"
+		));
 	}
 }

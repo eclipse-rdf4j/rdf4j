@@ -41,7 +41,6 @@ import org.eclipse.rdf4j.model.base.AbstractLiteral.TaggedLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.TemporalAccessorLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.TemporalAmountLiteral;
 import org.eclipse.rdf4j.model.base.AbstractLiteral.TypedLiteral;
-import org.eclipse.rdf4j.model.base.AbstractStatement.GenericStatement;
 import org.eclipse.rdf4j.model.base.AbstractTriple.GenericTriple;
 
 /**
@@ -114,6 +113,32 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		}
 
 		return new TypedLiteral(label, datatype);
+	}
+
+	@Override
+	public Literal createLiteral(String label, CoreDatatype datatype) {
+
+		Objects.requireNonNull(label, "Label may not be null");
+		Objects.requireNonNull(datatype, "CoreDatatype may not be null");
+
+		if (reserved(datatype)) {
+			throw new IllegalArgumentException("reserved datatype <" + datatype + ">");
+		}
+
+		return new TypedLiteral(label, datatype);
+	}
+
+	@Override
+	public Literal createLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {
+		Objects.requireNonNull(label, "Label may not be null");
+		Objects.requireNonNull(datatype, "Datatype may not be null");
+		Objects.requireNonNull(coreDatatype, "CoreDatatype may not be null");
+
+		if (reserved(coreDatatype)) {
+			throw new IllegalArgumentException("reserved datatype <" + datatype + ">");
+		}
+
+		return new TypedLiteral(label, datatype, coreDatatype);
 	}
 
 	@Override
@@ -244,6 +269,44 @@ public abstract class AbstractValueFactory implements ValueFactory {
 		Objects.requireNonNull(object, "null object");
 
 		return new GenericStatement(subject, predicate, object, context);
+	}
+
+	static class GenericStatement extends AbstractStatement {
+
+		private static final long serialVersionUID = -4116676621136121342L;
+
+		private final Resource subject;
+		private final IRI predicate;
+		private final Value object;
+		private final Resource context;
+
+		GenericStatement(Resource subject, IRI predicate, Value object, Resource context) {
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+			this.context = context;
+		}
+
+		@Override
+		public Resource getSubject() {
+			return subject;
+		}
+
+		@Override
+		public IRI getPredicate() {
+			return predicate;
+		}
+
+		@Override
+		public Value getObject() {
+			return object;
+		}
+
+		@Override
+		public Resource getContext() {
+			return context;
+		}
+
 	}
 
 }

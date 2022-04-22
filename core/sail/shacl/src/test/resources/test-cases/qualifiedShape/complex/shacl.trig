@@ -1,0 +1,47 @@
+@prefix : <http://example.com/data/> .
+@prefix ont: <http://example.com/ontology#> .
+@prefix vocsh: <http://example.org/shape/> .
+@prefix so: <http://www.ontotext.com/semantic-object/> .
+@prefix affected: <http://www.ontotext.com/semantic-object/affected> .
+@prefix res: <http://www.ontotext.com/semantic-object/result/> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix gn: <http://www.geonames.org/ontology#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix puml: <http://plantuml.com/ontology#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix void: <http://rdfs.org/ns/void#> .
+@prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix dash: <http://datashapes.org/dash#> .
+@prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix ec: <http://www.ontotext.com/connectors/entity-change#> .
+@prefix ecinst: <http://www.ontotext.com/connectors/entity-change/instance#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+rdf4j:SHACLShapeGraph {
+  vocsh:LangStringUniq a sh:NodeShape;
+    rsx:targetShape [ a sh:NodeShape;
+        sh:property [ a sh:PropertyShape;
+            sh:path rdf:type;
+            sh:hasValue ont:LangStringUniq
+          ]
+      ].
+}
+
+{
+
+  vocsh:LangStringUniq a sh:NodeShape;
+    sh:property [ a sh:PropertyShape;
+        sh:path ont:uniqStrOrLangstrEnDeAllDialects;
+        sh:qualifiedValueShape [ a sh:NodeShape;
+            sh:datatype xsd:string
+          ];
+        sh:qualifiedMaxCount 1
+      ] .
+
+  rdf4j:nil sh:shapesGraph rdf4j:nil, rdf4j:SHACLShapeGraph.
+
+}

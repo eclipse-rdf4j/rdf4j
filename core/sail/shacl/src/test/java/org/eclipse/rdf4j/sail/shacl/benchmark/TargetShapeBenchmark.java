@@ -10,11 +10,10 @@ package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.eclipse.rdf4j.sail.shacl.Utils;
@@ -44,9 +43,6 @@ import ch.qos.logback.classic.Logger;
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class TargetShapeBenchmark {
-	{
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	@Setup(Level.Trial)
 	public void setUp() throws InterruptedException {
@@ -58,7 +54,7 @@ public class TargetShapeBenchmark {
 	public void shacl() throws Exception {
 
 		SailRepository repository = new SailRepository(
-				Utils.getInitializedShaclSail("benchmark/targetShape/shapes.ttl"));
+				Utils.getInitializedShaclSail("benchmark/targetShape/shapes.trig"));
 
 		((ShaclSail) repository.getSail()).setDashDataShapes(true);
 		((ShaclSail) repository.getSail()).setEclipseRdf4jShaclExtensions(true);
@@ -67,7 +63,7 @@ public class TargetShapeBenchmark {
 
 			connection.begin(IsolationLevels.SNAPSHOT);
 			connection.add(TargetShapeBenchmark.class.getClassLoader().getResource("benchmark/targetShape/data.ttl"),
-					RDFFormat.TURTLE);
+					RDFFormat.TRIG);
 			connection.commit();
 		}
 

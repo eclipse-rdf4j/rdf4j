@@ -70,7 +70,7 @@ public interface Value extends Serializable {
 	}
 
 	/**
-	 * Returns the String-value of a <tt>Value</tt> object. This returns either a {@link Literal}'s label, a
+	 * Returns the String-value of a <var>Value</var> object. This returns either a {@link Literal}'s label, a
 	 * {@link IRI}'s URI or a {@link BNode}'s ID.
 	 */
 	String stringValue();

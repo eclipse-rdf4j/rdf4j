@@ -14,6 +14,7 @@ import java.util.Arrays;
  * memory Sail.
  */
 public class MemStatementList {
+	private static final MemStatement[] EMPTY_ARRAY = new MemStatement[0];
 
 	/*-----------*
 	 * Variables *
@@ -31,7 +32,8 @@ public class MemStatementList {
 	 * Creates a new MemStatementList.
 	 */
 	public MemStatementList() {
-		this(4);
+		statements = EMPTY_ARRAY;
+		size = 0;
 	}
 
 	public MemStatementList(int capacity) {
@@ -40,8 +42,8 @@ public class MemStatementList {
 	}
 
 	public MemStatementList(MemStatementList other) {
-		this(other.size);
-		addAll(other);
+		statements = Arrays.copyOf(other.statements, other.statements.length);
+		size = other.size;
 	}
 
 	/*---------*
@@ -63,10 +65,18 @@ public class MemStatementList {
 		return statements[index];
 	}
 
+	public MemStatement getIfExists(int index) {
+		if (index < size) {
+			return statements[index];
+		} else {
+			return null;
+		}
+	}
+
 	public void add(MemStatement st) {
 		if (size == statements.length) {
 			// Grow array
-			growArray((size == 0) ? 1 : 2 * size);
+			growArray((size == 0) ? 4 : 2 * size);
 		}
 
 		statements[size] = st;
@@ -110,7 +120,7 @@ public class MemStatementList {
 	}
 
 	public void clear() {
-		Arrays.fill(statements, 0, size, null);
+		statements = EMPTY_ARRAY;
 		size = 0;
 	}
 
@@ -119,6 +129,8 @@ public class MemStatementList {
 
 		// remove all deprecated statements from the end of the list
 		for (; i >= 0; i--) {
+			if (Thread.currentThread().isInterrupted())
+				return;
 			if (statements[i].getTillSnapshot() <= currentSnapshot) {
 				--size;
 				statements[i] = null;
@@ -130,6 +142,9 @@ public class MemStatementList {
 
 		// remove all deprecated statements that are not at the end of the list
 		for (; i >= 0; i--) {
+			if (Thread.currentThread().isInterrupted())
+				return;
+
 			if (statements[i].getTillSnapshot() <= currentSnapshot) {
 				// replace statement with last statement in the list
 				--size;
@@ -141,7 +156,10 @@ public class MemStatementList {
 
 	private void growArray(int newSize) {
 		MemStatement[] newArray = new MemStatement[newSize];
-		System.arraycopy(statements, 0, newArray, 0, size);
+		if (statements != EMPTY_ARRAY) {
+			System.arraycopy(statements, 0, newArray, 0, size);
+		}
 		statements = newArray;
+
 	}
 }

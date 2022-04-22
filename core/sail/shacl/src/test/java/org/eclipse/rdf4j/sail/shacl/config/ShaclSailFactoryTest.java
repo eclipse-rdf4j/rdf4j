@@ -8,11 +8,22 @@
 package org.eclipse.rdf4j.sail.shacl.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.eclipse.rdf4j.sail.shacl.GlobalValidationExecutionLogging;
+import java.util.List;
+
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreFactory;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.junit.AfterClass;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link ShaclSailFactory}
@@ -20,11 +31,6 @@ import org.junit.Test;
  * @author Jeen Broekstra
  */
 public class ShaclSailFactoryTest {
-
-	@AfterClass
-	public static void afterClass() {
-		GlobalValidationExecutionLogging.loggingEnabled = false;
-	}
 
 	@Test
 	public void getSailTypeReturnsCorrectValue() {
@@ -40,8 +46,65 @@ public class ShaclSailFactoryTest {
 		ShaclSailFactory subject = new ShaclSailFactory();
 
 		ShaclSailConfig config = new ShaclSailConfig();
+
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
+		sail.setBaseSail(new MemoryStore());
+
 		assertMatchesConfig(sail, config);
+
+		sail.shutDown();
+	}
+
+	/**
+	 * Verify that the created sail is configured according to the supplied default configuration.
+	 */
+	@Test
+	public void serializableValidationLimitedBySupportIsolationLevelsTest() {
+		ShaclSailFactory subject = new ShaclSailFactory();
+
+		ShaclSailConfig config = new ShaclSailConfig();
+		config.setSerializableValidation(true);
+
+		ShaclSail sail = (ShaclSail) subject.getSail(config);
+
+		assertFalse(sail.isSerializableValidation());
+
+		AbstractNotifyingSail sailThatDoesntSupportSnapshotIsolation = new AbstractNotifyingSail() {
+			@Override
+			protected void shutDownInternal() throws SailException {
+
+			}
+
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				return null;
+			}
+
+			@Override
+			public boolean isWritable() throws SailException {
+				return false;
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return null;
+			}
+
+			@Override
+			public List<IsolationLevel> getSupportedIsolationLevels() {
+				return List.of(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
+						IsolationLevels.SERIALIZABLE);
+			}
+		};
+
+		sail.setBaseSail(sailThatDoesntSupportSnapshotIsolation);
+		assertFalse(sail.isSerializableValidation());
+
+		sail.setBaseSail(new MemoryStore());
+		assertTrue(sail.isSerializableValidation());
+
+		sail.shutDown();
+
 	}
 
 	/**
@@ -56,11 +119,9 @@ public class ShaclSailFactoryTest {
 		// set everything to the opposite of its default
 		config.setCacheSelectNodes(!config.isCacheSelectNodes());
 		config.setGlobalLogValidationExecution(!config.isGlobalLogValidationExecution());
-		config.setIgnoreNoShapesLoadedException(!config.isIgnoreNoShapesLoadedException());
 		config.setLogValidationPlans(!config.isLogValidationPlans());
 		config.setLogValidationViolations(!config.isLogValidationViolations());
 		config.setParallelValidation(!config.isParallelValidation());
-		config.setUndefinedTargetValidatesAllSubjects(!config.isUndefinedTargetValidatesAllSubjects());
 		config.setValidationEnabled(!config.isValidationEnabled());
 		config.setPerformanceLogging(!config.isPerformanceLogging());
 		config.setSerializableValidation(!config.isSerializableValidation());
@@ -73,17 +134,15 @@ public class ShaclSailFactoryTest {
 
 		ShaclSail sail = (ShaclSail) subject.getSail(config);
 		assertMatchesConfig(sail, config);
+
 	}
 
 	private void assertMatchesConfig(ShaclSail sail, ShaclSailConfig config) {
 		assertThat(sail.isCacheSelectNodes()).isEqualTo(config.isCacheSelectNodes());
 		assertThat(sail.isGlobalLogValidationExecution()).isEqualTo(config.isGlobalLogValidationExecution());
-		assertThat(sail.isIgnoreNoShapesLoadedException()).isEqualTo(config.isIgnoreNoShapesLoadedException());
 		assertThat(sail.isLogValidationPlans()).isEqualTo(config.isLogValidationPlans());
 		assertThat(sail.isLogValidationViolations()).isEqualTo(config.isLogValidationViolations());
 		assertThat(sail.isParallelValidation()).isEqualTo(config.isParallelValidation());
-		assertThat(sail.isUndefinedTargetValidatesAllSubjects())
-				.isEqualTo(config.isUndefinedTargetValidatesAllSubjects());
 		assertThat(sail.isValidationEnabled()).isEqualTo(config.isValidationEnabled());
 		assertThat(sail.isPerformanceLogging()).isEqualTo(config.isPerformanceLogging());
 		assertThat(sail.isSerializableValidation()).isEqualTo(config.isSerializableValidation());
@@ -93,7 +152,6 @@ public class ShaclSailFactoryTest {
 		assertThat(sail.getValidationResultsLimitTotal()).isEqualTo(config.getValidationResultsLimitTotal());
 		assertThat(sail.getValidationResultsLimitPerConstraint())
 				.isEqualTo(config.getValidationResultsLimitPerConstraint());
-
 	}
 
 }

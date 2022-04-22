@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository;
 
-import org.eclipse.rdf4j.RDF4JException;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 
 /**
  * An exception thrown by classes from the Repository API to indicate an error. Most of the time, this exception will

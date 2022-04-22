@@ -21,15 +21,19 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfSubject;
  */
 public class Variable implements Projectable, RdfSubject, RdfPredicate, RdfObject, Operand, Orderable, Groupable,
 		GraphName, Assignable {
-	private String alias;
+	private String varName;
 
 	Variable(String varName) {
-		this.alias = varName;
+		this.varName = varName;
+	}
+
+	public String getVarName() {
+		return varName;
 	}
 
 	@Override
 	public String getQueryString() {
-		return "?" + alias;
+		return "?" + varName;
 	}
 
 	@Override
@@ -45,11 +49,11 @@ public class Variable implements Projectable, RdfSubject, RdfPredicate, RdfObjec
 		}
 
 		Variable other = (Variable) obj;
-		if (alias == null) {
-			if (other.alias != null) {
+		if (varName == null) {
+			if (other.varName != null) {
 				return false;
 			}
-		} else if (!alias.equals(other.alias)) {
+		} else if (!varName.equals(other.varName)) {
 			return false;
 		}
 
@@ -60,7 +64,7 @@ public class Variable implements Projectable, RdfSubject, RdfPredicate, RdfObjec
 	public int hashCode() {
 		final int prime = 31;
 		int result = 1;
-		result = prime * result + ((alias == null) ? 0 : alias.hashCode());
+		result = prime * result + ((varName == null) ? 0 : varName.hashCode());
 		return result;
 	}
 }

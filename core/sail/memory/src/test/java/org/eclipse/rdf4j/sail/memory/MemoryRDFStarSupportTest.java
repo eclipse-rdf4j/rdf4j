@@ -1,4 +1,4 @@
-/******************************************************************************* 
+/*******************************************************************************
  * Copyright (c) 2020 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -9,9 +9,9 @@ package org.eclipse.rdf4j.sail.memory;
 
 import java.io.File;
 
-import org.eclipse.rdf4j.repository.RDFStarSupportTest;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.testsuite.repository.RDFStarSupportTest;
 import org.junit.jupiter.api.io.TempDir;
 
 /**

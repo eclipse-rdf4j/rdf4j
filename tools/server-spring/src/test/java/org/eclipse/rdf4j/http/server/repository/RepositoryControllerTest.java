@@ -14,6 +14,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
+
 import org.apache.commons.codec.Charsets;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -54,7 +56,7 @@ public class RepositoryControllerTest {
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
 		request.setContent(
 				("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
-						.getBytes(Charsets.UTF_8));
+						.getBytes(StandardCharsets.UTF_8));
 
 		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(false);
 
@@ -72,7 +74,7 @@ public class RepositoryControllerTest {
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
 		request.setContent(
 				("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
-						.getBytes(Charsets.UTF_8));
+						.getBytes(StandardCharsets.UTF_8));
 		when(manager.hasRepositoryConfig(repositoryId)).thenReturn(true);
 
 		try {
@@ -87,7 +89,7 @@ public class RepositoryControllerTest {
 	public void put_errorHandling_MissingConfig() throws Exception {
 		request.setMethod(HttpMethod.PUT.name());
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
-		request.setContent(("").getBytes(Charsets.UTF_8));
+		request.setContent(("").getBytes(StandardCharsets.UTF_8));
 
 		try {
 			controller.handleRequest(request, response);
@@ -103,7 +105,7 @@ public class RepositoryControllerTest {
 		request.setMethod(HttpMethod.PUT.name());
 		request.setContentType(RDFFormat.NTRIPLES.getDefaultMIMEType());
 		request.setContent(("_:node1 <" + RepositoryConfigSchema.REPOSITORYID + "> \"" + repositoryId + "\" .")
-				.getBytes(Charsets.UTF_8));
+				.getBytes(StandardCharsets.UTF_8));
 		doThrow(new RepositoryConfigException("stub invalid")).when(manager).addRepositoryConfig(Mockito.any());
 
 		try {

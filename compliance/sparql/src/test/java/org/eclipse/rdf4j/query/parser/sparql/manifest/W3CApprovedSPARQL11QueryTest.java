@@ -14,6 +14,8 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11ManifestTest;
+import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQLQueryTest;
 import org.junit.Ignore;
 
 import junit.framework.Test;

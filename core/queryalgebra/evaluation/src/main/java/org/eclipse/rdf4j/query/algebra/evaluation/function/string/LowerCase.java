@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * The SPARQL built-in {@link Function} LCASE, as defined in
@@ -41,7 +41,7 @@ public class LowerCase implements Function {
 			Literal literal = (Literal) args[0];
 
 			// LowerCase function accepts only string literals.
-			if (QueryEvaluationUtil.isStringLiteral(literal)) {
+			if (QueryEvaluationUtility.isStringLiteral(literal)) {
 				String lexicalValue = literal.getLabel().toLowerCase();
 				Optional<String> language = literal.getLanguage();
 

@@ -33,11 +33,9 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 
 	private final Iteration<BindingSet, X> rightArg;
 
-	private final boolean distinct;
+	private boolean initialized;
 
-	private volatile boolean initialized;
-
-	private volatile Set<BindingSet> excludeSet;
+	private Set<BindingSet> excludeSet;
 
 	/*--------------*
 	 * Constructors *
@@ -51,7 +49,12 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 */
 	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg) {
-		this(leftArg, rightArg, false);
+		super(leftArg);
+
+		assert rightArg != null;
+
+		this.rightArg = rightArg;
+		this.initialized = false;
 	}
 
 	/**
@@ -60,16 +63,11 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 *
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
-	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
+	 * @param distinct This argument is ignored
 	 */
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg, boolean distinct) {
-		super(leftArg);
-
-		assert rightArg != null;
-
-		this.rightArg = rightArg;
-		this.distinct = distinct;
-		this.initialized = false;
+		this(leftArg, rightArg);
 	}
 
 	/*--------------*
@@ -80,13 +78,9 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	@Override
 	protected boolean accept(BindingSet object) throws X {
 		if (!initialized) {
-			synchronized (this) {
-				if (!initialized) {
-					// Build set of elements-to-exclude from right argument
-					excludeSet = makeSet(getRightArg());
-					initialized = true;
-				}
-			}
+			// Build set of elements-to-exclude from right argument
+			excludeSet = makeSet(getRightArg());
+			initialized = true;
 		}
 
 		boolean compatible = false;

@@ -8,8 +8,11 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
 import java.util.Optional;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 /**
@@ -39,6 +42,10 @@ public abstract class DestinationSourceManagementQuery<T extends DestinationSour
 		return fromDefault(false);
 	}
 
+	public T from(IRI from) {
+		return from(iri(from));
+	}
+
 	/**
 	 * Specify the query destination graph
 	 *
@@ -50,6 +57,17 @@ public abstract class DestinationSourceManagementQuery<T extends DestinationSour
 		this.to = Optional.ofNullable(to);
 
 		return toDefault(false);
+	}
+
+	/**
+	 * Specify the query destination graph
+	 *
+	 * @param to the Iri identifying the destination graph
+	 *
+	 * @return this query instance
+	 */
+	public T to(IRI to) {
+		return to(iri(to));
 	}
 
 	/**

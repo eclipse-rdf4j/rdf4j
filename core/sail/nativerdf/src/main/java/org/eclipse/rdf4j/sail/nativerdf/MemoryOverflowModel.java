@@ -11,12 +11,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.nio.file.Files;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Optional;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
@@ -24,9 +24,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.AbstractModel;
-import org.eclipse.rdf4j.model.impl.ContextStatementImpl;
 import org.eclipse.rdf4j.model.impl.FilteredModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.slf4j.Logger;
@@ -64,6 +64,8 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	private long baseline = 0;
 
 	private long maxBlockSize = 0;
+
+	SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	public MemoryOverflowModel() {
 		memory = new LinkedHashModel(LARGE_BLOCK);
@@ -208,7 +210,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			IRI pred = st.getPredicate();
 			Value obj = st.getObject();
 			Resource ctx = st.getContext();
-			s.writeObject(new ContextStatementImpl(subj, pred, obj, ctx));
+			s.writeObject(vf.createStatement(subj, pred, obj, ctx));
 		}
 	}
 
@@ -264,29 +266,10 @@ abstract class MemoryOverflowModel extends AbstractModel {
 	private synchronized void overflowToDisk() {
 		try {
 			assert disk == null;
-			dataDir = createTempDir("model");
+			dataDir = Files.createTempDirectory("model").toFile();
 			logger.debug("memory overflow using temp directory {}", dataDir);
 			store = createSailStore(dataDir);
-			disk = new SailSourceModel(store) {
-
-				@Override
-				protected void finalize() throws Throwable {
-					logger.debug("finalizing {}", dataDir);
-					if (disk == this) {
-						try {
-							store.close();
-						} catch (SailException e) {
-							logger.error(e.toString(), e);
-						} finally {
-							FileUtil.deltree(dataDir);
-							dataDir = null;
-							store = null;
-							disk = null;
-						}
-					}
-					super.finalize();
-				}
-			};
+			disk = new SailSourceModel(store);
 			disk.addAll(memory);
 			memory = new LinkedHashModel(memory.getNamespaces(), LARGE_BLOCK);
 			logger.debug("overflow synced to disk");
@@ -295,19 +278,4 @@ abstract class MemoryOverflowModel extends AbstractModel {
 			logger.error("Error while writing to overflow directory " + path, e);
 		}
 	}
-
-	private File createTempDir(String name) throws IOException {
-		String tmpDirStr = System.getProperty("java.io.tmpdir");
-		if (tmpDirStr != null) {
-			File tmpDir = new File(tmpDirStr);
-			if (!tmpDir.exists()) {
-				tmpDir.mkdirs();
-			}
-		}
-		File tmp = File.createTempFile(name, "");
-		tmp.delete();
-		tmp.mkdir();
-		return tmp;
-	}
-
 }

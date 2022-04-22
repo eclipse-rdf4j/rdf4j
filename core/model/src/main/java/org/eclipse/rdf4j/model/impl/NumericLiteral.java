@@ -7,31 +7,47 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import java.util.Objects;
+import java.util.Optional;
+
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.AbstractLiteral;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
- * An extension of {@link SimpleLiteral} that stores a numeric value to avoid parsing.
+ * An extension of {@link AbstractLiteral} that stores a numeric value to avoid parsing.
  *
  * @author David Huynh
+ * @author Jerven Bolleman
  */
-public class NumericLiteral extends SimpleLiteral {
+public class NumericLiteral extends AbstractLiteral {
 
 	private static final long serialVersionUID = 3004497457768807919L;
 
 	private final Number number;
 
+	private final CoreDatatype datatype;
+
 	/**
 	 * Creates a literal with the specified value and datatype.
 	 */
 	protected NumericLiteral(Number number, IRI datatype) {
-		super(XMLDatatypeUtil.toString(number), datatype);
+		super();
+		assert Objects.nonNull(number);
+		assert Objects.nonNull(datatype);
+		this.datatype = CoreDatatype.from(datatype);
 		this.number = number;
 	}
 
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected NumericLiteral(Number number, XSD.Datatype datatype) {
-		super(XMLDatatypeUtil.toString(number), datatype);
+		this(number, datatype.getCoreDatatype());
+	}
+
+	protected NumericLiteral(Number number, CoreDatatype datatype) {
+		this.datatype = datatype;
 		this.number = number;
 	}
 
@@ -39,42 +55,42 @@ public class NumericLiteral extends SimpleLiteral {
 	 * Creates an xsd:byte typed litral with the specified value.
 	 */
 	protected NumericLiteral(byte number) {
-		this(number, XSD.BYTE);
+		this(number, CoreDatatype.XSD.BYTE);
 	}
 
 	/**
 	 * Creates an xsd:short typed litral with the specified value.
 	 */
 	protected NumericLiteral(short number) {
-		this(number, XSD.SHORT);
+		this(number, CoreDatatype.XSD.SHORT);
 	}
 
 	/**
 	 * Creates an xsd:int typed litral with the specified value.
 	 */
 	protected NumericLiteral(int number) {
-		this(number, XSD.INT);
+		this(number, CoreDatatype.XSD.INT);
 	}
 
 	/**
 	 * Creates an xsd:long typed litral with the specified value.
 	 */
 	protected NumericLiteral(long n) {
-		this(n, XSD.LONG);
+		this(n, CoreDatatype.XSD.LONG);
 	}
 
 	/**
 	 * Creates an xsd:float typed litral with the specified value.
 	 */
 	protected NumericLiteral(float n) {
-		this(n, XSD.FLOAT);
+		this(n, CoreDatatype.XSD.FLOAT);
 	}
 
 	/**
 	 * Creates an xsd:double typed litral with the specified value.
 	 */
 	protected NumericLiteral(double n) {
-		this(n, XSD.DOUBLE);
+		this(n, CoreDatatype.XSD.DOUBLE);
 	}
 
 	@Override
@@ -106,4 +122,37 @@ public class NumericLiteral extends SimpleLiteral {
 	public double doubleValue() {
 		return number.doubleValue();
 	}
+
+	@Override
+	public String getLabel() {
+		return XMLDatatypeUtil.toString(number);
+	}
+
+	@Override
+	public Optional<String> getLanguage() {
+		return Optional.empty();
+	}
+
+	@Override
+	public IRI getDatatype() {
+		return datatype.getIri();
+	}
+
+	@Override
+	public CoreDatatype getCoreDatatype() {
+		return datatype;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o instanceof NumericLiteral) {
+			return datatype == ((NumericLiteral) o).datatype && number.equals(((NumericLiteral) o).number);
+		} else {
+			return super.equals(o);
+		}
+	}
+
 }

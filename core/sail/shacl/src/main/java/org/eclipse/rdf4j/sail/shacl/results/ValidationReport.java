@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 @Deprecated
 public class ValidationReport {
 
-	protected final Resource id = bnode();
+	protected Resource id = null;
 
 	protected boolean conforms = true;
 
@@ -58,8 +58,6 @@ public class ValidationReport {
 		model.add(getId(), RDF.TYPE, SHACL.VALIDATION_REPORT);
 		model.add(getId(), RDF4J.TRUNCATED, BooleanLiteral.valueOf(truncated));
 
-		model.setNamespace(SHACL.NS);
-
 		HashSet<Resource> rdfListDedupe = new HashSet<>();
 
 		for (ValidationResult result : validationResult) {
@@ -74,7 +72,10 @@ public class ValidationReport {
 		return asModel(new DynamicModelFactory().createEmptyModel());
 	}
 
-	public Resource getId() {
+	public final Resource getId() {
+		if (id == null) {
+			id = bnode();
+		}
 		return id;
 	}
 

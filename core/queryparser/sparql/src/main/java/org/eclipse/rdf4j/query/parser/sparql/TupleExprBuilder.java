@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
@@ -224,7 +225,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 
 /**
  * A SPARQL AST visitor implementation that creates a query algebra representation of the query.
- * 
+ *
  * @author Arjohn Kampman
  *
  * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
@@ -232,6 +233,10 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  */
 @InternalUseOnly
 public class TupleExprBuilder extends AbstractASTVisitor {
+
+	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
+	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
 
 	/*-----------*
 	 * Variables *
@@ -310,7 +315,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		// the
 		// varname
 		// remains compatible with the SPARQL grammar. See SES-2310.
-		final Var var = new Var("_anon_" + UUID.randomUUID().toString().replaceAll("-", "_"));
+		final Var var = new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
 		var.setAnonymous(true);
 		return var;
 	}
@@ -591,12 +596,14 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					}
 				}
 
-				// add extension element reference to the projection element and
-				// to
-				// the extension
-				ExtensionElem extElem = new ExtensionElem(valueExpr, alias);
-				extension.addElement(extElem);
-				elem.setSourceExpression(extElem);
+				if (!(child instanceof ASTVar)) {
+					// source of the aliased projection is not a simple variable:
+					// add extension element reference to the projection element and
+					// to the extension
+					ExtensionElem extElem = new ExtensionElem(valueExpr, alias);
+					extension.addElement(extElem);
+					elem.setSourceExpression(extElem);
+				}
 			} else if (child instanceof ASTVar) {
 				Var projVar = (Var) child.jjtAccept(this, null);
 				ProjectionElem elem = new ProjectionElem(projVar.getName());
@@ -625,34 +632,38 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		}
 
 		result = new Projection(result, projElemList);
-
 		if (group != null) {
 			for (ProjectionElem elem : projElemList.getElements()) {
 				if (!elem.hasAggregateOperatorInExpression()) {
-					Set<String> groupNames = group.getBindingNames();
-
+					// non-aggregate projection elem is only allowed to be a constant or a simple expression (see
+					// https://www.w3.org/TR/sparql11-query/#aggregateRestrictions)
 					ExtensionElem extElem = elem.getSourceExpression();
 					if (extElem != null) {
 						ValueExpr expr = extElem.getExpr();
-
-						VarCollector collector = new VarCollector();
-						expr.visit(collector);
-
-						for (Var var : collector.getCollectedVars()) {
-							if (!groupNames.contains(var.getName())) {
-								throw new VisitorException(
-										"variable '" + var.getName() + "' in projection not present in GROUP BY.");
-
-							}
+						if (!(expr instanceof ValueConstant)) {
+							throw new VisitorException(
+									"non-aggregate expression '" + expr
+											+ "' not allowed in projection when using GROUP BY.");
 						}
-					} else {
-						if (!groupNames.contains(elem.getTargetName())) {
-							throw new VisitorException(
-									"variable '" + elem.getTargetName() + "' in projection not present in GROUP BY.");
-						} else if (!groupNames.contains(elem.getSourceName())) {
-							throw new VisitorException(
-									"variable '" + elem.getSourceName() + "' in projection not present in GROUP BY.");
 
+					} else {
+						Set<String> groupNames = group.getBindingNames();
+
+						if (!elem.getSourceName().equals(elem.getTargetName())) {
+							// projection element is a SELECT expression using a simple var (e.g. (?a AS ?b)).
+							// Source var must be present in GROUP BY.
+							if (!groupNames.contains(elem.getSourceName())) {
+								throw new VisitorException(
+										"variable '" + elem.getSourceName()
+												+ "' in projection not present in GROUP BY.");
+							}
+						} else {
+							// projection element is simple var. Must be present in GROUP BY.
+							if (!groupNames.contains(elem.getTargetName())) {
+								throw new VisitorException(
+										"variable '" + elem.getTargetName()
+												+ "' in projection not present in GROUP BY.");
+							}
 						}
 					}
 				}
@@ -974,7 +985,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (resource instanceof Var) {
 				projectionElements.addElement(new ProjectionElem(((Var) resource).getName()));
 			} else {
-				String alias = "_describe_" + UUID.randomUUID().toString().replaceAll("-", "_");
+				String alias = "_describe_" + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();
 				ExtensionElem elem = new ExtensionElem(resource, alias);
 				e.addElement(elem);
 				projectionElements.addElement(new ProjectionElem(alias));
@@ -2617,7 +2628,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * Internal class for keeping track of contextual information relevant for path sequence processing: current scope,
 	 * context, start and end variable of the path expression. Passed through to visitor methods via the
 	 * <code>data</code> input parameter.
-	 * 
+	 *
 	 * @author Jeen Broekstra
 	 */
 	private static class PathSequenceContext {
@@ -2629,7 +2640,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		/**
 		 * Create a new {@link PathSequenceContext} that is a copy of the supplied <code>pathSequenceContext</code>.
-		 * 
+		 *
 		 * @param pathSequenceContext the {@link PathSequenceContext} to copy.
 		 */
 		public PathSequenceContext(PathSequenceContext pathSequenceContext) {

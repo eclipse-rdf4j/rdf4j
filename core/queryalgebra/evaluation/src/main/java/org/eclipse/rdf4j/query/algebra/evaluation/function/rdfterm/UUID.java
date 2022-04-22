@@ -37,4 +37,8 @@ public class UUID implements Function {
 		return uri;
 	}
 
+	@Override
+	public boolean mustReturnDifferentResult() {
+		return true;
+	}
 }

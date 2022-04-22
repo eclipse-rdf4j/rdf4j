@@ -78,7 +78,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	/**
 	 * Default implementation of {@link QueryModelNode#replaceChildNode(QueryModelNode, QueryModelNode)} that throws an
-	 * {@link IllegalArgumentException} indicating that <tt>current</tt> is not a child node of this node.
+	 * {@link IllegalArgumentException} indicating that <var>current</var> is not a child node of this node.
 	 */
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
@@ -87,7 +87,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 	/**
 	 * Default implementation of {@link QueryModelNode#replaceWith(QueryModelNode)} that throws an
-	 * {@link IllegalArgumentException} indicating that <tt>current</tt> is not a child node of this node.
+	 * {@link IllegalArgumentException} indicating that <var>current</var> is not a child node of this node.
 	 */
 	@Override
 	public void replaceWith(QueryModelNode replacement) {

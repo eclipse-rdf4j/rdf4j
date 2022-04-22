@@ -26,11 +26,11 @@ public class NativeStoreDirLockTest {
 	public void testLocking() throws Exception {
 		File dataDir = tempDir.newFolder();
 		NativeStore sail = new NativeStore(dataDir, "spoc,posc");
-		sail.initialize();
+		sail.init();
 
 		try {
 			NativeStore sail2 = new NativeStore(dataDir, "spoc,posc");
-			sail2.initialize();
+			sail2.init();
 			try {
 				fail("initialized a second native store with same dataDir");
 			} finally {

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.federated;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -195,7 +196,7 @@ public abstract class FedXBaseTest {
 	protected String readResourceAsString(String resource) throws IOException {
 		InputStream stream = FedXBaseTest.class.getResourceAsStream(resource);
 		try {
-			return IOUtil.readString(new InputStreamReader(stream, "UTF-8"));
+			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
 		} finally {
 			stream.close();
 		}

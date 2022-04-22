@@ -14,8 +14,8 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 
-import org.eclipse.rdf4j.IsolationLevel;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -23,9 +23,9 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnectionTest;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -99,31 +99,6 @@ public class LimitedSizeNativeStoreConnectionTest extends RepositoryConnectionTe
 		// There is just one object therefore we should not throw a new
 		// exception
 		queryString = "SELECT DISTINCT ?o WHERE {?s ?p ?o}";
-		q = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-		shouldThrow = runQuery(q);
-		assertNull(shouldThrow);
-	}
-
-	@Test
-	public void testOrderAndLimit() throws Exception {
-		((LimitedSizeNativeStoreConnection) ((SailRepositoryConnection) testCon).getSailConnection())
-				.setMaxCollectionsSize(2);
-		testCon.begin();
-		ValueFactory vf = testCon.getValueFactory();
-		IRI context1 = vf.createIRI("http://my.context.1");
-		IRI predicate = vf.createIRI("http://my.predicate");
-		IRI object = vf.createIRI("http://my.object");
-
-		for (int j = 0; j < 100; j++) {
-			testCon.add(vf.createIRI("http://my.subject" + j), predicate, object, context1);
-		}
-		testCon.commit();
-		String queryString = "SELECT DISTINCT ?s WHERE {?s ?p ?o} ORDER BY ?s";
-		TupleQuery q = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-		QueryEvaluationException shouldThrow = runQuery(q);
-		assertNotNull(shouldThrow);
-
-		queryString = "SELECT DISTINCT ?s WHERE {?s ?p ?o} ORDER BY ?s LIMIT 2";
 		q = testCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 		shouldThrow = runQuery(q);
 		assertNull(shouldThrow);

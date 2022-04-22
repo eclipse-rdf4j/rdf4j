@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
+import java.lang.ref.WeakReference;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
@@ -29,10 +30,10 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 
 	private static final Logger log = LoggerFactory.getLogger(FedXQueueCursor.class);
 
-	public static <T> FedXQueueCursor<T> create(int capacity) {
+	public static <T> FedXQueueCursor<T> create(int capacity, WeakReference<?> callerReference) {
 		BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queue = new ArrayBlockingQueue<>(capacity,
 				false);
-		return new FedXQueueCursor<>(queue);
+		return new FedXQueueCursor<>(queue, callerReference);
 	}
 
 	/**
@@ -42,8 +43,9 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 	 */
 	private final BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queueRef;
 
-	private FedXQueueCursor(BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queue) {
-		super(queue);
+	private FedXQueueCursor(BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queue,
+			WeakReference<?> callerRef) {
+		super(queue, callerRef);
 		this.queueRef = queue;
 	}
 

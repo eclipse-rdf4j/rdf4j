@@ -25,8 +25,6 @@ public class InferredContextTest {
 	@Test
 	public void testInferrecContextNull() {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new MemoryStore());
-
-		sail.initialize();
 		sail.setAddInferredStatementsToDefaultContext(true);
 
 		try (SchemaCachingRDFSInferencerConnection connection = sail.getConnection()) {
@@ -44,8 +42,6 @@ public class InferredContextTest {
 	@Test
 	public void testInferrecContextNoNull() {
 		SchemaCachingRDFSInferencer sail = new SchemaCachingRDFSInferencer(new MemoryStore());
-
-		sail.initialize();
 		sail.setAddInferredStatementsToDefaultContext(false);
 
 		try (SchemaCachingRDFSInferencerConnection connection = sail.getConnection()) {

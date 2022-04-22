@@ -6,7 +6,6 @@ PREFIX sh: <http://www.w3.org/ns/shacl#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 INSERT DATA {
-
 ex:validPerson1 a ex:Person ;
 	ex:uuid "4db83088-7bd1-4861-b12c-210002db48bf"@en, "3db83088-7bd1-4861-b12c-210002db48bf"^^xsd:xmlLiteral.
 

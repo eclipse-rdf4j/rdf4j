@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
@@ -7,73 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.eclipse.rdf4j.sail.SailConnectionListener;
-
 /**
- * Abstract Class offering base functionality for SailConnection implementations.
+ * @author Jeen Broekstra
  *
- * @author Arjohn Kampman
- * @author jeen
+ * @deprecated since RDF4J 4.0. Use {@link AbstractNotifyingSailConnection} instead.
  */
-public abstract class NotifyingSailConnectionBase extends AbstractSailConnection implements NotifyingSailConnection {
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
-	private List<SailConnectionListener> listeners;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+@Deprecated(forRemoval = true)
+public abstract class NotifyingSailConnectionBase extends AbstractNotifyingSailConnection {
 
 	public NotifyingSailConnectionBase(AbstractSail sailBase) {
 		super(sailBase);
-		listeners = new ArrayList<>(0);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
-	@Override
-	public void addConnectionListener(SailConnectionListener listener) {
-		synchronized (listeners) {
-			listeners.add(listener);
-		}
-	}
-
-	@Override
-	public void removeConnectionListener(SailConnectionListener listener) {
-		synchronized (listeners) {
-			listeners.remove(listener);
-		}
-	}
-
-	protected boolean hasConnectionListeners() {
-		synchronized (listeners) {
-			return !listeners.isEmpty();
-		}
-	}
-
-	protected void notifyStatementAdded(Statement st) {
-		synchronized (listeners) {
-			for (SailConnectionListener listener : listeners) {
-				listener.statementAdded(st);
-			}
-		}
-	}
-
-	protected void notifyStatementRemoved(Statement st) {
-		synchronized (listeners) {
-			for (SailConnectionListener listener : listeners) {
-				listener.statementRemoved(st);
-			}
-		}
-	}
 }

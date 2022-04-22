@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -38,7 +38,7 @@ public class UnknownShapesTest {
 		MyAppender newAppender = new MyAppender();
 		root.addAppender(newAppender);
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("unknownProperties.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("unknownProperties.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();
@@ -52,9 +52,10 @@ public class UnknownShapesTest {
 				.filter(m -> m.startsWith("Unsupported SHACL feature"))
 				.collect(Collectors.toSet());
 
-		Set<String> expected = new HashSet<>(Arrays.asList(
-				"Unsupported SHACL feature detected sh:unknownTarget in statement (http://example.com/ns#PersonShape, http://www.w3.org/ns/shacl#unknownTarget, http://www.w3.org/2000/01/rdf-schema#Class) [null]",
-				"Unsupported SHACL feature detected sh:unknownShaclProperty in statement (http://example.com/ns#PersonPropertyShape, http://www.w3.org/ns/shacl#unknownShaclProperty, \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) [null]"));
+		Set<String> expected = Set.of(
+				"Unsupported SHACL feature detected sh:unknownTarget in statement (http://example.com/ns#PersonShape, http://www.w3.org/ns/shacl#unknownTarget, http://www.w3.org/2000/01/rdf-schema#Class, http://rdf4j.org/schema/rdf4j#SHACLShapeGraph) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]",
+				"Unsupported SHACL feature detected sh:unknownShaclProperty in statement (http://example.com/ns#PersonPropertyShape, http://www.w3.org/ns/shacl#unknownShaclProperty, \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>, http://rdf4j.org/schema/rdf4j#SHACLShapeGraph) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]"
+		);
 
 		assertEquals(expected, relevantLog);
 
@@ -62,7 +63,7 @@ public class UnknownShapesTest {
 
 	}
 
-	@Ignore
+	@Disabled
 	@Test
 	public void testComplexPath() throws IOException, InterruptedException {
 		ch.qos.logback.classic.Logger root = (ch.qos.logback.classic.Logger) LoggerFactory
@@ -71,7 +72,7 @@ public class UnknownShapesTest {
 		MyAppender newAppender = new MyAppender();
 		root.addAppender(newAppender);
 
-		SailRepository shaclRepository = Utils.getInitializedShaclRepository("complexPath.ttl", false);
+		SailRepository shaclRepository = Utils.getInitializedShaclRepository("complexPath.trig");
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
 			connection.begin();

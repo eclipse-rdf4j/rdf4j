@@ -23,6 +23,7 @@ import com.google.common.cache.CacheBuilder;
  *
  * @author Jeen Broekstra
  */
+@Deprecated(forRemoval = true, since = "4.0.0")
 public class EvaluationStrategies {
 
 	private static final Cache<UUID, EvaluationStrategy> registry = CacheBuilder.newBuilder().weakValues().build();
@@ -33,7 +34,7 @@ public class EvaluationStrategies {
 	 * @param key the key
 	 * @return the registered EvaluationStrategy, or <code>null</code> if no matching EvaluationStrategy can be found.
 	 */
-	public static final EvaluationStrategy get(UUID key) {
+	public static EvaluationStrategy get(UUID key) {
 		return registry.getIfPresent(key);
 	}
 
@@ -44,8 +45,8 @@ public class EvaluationStrategies {
 	 * @return the registry key with which the supplied strategy can be retrieved, or <code>null</code> if the supplied
 	 *         strategy is not in the registry.
 	 */
-	public static final UUID getKey(EvaluationStrategy strategy) {
-		final Map<UUID, EvaluationStrategy> map = registry.asMap();
+	public static UUID getKey(EvaluationStrategy strategy) {
+		Map<UUID, EvaluationStrategy> map = registry.asMap();
 
 		// we could make this lookup more efficient with a WeakHashMap-based
 		// reverse index, but we currently prefer this slower but more robust
@@ -68,7 +69,7 @@ public class EvaluationStrategies {
 	 * @param strategy the EvaluationStrategy to register
 	 * @return the key with which the strategy is registered.
 	 */
-	public static final UUID register(EvaluationStrategy strategy) {
+	public static UUID register(EvaluationStrategy strategy) {
 		UUID key;
 		if (strategy instanceof UUIDable) {
 			key = ((UUIDable) strategy).getUUID();

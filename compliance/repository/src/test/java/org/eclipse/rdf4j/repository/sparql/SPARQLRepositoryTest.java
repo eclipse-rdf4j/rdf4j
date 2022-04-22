@@ -9,8 +9,8 @@ package org.eclipse.rdf4j.repository.sparql;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryTest;
 import org.eclipse.rdf4j.repository.http.HTTPMemServer;
+import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;

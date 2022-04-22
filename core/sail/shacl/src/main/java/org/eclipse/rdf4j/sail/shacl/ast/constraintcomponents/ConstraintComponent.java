@@ -1,8 +1,16 @@
+/*******************************************************************************
+ * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *******************************************************************************/
+
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import org.eclipse.rdf4j.sail.shacl.ConnectionsGroup;
-import org.eclipse.rdf4j.sail.shacl.RdfsSubClassOfReasoner;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.Exportable;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
@@ -11,14 +19,17 @@ import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public interface ConstraintComponent extends Exportable, TargetChainInterface {
 
-	ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup, boolean logValidationPlans,
+	ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+			ValidationSettings validationSettings,
 			boolean negatePlan, boolean negateChildren, Scope scope);
 
 	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			boolean logValidationPlans, PlanNodeProvider overrideTargetNode,
+			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode,
 			Scope scope);
 
 	/**
@@ -37,13 +48,14 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	 *
 	 * @param connectionsGroup
 	 * @param scope
+	 * @param dataGraph
 	 * @return true if the constraint component should be evaluated, eg. if validation is needed.
 	 */
-	boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope);
+	boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph);
 
 	SourceConstraintComponent getConstraintComponent();
 
-	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Scope scope);
+	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope);
 
 	SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,

@@ -5,96 +5,109 @@
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix rsx: <http://rdf4j.org/shacl-extensions#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
 
 [] a sh:ValidationReport;
-  <http://rdf4j.org/schema/rdf4j#truncated> false;
+  rdf4j:truncated false;
   sh:conforms false;
   sh:result [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:b;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx26269;
+      sh:value "1"
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:c;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:sourceShape _:node1ftskin5gx26269;
       sh:value "8"
     ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:b;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx26269;
+      sh:value "8"
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:a;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx26269;
+      sh:value "1"
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:c;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx26269;
+      sh:value "1"
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:a;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx26269;
+      sh:value "8"
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:g;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:sourceShape _:node1ftskin5gx26269;
       sh:value "z"
     ], [ a sh:ValidationResult;
-      sh:focusNode ex:d;
-      sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
-      sh:value "x"
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:a;
-      sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
-      sh:value "8"
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:b;
-      sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
-      sh:value "9"
-    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:e;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:sourceShape _:node1ftskin5gx26269;
       sh:value "x"
     ], [ a sh:ValidationResult;
-      sh:focusNode ex:a;
-      sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
-      sh:value "1"
-    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:b;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
-      sh:value "1"
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:c;
-      sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:sourceShape _:node1ftskin5gx26269;
       sh:value "9"
     ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
+      sh:focusNode ex:d;
+      sh:resultPath ex:age;
+      sh:resultSeverity sh:Violation;
+      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
+      sh:sourceShape _:node1ftskin5gx26269;
+      sh:value "x"
+    ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:c;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
-      sh:value "1"
+      sh:sourceShape _:node1ftskin5gx26269;
+      sh:value "9"
     ], [ a sh:ValidationResult;
+      rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:f;
       sh:resultPath ex:age;
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
+      sh:sourceShape _:node1ftskin5gx26269;
       sh:value "z"
-    ], [ a sh:ValidationResult;
-      sh:focusNode ex:b;
-      sh:resultPath ex:age;
-      sh:resultSeverity sh:Violation;
-      sh:sourceConstraintComponent sh:DatatypeConstraintComponent;
-      sh:sourceShape _:node1ev4ek0h0x2;
-      sh:value "8"
     ] .
 
-_:node1ev4ek0h0x2 a sh:PropertyShape;
+_:node1ftskin5gx26269 a sh:PropertyShape;
   sh:datatype xsd:integer;
   sh:path ex:age .

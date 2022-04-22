@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.model.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -67,18 +68,17 @@ public class StatementsTest {
 
 	@Test
 	public void testInvalidInput() {
-		try {
-			Statements.consume(vf, FOAF.AGE, RDF.TYPE, RDF.PROPERTY, st -> fail("should have resulted in Exception"),
+		assertThatThrownBy(() -> {
+			Statements.consume(vf, FOAF.AGE, RDF.TYPE, RDF.PROPERTY,
+					st -> fail("should have resulted in Exception"),
 					null);
-		} catch (IllegalArgumentException e) {
-			// fall through.
-		}
+		}).isInstanceOf(NullPointerException.class)
+				.hasMessage(
+						"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
-		try {
+		assertThatThrownBy(() -> {
 			Statements.consume(vf, null, RDF.TYPE, RDF.PROPERTY, st -> fail("should have resulted in Exception"));
-		} catch (NullPointerException e) {
-			// fall through.
-		}
+		}).isInstanceOf(NullPointerException.class);
 	}
 
 	@Test

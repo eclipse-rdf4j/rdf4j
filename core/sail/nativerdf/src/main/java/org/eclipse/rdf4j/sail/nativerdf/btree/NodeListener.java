@@ -50,7 +50,7 @@ interface NodeListener {
 	 *
 	 * @param sourceNode The node that donated its values to the target node.
 	 * @param targetNode The node in which the values have been merged.
-	 * @param mergeIdx   The index of <tt>sourceNode</tt>'s values in <tt>targetNode</tt> .
+	 * @param mergeIdx   The index of <var>sourceNode</var>'s values in <var>targetNode</var> .
 	 * @return Indicates whether the node listener should be deregistered with the <em>source node</em> as a result of
 	 *         this event.
 	 */

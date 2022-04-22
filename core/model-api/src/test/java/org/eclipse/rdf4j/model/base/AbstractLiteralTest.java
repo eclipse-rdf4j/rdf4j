@@ -40,6 +40,11 @@ public class AbstractLiteralTest extends LiteralTest {
 	}
 
 	@Override
+	protected Literal literal(String label, CoreDatatype datatype) {
+		return factory.createLiteral(label, datatype);
+	}
+
+	@Override
 	protected IRI datatype(String iri) {
 		return factory.createIRI(iri);
 	}
