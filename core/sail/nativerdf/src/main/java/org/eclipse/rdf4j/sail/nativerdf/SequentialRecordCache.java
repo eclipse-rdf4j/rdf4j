@@ -9,11 +9,7 @@ package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
 import java.util.UUID;
@@ -59,24 +55,11 @@ final class SequentialRecordCache extends AbstractRecordCache {
 	 * Attributes *
 	 *------------*/
 
-	private final File cacheDir;
 	private final int recordSize;
 	private long currentSize;
 	private long extendedSize;
 
-	private NioFile nioFile;
-
-	private final static VarHandle NIO_FILE;
-
-	static {
-		try {
-			NIO_FILE = MethodHandles
-					.privateLookupIn(SequentialRecordCache.class, MethodHandles.lookup())
-					.findVarHandle(SequentialRecordCache.class, "nioFile", NioFile.class);
-		} catch (ReflectiveOperationException e) {
-			throw new Error(e);
-		}
-	}
+	private final NioFile nioFile;
 
 	/*--------------*
 	 * Constructors *
@@ -89,42 +72,14 @@ final class SequentialRecordCache extends AbstractRecordCache {
 	public SequentialRecordCache(File cacheDir, int recordSize, long maxRecords) throws IOException {
 		super(maxRecords);
 		this.recordSize = recordSize;
-		this.cacheDir = cacheDir;
-	}
+		this.nioFile = new NioFile(cacheDir, FILE_OPEN_OPTIONS);
 
-	private void init() throws IOException {
-		if (nioFile == null) {
-			NioFile nioFileVolatile = (NioFile) NIO_FILE.getVolatile(this);
-
-			if (nioFileVolatile == null) {
-				Path path = Paths.get(cacheDir.getCanonicalPath(),
-						TEMP_FILE_PREFIX + TEMP_FILE_COUNTER.incrementAndGet() + TEMP_FILE_SUFFIX);
-
-				boolean success;
-				do {
-					NioFile temp = new NioFile(path, FILE_OPEN_OPTIONS);
-					success = NIO_FILE.compareAndSet(this, null, temp);
-					if (!success) {
-						temp.delete();
-					} else {
-						// nioFile isn't volatile, even though we did a compare and set it might not be visible for us
-						// yet
-						nioFile = temp;
-					}
-				} while (!success);
-
-				// Write file header
-				append(MAGIC_NUMBER);
-				append(new byte[] { FILE_FORMAT_VERSION });
-			} else {
-				nioFile = nioFileVolatile;
-			}
-
-		}
+		// Write file header
+		append(MAGIC_NUMBER);
+		append(new byte[] { FILE_FORMAT_VERSION });
 	}
 
 	private void append(byte[] data) throws IOException {
-		init();
 		if (currentSize >= extendedSize - recordSize) {
 			long newExtendedSize = (((currentSize + recordSize) / BLOCK_SIZE) + 1) * BLOCK_SIZE;
 			assert newExtendedSize > extendedSize;
@@ -139,18 +94,14 @@ final class SequentialRecordCache extends AbstractRecordCache {
 
 	@Override
 	public void discard() throws IOException {
-		if (nioFile != null) {
-			nioFile.delete();
-		}
+		nioFile.delete();
 	}
 
 	@Override
 	protected void clearInternal() throws IOException {
-		if (nioFile != null) {
-			nioFile.truncate(HEADER_LENGTH);
-			currentSize = nioFile.size();
-			extendedSize = currentSize;
-		}
+		nioFile.truncate(HEADER_LENGTH);
+		currentSize = nioFile.size();
+		extendedSize = currentSize;
 	}
 
 	@Override
@@ -160,7 +111,6 @@ final class SequentialRecordCache extends AbstractRecordCache {
 
 	@Override
 	protected RecordIterator getRecordsInternal() throws IOException {
-		init();
 		return new RecordCacheIterator();
 	}
 

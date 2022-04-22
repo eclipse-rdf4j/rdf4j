@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
 import java.io.IOException;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
 
