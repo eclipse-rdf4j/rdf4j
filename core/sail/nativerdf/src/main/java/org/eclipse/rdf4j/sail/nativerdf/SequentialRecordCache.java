@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
 import java.util.UUID;
@@ -72,7 +74,11 @@ final class SequentialRecordCache extends AbstractRecordCache {
 	public SequentialRecordCache(File cacheDir, int recordSize, long maxRecords) throws IOException {
 		super(maxRecords);
 		this.recordSize = recordSize;
-		this.nioFile = new NioFile(cacheDir, FILE_OPEN_OPTIONS);
+
+		Path path = Paths.get(cacheDir.getCanonicalPath(),
+				TEMP_FILE_PREFIX + TEMP_FILE_COUNTER.incrementAndGet() + TEMP_FILE_SUFFIX);
+
+		this.nioFile = new NioFile(path, FILE_OPEN_OPTIONS);
 
 		// Write file header
 		append(MAGIC_NUMBER);
