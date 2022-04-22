@@ -145,15 +145,14 @@ public class NumericLiteral extends AbstractLiteral {
 
 	@Override
 	public boolean equals(Object o) {
-		if (o instanceof NumericLiteral)
-			return equals((NumericLiteral) o);
-		else
+		if (this == o) {
+			return true;
+		}
+		if (o instanceof NumericLiteral) {
+			return datatype == ((NumericLiteral) o).datatype && number.equals(((NumericLiteral) o).number);
+		} else {
 			return super.equals(o);
+		}
 	}
 
-	private boolean equals(NumericLiteral o) {
-		if (this == o)
-			return true;
-		return number.equals(o.number) && datatype.equals(o.datatype);
-	}
 }
