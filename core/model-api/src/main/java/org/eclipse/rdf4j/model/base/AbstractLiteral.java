@@ -61,6 +61,7 @@ import javax.xml.namespace.QName;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * Base class for {@link Literal}, offering common functionality.
@@ -167,10 +168,22 @@ public abstract class AbstractLiteral implements Literal {
 
 	@Override
 	public boolean equals(Object o) {
-		return this == o || o instanceof Literal
-				&& getLabel().equals(((Literal) o).getLabel())
-				&& getDatatype().equals(((Literal) o).getDatatype())
-				&& equals(getLanguage(), ((Literal) o).getLanguage());
+		if (this == o) {
+			return true;
+		}
+//		if (o instanceof Literal) {
+		if (o instanceof Value && ((Value) o).isLiteral()) {
+			if (getCoreDatatype() != ((Literal) o).getCoreDatatype()) {
+				return false;
+			}
+			if (getCoreDatatype() == CoreDatatype.NONE && !getDatatype().equals(((Literal) o).getDatatype())) {
+				return false;
+			}
+
+			return getLabel().equals(((Literal) o).getLabel())
+					&& equals(getLanguage(), ((Literal) o).getLanguage());
+		}
+		return false;
 	}
 
 	@Override

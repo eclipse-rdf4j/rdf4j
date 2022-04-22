@@ -192,6 +192,10 @@ public class XSD {
 		return Vocabularies.createIRI(org.eclipse.rdf4j.model.vocabulary.XSD.NAMESPACE, localName);
 	}
 
+	/**
+	 * @deprecated Use {@link CoreDatatype.XSD} instead.
+	 */
+	@Deprecated(since = "4.0.0", forRemoval = true)
 	public enum Datatype {
 
 		DURATION(CoreDatatype.XSD.DURATION.getIri(), true, true, false, false, false, false, false),
