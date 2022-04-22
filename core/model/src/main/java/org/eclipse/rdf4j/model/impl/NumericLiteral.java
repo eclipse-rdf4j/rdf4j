@@ -7,38 +7,47 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import java.util.Objects;
+import java.util.Optional;
+
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
- * An extension of {@link SimpleLiteral} that stores a numeric value to avoid parsing.
+ * An extension of {@link AbstractLiteral} that stores a numeric value to avoid parsing.
  *
  * @author David Huynh
+ * @author Jerven Bolleman
  */
-public class NumericLiteral extends SimpleLiteral {
+public class NumericLiteral extends AbstractLiteral {
 
 	private static final long serialVersionUID = 3004497457768807919L;
 
 	private final Number number;
 
+	private final CoreDatatype datatype;
+
 	/**
 	 * Creates a literal with the specified value and datatype.
 	 */
 	protected NumericLiteral(Number number, IRI datatype) {
-		super(XMLDatatypeUtil.toString(number), datatype);
+		super();
+		assert Objects.nonNull(number);
+		assert Objects.nonNull(datatype);
+		this.datatype = CoreDatatype.from(datatype);
 		this.number = number;
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	protected NumericLiteral(Number number, XSD.Datatype datatype) {
-		super(XMLDatatypeUtil.toString(number), datatype);
-		this.number = number;
+		this(number, datatype.getCoreDatatype());
 	}
 
 	protected NumericLiteral(Number number, CoreDatatype datatype) {
-		super(XMLDatatypeUtil.toString(number), datatype);
+		this.datatype = datatype;
 		this.number = number;
 	}
 
@@ -113,4 +122,37 @@ public class NumericLiteral extends SimpleLiteral {
 	public double doubleValue() {
 		return number.doubleValue();
 	}
+
+	@Override
+	public String getLabel() {
+		return XMLDatatypeUtil.toString(number);
+	}
+
+	@Override
+	public Optional<String> getLanguage() {
+		return Optional.empty();
+	}
+
+	@Override
+	public IRI getDatatype() {
+		return datatype.getIri();
+	}
+
+	@Override
+	public CoreDatatype getCoreDatatype() {
+		return datatype;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o instanceof NumericLiteral) {
+			return datatype == ((NumericLiteral) o).datatype && number.equals(((NumericLiteral) o).number);
+		} else {
+			return super.equals(o);
+		}
+	}
+
 }
