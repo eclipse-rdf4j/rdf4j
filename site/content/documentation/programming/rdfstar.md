@@ -64,12 +64,12 @@ A Turtle-star file that contains an annotation with a certainty score, on a stat
 If we wish to read this data into an RDF4J Model object, we can do so using the Rio Turtle-star parser:
 
 ```java
-Model model = Rio.parse(new FileInputStream("/path/to/file.ttls"), "", RDFFORMAT.TURTLESTAR);
+Model model = Rio.parse(new FileInputStream("/path/to/file.ttls"), "", RDFFormat.TURTLESTAR);
 ```
 
 Similarly, Rio can be used to write RDF-star models to file:
 ```java
-Rio.write(model, new FileOuputStream("/path/to/file.ttls"), "", RDFFORMAT.TURTLESTAR);
+Rio.write(model, new FileOutputStream("/path/to/file.ttls"), "", RDFFormat.TURTLESTAR);
 ```
 
 ## Storing and retrieving RDF-star in a Repository
