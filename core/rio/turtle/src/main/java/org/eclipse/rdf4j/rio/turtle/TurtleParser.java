@@ -669,7 +669,7 @@ public class TurtleParser extends AbstractRDFParser {
 	 * @throws RDFParseException
 	 */
 	protected String parseQuotedString() throws IOException, RDFParseException {
-		String result = null;
+		String result;
 
 		int c1 = readCodePoint();
 

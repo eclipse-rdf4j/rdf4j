@@ -18,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -325,18 +324,15 @@ public abstract class RDFStoreTest {
 		con.addStatement(subj, pred, obj);
 		con.commit();
 
-		CloseableIteration<? extends Statement, SailException> stIter = con.getStatements(null, null, null, false);
-
-		try {
+		try (CloseableIteration<? extends Statement, SailException> stIter = con.getStatements(null, null, null,
+				false)) {
 			Assert.assertTrue(stIter.hasNext());
 
 			Statement st = stIter.next();
 			Assert.assertEquals(subj, st.getSubject());
 			Assert.assertEquals(pred, st.getPredicate());
 			Assert.assertEquals(obj, st.getObject());
-			Assert.assertTrue(!stIter.hasNext());
-		} finally {
-			stIter.close();
+			Assert.assertFalse(stIter.hasNext());
 		}
 
 		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
@@ -700,15 +696,12 @@ public abstract class RDFStoreTest {
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.commit();
 
-		CloseableIteration<? extends Namespace, SailException> namespaces = con.getNamespaces();
-		try {
+		try (CloseableIteration<? extends Namespace, SailException> namespaces = con.getNamespaces()) {
 			Assert.assertTrue(namespaces.hasNext());
 			Namespace rdf = namespaces.next();
 			Assert.assertEquals("rdf", rdf.getPrefix());
 			Assert.assertEquals(RDF.NAMESPACE, rdf.getName());
-			Assert.assertTrue(!namespaces.hasNext());
-		} finally {
-			namespaces.close();
+			Assert.assertFalse(namespaces.hasNext());
 		}
 	}
 
@@ -818,8 +811,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testDualConnections() throws Exception {
-		SailConnection con2 = sail.getConnection();
-		try {
+		try (SailConnection con2 = sail.getConnection()) {
 			Assert.assertEquals(0, countAllElements());
 			con.begin();
 			con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
@@ -849,8 +841,6 @@ public abstract class RDFStoreTest {
 			Thread.yield();
 			con2.commit();
 			thread.join();
-		} finally {
-			con2.close();
 		}
 	}
 

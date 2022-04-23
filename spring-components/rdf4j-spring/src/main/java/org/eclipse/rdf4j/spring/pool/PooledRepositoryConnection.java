@@ -26,9 +26,9 @@ public class PooledRepositoryConnection extends RepositoryConnectionWrapper {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
-	private RepositoryConnection delegate;
+	private final RepositoryConnection delegate;
 
-	private ObjectPool<RepositoryConnection> pool;
+	private final ObjectPool<RepositoryConnection> pool;
 
 	public PooledRepositoryConnection(
 			RepositoryConnection delegate, ObjectPool<RepositoryConnection> pool) {

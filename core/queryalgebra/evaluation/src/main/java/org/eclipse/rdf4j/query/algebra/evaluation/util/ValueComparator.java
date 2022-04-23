@@ -132,7 +132,7 @@ public class ValueComparator implements Comparator<Value> {
 	}
 
 	private int comparePlainLiterals(Literal leftLit, Literal rightLit) {
-		int result = 0;
+		int result;
 
 		// FIXME: Confirm these rules work with RDF-1.1
 		// Sort by datatype first, plain literals come before datatyped literals

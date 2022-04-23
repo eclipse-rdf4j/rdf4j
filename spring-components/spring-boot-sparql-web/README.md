@@ -2,7 +2,7 @@
 
 This code is to be used in a different (your) spring-boot project.
 
-For example add the following to your pom otherwise setup like any other 
+For example add the following to your pom otherwise setup like any other
 spring-boot application
 
 ```
@@ -35,8 +35,8 @@ import org.springframework.context.annotation.Import;
 @Import(QueryResponder.class)
 public class Server {
 	@Bean
+	MemoryStore store = ... ;//Configure progamatically your specific store
 	public Repository getRepository() {
-		MemoryStore store = ... //Configure progamatically your specific store
 		SailRepository sailRepository = new SailRepository(store);
 		sailRepository.init();
 		retun sailRepository;

@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
  */
 public class Assignment implements Projectable, Groupable {
 	private static final String AS = " AS ";
-	private Assignable expression;
-	private Variable var;
+	private final Assignable expression;
+	private final Variable var;
 
 	Assignment(Assignable exp, Variable var) {
 		this.expression = exp;

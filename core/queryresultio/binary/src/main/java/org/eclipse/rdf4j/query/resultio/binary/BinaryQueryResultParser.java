@@ -67,7 +67,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 
 	private int formatVersion;
 
-	private CharsetDecoder charsetDecoder = StandardCharsets.UTF_8.newDecoder();
+	private final CharsetDecoder charsetDecoder = StandardCharsets.UTF_8.newDecoder();
 
 	private String[] namespaceArray = new String[32];
 
@@ -211,7 +211,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 	private void processError() throws IOException, QueryResultParseException {
 		byte errTypeFlag = in.readByte();
 
-		QueryErrorType errType = null;
+		QueryErrorType errType;
 		if (errTypeFlag == MALFORMED_QUERY_ERROR) {
 			errType = QueryErrorType.MALFORMED_QUERY_ERROR;
 		} else if (errTypeFlag == QUERY_EVALUATION_ERROR) {
@@ -262,7 +262,7 @@ public class BinaryQueryResultParser extends AbstractTupleQueryResultParser {
 		String label = readString();
 
 		if (recordTypeMarker == DATATYPE_LITERAL_RECORD_MARKER) {
-			IRI datatype = null;
+			IRI datatype;
 
 			int dtTypeMarker = in.readByte();
 			switch (dtTypeMarker) {

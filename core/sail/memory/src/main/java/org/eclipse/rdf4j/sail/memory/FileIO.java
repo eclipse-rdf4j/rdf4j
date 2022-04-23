@@ -226,7 +226,7 @@ class FileIO {
 
 	public void writeStatement(CloseableIteration<? extends Statement, SailException> stIter, int tripleMarker,
 			int quadMarker, DataOutputStream dataOut) throws IOException, SailException {
-		try {
+		try (stIter) {
 			while (stIter.hasNext()) {
 				Statement st = stIter.next();
 				Resource context = st.getContext();
@@ -242,8 +242,6 @@ class FileIO {
 					writeValue(context, dataOut);
 				}
 			}
-		} finally {
-			stIter.close();
 		}
 	}
 

@@ -179,7 +179,7 @@ public class RepositoryFederatedService implements FederatedService {
 	private boolean useFreshConnection = true;
 
 	// flag indicating whether the repository shall be closed in #shutdown()
-	protected boolean shutDown = true;
+	protected boolean shutDown;
 
 	private RepositoryConnection managedConn = null;
 

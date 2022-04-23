@@ -45,7 +45,7 @@ public class ModelsTest {
 
 	private Model model2;
 
-	private static ValueFactory VF = SimpleValueFactory.getInstance();
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
 	private IRI foo;
 

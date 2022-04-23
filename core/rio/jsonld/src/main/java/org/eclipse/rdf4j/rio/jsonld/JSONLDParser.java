@@ -39,7 +39,7 @@ import com.github.jsonldjava.utils.JsonUtils;
  *
  * @author Peter Ansell
  */
-public class JSONLDParser extends AbstractRDFParser implements RDFParser {
+public class JSONLDParser extends AbstractRDFParser {
 
 	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 

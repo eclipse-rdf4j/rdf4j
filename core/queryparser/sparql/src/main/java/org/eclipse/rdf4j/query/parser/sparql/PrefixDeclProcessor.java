@@ -131,7 +131,7 @@ public class PrefixDeclProcessor {
 
 	private static class QNameProcessor extends AbstractASTVisitor {
 
-		private Map<String, String> prefixMap;
+		private final Map<String, String> prefixMap;
 
 		public QNameProcessor(Map<String, String> prefixMap) {
 			this.prefixMap = prefixMap;

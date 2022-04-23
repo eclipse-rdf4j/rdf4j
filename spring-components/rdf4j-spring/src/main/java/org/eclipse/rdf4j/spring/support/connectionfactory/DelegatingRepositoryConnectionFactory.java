@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
  * @author Florian Kleedorfer
  */
 public abstract class DelegatingRepositoryConnectionFactory implements RepositoryConnectionFactory {
-	private RepositoryConnectionFactory delegate;
+	private final RepositoryConnectionFactory delegate;
 
 	public DelegatingRepositoryConnectionFactory(RepositoryConnectionFactory delegate) {
 		this.delegate = delegate;

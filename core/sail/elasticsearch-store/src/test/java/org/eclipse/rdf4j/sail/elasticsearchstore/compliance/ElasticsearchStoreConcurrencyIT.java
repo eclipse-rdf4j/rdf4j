@@ -28,7 +28,7 @@ import org.junit.BeforeClass;
  */
 public class ElasticsearchStoreConcurrencyIT extends SailConcurrencyTest {
 
-	private static File installLocation = Files.newTemporaryFolder();
+	private static final File installLocation = Files.newTemporaryFolder();
 	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider clientPool;
 

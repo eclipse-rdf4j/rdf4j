@@ -33,7 +33,7 @@ import org.junit.Test;
  */
 public class RegexTest {
 
-	private ValueFactory vf = SimpleValueFactory.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private SPARQLServiceResolver serviceResolver;
 

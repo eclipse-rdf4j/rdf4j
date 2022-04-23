@@ -42,7 +42,7 @@ import org.junit.Test;
 
 public abstract class AbstractLuceneSailIndexedPropertiesTest {
 
-	private static ValueFactory vf = SimpleValueFactory.getInstance();
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	protected LuceneSail sail;
 
@@ -162,7 +162,7 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 					// check the results
 					ArrayList<IRI> uris = new ArrayList<>();
 
-					BindingSet bindings = null;
+					BindingSet bindings;
 					while (result.hasNext()) {
 						bindings = result.next();
 						uris.add((IRI) bindings.getValue("Subject"));
@@ -183,7 +183,7 @@ public abstract class AbstractLuceneSailIndexedPropertiesTest {
 					// check the results
 					ArrayList<IRI> uris = new ArrayList<>();
 
-					BindingSet bindings = null;
+					BindingSet bindings;
 					while (result.hasNext()) {
 						bindings = result.next();
 						uris.add((IRI) bindings.getValue("Subject"));

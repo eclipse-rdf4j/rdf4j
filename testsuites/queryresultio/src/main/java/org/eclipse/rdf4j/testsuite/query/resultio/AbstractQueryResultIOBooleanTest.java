@@ -9,6 +9,7 @@
 package org.eclipse.rdf4j.testsuite.query.resultio;
 
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
@@ -47,14 +48,14 @@ public abstract class AbstractQueryResultIOBooleanTest extends AbstractQueryResu
 
 	@Test
 	public final void testBooleanEmptyLinks() throws Exception {
-		doBooleanLinks(getBooleanFormat(), true, Arrays.<String>asList());
-		doBooleanLinks(getBooleanFormat(), false, Arrays.<String>asList());
+		doBooleanLinks(getBooleanFormat(), true, List.<String>of());
+		doBooleanLinks(getBooleanFormat(), false, List.<String>of());
 	}
 
 	@Test
 	public final void testBooleanOneLink() throws Exception {
-		doBooleanLinks(getBooleanFormat(), true, Arrays.asList("info"));
-		doBooleanLinks(getBooleanFormat(), false, Arrays.asList("info"));
+		doBooleanLinks(getBooleanFormat(), true, List.of("info"));
+		doBooleanLinks(getBooleanFormat(), false, List.of("info"));
 	}
 
 	@Test
@@ -65,14 +66,14 @@ public abstract class AbstractQueryResultIOBooleanTest extends AbstractQueryResu
 
 	@Test
 	public final void testBooleanEmptyLinksOnly() throws Exception {
-		doBooleanLinksOnly(getBooleanFormat(), true, Arrays.<String>asList());
-		doBooleanLinksOnly(getBooleanFormat(), false, Arrays.<String>asList());
+		doBooleanLinksOnly(getBooleanFormat(), true, List.<String>of());
+		doBooleanLinksOnly(getBooleanFormat(), false, List.<String>of());
 	}
 
 	@Test
 	public final void testBooleanOneLinkOnly() throws Exception {
-		doBooleanLinksOnly(getBooleanFormat(), true, Arrays.asList("info"));
-		doBooleanLinksOnly(getBooleanFormat(), false, Arrays.asList("info"));
+		doBooleanLinksOnly(getBooleanFormat(), true, List.of("info"));
+		doBooleanLinksOnly(getBooleanFormat(), false, List.of("info"));
 	}
 
 	@Test

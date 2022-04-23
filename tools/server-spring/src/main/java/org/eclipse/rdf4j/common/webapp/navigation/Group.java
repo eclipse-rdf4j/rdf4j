@@ -92,7 +92,7 @@ public class Group extends AbstractNavigationNode {
 	}
 
 	protected View findViewInternal(String viewName) {
-		View result = null;
+		View result;
 
 		int indexOfSeparator = viewName.indexOf(getPathSeparator());
 		if (indexOfSeparator > 0) {

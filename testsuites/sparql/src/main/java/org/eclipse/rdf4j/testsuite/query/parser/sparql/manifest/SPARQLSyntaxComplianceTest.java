@@ -55,10 +55,10 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(SPARQLSyntaxComplianceTest.class);
 
-	private static final List<String> excludedSubdirs = Arrays.asList();
+	private static final List<String> excludedSubdirs = List.of();
 
-	private String queryFileURL;
-	private boolean positiveTest;
+	private final String queryFileURL;
+	private final boolean positiveTest;
 
 	@Parameterized.Parameters(name = "{0}")
 	public static Collection<Object[]> data() {

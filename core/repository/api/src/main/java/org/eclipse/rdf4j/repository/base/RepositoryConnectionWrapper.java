@@ -436,7 +436,7 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 */
 	protected void exportStatements(RepositoryResult<Statement> stIter, RDFHandler handler)
 			throws RepositoryException, RDFHandlerException {
-		try {
+		try (stIter) {
 			handler.startRDF();
 			try ( // Export namespace information
 					RepositoryResult<Namespace> nsIter = getNamespaces()) {
@@ -450,8 +450,6 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 				handler.handleStatement(stIter.next());
 			}
 			handler.endRDF();
-		} finally {
-			stIter.close();
 		}
 	}
 

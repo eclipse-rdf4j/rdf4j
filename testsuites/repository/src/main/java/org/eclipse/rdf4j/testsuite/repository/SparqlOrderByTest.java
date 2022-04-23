@@ -43,14 +43,14 @@ public abstract class SparqlOrderByTest {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
-	private String query1 = "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name\n"
+	private final String query1 = "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name\n"
 			+ "WHERE { ?x foaf:name ?name }\n" + "ORDER BY ?name\n";
 
-	private String query2 = "PREFIX     :    <http://example.org/ns#>\n"
+	private final String query2 = "PREFIX     :    <http://example.org/ns#>\n"
 			+ "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n" + "PREFIX xsd:     <http://www.w3.org/2001/XMLSchema#>\n"
 			+ "SELECT ?name\n" + "WHERE { ?x foaf:name ?name ; :empId ?emp }\n" + "ORDER BY DESC(?emp)\n";
 
-	private String query3 = "PREFIX     :    <http://example.org/ns#>\n"
+	private final String query3 = "PREFIX     :    <http://example.org/ns#>\n"
 			+ "PREFIX foaf:    <http://xmlns.com/foaf/0.1/>\n" + "SELECT ?name\n"
 			+ "WHERE { ?x foaf:name ?name ; :empId ?emp }\n" + "ORDER BY ?name DESC(?emp)\n";
 

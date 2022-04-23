@@ -275,10 +275,8 @@ public class IOUtil {
 	 */
 	public static Properties readProperties(InputStream in, Properties defaults) throws IOException {
 		Properties result = new Properties(defaults);
-		try {
+		try (in) {
 			result.load(in);
-		} finally {
-			in.close();
 		}
 		return result;
 	}
@@ -315,10 +313,8 @@ public class IOUtil {
 			props = all;
 		}
 
-		try {
+		try (out) {
 			props.store(out, null);
-		} finally {
-			out.close();
 		}
 	}
 
@@ -330,16 +326,8 @@ public class IOUtil {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public static void writeStream(InputStream in, File file) throws IOException {
-		FileOutputStream out = new FileOutputStream(file);
-
-		try {
+		try (FileOutputStream out = new FileOutputStream(file)) {
 			transfer(in, out);
-		} finally {
-			try {
-				out.flush();
-			} finally {
-				out.close();
-			}
 		}
 	}
 
@@ -404,7 +392,7 @@ public class IOUtil {
 	private static CharArrayWriter readFully(Reader r) throws IOException {
 		CharArrayWriter result = new CharArrayWriter();
 		char[] buf = new char[4096];
-		int charsRead = 0;
+		int charsRead;
 
 		while ((charsRead = r.read(buf)) != -1) {
 			result.write(buf, 0, charsRead);
@@ -423,7 +411,7 @@ public class IOUtil {
 	 */
 	public static final long transfer(InputStream in, OutputStream out) throws IOException {
 		long totalBytes = 0;
-		int bytesInBuf = 0;
+		int bytesInBuf;
 		byte[] buf = new byte[4096];
 
 		while ((bytesInBuf = in.read(buf)) != -1) {
@@ -458,7 +446,7 @@ public class IOUtil {
 	 */
 	public static final long transfer(Reader in, Writer out) throws IOException {
 		long totalChars = 0;
-		int charsInBuf = 0;
+		int charsInBuf;
 		char[] buf = new char[4096];
 
 		while ((charsInBuf = in.read(buf)) != -1) {
@@ -497,7 +485,7 @@ public class IOUtil {
 	 * </p>
 	 * <p>
 	 * The table below shows a few examples of decimals encoded both as a 32-bit integer and as variable length binary:
-	 * 
+	 *
 	 * <pre>
 	 * {@code
 	 * decimal |           32-bit integer            |          variable length binary
@@ -545,7 +533,7 @@ public class IOUtil {
 
 	/**
 	 * Read an variable length integer. See {@link #writeVarInt(OutputStream, int)} for encoding details.
-	 * 
+	 *
 	 * @param in The {@link InputStream} to read from.
 	 * @return The integer read.
 	 * @throws IOException If an error occurred while reading the integer.

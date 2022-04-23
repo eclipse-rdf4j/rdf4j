@@ -26,9 +26,9 @@ public class BTreeTest {
 	 * Constants *
 	 *-----------*/
 
-	private static List<byte[]> TEST_VALUES = new ArrayList<>(256);
+	private static final List<byte[]> TEST_VALUES = new ArrayList<>(256);
 
-	private static List<byte[]> RANDOMIZED_TEST_VALUES = new ArrayList<>(256);
+	private static final List<byte[]> RANDOMIZED_TEST_VALUES = new ArrayList<>(256);
 
 	static {
 		for (int i = 0; i < 256; i++) {

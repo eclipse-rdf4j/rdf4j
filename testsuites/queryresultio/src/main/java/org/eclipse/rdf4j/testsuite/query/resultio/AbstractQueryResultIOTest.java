@@ -117,7 +117,7 @@ public abstract class AbstractQueryResultIOTest {
 	}
 
 	protected TupleQueryResult createTupleSingleVarMultipleBindingSets() {
-		List<String> bindingNames = Arrays.asList("a");
+		List<String> bindingNames = List.of("a");
 
 		MapBindingSet solution1 = new MapBindingSet(bindingNames.size());
 		solution1.addBinding("a", vf.createIRI("foo:bar"));
@@ -427,13 +427,11 @@ public abstract class AbstractQueryResultIOTest {
 		writer.handleLinks(links);
 		writer.endHeader();
 		writer.endHeader();
-		try {
+		try (input) {
 			while (input.hasNext()) {
 				BindingSet bindingSet = input.next();
 				writer.handleSolution(bindingSet);
 			}
-		} finally {
-			input.close();
 		}
 		writer.endQueryResult();
 
@@ -462,7 +460,7 @@ public abstract class AbstractQueryResultIOTest {
 		writer.startHeader();
 		writer.handleLinks(links);
 		writer.endHeader();
-		try {
+		try (input) {
 			while (input.hasNext()) {
 				BindingSet bindingSet = input.next();
 				writer.handleSolution(bindingSet);
@@ -471,8 +469,6 @@ public abstract class AbstractQueryResultIOTest {
 			fail("Expected exception when calling handleSolution without startQueryResult");
 		} catch (IllegalStateException ise) {
 			// Expected exception
-		} finally {
-			input.close();
 		}
 	}
 
@@ -579,7 +575,7 @@ public abstract class AbstractQueryResultIOTest {
 		// this test is irrelevant as it will fail early
 		boolean supported = true;
 		try {
-			writer.startQueryResult(Arrays.asList("foo"));
+			writer.startQueryResult(List.of("foo"));
 		} catch (UnsupportedOperationException uoe) {
 			// Boolean writers are allowed to throw this for startQueryResult
 			supported = false;

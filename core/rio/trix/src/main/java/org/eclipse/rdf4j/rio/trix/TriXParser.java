@@ -258,7 +258,7 @@ public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {
 
 		private boolean parsingContext;
 
-		private List<Value> valueList;
+		private final List<Value> valueList;
 
 		public TriXSAXHandler() {
 			currentContext = null;

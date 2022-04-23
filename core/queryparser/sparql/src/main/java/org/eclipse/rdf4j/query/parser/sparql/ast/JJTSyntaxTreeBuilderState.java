@@ -9,8 +9,8 @@
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
 public class JJTSyntaxTreeBuilderState {
-	private java.util.List<Node> nodes;
-	private java.util.List<Integer> marks;
+	private final java.util.List<Node> nodes;
+	private final java.util.List<Integer> marks;
 
 	private int sp; // number of nodes on stack
 	private int mk; // current mark

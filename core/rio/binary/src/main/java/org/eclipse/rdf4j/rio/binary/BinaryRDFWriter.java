@@ -58,11 +58,11 @@ import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
 
 /**
  * A {@link RDFWriter} for the binary RDF format.
- * 
+ *
  * @author Arjohn Kampman
  * @author Frens Jan Rumph
  */
-public class BinaryRDFWriter extends AbstractRDFWriter implements RDFWriter, ByteSink {
+public class BinaryRDFWriter extends AbstractRDFWriter implements ByteSink {
 
 	private final Queue<Statement> statementQueue;
 

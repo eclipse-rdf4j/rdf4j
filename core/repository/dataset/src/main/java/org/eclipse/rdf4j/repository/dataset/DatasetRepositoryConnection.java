@@ -29,9 +29,9 @@ import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 
 public class DatasetRepositoryConnection extends RepositoryConnectionWrapper {
 
-	private DatasetRepository repository;
+	private final DatasetRepository repository;
 
-	private SailRepositoryConnection delegate;
+	private final SailRepositoryConnection delegate;
 
 	public DatasetRepositoryConnection(DatasetRepository repository, SailRepositoryConnection delegate) {
 		super(repository, delegate);

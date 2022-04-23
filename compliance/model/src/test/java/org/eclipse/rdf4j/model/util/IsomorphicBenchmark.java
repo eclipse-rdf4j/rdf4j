@@ -44,41 +44,41 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class IsomorphicBenchmark {
 
-	private Model empty = getModel("empty.ttl");
-	private Model blankNodes = getModel("blankNodes.ttl");
-	private Model blankNodesLarge = getModel("blankNodesLarge.ttl");
-	private Model shacl = getModel("shacl.ttl");
-	private Model shaclValidationReport = getModel("shaclValidationReport.ttl");
-	private Model longChain = getModel("longChain.ttl");
-	private Model sparqlTestCase = getModel("sparqlTestCase.ttl");
-	private Model spinFullForwardchained = getModel("spin-full-forwardchained.ttl");
-	private Model bsbm = getModel("bsbm-100.ttl");
-	private Model bsbmChanged = getModel("bsbm-100-changed.ttl");
-	private List<Statement> bsbm_arraylist = new ArrayList<>(bsbm);
-	private Model bsbmTree = new TreeModel(bsbm);
-	private Model list = getModel("list.ttl");
-	private Model internallyIsomorphic = getModel("internallyIsomorphic.ttl");
-	private Model manyProperties = getModel("manyProperties.ttl");
-	private Model manyProperties2 = getModel("manyProperties2.ttl");
-	private Model uuid = getModel("uuid.ttl");
+	private final Model empty = getModel("empty.ttl");
+	private final Model blankNodes = getModel("blankNodes.ttl");
+	private final Model blankNodesLarge = getModel("blankNodesLarge.ttl");
+	private final Model shacl = getModel("shacl.ttl");
+	private final Model shaclValidationReport = getModel("shaclValidationReport.ttl");
+	private final Model longChain = getModel("longChain.ttl");
+	private final Model sparqlTestCase = getModel("sparqlTestCase.ttl");
+	private final Model spinFullForwardchained = getModel("spin-full-forwardchained.ttl");
+	private final Model bsbm = getModel("bsbm-100.ttl");
+	private final Model bsbmChanged = getModel("bsbm-100-changed.ttl");
+	private final List<Statement> bsbm_arraylist = new ArrayList<>(bsbm);
+	private final Model bsbmTree = new TreeModel(bsbm);
+	private final Model list = getModel("list.ttl");
+	private final Model internallyIsomorphic = getModel("internallyIsomorphic.ttl");
+	private final Model manyProperties = getModel("manyProperties.ttl");
+	private final Model manyProperties2 = getModel("manyProperties2.ttl");
+	private final Model uuid = getModel("uuid.ttl");
 
-	private Model empty_2 = getModel("empty.ttl");
-	private Model blankNodes_2 = getModel("blankNodes.ttl");
-	private Model blankNodesLarge_2 = getModel("blankNodesLarge.ttl");
-	private Model shacl_2 = getModel("shacl.ttl");
-	private Model shaclValidationReport_2 = getModel("shaclValidationReport.ttl");
-	private Model shaclValidationReport_changed = getModel("shaclValidationReport-changed.ttl");
-	private Model longChain_2 = getModel("longChain.ttl");
-	private Model sparqlTestCase_2 = getModel("sparqlTestCase.ttl");
-	private Model spinFullForwardchained_2 = getModel("spin-full-forwardchained.ttl");
-	private Model bsbm_2 = getModel("bsbm-100.ttl");
-	private List<Statement> bsbm_arraylist_2 = new ArrayList<>(bsbm);
-	private Model bsbmTree_2 = new TreeModel(bsbm);
-	private Model list_2 = getModel("list.ttl");
-	private Model internallyIsomorphic_2 = getModel("internallyIsomorphic.ttl");
-	private Model manyProperties_2 = getModel("manyProperties.ttl");
-	private Model manyProperties2_2 = getModel("manyProperties2.ttl");
-	private Model uuid_2 = getModel("uuid.ttl");
+	private final Model empty_2 = getModel("empty.ttl");
+	private final Model blankNodes_2 = getModel("blankNodes.ttl");
+	private final Model blankNodesLarge_2 = getModel("blankNodesLarge.ttl");
+	private final Model shacl_2 = getModel("shacl.ttl");
+	private final Model shaclValidationReport_2 = getModel("shaclValidationReport.ttl");
+	private final Model shaclValidationReport_changed = getModel("shaclValidationReport-changed.ttl");
+	private final Model longChain_2 = getModel("longChain.ttl");
+	private final Model sparqlTestCase_2 = getModel("sparqlTestCase.ttl");
+	private final Model spinFullForwardchained_2 = getModel("spin-full-forwardchained.ttl");
+	private final Model bsbm_2 = getModel("bsbm-100.ttl");
+	private final List<Statement> bsbm_arraylist_2 = new ArrayList<>(bsbm);
+	private final Model bsbmTree_2 = new TreeModel(bsbm);
+	private final Model list_2 = getModel("list.ttl");
+	private final Model internallyIsomorphic_2 = getModel("internallyIsomorphic.ttl");
+	private final Model manyProperties_2 = getModel("manyProperties.ttl");
+	private final Model manyProperties2_2 = getModel("manyProperties2.ttl");
+	private final Model uuid_2 = getModel("uuid.ttl");
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder().include("IsomorphicBenchmark.*")

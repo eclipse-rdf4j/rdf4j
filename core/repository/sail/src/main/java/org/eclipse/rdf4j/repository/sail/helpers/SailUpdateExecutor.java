@@ -632,7 +632,7 @@ public class SailUpdateExecutor {
 
 		Resource subject = null;
 		IRI predicate = null;
-		Value object = null;
+		Value object;
 		Resource context = null;
 
 		Value patternValue;
@@ -732,7 +732,7 @@ public class SailUpdateExecutor {
 	}
 
 	private Value getValueForVar(Var var, BindingSet bindings) throws SailException {
-		Value value = null;
+		Value value;
 		if (var.hasValue()) {
 			value = var.getValue();
 		} else {

@@ -81,7 +81,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
+abstract public class Shape implements ConstraintComponent, Identifiable {
 
 	private static final Logger logger = LoggerFactory.getLogger(Shape.class);
 

@@ -37,4 +37,8 @@ public class STRUUID implements Function {
 		return literal;
 	}
 
+	@Override
+	public boolean mustReturnDifferentResult() {
+		return true;
+	}
 }

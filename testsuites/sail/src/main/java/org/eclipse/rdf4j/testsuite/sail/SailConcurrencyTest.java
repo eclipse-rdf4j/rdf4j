@@ -88,7 +88,7 @@ public abstract class SailConcurrencyTest {
 
 		private final CountDownLatch otherTxnCommitted;
 
-		private AtomicInteger targetSize = new AtomicInteger(MAX_STATEMENTS);
+		private final AtomicInteger targetSize = new AtomicInteger(MAX_STATEMENTS);
 
 		private final boolean rollback;
 
@@ -103,8 +103,7 @@ public abstract class SailConcurrencyTest {
 		@Override
 		public void run() {
 			try {
-				final SailConnection conn = store.getConnection();
-				try {
+				try (SailConnection conn = store.getConnection()) {
 					conn.begin();
 					while (txnSize < targetSize.get()) {
 						IRI subject = vf.createIRI("urn:instance-" + txnSize);
@@ -121,8 +120,6 @@ public abstract class SailConcurrencyTest {
 						conn.commit();
 						otherTxnCommitted.countDown();
 					}
-				} finally {
-					conn.close();
 				}
 			} catch (Throwable t) {
 				logger.error("error while executing transactions", t);
@@ -174,15 +171,12 @@ public abstract class SailConcurrencyTest {
 		final long finish = System.currentTimeMillis();
 		logger.info("committed both txns in " + (finish - start) / 1000 + "s");
 
-		SailConnection conn = store.getConnection();
-		try {
+		try (SailConnection conn = store.getConnection()) {
 			long size1 = conn.size(context1);
 			long size2 = conn.size(context2);
 			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
 			Assert.assertEquals("upload into context 1 should have been fully committed", runner1.getSize(), size1);
 			Assert.assertEquals("upload into context 2 should have been fully committed", runner2.getSize(), size2);
-		} finally {
-			conn.close();
 		}
 
 	}
@@ -222,15 +216,12 @@ public abstract class SailConcurrencyTest {
 		final long finish = System.currentTimeMillis();
 		logger.info("completed both txns in " + (finish - start) / 1000 + "s");
 
-		SailConnection conn = store.getConnection();
-		try {
+		try (SailConnection conn = store.getConnection()) {
 			long size1 = conn.size(context1);
 			long size2 = conn.size(context2);
 			logger.debug("size 1 = {}, size 2 = {}", size1, size2);
 			Assert.assertEquals("upload into context 1 should have been fully committed", runner1.getSize(), size1);
 			Assert.assertEquals("upload into context 2 should have been rolled back", 0, size2);
-		} finally {
-			conn.close();
 		}
 
 	}
@@ -245,8 +236,7 @@ public abstract class SailConcurrencyTest {
 
 		Runnable writer = () -> {
 			try {
-				SailConnection connection = store.getConnection();
-				try {
+				try (SailConnection connection = store.getConnection()) {
 					while (continueRunning) {
 						connection.begin();
 						for (int i = 0; i < 10; i++) {
@@ -256,8 +246,6 @@ public abstract class SailConcurrencyTest {
 						// System.out.print("*");
 						connection.commit();
 					}
-				} finally {
-					connection.close();
 				}
 			} catch (Throwable t) {
 				continueRunning = false;
@@ -269,22 +257,16 @@ public abstract class SailConcurrencyTest {
 		// connection.
 		Runnable reader = () -> {
 			try {
-				SailConnection connection = store.getConnection();
-				try {
+				try (SailConnection connection = store.getConnection()) {
 					while (continueRunning) {
-						CloseableIteration<? extends Resource, SailException> contextIter = connection
-								.getContextIDs();
-						try {
+						try (CloseableIteration<? extends Resource, SailException> contextIter = connection
+								.getContextIDs()) {
 							while (contextIter.hasNext()) {
 								Resource context = contextIter.next();
 								assertNotNull(context);
 							}
-						} finally {
-							contextIter.close();
 						}
 					}
-				} finally {
-					connection.close();
 				}
 			} catch (Throwable t) {
 				continueRunning = false;

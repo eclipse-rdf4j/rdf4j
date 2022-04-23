@@ -52,7 +52,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
  * @author Andreas Schwarte
  *
  */
-public class SparqlTripleSource extends TripleSourceBase implements TripleSource {
+public class SparqlTripleSource extends TripleSourceBase {
 
 	private boolean useASKQueries = true;
 

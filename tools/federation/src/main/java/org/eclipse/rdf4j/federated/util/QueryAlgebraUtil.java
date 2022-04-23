@@ -202,7 +202,7 @@ public class QueryAlgebraUtil {
 		Set<String> varNames = new HashSet<>();
 		List<ExclusiveTupleExpr> stmts = group.getExclusiveExpressions();
 
-		Join join = null;
+		Join join;
 
 		if (stmts.size() == 2) {
 			join = new Join(constructJoinArg(stmts.get(0), varNames, bindings),

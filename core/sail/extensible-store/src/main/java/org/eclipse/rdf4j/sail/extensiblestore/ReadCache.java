@@ -74,7 +74,7 @@ public class ReadCache implements DataStructureInterface {
 
 		return new CloseableIteration<>() {
 
-			CloseableIteration<? extends ExtensibleStatement, SailException> statements = delegate.getStatements(
+			final CloseableIteration<? extends ExtensibleStatement, SailException> statements = delegate.getStatements(
 					subject,
 					predicate, object, inferred, context);
 			List<ExtensibleStatement> cache = new ArrayList<>();
@@ -127,7 +127,7 @@ public class ReadCache implements DataStructureInterface {
 
 			return new LookAheadIteration<>() {
 				@Override
-				protected final void handleClose() throws SailException {
+				protected void handleClose() throws SailException {
 					// no-op
 				}
 

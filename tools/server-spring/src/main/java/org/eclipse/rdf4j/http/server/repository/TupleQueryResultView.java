@@ -39,7 +39,7 @@ import org.slf4j.LoggerFactory;
  */
 public class TupleQueryResultView extends QueryResultView {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	protected static final String DEFAULT_JSONP_CALLBACK_PARAMETER = "callback";
 

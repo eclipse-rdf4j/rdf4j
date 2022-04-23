@@ -123,7 +123,7 @@ public class RDFLoader {
 				(PrivilegedAction<Integer>) () -> Integer.valueOf(System.getProperty("http.maxRedirects", "20")));
 
 		int redirects = 0;
-		boolean redirected = false;
+		boolean redirected;
 
 		URL requestURL = url;
 		do {

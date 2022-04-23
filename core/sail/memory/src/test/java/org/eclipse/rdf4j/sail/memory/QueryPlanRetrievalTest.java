@@ -953,6 +953,31 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
+	public void testWildcard2() {
+
+		String expected = "Projection\n" +
+				"╠══ProjectionElemList\n" +
+				"║     ProjectionElem \"a\"\n" +
+				"║     ProjectionElem \"b\"\n" +
+				"║     ProjectionElem \"c\"\n" +
+				"╚══StatementPattern (resultSizeEstimate=12)\n" +
+				"      Var (name=a)\n" +
+				"      Var (name=b)\n" +
+				"      Var (name=c)\n";
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		addData(sailRepository);
+
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("select * where {?a ?b ?c.}");
+			String actual = query.explain(Explanation.Level.Optimized).toString();
+
+			assertThat(actual).isEqualToNormalizingNewlines(expected);
+		}
+		sailRepository.shutDown();
+
+	}
+
+	@Test
 	public void testArbitraryLengthPath() {
 
 		String expected = "Projection\n" +

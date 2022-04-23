@@ -26,17 +26,17 @@ public class SimpleTriple extends AbstractTriple {
 	/**
 	 * The triple's subject.
 	 */
-	private Resource subject;
+	private final Resource subject;
 
 	/**
 	 * The triple's predicate.
 	 */
-	private IRI predicate;
+	private final IRI predicate;
 
 	/**
 	 * The triple's object.
 	 */
-	private Value object;
+	private final Value object;
 
 	/**
 	 * Creates a new Triple with the supplied subject, predicate and object.

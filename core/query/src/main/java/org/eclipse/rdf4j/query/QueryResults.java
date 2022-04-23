@@ -263,15 +263,13 @@ public class QueryResults extends Iterations {
 	public static void report(TupleQueryResult tqr, QueryResultHandler handler)
 			throws TupleQueryResultHandlerException, QueryEvaluationException {
 
-		try {
+		try (tqr) {
 			handler.startQueryResult(tqr.getBindingNames());
 
 			while (tqr.hasNext()) {
 				BindingSet bindingSet = tqr.next();
 				handler.handleSolution(bindingSet);
 			}
-		} finally {
-			tqr.close();
 		}
 		handler.endQueryResult();
 	}

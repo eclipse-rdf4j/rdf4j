@@ -225,7 +225,7 @@ public class TupleExprBuilderTest {
 
 	private class ServiceNodeFinder extends AbstractASTVisitor {
 
-		private List<String> graphPatterns = new ArrayList<>();
+		private final List<String> graphPatterns = new ArrayList<>();
 
 		@Override
 		public Object visit(ASTServiceGraphPattern node, Object data) throws VisitorException {

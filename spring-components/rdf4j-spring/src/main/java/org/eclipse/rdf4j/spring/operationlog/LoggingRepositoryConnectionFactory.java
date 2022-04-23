@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils;
  */
 public class LoggingRepositoryConnectionFactory extends DelegatingRepositoryConnectionFactory {
 
-	private OperationLog operationLog;
+	private final OperationLog operationLog;
 
 	public LoggingRepositoryConnectionFactory(
 			RepositoryConnectionFactory delegate, OperationLog operationLog) {

@@ -170,7 +170,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	private String analyzer;
 
-	private String queryAnalyzer = "standard";
+	private final String queryAnalyzer = "standard";
 
 	private Function<? super String, ? extends SpatialContext> geoContextMapper;
 

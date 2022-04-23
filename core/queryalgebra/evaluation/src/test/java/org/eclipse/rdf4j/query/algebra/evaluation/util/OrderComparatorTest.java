@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -111,26 +112,26 @@ public class OrderComparatorTest {
 		}
 	}
 
-	private EvaluationStrategyStub strategy = new EvaluationStrategyStub();
+	private final EvaluationStrategyStub strategy = new EvaluationStrategyStub();
 
-	private Order order = new Order();
+	private final Order order = new Order();
 
-	private OrderElem asc = new OrderElem();
+	private final OrderElem asc = new OrderElem();
 
-	private OrderElem desc = new OrderElem();
+	private final OrderElem desc = new OrderElem();
 
-	private ComparatorStub cmp = new ComparatorStub();
+	private final ComparatorStub cmp = new ComparatorStub();
 
-	private int ZERO = 0;
+	private final int ZERO = 0;
 
-	private int POS = 378;
+	private final int POS = 378;
 
-	private int NEG = -7349;
+	private final int NEG = -7349;
 
 	@Test
 	public void testEquals() throws Exception {
 		order.addElement(asc);
-		cmp.setIterator(Arrays.asList(ZERO).iterator());
+		cmp.setIterator(List.of(ZERO).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
 		assertTrue(sud.compare(null, null) == 0);
 	}
@@ -156,7 +157,7 @@ public class OrderComparatorTest {
 	@Test
 	public void testAscLessThan() throws Exception {
 		order.addElement(asc);
-		cmp.setIterator(Arrays.asList(NEG).iterator());
+		cmp.setIterator(List.of(NEG).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
 		assertTrue(sud.compare(null, null) < 0);
 	}
@@ -164,7 +165,7 @@ public class OrderComparatorTest {
 	@Test
 	public void testAscGreaterThan() throws Exception {
 		order.addElement(asc);
-		cmp.setIterator(Arrays.asList(POS).iterator());
+		cmp.setIterator(List.of(POS).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
 		assertTrue(sud.compare(null, null) > 0);
 	}
@@ -172,7 +173,7 @@ public class OrderComparatorTest {
 	@Test
 	public void testDescLessThan() throws Exception {
 		order.addElement(desc);
-		cmp.setIterator(Arrays.asList(NEG).iterator());
+		cmp.setIterator(List.of(NEG).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
 		assertTrue(sud.compare(null, null) > 0);
 	}
@@ -180,7 +181,7 @@ public class OrderComparatorTest {
 	@Test
 	public void testDescGreaterThan() throws Exception {
 		order.addElement(desc);
-		cmp.setIterator(Arrays.asList(POS).iterator());
+		cmp.setIterator(List.of(POS).iterator());
 		OrderComparator sud = new OrderComparator(strategy, order, cmp, context);
 		assertTrue(sud.compare(null, null) < 0);
 	}

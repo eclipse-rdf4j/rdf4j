@@ -849,7 +849,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (expr instanceof BNodeGenerator) {
 			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Bound) {
-			return new QueryValueEvaluationStep.Minimal(this, expr);
+			return prepare((Bound) expr, context);
+//			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Str) {
 			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Label) {
@@ -1067,6 +1068,28 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return BooleanLiteral.valueOf(argValue != null);
 		} catch (ValueExprEvaluationException e) {
 			return BooleanLiteral.FALSE;
+		}
+	}
+
+	private QueryValueEvaluationStep prepare(Bound node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		try {
+			QueryValueEvaluationStep arg = precompile(node.getArg(), context);
+			return new QueryValueEvaluationStep() {
+
+				@Override
+				public Value evaluate(BindingSet bindings)
+						throws ValueExprEvaluationException, QueryEvaluationException {
+					try {
+						Value argValue = arg.evaluate(bindings);
+						return BooleanLiteral.valueOf(argValue != null);
+					} catch (ValueExprEvaluationException e) {
+						return BooleanLiteral.FALSE;
+					}
+				}
+			};
+		} catch (QueryEvaluationException e) {
+			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
 		}
 	}
 
@@ -1481,13 +1504,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		QueryValueEvaluationStep[] argSteps = new QueryValueEvaluationStep[args.size()];
 
-		boolean allConstant = true;
-		for (int i = 0; i < args.size(); i++) {
-			argSteps[i] = precompile(args.get(i), context);
-			if (!argSteps[i].isConstant()) {
-				allConstant = false;
-			}
-		}
+		boolean allConstant = determineIfFunctionCallWillBeAConstant(context, function, args, argSteps);
 		if (allConstant) {
 			Value[] argValues = evaluateAllArguments(args, argSteps, EmptyBindingSet.getInstance());
 			Value res = function.evaluate(tripleSource, argValues);
@@ -1498,6 +1515,34 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				return function.evaluate(tripleSource, argValues);
 			};
 		}
+	}
+
+	/**
+	 * If all input is constant normally the function call output will be constant as well.
+	 * 
+	 * @param context  used to precompile arguments of the function
+	 * @param function that might be constant
+	 * @param args     that the function must evaluate
+	 * @param argSteps side effect this array is filled
+	 * @return if this function resolves to a constant value
+	 */
+	private boolean determineIfFunctionCallWillBeAConstant(QueryEvaluationContext context, Function function,
+			List<ValueExpr> args, QueryValueEvaluationStep[] argSteps) {
+		boolean allConstant = true;
+		if (function.mustReturnDifferentResult()) {
+			allConstant = false;
+			for (int i = 0; i < args.size(); i++) {
+				argSteps[i] = precompile(args.get(i), context);
+			}
+		} else {
+			for (int i = 0; i < args.size(); i++) {
+				argSteps[i] = precompile(args.get(i), context);
+				if (!argSteps[i].isConstant()) {
+					allConstant = false;
+				}
+			}
+		}
+		return allConstant;
 	}
 
 	private Value[] evaluateAllArguments(List<ValueExpr> args, QueryValueEvaluationStep[] argSteps,

@@ -45,10 +45,10 @@ public class SPARQLTSVCustomTest {
 	@Ignore("This test does not work with RDF-1.1")
 	@Test
 	public void testSES2126QuotedLiteralIntegerAsStringExplicitType() throws Exception {
-		List<String> bindingNames = Arrays.asList("test");
+		List<String> bindingNames = List.of("test");
 		String result;
 		try (TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
-				Arrays.asList(new ListBindingSet(bindingNames,
+				List.of(new ListBindingSet(bindingNames,
 						SimpleValueFactory.getInstance().createLiteral("1", XSD.STRING))))) {
 			result = writeTupleResult(tqr);
 		}
@@ -62,10 +62,10 @@ public class SPARQLTSVCustomTest {
 	 */
 	@Test
 	public void testSES2126QuotedLiteralIntegerAsStringImplicitType() throws Exception {
-		List<String> bindingNames = Arrays.asList("test");
+		List<String> bindingNames = List.of("test");
 		String result;
 		try (TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
-				Arrays.asList(new ListBindingSet(bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))))) {
+				List.of(new ListBindingSet(bindingNames, SimpleValueFactory.getInstance().createLiteral("1"))))) {
 			result = writeTupleResult(tqr);
 		}
 		assertEquals("?test\n\"1\"\n", result);

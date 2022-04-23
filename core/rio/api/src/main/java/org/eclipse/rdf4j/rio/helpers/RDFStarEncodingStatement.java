@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.Value;
  * @author Pavel Mihaylov
  */
 class RDFStarEncodingStatement implements Statement {
-	private Statement delegate;
+	private final Statement delegate;
 
 	RDFStarEncodingStatement(Statement delegate) {
 		this.delegate = delegate;

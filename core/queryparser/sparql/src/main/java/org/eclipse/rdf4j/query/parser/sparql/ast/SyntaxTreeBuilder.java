@@ -10980,10 +10980,10 @@ public class SyntaxTreeBuilder
 		}
 	}
 
-	private java.util.List<int[]> jj_expentries = new java.util.ArrayList<>();
+	private final java.util.List<int[]> jj_expentries = new java.util.ArrayList<>();
 	private int[] jj_expentry;
 	private int jj_kind = -1;
-	private int[] jj_lasttokens = new int[100];
+	private final int[] jj_lasttokens = new int[100];
 	private int jj_endpos;
 
 	private void jj_add_error_token(int kind, int pos) {

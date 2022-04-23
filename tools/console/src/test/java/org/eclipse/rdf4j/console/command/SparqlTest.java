@@ -89,7 +89,7 @@ public class SparqlTest extends AbstractCommandTest {
 
 		assertTrue(f.exists(), "File does not exist");
 		assertTrue(f.length() > 0, "Empty file");
-		Model m = null;
+		Model m;
 		try (Reader reader = new FileReader(f)) {
 			m = Rio.parse(reader, "", RDFFormat.TURTLE);
 		}
@@ -108,7 +108,7 @@ public class SparqlTest extends AbstractCommandTest {
 
 		assertTrue(f.exists(), "File does not exist");
 		assertTrue(f.length() > 0, "Empty file");
-		Model m = null;
+		Model m;
 		try (Reader reader = new FileReader(f)) {
 			m = Rio.parse(reader, "", RDFFormat.TURTLE);
 		}

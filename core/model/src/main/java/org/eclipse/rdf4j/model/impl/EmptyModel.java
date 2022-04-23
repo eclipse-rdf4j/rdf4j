@@ -34,7 +34,7 @@ public class EmptyModel extends AbstractModel {
 
 	private static final long serialVersionUID = 3123007631452759092L;
 
-	private Set<Statement> emptySet = Collections.emptySet();
+	private final Set<Statement> emptySet = Collections.emptySet();
 
 	@Override
 	public Optional<Namespace> getNamespace(String prefix) {

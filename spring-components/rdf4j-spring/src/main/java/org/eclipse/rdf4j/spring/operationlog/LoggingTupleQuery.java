@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.spring.support.query.DelegatingTupleQuery;
  */
 public class LoggingTupleQuery extends DelegatingTupleQuery {
 
-	private OperationLog operationLog;
+	private final OperationLog operationLog;
 
 	public LoggingTupleQuery(TupleQuery delegate, OperationLog operationLog) {
 		super(delegate);

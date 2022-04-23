@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -66,7 +67,7 @@ public class ProtocolIT {
 
 	private static TestServer server;
 
-	private static ValueFactory vf = SimpleValueFactory.getInstance();
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@BeforeClass
 	public static void startServer() throws Exception {
@@ -521,12 +522,8 @@ public class ProtocolIT {
 		conn.setDoOutput(true);
 
 		try (InputStream dataStream = new ByteArrayInputStream(namespace.getBytes(StandardCharsets.UTF_8))) {
-			OutputStream connOut = conn.getOutputStream();
-
-			try {
+			try (OutputStream connOut = conn.getOutputStream()) {
 				IOUtil.transfer(dataStream, connOut);
-			} finally {
-				connOut.close();
 			}
 		}
 
@@ -574,12 +571,8 @@ public class ProtocolIT {
 		conn.setRequestProperty("Content-Type", dataFormat.getDefaultMIMEType());
 
 		try (InputStream dataStream = ProtocolIT.class.getResourceAsStream(file)) {
-			OutputStream connOut = conn.getOutputStream();
-
-			try {
-				IOUtil.transfer(dataStream, connOut);
-			} finally {
-				connOut.close();
+			try (OutputStream connOut = conn.getOutputStream()) {
+				IOUtil.transfer(Objects.requireNonNull(dataStream), connOut);
 			}
 		}
 

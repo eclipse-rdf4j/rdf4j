@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 
 public class TaskWrapperIntegrationTest extends SPARQLBaseTest {
 
-	private TestTaskWrapper taskWrapper = new TestTaskWrapper();
+	private final TestTaskWrapper taskWrapper = new TestTaskWrapper();
 
 	@Override
 	protected void initFedXConfig() {

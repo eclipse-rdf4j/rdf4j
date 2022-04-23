@@ -16,7 +16,7 @@ enum UnaryOperator implements SparqlOperator {
 	UNARY_PLUS("+"),
 	UNARY_MINUS("-");
 
-	private String operator;
+	private final String operator;
 
 	UnaryOperator(String operator) {
 		this.operator = operator;

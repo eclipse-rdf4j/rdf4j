@@ -46,7 +46,7 @@ public class ConfigController extends AbstractController {
 
 	private RepositoryManager repositoryManager;
 
-	private ModelFactory modelFactory = new LinkedHashModelFactory();
+	private final ModelFactory modelFactory = new LinkedHashModelFactory();
 
 	public ConfigController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_POST, METHOD_HEAD });

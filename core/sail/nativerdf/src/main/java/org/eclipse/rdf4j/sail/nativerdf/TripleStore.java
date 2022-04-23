@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -47,6 +48,10 @@ class TripleStore implements Closeable {
 	/*-----------*
 	 * Constants *
 	 *-----------*/
+
+	private static final int CHECK_MEMORY_PRESSURE_INTERVAL = isAssertionsEnabled() ? 3 : 1024;
+	private static final long MIN_FREE_MEMORY_BEFORE_OVERFLOW = isAssertionsEnabled() ? Long.MAX_VALUE
+			: 1024 * 1024 * 128;
 
 	/**
 	 * The default triple indexes.
@@ -143,7 +148,7 @@ class TripleStore implements Closeable {
 
 	private final TxnStatusFile txnStatusFile;
 
-	private volatile RecordCache updatedTriplesCache;
+	private volatile SortedRecordCache updatedTriplesCache;
 
 	/*--------------*
 	 * Constructors *
@@ -353,7 +358,7 @@ class TripleStore implements Closeable {
 				try {
 					addedBTree = addedIndex.getBTree();
 					sourceIter = sourceIndex.getBTree().iterateAll();
-					byte[] value = null;
+					byte[] value;
 					while ((value = sourceIter.next()) != null) {
 						addedBTree.insert(value);
 					}
@@ -656,7 +661,7 @@ class TripleStore implements Closeable {
 	}
 
 	public boolean storeTriple(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
-		boolean stAdded = false;
+		boolean stAdded;
 
 		byte[] data = getData(subj, pred, obj, context, 0);
 		byte[] storedData = indexes.get(0).getBTree().get(data);
@@ -790,33 +795,45 @@ class TripleStore implements Closeable {
 	public Map<Integer, Long> removeTriplesByContext(int subj, int pred, int obj, int context, boolean explicit)
 			throws IOException {
 		byte flags = explicit ? EXPLICIT_FLAG : 0;
-		RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG);
-		return removeTriples(iter);
+		try (RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG)) {
+			return removeTriples(iter);
+		}
 	}
 
 	private Map<Integer, Long> removeTriples(RecordIterator iter) throws IOException {
-		final Map<Integer, Long> perContextCounts = new HashMap<>();
 
 		byte[] data = iter.next();
 		if (data == null) {
 			// no triples to remove
-			return perContextCounts;
+			return Collections.emptyMap();
 		}
+
+		final HashMap<Integer, Long> perContextCounts = new HashMap<>();
 
 		// Store the values that need to be removed in a tmp file and then
 		// iterate over this file to set the REMOVED flag
-		RecordCache removedTriplesCache = new SequentialRecordCache(dir, RECORD_LENGTH);
+		RecordCache removedTriplesCache = new InMemRecordCache();
 		try {
-			while (data != null) {
-				if ((data[FLAG_IDX] & REMOVED_FLAG) == 0) {
-					data[FLAG_IDX] |= REMOVED_FLAG;
-					removedTriplesCache.storeRecord(data);
-					int context = ByteArrayUtil.getInt(data, CONTEXT_IDX);
-					perContextCounts.merge(context, 1L, (c, one) -> c + one);
+			try (iter) {
+				while (data != null) {
+					if ((data[FLAG_IDX] & REMOVED_FLAG) == 0) {
+						data[FLAG_IDX] |= REMOVED_FLAG;
+						removedTriplesCache.storeRecord(data);
+						int context = ByteArrayUtil.getInt(data, CONTEXT_IDX);
+						perContextCounts.merge(context, 1L, Long::sum);
+					}
+					data = iter.next();
+
+					if (shouldOverflowToDisk(removedTriplesCache)) {
+						logger.debug("Overflowing RecordCache to disk due to low free mem.");
+						assert removedTriplesCache instanceof InMemRecordCache;
+						InMemRecordCache old = (InMemRecordCache) removedTriplesCache;
+						removedTriplesCache = new SequentialRecordCache(dir, RECORD_LENGTH);
+						removedTriplesCache.storeRecords(old);
+						old.clear();
+					}
 				}
-				data = iter.next();
 			}
-			iter.close();
 
 			updatedTriplesCache.storeRecords(removedTriplesCache);
 
@@ -835,6 +852,21 @@ class TripleStore implements Closeable {
 		}
 
 		return perContextCounts;
+	}
+
+	private boolean shouldOverflowToDisk(RecordCache removedTriplesCache) {
+		if (removedTriplesCache instanceof InMemRecordCache
+				&& removedTriplesCache.getRecordCount() % CHECK_MEMORY_PRESSURE_INTERVAL == 0) {
+			Runtime runtime = Runtime.getRuntime();
+			long allocatedMemory = runtime.totalMemory() - runtime.freeMemory();
+			long presumableFreeMemory = runtime.maxMemory() - allocatedMemory;
+
+			logger.trace("Free memory {} MB and required free memory {} MB", presumableFreeMemory / 1024 / 1024,
+					MIN_FREE_MEMORY_BEFORE_OVERFLOW / 1024 / 1024);
+			return presumableFreeMemory < MIN_FREE_MEMORY_BEFORE_OVERFLOW;
+		}
+
+		return false;
 	}
 
 	public void startTransaction() throws IOException {
@@ -951,7 +983,7 @@ class TripleStore implements Closeable {
 			}
 
 			try {
-				byte[] data = null;
+				byte[] data;
 				while ((data = iter.next()) != null) {
 					byte flags = data[FLAG_IDX];
 					boolean wasAdded = (flags & ADDED_FLAG) != 0;
@@ -1179,7 +1211,7 @@ class TripleStore implements Closeable {
 		@Override
 		public final int compareBTreeValues(byte[] key, byte[] data, int offset, int length) {
 			for (char field : fieldSeq) {
-				int fieldIdx = 0;
+				int fieldIdx;
 
 				switch (field) {
 				case 's':
@@ -1207,6 +1239,15 @@ class TripleStore implements Closeable {
 			}
 
 			return 0;
+		}
+	}
+
+	private static boolean isAssertionsEnabled() {
+		try {
+			assert false;
+			return false;
+		} catch (AssertionError ignored) {
+			return true;
 		}
 	}
 }

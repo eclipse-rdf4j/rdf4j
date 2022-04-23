@@ -49,7 +49,7 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	protected FilterValueExpr filterExpr = null;
 	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as
 	// additional bindings
-	protected transient Endpoint ownedEndpoint = null;
+	protected transient Endpoint ownedEndpoint;
 
 	public ExclusiveGroup(Collection<? extends ExclusiveTupleExpr> ownedNodes, StatementSource owner,
 			QueryInfo queryInfo) {

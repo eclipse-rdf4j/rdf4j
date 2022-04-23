@@ -31,7 +31,7 @@ public class EmptyBindingSet implements BindingSet {
 		return singleton;
 	}
 
-	private EmptyBindingIterator iter = new EmptyBindingIterator();
+	private final EmptyBindingIterator iter = new EmptyBindingIterator();
 
 	@Override
 	public Iterator<Binding> iterator() {

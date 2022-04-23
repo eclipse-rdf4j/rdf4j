@@ -14,15 +14,15 @@ public class Message {
 
 	public static final String ATTRIBUTE_KEY = "message";
 
-	public static enum Type {
+	public enum Type {
 		ERROR,
 		WARN,
 		INFO
 	}
 
-	private Type type;
+	private final Type type;
 
-	private String i18n;
+	private final String i18n;
 
 	public Message(Type type, String i18n) {
 		this.type = type;

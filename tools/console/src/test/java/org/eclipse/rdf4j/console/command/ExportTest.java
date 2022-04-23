@@ -52,7 +52,7 @@ public class ExportTest extends AbstractCommandTest {
 	public final void testExportAll() throws RepositoryException, IOException {
 		File nq = new File(locationFile, "all.nq");
 		cmd.execute("export", nq.getAbsolutePath());
-		Model exp = null;
+		Model exp;
 		try (Reader reader = Files.newReader(nq, StandardCharsets.UTF_8)) {
 			exp = Rio.parse(reader, "http://example.com", RDFFormat.NQUADS);
 		}
@@ -69,7 +69,7 @@ public class ExportTest extends AbstractCommandTest {
 
 		File nq = new File(locationFile, "all.nq");
 		cmd.execute("export", nq.getName());
-		Model exp = null;
+		Model exp;
 		try (Reader reader = Files.newReader(nq, StandardCharsets.UTF_8)) {
 			exp = Rio.parse(reader, "http://example.com", RDFFormat.NQUADS);
 		}
@@ -82,7 +82,7 @@ public class ExportTest extends AbstractCommandTest {
 	public final void testExportContexts() throws RepositoryException, IOException {
 		File nq = new File(locationFile, "default.nq");
 		cmd.execute("export", nq.getAbsolutePath(), "null", "http://example.org/ns/context/resurrection");
-		Model exp = null;
+		Model exp;
 		try (Reader reader = Files.newReader(nq, StandardCharsets.UTF_8)) {
 			exp = Rio.parse(reader, "http://example.com", RDFFormat.NQUADS);
 		}

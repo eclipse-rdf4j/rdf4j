@@ -43,7 +43,7 @@ public class ModifyQuery extends UpdateQuery<ModifyQuery> {
 	private Optional<GraphName> deleteGraph = Optional.empty();
 	private Optional<GraphName> insertGraph = Optional.empty();
 
-	private QueryPattern where = SparqlBuilder.where();
+	private final QueryPattern where = SparqlBuilder.where();
 
 	ModifyQuery() {
 	}

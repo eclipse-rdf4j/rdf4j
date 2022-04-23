@@ -42,7 +42,7 @@ public class HTTPRepositoryFactory implements RepositoryFactory {
 
 	@Override
 	public Repository getRepository(RepositoryImplConfig config) throws RepositoryConfigException {
-		HTTPRepository result = null;
+		HTTPRepository result;
 
 		if (config instanceof HTTPRepositoryConfig) {
 			HTTPRepositoryConfig httpConfig = (HTTPRepositoryConfig) config;

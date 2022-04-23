@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
  */
 public class NotifyingLocalRepositoryManager extends LocalRepositoryManager {
 
-	private ArrayList<RepositoryManagerListener> listeners;
+	private final ArrayList<RepositoryManagerListener> listeners;
 
 	public NotifyingLocalRepositoryManager(File baseDir) {
 		super(baseDir);

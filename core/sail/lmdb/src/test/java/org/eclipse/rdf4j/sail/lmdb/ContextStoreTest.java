@@ -31,10 +31,10 @@ public class ContextStoreTest {
 
 	private ContextStore subject;
 
-	private static ValueFactory vf = SimpleValueFactory.getInstance();
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	private Resource g1 = vf.createIRI("http://example.org/g1");
-	private Resource g2 = vf.createBNode();
+	private final Resource g1 = vf.createIRI("http://example.org/g1");
+	private final Resource g2 = vf.createBNode();
 
 	@Rule
 	public final TemporaryFolder tmpDir = new TemporaryFolder();

@@ -63,7 +63,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
-		writer.handleLinks(Arrays.<String>asList());
+		writer.handleLinks(List.<String>of());
 		QueryResults.report(createTupleNoBindingSets(), writer);
 
 		assertEquals("\r\n", out.toString(StandardCharsets.UTF_8).replaceAll("\\S+", ""));
@@ -76,7 +76,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
-		writer.handleLinks(Arrays.<String>asList());
+		writer.handleLinks(List.<String>of());
 		QueryResults.report(createTupleNoBindingSets(), writer);
 
 		assertRegex("a,b,c(\r\n)?", out.toString(StandardCharsets.UTF_8));
@@ -89,7 +89,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
-		writer.handleLinks(Arrays.<String>asList());
+		writer.handleLinks(List.<String>of());
 		QueryResults.report(createTupleSingleVarMultipleBindingSets(), writer);
 
 		System.out.println(out.toString(StandardCharsets.UTF_8));
@@ -108,7 +108,7 @@ public class SPARQLCSVTupleTest extends AbstractQueryResultIOTupleTest {
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
-		writer.handleLinks(Arrays.<String>asList());
+		writer.handleLinks(List.<String>of());
 		QueryResults.report(createTupleMultipleBindingSets(), writer);
 
 		assertRegex("a,b,c\r\n" + "foo:bar,_:bnode,baz\r\n" + "1,,Hello World!\r\n"

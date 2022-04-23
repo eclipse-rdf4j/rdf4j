@@ -25,7 +25,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private final AtomicLong used = new AtomicLong();
 
-	private long maxSize;
+	private final long maxSize;
 
 	/**
 	 * @param tripleSource

@@ -29,9 +29,9 @@ public class ConsoleRDFWriter extends AbstractRDFWriter {
 	private final int consoleWidth;
 	private final Map<String, String> namespaces = new HashMap<>();
 	private int columnWidth;
-	private String separatorLine = "";
-	private String header = "";
-	private RDFFormat rdfFormat = new RDFFormat("Console RDF", "application/x-dummy", StandardCharsets.UTF_8,
+	private final String separatorLine = "";
+	private final String header = "";
+	private final RDFFormat rdfFormat = new RDFFormat("Console RDF", "application/x-dummy", StandardCharsets.UTF_8,
 			"dummy", true, false, true);
 
 	/**

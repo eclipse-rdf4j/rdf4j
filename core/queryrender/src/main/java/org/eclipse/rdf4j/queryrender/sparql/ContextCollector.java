@@ -38,7 +38,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	 * a SPARQL query -- all elements sharing the same contexts are grouped together with a "GRAPH <ctx> { ... }"
 	 * clause.
 	 */
-	private Map<TupleExpr, Var> mContexts = new HashMap<>();
+	private final Map<TupleExpr, Var> mContexts = new HashMap<>();
 
 	private ContextCollector() {
 	}

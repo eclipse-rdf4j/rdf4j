@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.spring.support.query.DelegatingGraphQuery;
  */
 public class LoggingGraphQuery extends DelegatingGraphQuery {
 
-	private OperationLog operationLog;
+	private final OperationLog operationLog;
 
 	public LoggingGraphQuery(GraphQuery delegate, OperationLog operationLog) {
 		super(delegate);

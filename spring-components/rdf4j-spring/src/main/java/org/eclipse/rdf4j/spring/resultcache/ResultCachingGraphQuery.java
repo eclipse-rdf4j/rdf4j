@@ -26,8 +26,8 @@ import org.slf4j.LoggerFactory;
 public class ResultCachingGraphQuery extends DelegatingGraphQuery {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private WeakReference<ResultCache<Integer, ReusableGraphQueryResult>> localResultCacheRef;
-	private ResultCache<Integer, ReusableGraphQueryResult> globalResultCache;
-	private ResultCacheProperties properties;
+	private final ResultCache<Integer, ReusableGraphQueryResult> globalResultCache;
+	private final ResultCacheProperties properties;
 
 	public ResultCachingGraphQuery(
 			GraphQuery delegate,

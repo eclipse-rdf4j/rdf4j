@@ -19,7 +19,7 @@ enum BinaryOperator implements SparqlOperator {
 	LESS_THAN_EQUALS("<="),
 	NOT_EQUALS("!=");
 
-	private String operator;
+	private final String operator;
 
 	BinaryOperator(String operator) {
 		this.operator = operator;

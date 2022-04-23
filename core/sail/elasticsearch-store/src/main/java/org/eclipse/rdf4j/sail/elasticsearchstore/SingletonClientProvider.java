@@ -24,9 +24,9 @@ public class SingletonClientProvider implements ClientProvider {
 
 	transient private Client client;
 	private transient boolean closed = false;
-	private String hostname;
-	private int port;
-	private String clusterName;
+	private final String hostname;
+	private final int port;
+	private final String clusterName;
 
 	public SingletonClientProvider(String hostname, int port, String clusterName) {
 		this.hostname = hostname;

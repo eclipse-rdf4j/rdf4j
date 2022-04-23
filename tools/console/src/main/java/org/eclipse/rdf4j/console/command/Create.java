@@ -58,7 +58,7 @@ import org.jline.reader.UserInterruptException;
 public class Create extends ConsoleCommand {
 	private static final String TEMPLATES_SUBDIR = "templates";
 	private static final String FILE_EXT = ".ttl";
-	private File templatesDir;
+	private final File templatesDir;
 
 	@Override
 	public String getName() {

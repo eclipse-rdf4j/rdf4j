@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
  */
 class SerializableParsedTupleQuery extends AbstractSerializableParsedQuery {
 
-	public static enum QueryModifier {
+	public enum QueryModifier {
 		DISTINCT,
 		REDUCED
 	}

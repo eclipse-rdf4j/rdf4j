@@ -42,7 +42,7 @@ import org.junit.Test;
 
 public class RDFXMLPrettyWriterTest extends AbstractRDFXMLWriterTest {
 
-	private static ValueFactory vf = SimpleValueFactory.getInstance();
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	public RDFXMLPrettyWriterTest() {
 		super(new RDFXMLPrettyWriterFactory(), new RDFXMLParserFactory());

@@ -19,7 +19,7 @@ public class TupleFunctionEvaluationStatistics extends EvaluationStatistics {
 
 	protected static class TupleFunctionCardinalityCalculator extends CardinalityCalculator {
 
-		private static double VAR_CARDINALITY = 10;
+		private static final double VAR_CARDINALITY = 10;
 
 		@Override
 		protected void meetNode(QueryModelNode node) {

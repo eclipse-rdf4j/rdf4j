@@ -67,7 +67,7 @@ public class FederationManager {
 	 *
 	 * @author Andreas Schwarte
 	 */
-	public static enum FederationType {
+	public enum FederationType {
 		LOCAL,
 		REMOTE,
 		HYBRID

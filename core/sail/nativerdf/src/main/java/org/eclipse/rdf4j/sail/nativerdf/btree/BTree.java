@@ -739,7 +739,7 @@ public class BTree implements Closeable {
 	}
 
 	private InsertResult insertInTree(byte[] value, int nodeID, Node node) throws IOException {
-		InsertResult insertResult = null;
+		InsertResult insertResult;
 
 		// Search value in node
 		int valueIdx = node.search(value);

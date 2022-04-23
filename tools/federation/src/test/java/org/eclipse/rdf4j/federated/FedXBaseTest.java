@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.dawg.DAWGTestResultSetUtil;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MutableTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
@@ -194,11 +193,8 @@ public abstract class FedXBaseTest {
 	 * @throws IOException
 	 */
 	protected String readResourceAsString(String resource) throws IOException {
-		InputStream stream = FedXBaseTest.class.getResourceAsStream(resource);
-		try {
+		try (InputStream stream = FedXBaseTest.class.getResourceAsStream(resource)) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 
@@ -214,11 +210,11 @@ public abstract class FedXBaseTest {
 		QueryResultFormat tqrFormat = QueryResultIO.getParserFormatForFileName(resultFile).get();
 
 		InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
-		if (in == null) {
-			throw new IOException("File could not be opened: " + resultFile);
-		}
 
-		try {
+		try (in) {
+			if (in == null) {
+				throw new IOException("File could not be opened: " + resultFile);
+			}
 			TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat);
 
 			TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
@@ -226,9 +222,8 @@ public abstract class FedXBaseTest {
 
 			parser.parseQueryResult(in);
 			return qrBuilder.getQueryResult();
-		} finally {
-			in.close();
 		}
+
 	}
 
 	/**

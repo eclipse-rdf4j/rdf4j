@@ -42,7 +42,7 @@ import com.fasterxml.jackson.core.JsonToken;
  *
  * @author Peter Ansell
  */
-public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
+public class RDFJSONParser extends AbstractRDFParser {
 
 	private final RDFFormat actualFormat;
 
@@ -180,7 +180,7 @@ public class RDFJSONParser extends AbstractRDFParser implements RDFParser {
 
 		while (jp.nextToken() != JsonToken.END_OBJECT) {
 			final String subjStr = jp.getCurrentName();
-			Resource subject = null;
+			Resource subject;
 
 			subject = subjStr.startsWith("_:") ? createNode(subjStr.substring(2)) : vf.createIRI(subjStr);
 			if (jp.nextToken() != JsonToken.START_OBJECT) {

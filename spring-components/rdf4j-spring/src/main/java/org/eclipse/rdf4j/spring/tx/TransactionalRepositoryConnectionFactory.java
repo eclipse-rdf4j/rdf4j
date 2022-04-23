@@ -29,7 +29,7 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
-	private RepositoryConnectionFactory delegateFactory;
+	private final RepositoryConnectionFactory delegateFactory;
 
 	private final ThreadLocal<TransactionObject> transactionData = new ThreadLocal<>();
 

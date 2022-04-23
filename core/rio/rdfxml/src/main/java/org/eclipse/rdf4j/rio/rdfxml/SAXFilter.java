@@ -39,7 +39,7 @@ class SAXFilter implements ContentHandler {
 	/**
 	 * The RDF parser to supply the filtered SAX events to.
 	 */
-	private RDFXMLParser rdfParser;
+	private final RDFXMLParser rdfParser;
 
 	/**
 	 * A Locator indicating a position in the text that is currently being parsed by the SAX parser.
@@ -49,12 +49,12 @@ class SAXFilter implements ContentHandler {
 	/**
 	 * Stack of ElementInfo objects.
 	 */
-	private Stack<ElementInfo> elInfoStack = new Stack<>();
+	private final Stack<ElementInfo> elInfoStack = new Stack<>();
 
 	/**
 	 * StringBuilder used to collect text during parsing.
 	 */
-	private StringBuilder charBuf = new StringBuilder(512);
+	private final StringBuilder charBuf = new StringBuilder(512);
 
 	/**
 	 * The document's URI.
@@ -77,7 +77,7 @@ class SAXFilter implements ContentHandler {
 	 * New namespace mappings that have been reported for the next start tag by the SAX parser, but that are not yet
 	 * assigned to an ElementInfo object.
 	 */
-	private Map<String, String> newNamespaceMappings = new LinkedHashMap<>();
+	private final Map<String, String> newNamespaceMappings = new LinkedHashMap<>();
 
 	/**
 	 * Flag indicating whether we're currently parsing RDF elements.
@@ -103,13 +103,13 @@ class SAXFilter implements ContentHandler {
 	 * The prefixes that are defined in the XML literal itself (this in contrast to the namespaces from the XML
 	 * literal's context).
 	 */
-	private List<String> xmlLiteralPrefixes = new ArrayList<>();
+	private final List<String> xmlLiteralPrefixes = new ArrayList<>();
 
 	/**
 	 * The prefixes that were used in an XML literal, but that were not defined in it (but rather in the XML literal's
 	 * context).
 	 */
-	private List<String> unknownPrefixesInXMLLiteral = new ArrayList<>();
+	private final List<String> unknownPrefixesInXMLLiteral = new ArrayList<>();
 
 	/*--------------*
 	 * Constructors *

@@ -147,9 +147,10 @@ class ExtensibleSailSource implements SailSource {
 			@Override
 			public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
 				return new CloseableIteration<>() {
-					CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null, null);
+					final CloseableIteration<? extends Statement, SailException> statements = getStatements(null, null,
+							null);
 
-					Set<Resource> contexts = new HashSet<>();
+					final Set<Resource> contexts = new HashSet<>();
 
 					Resource next = internalNext();
 

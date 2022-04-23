@@ -133,9 +133,7 @@ public class SPARQL10ManifestTest {
 			baseURI = url.toExternalForm();
 		}
 
-		InputStream in = url.openStream();
-
-		try {
+		try (InputStream in = url.openStream()) {
 			final ValueFactory vf = con.getRepository().getValueFactory();
 			RDFParser rdfParser = new TurtleParser();
 			rdfParser.setValueFactory(vf);
@@ -166,8 +164,6 @@ public class SPARQL10ManifestTest {
 				}
 				throw e;
 			}
-		} finally {
-			in.close();
 		}
 	}
 }

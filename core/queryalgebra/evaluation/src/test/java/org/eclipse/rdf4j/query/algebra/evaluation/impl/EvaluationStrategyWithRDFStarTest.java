@@ -81,7 +81,6 @@ public class EvaluationStrategyWithRDFStarTest {
 				IRI pred, Value obj)
 				throws QueryEvaluationException {
 			return new AbstractCloseableIteration<>() {
-
 				final Iterator<Triple> iter = triples.iterator();
 
 				@Override

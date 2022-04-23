@@ -94,7 +94,7 @@ public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
 		}
 
 		int nBindings;
-		List<BindingSet> bindings = null;
+		List<BindingSet> bindings;
 		while (!isClosed() && leftIter.hasNext()) {
 
 			// create a new phaser if there are more than 10000 parties

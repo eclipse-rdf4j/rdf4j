@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
  */
 public class GraphQueryResultConverter {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-	private GraphQueryResult graphQueryResult;
+	private final GraphQueryResult graphQueryResult;
 
 	public GraphQueryResultConverter(GraphQueryResult graphQueryResult) {
 		this.graphQueryResult = graphQueryResult;

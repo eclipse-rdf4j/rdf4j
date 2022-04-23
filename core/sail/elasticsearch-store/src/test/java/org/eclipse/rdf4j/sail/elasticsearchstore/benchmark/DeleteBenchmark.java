@@ -50,7 +50,7 @@ public class DeleteBenchmark {
 	// @Param({ "100", "1000", "10000" })
 	public int NUMBER_OF_STATEMENTS = 10000;
 
-	private static File installLocation = Files.newTemporaryFolder();
+	private static final File installLocation = Files.newTemporaryFolder();
 	private static ElasticsearchClusterRunner runner;
 	private SailRepository elasticsearchStore;
 
