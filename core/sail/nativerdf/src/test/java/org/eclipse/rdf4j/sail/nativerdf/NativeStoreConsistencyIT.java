@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.nativerdf;
 import static org.junit.Assert.assertEquals;
 
 import java.io.File;
-import java.util.Collection;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -27,7 +26,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.repository.util.RDFLoader;
-import org.eclipse.rdf4j.repository.util.RepositoryUtil;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.junit.Rule;
 import org.junit.Test;

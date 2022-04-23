@@ -1,12 +1,12 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 
-package org.eclipse.rdf4j.sail.lmdb.benchmark;
+package org.eclipse.rdf4j.sail.nativerdf.benchmark;
 
 import java.io.File;
 import java.io.IOException;
@@ -18,13 +18,15 @@ import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.Rule;
 import org.junit.rules.TemporaryFolder;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -45,163 +47,77 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
- * Benchmarks query performance with real data.
+ * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 2)
+@Warmup(iterations = 3)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-Xmn1G", "-XX:+UseSerialGC" })
-//@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
+//@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class QueryBenchmark {
-
-	private SailRepository repository;
+public class QueryWriteBenchmark {
 
 	@Rule
 	public TemporaryFolder tempDir = new TemporaryFolder();
 
-	private static final String query1;
+	private SailRepository repository;
+
 	private static final String query2;
 	private static final String query3;
-	private static final String query4;
-	private static final String query5;
-	private static final String query7_pathexpression1;
+
+	private static final Model data;
+	List<Statement> statementList;
 
 	static {
 		try {
-			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
 			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
 			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
-			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
-			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
-			query7_pathexpression1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query7-pathexpression1.qr"),
-					StandardCharsets.UTF_8);
+
+			try (InputStream inputStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl")) {
+				data = Rio.parse(inputStream, RDFFormat.TURTLE);
+			}
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	List<Statement> statementList;
-
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark") // adapt to control which benchmark tests to run
+				.include("QueryWriteBenchmark") // adapt to run other benchmark tests
 				.forks(1)
 				.build();
 
 		new Runner(opt).run();
 	}
 
-	@Setup(Level.Trial)
-	public void beforeClass() throws IOException {
+	@Setup(Level.Invocation)
+	public void beforeClass() throws IOException, InterruptedException {
 		tempDir.create();
 		File file = tempDir.newFolder();
 
-		repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig()));
+		repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl"), "", RDFFormat.TURTLE);
+			connection.add(data);
 			connection.commit();
 		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-
+			connection.begin(IsolationLevels.NONE);
 			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+			connection.commit();
 		}
 
 		System.gc();
 
 	}
 
-	private static InputStream getResourceAsStream(String name) {
-		return QueryBenchmark.class.getClassLoader().getResourceAsStream(name);
-	}
-
-	@TearDown(Level.Trial)
-	public void afterClass() throws IOException {
-		tempDir.delete();
+	@TearDown(Level.Invocation)
+	public void afterClass() {
 		repository.shutDown();
-	}
-
-	@Benchmark
-	public long groupByQuery() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
-					.prepareTupleQuery(query1)
-					.evaluate()
-					.stream()
-					.count();
-		}
-	}
-
-	@Benchmark
-	public long complexQuery() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
-					.prepareTupleQuery(query4)
-					.evaluate()
-					.stream()
-					.count();
-		}
-	}
-
-	@Benchmark
-	public long distinctPredicatesQuery() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
-					.prepareTupleQuery(query5)
-					.evaluate()
-					.stream()
-					.count();
-		}
-	}
-
-	@Benchmark
-	public long pathExpressionQuery1() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection
-					.prepareTupleQuery(query7_pathexpression1)
-					.evaluate()
-					.stream()
-					.count();
-
-		}
-	}
-
-	@Benchmark
-	public boolean removeByQuery() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.remove((Resource) null, RDF.TYPE, null);
-			connection.commit();
-			connection.begin(IsolationLevels.NONE);
-			connection.add(statementList);
-			connection.commit();
-		}
-		return hasStatement();
-
-	}
-
-	@Benchmark
-	public boolean removeByQueryReadCommitted() {
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.remove((Resource) null, RDF.TYPE, null);
-			connection.commit();
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.add(statementList);
-			connection.commit();
-		}
-		return hasStatement();
-
+		tempDir.delete();
 	}
 
 	@Benchmark
@@ -240,10 +156,110 @@ public class QueryBenchmark {
 
 	}
 
+	@Benchmark
+	public boolean removeByQuery() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.remove((Resource) null, RDF.TYPE, null);
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	@Benchmark
+	public boolean removeByQueryReadCommitted() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.remove((Resource) null, RDF.TYPE, null);
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	@Benchmark
+	public boolean clear() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.clear();
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	@Benchmark
+	public boolean clearReadCommitted() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.clear();
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	@Benchmark
+	public boolean clearContext() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.clear(new Resource[] { null });
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	@Benchmark
+	public boolean clearContextReadCommitted() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.clear(new Resource[] { null });
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	@Benchmark
+	public boolean clearByQuery() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.remove((Resource) null, null, null);
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
+	@Benchmark
+	public boolean clearByQueryReadCommitted() {
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.remove((Resource) null, null, null);
+			connection.commit();
+		}
+		return hasStatement();
+
+	}
+
 	private boolean hasStatement() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection.hasStatement(RDF.TYPE, RDF.TYPE, RDF.TYPE, true);
 		}
+	}
+
+	private static InputStream getResourceAsStream(String filename) {
+		return QueryWriteBenchmark.class.getClassLoader().getResourceAsStream(filename);
 	}
 
 }

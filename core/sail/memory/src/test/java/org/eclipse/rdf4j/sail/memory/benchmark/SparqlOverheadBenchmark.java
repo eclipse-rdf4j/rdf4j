@@ -70,7 +70,6 @@ public class SparqlOverheadBenchmark {
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("SparqlOverheadBenchmark.*") // adapt to run other benchmark tests
-				// .addProfiler("stack", "lines=20;period=1;top=20")
 				.forks(1)
 				.build();
 
