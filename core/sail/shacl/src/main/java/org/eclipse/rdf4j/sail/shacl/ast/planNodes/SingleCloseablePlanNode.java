@@ -22,46 +22,15 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 public class SingleCloseablePlanNode implements PlanNode {
 
-	PlanNode parent;
-
-	private ValidationExecutionLogger validationExecutionLogger;
+	private final PlanNode parent;
 
 	public SingleCloseablePlanNode(PlanNode parent) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-		this.parent = parent;
-
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 	}
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
-		return new CloseableIteration<ValidationTuple, SailException>() {
-
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
-			final AtomicBoolean closed = new AtomicBoolean(false);
-
-			@Override
-			public void close() throws SailException {
-				if (closed.compareAndSet(false, true)) {
-					parentIterator.close();
-				}
-			}
-
-			@Override
-			public boolean hasNext() throws SailException {
-				return parentIterator.hasNext();
-			}
-
-			@Override
-			public ValidationTuple next() throws SailException {
-				return parentIterator.next();
-			}
-
-			@Override
-			public void remove() throws SailException {
-				parentIterator.remove();
-			}
-		};
-
+		return new SingleCloseableIteration(parent);
 	}
 
 	@Override
@@ -76,9 +45,7 @@ public class SingleCloseablePlanNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "SingleCloseablePlanNode{" +
-				"parent=" + parent +
-				'}';
+		return "SingleCloseablePlanNode{" + "parent=" + parent + '}';
 	}
 
 	@Override
@@ -116,5 +83,37 @@ public class SingleCloseablePlanNode implements PlanNode {
 	@Override
 	public int hashCode() {
 		return Objects.hash(parent);
+	}
+
+	private static class SingleCloseableIteration implements CloseableIteration<ValidationTuple, SailException> {
+
+		final CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
+		final AtomicBoolean closed = new AtomicBoolean(false);
+
+		public SingleCloseableIteration(PlanNode parent) {
+			parentIterator = parent.iterator();
+		}
+
+		@Override
+		public void close() throws SailException {
+			if (closed.compareAndSet(false, true)) {
+				parentIterator.close();
+			}
+		}
+
+		@Override
+		public boolean hasNext() throws SailException {
+			return parentIterator.hasNext();
+		}
+
+		@Override
+		public ValidationTuple next() throws SailException {
+			return parentIterator.next();
+		}
+
+		@Override
+		public void remove() throws SailException {
+			parentIterator.remove();
+		}
 	}
 }

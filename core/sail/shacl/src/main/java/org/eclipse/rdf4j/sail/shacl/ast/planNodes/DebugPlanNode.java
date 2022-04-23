@@ -49,7 +49,7 @@ public class DebugPlanNode implements PlanNode {
 			throw new IllegalStateException("Did not receive validationExecutionLogger before .iterator() was called!");
 		}
 
-		return new CloseableIteration<ValidationTuple, SailException>() {
+		return new CloseableIteration<>() {
 
 			final CloseableIteration<? extends ValidationTuple, SailException> iterator = parent.iterator();
 

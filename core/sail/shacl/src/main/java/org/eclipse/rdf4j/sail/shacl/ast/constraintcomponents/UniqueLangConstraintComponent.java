@@ -106,8 +106,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings,
-			PlanNodeProvider overrideTargetNode, Scope scope) {
+			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope) {
 //		assert !negateChildren : "There are no subplans!";
 //		assert !negatePlan;
 

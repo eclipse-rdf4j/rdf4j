@@ -37,11 +37,9 @@ public class ValuesBackedNode implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public ValuesBackedNode(SortedSet<Value> values, ConstraintComponent.Scope scope, Resource[] contexts) {
-
 		this.tuples = values.stream()
 				.map(c -> new ValidationTuple(c, scope, false, contexts))
 				.collect(Collectors.toList());
-
 		this.values = values;
 		this.scope = scope;
 	}
@@ -92,8 +90,7 @@ public class ValuesBackedNode implements PlanNode {
 
 	@Override
 	public String toString() {
-		return "ValuesBackedNode{" +
-				"values=" + values + '}';
+		return "ValuesBackedNode{" + "values=" + values + '}';
 	}
 
 	@Override

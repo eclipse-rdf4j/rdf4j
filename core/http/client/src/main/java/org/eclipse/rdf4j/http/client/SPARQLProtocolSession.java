@@ -650,7 +650,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			throw new RepositoryException("No tuple query result parsers have been registered");
 		}
 
-		TupleQueryResult tRes = null;
+		TupleQueryResult tRes;
 		// send the tuple query
 		HttpResponse response = sendTupleQueryViaHttp(method, tqrFormats);
 		try {
@@ -782,7 +782,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			throw new RepositoryException("No tuple RDF parsers have been registered");
 		}
 
-		GraphQueryResult gRes = null;
+		GraphQueryResult gRes;
 		// send the tuple query
 		HttpResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats);
 		try {
@@ -878,7 +878,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Pass through response content directly to the supplied sink if possible.
-	 * 
+	 *
 	 * @param response       the {@link HttpResponse} with the content.
 	 * @param responseFormat the format of the response.
 	 * @param sink           the {@link Sink} to pass the content through to.
@@ -1172,7 +1172,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Gets the character encoding specified in the HTTP headers of the supplied response, if any. For example, if the
 	 * response headers contain <var>Content-Type: application/xml;charset=UTF-8</var>, this method will return
 	 * {@link StandardCharsets#UTF_8 UTF-8} as the character encoding.
-	 * 
+	 *
 	 * @param response the response to get the character encoding from.
 	 * @return the response character encoding, {@link Optional#empty()} if it can not be determined.
 	 */
@@ -1258,7 +1258,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 	/**
 	 * Indicates if direct pass-through of the endpoint result to the supplied {@link Sink} is enabled.
-	 * 
+	 *
 	 * @return the passThroughEnabled setting.
 	 */
 	public boolean isPassThroughEnabled() {
@@ -1269,7 +1269,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Configure direct pass-through of the endpoint result to the supplied {@link Sink}.
 	 * <p>
 	 * If not explicitly configured, the setting defaults to {@code true}.
-	 * 
+	 *
 	 * @param passThroughEnabled the passThroughEnabled to set.
 	 */
 	public void setPassThroughEnabled(boolean passThroughEnabled) {

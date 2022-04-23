@@ -72,25 +72,25 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 //			"sq03 - Subquery within graph pattern, graph variable is not bound"
 	};
 
-	private static final List<String> excludedSubdirs = Arrays.asList("service");
+	private static final List<String> excludedSubdirs = List.of("service");
 
 	private String queryFileURL;
 	private String resultFileURL;
-	private Dataset dataset;
+	private final Dataset dataset;
 	private boolean ordered;
 	private Repository dataRep;
 
 	protected Repository expectedResultRepo;
 
-	private String requestFile;
+	private final String requestFile;
 
-	private IRI inputDefaultGraphURI;
+	private final IRI inputDefaultGraphURI;
 
-	private Map<String, IRI> inputNamedGraphs;
+	private final Map<String, IRI> inputNamedGraphs;
 
-	private IRI resultDefaultGraphURI;
+	private final IRI resultDefaultGraphURI;
 
-	private Map<String, IRI> resultNamedGraphs;
+	private final Map<String, IRI> resultNamedGraphs;
 
 	@Parameterized.Parameters(name = "{0}")
 	public static Collection<Object[]> data() {
@@ -129,7 +129,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 	public void setUp() throws Exception {
 		dataRep = createRepository();
 
-		try (RepositoryConnection conn = dataRep.getConnection();) {
+		try (RepositoryConnection conn = dataRep.getConnection()) {
 			conn.clear();
 
 			if (inputDefaultGraphURI != null) {
@@ -149,7 +149,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 
 		expectedResultRepo = createRepository();
 
-		try (RepositoryConnection conn = expectedResultRepo.getConnection();) {
+		try (RepositoryConnection conn = expectedResultRepo.getConnection()) {
 			conn.clear();
 
 			if (resultDefaultGraphURI != null) {
@@ -180,7 +180,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 		}
 	}
 
-	private final Repository createRepository() throws Exception {
+	private Repository createRepository() throws Exception {
 		Repository repo = newRepository();
 		try (RepositoryConnection con = repo.getConnection()) {
 			con.clear();
@@ -384,11 +384,8 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 	}
 
 	private String readUpdateString() throws IOException {
-		InputStream stream = new URL(requestFile).openStream();
-		try {
+		try (InputStream stream = new URL(requestFile).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 }

@@ -90,7 +90,7 @@ public class RdfStarQueryEvaluationStep implements QueryEvaluationStep {
 			}
 		};
 
-		return new ConvertingIteration<Triple, BindingSet, QueryEvaluationException>(filterIter) {
+		return new ConvertingIteration<>(filterIter) {
 			@Override
 			protected BindingSet convert(Triple triple) throws QueryEvaluationException {
 				MutableBindingSet result = context.createBindingSet(bindings);

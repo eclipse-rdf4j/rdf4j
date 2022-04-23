@@ -22,7 +22,7 @@ enum ConnectiveOperator implements SparqlOperator {
 	MULTIPLY("*"),
 	SUBTRACT("-");
 
-	private String operator;
+	private final String operator;
 
 	ConnectiveOperator(String operator) {
 		this.operator = operator;

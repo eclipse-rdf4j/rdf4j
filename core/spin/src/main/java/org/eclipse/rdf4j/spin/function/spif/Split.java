@@ -44,7 +44,7 @@ public class Split implements InverseMagicProperty {
 		final String regex = ((Literal) args[1]).stringValue();
 		final String[] parts = s.split(regex);
 		return new CloseableIteratorIteration<>(
-				SingleValueToListTransformer.transform(new Iterator<Value>() {
+				SingleValueToListTransformer.transform(new Iterator<>() {
 
 					int pos = 0;
 

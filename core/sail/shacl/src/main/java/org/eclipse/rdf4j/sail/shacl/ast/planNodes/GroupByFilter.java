@@ -29,9 +29,7 @@ public class GroupByFilter implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public GroupByFilter(PlanNode parent, Function<Collection<ValidationTuple>, Boolean> filter) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-
-		this.parent = parent;
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.filter = filter;
 	}
 
@@ -82,8 +80,8 @@ public class GroupByFilter implements PlanNode {
 
 			@Override
 			public void localClose() throws SailException {
-				group.clear();
 				parentIterator.close();
+				group.clear();
 			}
 
 			@Override

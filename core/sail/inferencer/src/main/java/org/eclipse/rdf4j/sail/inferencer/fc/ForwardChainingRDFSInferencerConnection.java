@@ -46,17 +46,17 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	/**
 	 * Flags indicating which rules should be evaluated.
 	 */
-	private boolean[] checkRule = new boolean[RDFSRules.RULECOUNT];
+	private final boolean[] checkRule = new boolean[RDFSRules.RULECOUNT];
 
 	/**
 	 * Flags indicating which rules should be evaluated next iteration.
 	 */
-	private boolean[] checkRuleNextIter = new boolean[RDFSRules.RULECOUNT];
+	private final boolean[] checkRuleNextIter = new boolean[RDFSRules.RULECOUNT];
 
 	/**
 	 * The number of inferred statements per rule.
 	 */
-	private int[] ruleCount = new int[RDFSRules.RULECOUNT];
+	private final int[] ruleCount = new int[RDFSRules.RULECOUNT];
 
 	/*--------------*
 	 * Constructors *
@@ -222,7 +222,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 		if (!checkRule[rule]) {
 			return 0;
 		}
-		int nofInferred = 0;
+		int nofInferred;
 
 		nofInferred = applyRuleInternal(rule);
 
@@ -232,7 +232,7 @@ class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInf
 	}
 
 	protected int applyRuleInternal(int rule) throws SailException {
-		int result = 0;
+		int result;
 
 		switch (rule) {
 		case RDFSRules.Rdf1:

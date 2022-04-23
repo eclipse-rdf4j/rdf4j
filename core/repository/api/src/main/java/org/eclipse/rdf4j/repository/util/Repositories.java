@@ -303,7 +303,7 @@ public final class Repositories {
 			QueryEvaluationException {
 		return get(repository, conn -> {
 			TupleQuery preparedQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (TupleQueryResult queryResult = preparedQuery.evaluate();) {
+			try (TupleQueryResult queryResult = preparedQuery.evaluate()) {
 				return processFunction.apply(queryResult);
 			}
 		});
@@ -330,7 +330,7 @@ public final class Repositories {
 			MalformedQueryException, QueryEvaluationException {
 		return getNoTransaction(repository, conn -> {
 			TupleQuery preparedQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			try (TupleQueryResult queryResult = preparedQuery.evaluate();) {
+			try (TupleQueryResult queryResult = preparedQuery.evaluate()) {
 				return processFunction.apply(queryResult);
 			}
 		});
@@ -401,7 +401,7 @@ public final class Repositories {
 			QueryEvaluationException {
 		return get(repository, conn -> {
 			GraphQuery preparedQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
-			try (GraphQueryResult queryResult = preparedQuery.evaluate();) {
+			try (GraphQueryResult queryResult = preparedQuery.evaluate()) {
 				return processFunction.apply(queryResult);
 			}
 		});
@@ -428,7 +428,7 @@ public final class Repositories {
 			MalformedQueryException, QueryEvaluationException {
 		return getNoTransaction(repository, conn -> {
 			GraphQuery preparedQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);
-			try (GraphQueryResult queryResult = preparedQuery.evaluate();) {
+			try (GraphQueryResult queryResult = preparedQuery.evaluate()) {
 				return processFunction.apply(queryResult);
 			}
 		});

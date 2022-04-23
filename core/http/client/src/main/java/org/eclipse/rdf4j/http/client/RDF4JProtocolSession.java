@@ -803,7 +803,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		if (transactionURL == null) {
 			return; // transaction has already been closed
 		}
-		HttpPost method = null;
+		HttpPost method;
 		try {
 			URIBuilder url = new URIBuilder(transactionURL);
 			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PING.toString());
@@ -934,7 +934,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	@Override
 	protected HttpUriRequest getQueryMethod(QueryLanguage ql, String query, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxQueryTime, Binding... bindings) {
-		RequestBuilder builder = null;
+		RequestBuilder builder;
 		String transactionURL = getTransactionURL();
 		if (transactionURL != null) {
 			builder = RequestBuilder.put(transactionURL);
@@ -967,7 +967,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	@Override
 	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxExecutionTime, Binding... bindings) {
-		RequestBuilder builder = null;
+		RequestBuilder builder;
 		String transactionURL = getTransactionURL();
 		if (transactionURL != null) {
 			builder = RequestBuilder.put(transactionURL);
@@ -1037,12 +1037,10 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 
 			@Override
 			public void writeTo(OutputStream out) throws IOException {
-				try {
+				try (contents) {
 					OutputStreamWriter writer = new OutputStreamWriter(out, charset);
 					IOUtil.transfer(contents, writer);
 					writer.flush();
-				} finally {
-					contents.close();
 				}
 			}
 		};

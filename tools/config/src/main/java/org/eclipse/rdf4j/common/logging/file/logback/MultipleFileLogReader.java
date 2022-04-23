@@ -34,7 +34,7 @@ import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
  *
  * @author alex
  */
-public class MultipleFileLogReader extends AbstractLogReader implements LogReader {
+public class MultipleFileLogReader extends AbstractLogReader {
 
 	private Date startDate = null;
 	private Date endDate = null;

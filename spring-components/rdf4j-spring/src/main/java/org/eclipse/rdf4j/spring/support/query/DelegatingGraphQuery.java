@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
  * @author Florian Kleedorfer
  */
 public abstract class DelegatingGraphQuery implements GraphQuery {
-	private GraphQuery delegate;
+	private final GraphQuery delegate;
 
 	public DelegatingGraphQuery(GraphQuery delegate) {
 		this.delegate = delegate;

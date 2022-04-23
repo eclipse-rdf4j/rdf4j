@@ -44,7 +44,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 
 	private boolean activated;
 
-	private Set<RepositoryConnectionInterceptor> interceptors = new CopyOnWriteArraySet<>();
+	private final Set<RepositoryConnectionInterceptor> interceptors = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Construcotrs *
@@ -238,7 +238,7 @@ public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectio
 	@Deprecated
 	public void setAutoCommit(boolean autoCommit) throws RepositoryException {
 		boolean denied = false;
-		boolean wasAutoCommit = isAutoCommit();
+		boolean wasAutoCommit = !isActive();
 		if (activated && wasAutoCommit != autoCommit) {
 			for (RepositoryConnectionInterceptor interceptor : interceptors) {
 				denied = interceptor.setAutoCommit(getDelegate(), autoCommit);

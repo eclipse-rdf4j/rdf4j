@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  */
 public class LoggingUpdate extends DelegatingUpdate {
 
-	private OperationLog operationLog;
+	private final OperationLog operationLog;
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 

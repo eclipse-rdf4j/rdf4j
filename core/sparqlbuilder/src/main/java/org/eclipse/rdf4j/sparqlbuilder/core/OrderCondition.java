@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
 public class OrderCondition implements Orderable {
 	private static final String ASC = "ASC";
 	private static final String DESC = "DESC";
-	private Orderable orderOn;
+	private final Orderable orderOn;
 	private boolean isAscending;
 
 	OrderCondition(Orderable orderOn) {

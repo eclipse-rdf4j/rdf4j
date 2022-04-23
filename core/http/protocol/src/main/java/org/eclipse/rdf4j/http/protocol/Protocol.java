@@ -23,7 +23,7 @@ public abstract class Protocol {
 	 *
 	 * @author Jeen Broekstra
 	 */
-	public static enum Action {
+	public enum Action {
 		/** adding data */
 		ADD,
 		/** deleting data */
@@ -43,7 +43,7 @@ public abstract class Protocol {
 		/** commit */
 		COMMIT,
 		/** rollback */
-		ROLLBACK;
+		ROLLBACK
 	}
 
 	/**
@@ -51,7 +51,7 @@ public abstract class Protocol {
 	 * are initialize before static fields.
 	 */
 	@Deprecated
-	public static enum TIMEOUT {
+	public enum TIMEOUT {
 		CACHE;
 
 		/**

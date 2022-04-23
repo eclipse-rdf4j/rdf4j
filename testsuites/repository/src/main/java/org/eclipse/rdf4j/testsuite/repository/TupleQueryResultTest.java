@@ -18,7 +18,9 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Random;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -32,7 +34,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+import org.eclipse.rdf4j.sail.SailException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -46,6 +50,11 @@ public abstract class TupleQueryResultTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private Repository rep;
@@ -119,32 +128,26 @@ public abstract class TupleQueryResultTest {
 	}
 
 	private void addData() throws IOException, UnsupportedRDFormatException, RDFParseException, RepositoryException {
-		InputStream defaultGraph = TupleQueryResultTest.class.getResourceAsStream("/testcases/default-graph-1.ttl");
-		try {
+		try (InputStream defaultGraph = TupleQueryResultTest.class
+				.getResourceAsStream("/testcases/default-graph-1.ttl")) {
 			con.add(defaultGraph, "", RDFFormat.TURTLE);
-		} finally {
-			defaultGraph.close();
 		}
 	}
 
 	@Test
 	public void testGetBindingNames() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate();
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate()) {
 			List<String> headers = result.getBindingNames();
 
 			assertThat(headers.get(0)).isEqualTo("P").as("first header element");
 			assertThat(headers.get(1)).isEqualTo("D").as("second header element");
-		} finally {
-			result.close();
 		}
 	}
 
 	@Test
 	public void testIterator() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate();
 
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate()) {
 			int count = 0;
 			while (result.hasNext()) {
 				result.next();
@@ -152,35 +155,27 @@ public abstract class TupleQueryResultTest {
 			}
 
 			assertTrue("query should have multiple results.", count > 1);
-		} finally {
-			result.close();
 		}
 	}
 
 	@Test
 	public void testIsEmpty() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(emptyResultQuery).evaluate();
 
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(emptyResultQuery).evaluate()) {
 			assertFalse("Query result should be empty", result.hasNext());
-		} finally {
-			result.close();
 		}
 	}
 
 	@Test
 	public void testCountMatchesAllSelect() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery("SELECT * WHERE {?s ?p ?o}").evaluate();
-		long size = con.size();
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery("SELECT * WHERE {?s ?p ?o}").evaluate()) {
+			long size = con.size();
 			for (int i = 0; i < size; i++) {
 				assertTrue(result.hasNext());
 				BindingSet next = result.next();
 				assertNotNull(next);
 			}
 			assertFalse("Query result should be empty", result.hasNext());
-		} finally {
-			result.close();
 		}
 	}
 
@@ -210,8 +205,8 @@ public abstract class TupleQueryResultTest {
 		con.commit();
 
 		for (int evaluateCount = 0; evaluateCount < 1000; evaluateCount++) {
-			try (ByteArrayOutputStream stream = new ByteArrayOutputStream();
-					RepositoryConnection nextCon = rep.getConnection();) {
+			try (ByteArrayOutputStream stream = new ByteArrayOutputStream(191226);
+					RepositoryConnection nextCon = rep.getConnection()) {
 				TupleQueryResultWriter sparqlWriter = QueryResultIO.createTupleWriter(TupleQueryResultFormat.SPARQL,
 						stream);
 				TupleQuery tupleQuery = nextCon.prepareTupleQuery(QueryLanguage.SPARQL,

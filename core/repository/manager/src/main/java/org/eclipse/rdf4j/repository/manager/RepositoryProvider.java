@@ -86,7 +86,7 @@ public class RepositoryProvider {
 	public static RepositoryManager getRepositoryManager(String url)
 			throws RepositoryConfigException, RepositoryException {
 		String uri = normalizeDirectory(url);
-		SynchronizedManager sync = null;
+		SynchronizedManager sync;
 		synchronized (managers) {
 			Iterator<SynchronizedManager> iter = managers.values().iterator();
 			while (iter.hasNext()) {

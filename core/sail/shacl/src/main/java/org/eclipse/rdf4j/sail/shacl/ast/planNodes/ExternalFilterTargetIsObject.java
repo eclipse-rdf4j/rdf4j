@@ -38,8 +38,7 @@ public class ExternalFilterTargetIsObject extends FilterPlanNode {
 
 	@Override
 	public String toString() {
-		return "ExternalFilterTargetIsObject{" +
-				'}';
+		return "ExternalFilterTargetIsObject{" + '}';
 	}
 
 	@Override

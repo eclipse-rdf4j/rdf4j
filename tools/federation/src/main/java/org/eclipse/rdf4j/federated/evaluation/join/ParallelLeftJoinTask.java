@@ -73,7 +73,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
 		private CloseableIteration<BindingSet, QueryEvaluationException> rightIter;
 
-		private AtomicBoolean exhausted = new AtomicBoolean(false);
+		private final AtomicBoolean exhausted = new AtomicBoolean(false);
 
 		public FedXLeftJoinIteration(FederationEvalStrategy strategy, LeftJoin join, BindingSet leftBindings) {
 			super();

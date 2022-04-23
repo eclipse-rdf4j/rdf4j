@@ -384,7 +384,7 @@ public class ParsedURI implements java.lang.Cloneable {
 	 * Methods for parsing URIs *
 	 *--------------------------*/
 
-	private static final boolean isJarScheme(String s) {
+	private static boolean isJarScheme(String s) {
 		return (s.length() > 4 && s.substring(0, 4).equalsIgnoreCase("jar:"));
 	}
 

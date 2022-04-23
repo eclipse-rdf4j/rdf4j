@@ -23,7 +23,7 @@ class Atts {
 	/**
 	 * List containing Att objects.
 	 */
-	private List<Att> attributes;
+	private final List<Att> attributes;
 
 	/*--------------*
 	 * Constructors *

@@ -170,7 +170,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	private String analyzer;
 
-	private String queryAnalyzer = "standard";
+	private final String queryAnalyzer = "standard";
 
 	private Function<? super String, ? extends SpatialContext> geoContextMapper;
 
@@ -397,7 +397,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	@Override
 	protected Iterable<? extends SearchDocument> getDocuments(String resourceId) throws IOException {
 		SearchHits hits = getDocuments(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, resourceId));
-		return Iterables.transform(hits, new Function<SearchHit, SearchDocument>() {
+		return Iterables.transform(hits, new Function<>() {
 
 			@Override
 			public SearchDocument apply(SearchHit hit) {
@@ -564,7 +564,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		} else {
 			hits = search(request, qb);
 		}
-		return Iterables.transform(hits, new Function<SearchHit, DocumentScore>() {
+		return Iterables.transform(hits, new Function<>() {
 
 			@Override
 			public DocumentScore apply(SearchHit hit) {
@@ -668,7 +668,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 		SearchRequestBuilder request = client.prepareSearch();
 		SearchHits hits = search(request, QueryBuilders.boolQuery().must(qb).filter(fb));
-		return Iterables.transform(hits, new Function<SearchHit, DocumentResult>() {
+		return Iterables.transform(hits, new Function<>() {
 
 			@Override
 			public DocumentResult apply(SearchHit hit) {

@@ -47,7 +47,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
  */
 public class NamespacesController extends AbstractController {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public NamespacesController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, "DELETE" });

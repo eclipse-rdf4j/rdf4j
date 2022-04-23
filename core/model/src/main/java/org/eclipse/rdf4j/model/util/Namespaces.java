@@ -146,7 +146,7 @@ public class Namespaces {
 	 * @return A Map of prefix to URI mappings which is backed by the given Set of {@link Namespace}s.
 	 */
 	public static Map<String, String> wrap(final Set<Namespace> namespaces) {
-		return new Map<String, String>() {
+		return new Map<>() {
 
 			@Override
 			public void clear() {

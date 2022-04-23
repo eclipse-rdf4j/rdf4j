@@ -31,13 +31,13 @@ public class ContextStatementCollector extends AbstractRDFHandler {
 	 * Variables *
 	 *-----------*/
 
-	private Collection<Statement> statements;
+	private final Collection<Statement> statements;
 
-	private Map<String, String> namespaces;
+	private final Map<String, String> namespaces;
 
-	private Resource[] contexts;
+	private final Resource[] contexts;
 
-	private ValueFactory vf;
+	private final ValueFactory vf;
 
 	/*--------------*
 	 * Constructors *

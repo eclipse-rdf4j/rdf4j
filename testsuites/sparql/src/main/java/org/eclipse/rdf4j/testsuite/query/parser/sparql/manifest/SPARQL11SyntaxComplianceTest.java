@@ -68,6 +68,6 @@ public abstract class SPARQL11SyntaxComplianceTest extends SPARQLSyntaxComplianc
 	@Override
 	protected Repository getDataRepository() {
 		return null; // not needed in syntax tests
-	};
+	}
 
 }

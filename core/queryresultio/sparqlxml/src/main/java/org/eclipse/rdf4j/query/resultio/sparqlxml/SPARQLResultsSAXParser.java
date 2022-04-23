@@ -77,14 +77,14 @@ class SPARQLResultsSAXParser extends SimpleSAXAdapter {
 	 */
 	private MapBindingSet currentSolution;
 
-	private ValueFactory valueFactory;
+	private final ValueFactory valueFactory;
 
-	private QueryResultHandler handler;
+	private final QueryResultHandler handler;
 
 	/**
 	 * stack for handling nested RDF-star triples
 	 */
-	private Deque<TripleContainer> tripleStack = new ArrayDeque<>();
+	private final Deque<TripleContainer> tripleStack = new ArrayDeque<>();
 
 	public SPARQLResultsSAXParser(ValueFactory valueFactory, QueryResultHandler handler) {
 		this.valueFactory = valueFactory;

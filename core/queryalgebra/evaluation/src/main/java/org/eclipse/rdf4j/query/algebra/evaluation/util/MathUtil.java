@@ -132,7 +132,7 @@ public class MathUtil {
 					return vf.createLiteral(left.multiply(right));
 				case DIVIDE:
 					// Divide by zero handled through NumberFormatException
-					BigDecimal result = null;
+					BigDecimal result;
 					try {
 						// try to return the exact quotient if possible.
 						result = left.divide(right, MathContext.UNLIMITED);

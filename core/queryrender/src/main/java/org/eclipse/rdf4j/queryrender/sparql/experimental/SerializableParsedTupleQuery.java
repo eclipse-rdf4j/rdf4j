@@ -21,14 +21,14 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
  * The SerializableParsedTupleQuery class is an intermediate structure holding main parts of a query or a subquery:
  * projection, WHERE clause, GROUP BY clause, ORDER BY clause, LIMIT element, HAVING clause, and BINDINGS clause. These
  * fields are extracted from the {@link ParsedTupleQuery} tree.
- * 
+ *
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
  */
 class SerializableParsedTupleQuery extends AbstractSerializableParsedQuery {
 
-	public static enum QueryModifier {
+	public enum QueryModifier {
 		DISTINCT,
 		REDUCED
 	}
@@ -45,11 +45,11 @@ class SerializableParsedTupleQuery extends AbstractSerializableParsedQuery {
 
 	/**
 	 * Returns the names of the variables projected by this query (as strings).
-	 * 
+	 *
 	 * @return list of projected variable names
 	 */
 	public List<String> getProjectionResultVars() {
-		List<String> res = new ArrayList<String>(
+		List<String> res = new ArrayList<>(
 				projection.getProjectionElemList().getElements().size());
 
 		for (ProjectionElem elem : projection.getProjectionElemList().getElements()) {

@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
-public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
+public class NodeShape extends Shape {
 
 	protected boolean produceValidationReports;
 

@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  *
  * <pre>
  * +------+--------------+--------------+-------+------+-------+--------+...+-------+
- * | type | totalStrings | stringsBlock | array | CRC8 | index | buffer |...| CRC32 | 
+ * | type | totalStrings | stringsBlock | array | CRC8 | index | buffer |...| CRC32 |
  * +------+--------------+--------------+-------+------+-------+--------+...+-------+
  * </pre>
  *
@@ -58,8 +58,7 @@ class HDTDictionarySectionPFC extends HDTDictionarySection {
 	private HDTArray blockStarts;
 
 	// keep most recently used blocks in memory as decoded values
-	private final LinkedHashMap<Integer, ArrayList<byte[]>> cache = new LinkedHashMap<Integer, ArrayList<byte[]>>(100,
-			1, true) {
+	private final LinkedHashMap<Integer, ArrayList<byte[]>> cache = new LinkedHashMap<>(100, 1, true) {
 		@Override
 		protected boolean removeEldestEntry(Map.Entry eldest) {
 			return size() > 99;

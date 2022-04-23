@@ -67,10 +67,10 @@ public class FederationManager {
 	 *
 	 * @author Andreas Schwarte
 	 */
-	public static enum FederationType {
+	public enum FederationType {
 		LOCAL,
 		REMOTE,
-		HYBRID;
+		HYBRID
 	}
 
 	/* Instance variables */
@@ -96,7 +96,7 @@ public class FederationManager {
 	}
 
 	/**
-	 * 
+	 *
 	 * @return the initialized and configured {@link FederationEvaluationStrategyFactory}
 	 */
 	/* package */ FederationEvaluationStrategyFactory getFederationEvaluationStrategyFactory() {
@@ -141,7 +141,7 @@ public class FederationManager {
 	/**
 	 * Returns the managed {@link Executor} which takes for properly handling any configured
 	 * {@link FedXConfig#getTaskWrapper()}
-	 * 
+	 *
 	 */
 	public Executor getExecutor() {
 		final Optional<TaskWrapper> taskWrapper = federationContext.getConfig().getTaskWrapper();

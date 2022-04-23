@@ -29,9 +29,9 @@ public class ParsedUpdate extends ParsedOperation {
 
 	private Map<String, String> namespaces;
 
-	private List<UpdateExpr> updateExprs = new ArrayList<>();
+	private final List<UpdateExpr> updateExprs = new ArrayList<>();
 
-	private Map<UpdateExpr, Dataset> datasetMapping = new IdentityHashMap<>();
+	private final Map<UpdateExpr, Dataset> datasetMapping = new IdentityHashMap<>();
 
 	/*--------------*
 	 * Constructors *

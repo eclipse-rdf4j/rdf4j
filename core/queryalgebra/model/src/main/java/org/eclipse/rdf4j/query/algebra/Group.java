@@ -130,7 +130,6 @@ public class Group extends UnaryTupleOperator {
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-
 		if (replaceNodeInList(groupElements, current, replacement)) {
 			return;
 		}

@@ -25,7 +25,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private final AtomicLong used = new AtomicLong();
 
-	private long maxSize;
+	private final long maxSize;
 
 	/**
 	 * @param tripleSource
@@ -50,7 +50,7 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 	@Override
 	public <B> Set<B> makeSet() {
 		Set<B> wrapped = super.makeSet();
-		return new Set<B>() {
+		return new Set<>() {
 
 			@Override
 			public boolean add(B e) {
@@ -118,8 +118,9 @@ public class LimitedSizeEvaluationStrategy extends StrictEvaluationStrategy {
 				boolean all = true;
 				for (B b : c) {
 					boolean added = wrapped.add(b);
-					if (!added)
+					if (!added) {
 						all = false;
+					}
 				}
 				return all;
 			}

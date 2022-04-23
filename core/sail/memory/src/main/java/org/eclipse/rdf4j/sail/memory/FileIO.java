@@ -143,7 +143,7 @@ class FileIO {
 			out.write(BMSF_VERSION);
 			out.flush();
 			// The rest of the data is GZIP-compressed
-			try (DataOutputStream dataOut = new DataOutputStream(new GZIPOutputStream(out));) {
+			try (DataOutputStream dataOut = new DataOutputStream(new GZIPOutputStream(out))) {
 				writeNamespaces(explicit, dataOut);
 				writeStatements(explicit, inferred, dataOut);
 
@@ -166,7 +166,7 @@ class FileIO {
 			}
 
 			// The rest of the data is GZIP-compressed
-			try (DataInputStream dataIn = new DataInputStream(new GZIPInputStream(in));) {
+			try (DataInputStream dataIn = new DataInputStream(new GZIPInputStream(in))) {
 				int recordTypeMarker;
 				while ((recordTypeMarker = dataIn.readByte()) != EOF_MARKER) {
 					switch (recordTypeMarker) {
@@ -194,7 +194,7 @@ class FileIO {
 	}
 
 	private void writeNamespaces(SailDataset store, DataOutputStream dataOut) throws IOException, SailException {
-		try (CloseableIteration<? extends Namespace, SailException> iter = store.getNamespaces();) {
+		try (CloseableIteration<? extends Namespace, SailException> iter = store.getNamespaces()) {
 			while (iter.hasNext()) {
 				Namespace ns = iter.next();
 				dataOut.writeByte(NAMESPACE_MARKER);
@@ -226,7 +226,7 @@ class FileIO {
 
 	public void writeStatement(CloseableIteration<? extends Statement, SailException> stIter, int tripleMarker,
 			int quadMarker, DataOutputStream dataOut) throws IOException, SailException {
-		try {
+		try (stIter) {
 			while (stIter.hasNext()) {
 				Statement st = stIter.next();
 				Resource context = st.getContext();
@@ -242,8 +242,6 @@ class FileIO {
 					writeValue(context, dataOut);
 				}
 			}
-		} finally {
-			stIter.close();
 		}
 	}
 

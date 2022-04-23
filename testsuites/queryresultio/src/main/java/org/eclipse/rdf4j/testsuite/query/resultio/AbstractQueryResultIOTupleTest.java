@@ -91,24 +91,24 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 
 	@Test
 	public final void testNoLinksNoResults() throws Exception {
-		doTupleLinks(getTupleFormat(), createTupleNoBindingSets(), createTupleNoBindingSets(), Arrays.<String>asList());
+		doTupleLinks(getTupleFormat(), createTupleNoBindingSets(), createTupleNoBindingSets(), List.<String>of());
 	}
 
 	@Test
 	public final void testNoLinksWithResults() throws Exception {
 		doTupleLinks(getTupleFormat(), createTupleMultipleBindingSets(), createTupleMultipleBindingSets(),
-				Arrays.<String>asList());
+				List.<String>of());
 	}
 
 	@Test
 	public final void testOneLinkNoResults() throws Exception {
-		doTupleLinks(getTupleFormat(), createTupleNoBindingSets(), createTupleNoBindingSets(), Arrays.asList("info"));
+		doTupleLinks(getTupleFormat(), createTupleNoBindingSets(), createTupleNoBindingSets(), List.of("info"));
 	}
 
 	@Test
 	public final void testOneLinkWithResults() throws Exception {
 		doTupleLinks(getTupleFormat(), createTupleMultipleBindingSets(), createTupleMultipleBindingSets(),
-				Arrays.asList("info"));
+				List.of("info"));
 	}
 
 	@Test

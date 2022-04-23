@@ -146,6 +146,7 @@ public abstract class AbstractLuceneSailTest {
 		if (repository != null) {
 			repository.shutDown();
 		}
+		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);
 	}
 
 	@Test
@@ -175,7 +176,7 @@ public abstract class AbstractLuceneSailTest {
 				// check the results
 				ArrayList<IRI> uris = new ArrayList<>();
 
-				BindingSet bindings = null;
+				BindingSet bindings;
 
 				assertTrue(result.hasNext());
 				bindings = result.next();
@@ -219,7 +220,7 @@ public abstract class AbstractLuceneSailTest {
 
 				// check the results
 				List<String> results = new ArrayList<>();
-				BindingSet bindings = null;
+				BindingSet bindings;
 
 				assertTrue(result.hasNext());
 				bindings = result.next();
@@ -322,8 +323,8 @@ public abstract class AbstractLuceneSailTest {
 						+ "                             <" + SCORE + "> ?R2Score ].}" };
 
 		ArrayList<List<Map<String, String>>> results = new ArrayList<>();
-		ArrayList<Map<String, String>> resultSet = null;
-		Map<String, String> result = null;
+		ArrayList<Map<String, String>> resultSet;
+		Map<String, String> result;
 
 		// create a new result set
 		resultSet = new ArrayList<>();
@@ -516,8 +517,8 @@ public abstract class AbstractLuceneSailTest {
 						+ "                            <" + SNIPPET + "> ?Snippet ].}" };
 
 		ArrayList<List<Map<String, String>>> results = new ArrayList<>();
-		ArrayList<Map<String, String>> resultSet = null;
-		Map<String, String> result = null;
+		ArrayList<Map<String, String>> resultSet;
+		Map<String, String> result;
 
 		// create a new result set
 		resultSet = new ArrayList<>();
@@ -580,7 +581,7 @@ public abstract class AbstractLuceneSailTest {
 			TupleQuery query = connection.prepareTupleQuery(q);
 			try (TupleQueryResult result = query.evaluate()) {
 				// check the results
-				BindingSet bindings = null;
+				BindingSet bindings;
 
 				// the first result is subject 1 and has a score
 				int results = 0;
@@ -644,7 +645,7 @@ public abstract class AbstractLuceneSailTest {
 				try (TupleQueryResult result = query.evaluate()) {
 
 					// check the results
-					BindingSet bindings = null;
+					BindingSet bindings;
 
 					// the first result is subject 1 and has a score
 					int results = 0;
@@ -709,7 +710,7 @@ public abstract class AbstractLuceneSailTest {
 				try (TupleQueryResult result = query.evaluate()) {
 
 					// check the results
-					BindingSet bindings = null;
+					BindingSet bindings;
 
 					// the first result is subject 1 and has a score
 					int results = 0;
@@ -978,7 +979,7 @@ public abstract class AbstractLuceneSailTest {
 			try (TupleQueryResult result = query.evaluate()) {
 
 				// check the results
-				BindingSet bindings = null;
+				BindingSet bindings;
 
 				// the first result is subject 1 and has a score
 				int results = 0;

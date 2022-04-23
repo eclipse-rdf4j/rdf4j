@@ -236,7 +236,7 @@ public class FedXConnection extends AbstractSailConnection {
 						new SimpleDataset()));
 
 		for (final Endpoint e : federation.getMembers()) {
-			union.addTask(new ParallelTask<Resource>() {
+			union.addTask(new ParallelTask<>() {
 				@Override
 				public CloseableIteration<Resource, QueryEvaluationException> performTask() throws Exception {
 					try (RepositoryConnection conn = e.getConnection()) {
@@ -262,7 +262,7 @@ public class FedXConnection extends AbstractSailConnection {
 		federationContext.getManager().getExecutor().execute(union);
 
 		return new DistinctIteration<>(
-				new ExceptionConvertingIteration<Resource, SailException>(union) {
+				new ExceptionConvertingIteration<>(union) {
 					@Override
 					protected SailException convert(Exception e) {
 						return new SailException(e);
@@ -298,7 +298,7 @@ public class FedXConnection extends AbstractSailConnection {
 			federationContext.getMonitoringService().monitorQuery(queryInfo);
 			CloseableIteration<Statement, QueryEvaluationException> res = strategy.getStatements(queryInfo, subj, pred,
 					obj, contexts);
-			return new ExceptionConvertingIteration<Statement, SailException>(res) {
+			return new ExceptionConvertingIteration<>(res) {
 				@Override
 				protected SailException convert(Exception e) {
 					return new SailException(e);

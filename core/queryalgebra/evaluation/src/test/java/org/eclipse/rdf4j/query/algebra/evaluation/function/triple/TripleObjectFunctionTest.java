@@ -31,7 +31,7 @@ public class TripleObjectFunctionTest {
 
 	private TripleObjectFunction function;
 
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	/**
 	 * @throws java.lang.Exception

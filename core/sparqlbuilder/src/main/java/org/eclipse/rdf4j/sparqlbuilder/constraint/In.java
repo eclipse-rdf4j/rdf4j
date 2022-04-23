@@ -1,7 +1,7 @@
 package org.eclipse.rdf4j.sparqlbuilder.constraint;
 
 public class In extends Function {
-	private Operand searchTerm;
+	private final Operand searchTerm;
 
 	In(Operand searchTerm, Operand... expressions) {
 		this(searchTerm, true, expressions);

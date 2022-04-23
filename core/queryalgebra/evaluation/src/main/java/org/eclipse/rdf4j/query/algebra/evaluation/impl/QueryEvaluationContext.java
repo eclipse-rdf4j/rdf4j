@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  */
 public interface QueryEvaluationContext {
 
-	public class Minimal implements QueryEvaluationContext {
+	class Minimal implements QueryEvaluationContext {
 		public Minimal(Literal now, Dataset dataset) {
 			super();
 			this.now = now;

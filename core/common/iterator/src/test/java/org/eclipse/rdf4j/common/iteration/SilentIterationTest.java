@@ -12,9 +12,9 @@ import org.junit.Test;
 public class SilentIterationTest {
 
 	@SuppressWarnings("unchecked")
-	private CloseableIteration<Object, Exception> delegate = mock(CloseableIteration.class);
+	private final CloseableIteration<Object, Exception> delegate = mock(CloseableIteration.class);
 
-	private SilentIteration<Object, Exception> subject = new SilentIteration<>(delegate);
+	private final SilentIteration<Object, Exception> subject = new SilentIteration<>(delegate);
 
 	@Test
 	public void hasNextSwallowsException() throws Exception {

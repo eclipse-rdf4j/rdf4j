@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
-public abstract class DelegatingTupleQuery implements TupleQuery, Operation {
-	private TupleQuery delegate;
+public abstract class DelegatingTupleQuery implements TupleQuery {
+	private final TupleQuery delegate;
 
 	public DelegatingTupleQuery(TupleQuery delegate) {
 		this.delegate = delegate;

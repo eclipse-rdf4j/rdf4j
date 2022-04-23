@@ -24,8 +24,7 @@ public class TrimToTarget implements PlanNode {
 	boolean keepPath = false;
 
 	public TrimToTarget(PlanNode parent) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-		this.parent = parent;
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 

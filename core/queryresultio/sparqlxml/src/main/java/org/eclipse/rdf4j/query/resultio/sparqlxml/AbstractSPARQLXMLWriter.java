@@ -70,7 +70,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Peter Ansell
  */
-abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter implements QueryResultWriter, CharSink {
+abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter implements CharSink {
 
 	/*-----------*
 	 * Variables *
@@ -92,7 +92,7 @@ abstract class AbstractSPARQLXMLWriter extends AbstractQueryResultWriter impleme
 	/**
 	 * Map with keys as namespace URI strings and the values as the shortened prefixes.
 	 */
-	private Map<String, String> namespaceTable = new HashMap<>();
+	private final Map<String, String> namespaceTable = new HashMap<>();
 
 	private final Logger log = LoggerFactory.getLogger(this.getClass());
 

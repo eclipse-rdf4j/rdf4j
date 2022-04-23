@@ -36,7 +36,6 @@ public class SPARQLRepositoryPerformance {
 				qRes.next();
 			}
 			System.out.println("Done.");
-			;
 		} finally {
 			if (qRes != null) {
 				qRes.close();

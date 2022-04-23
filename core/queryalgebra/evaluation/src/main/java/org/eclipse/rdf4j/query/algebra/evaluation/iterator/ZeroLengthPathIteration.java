@@ -44,17 +44,17 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private QueryBindingSet result;
 
-	private Value subj;
+	private final Value subj;
 
-	private Value obj;
+	private final Value obj;
 
-	private BindingSet bindings;
+	private final BindingSet bindings;
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> iter;
 
 	private Set<Value> reportedValues;
 
-	private Var contextVar;
+	private final Var contextVar;
 
 	private final EvaluationStrategy evaluationStrategy;
 

@@ -23,7 +23,7 @@ public enum SparqlAggregate implements SparqlOperator {
 	SAMPLE("SAMPLE"),
 	SUM("SUM");
 
-	private String function;
+	private final String function;
 
 	SparqlAggregate(String function) {
 		this.function = function;

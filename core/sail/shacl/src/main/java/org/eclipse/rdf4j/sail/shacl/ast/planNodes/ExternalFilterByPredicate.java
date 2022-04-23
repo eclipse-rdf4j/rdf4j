@@ -42,11 +42,9 @@ public class ExternalFilterByPredicate implements PlanNode {
 	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent,
 			On on, Resource[] dataGraph) {
 		this.dataGraph = dataGraph;
-		parent = PlanNodeHelper.handleSorting(this, parent);
-
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.connection = connection;
 		this.filterOnPredicates = filterOnPredicates;
-		this.parent = parent;
 		this.on = on;
 	}
 
@@ -79,16 +77,14 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 					return filterOnPredicates.stream()
 							.filter(predicate -> connection.hasStatement((Resource) node, predicate, null, true,
-									dataGraph)
-							)
+									dataGraph))
 							.findFirst()
 							.orElse(null);
 
 				} else if (on == On.Object) {
 
 					return filterOnPredicates.stream()
-							.filter(predicate -> connection.hasStatement(null, predicate, node, true, dataGraph)
-							)
+							.filter(predicate -> connection.hasStatement(null, predicate, node, true, dataGraph))
 							.findFirst()
 							.orElse(null);
 

@@ -619,7 +619,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	@SuppressWarnings("unused")
 	private void logIndexStats() {
 		try {
-			IndexReader reader = null;
+			IndexReader reader;
 			try {
 				reader = getIndexReader();
 

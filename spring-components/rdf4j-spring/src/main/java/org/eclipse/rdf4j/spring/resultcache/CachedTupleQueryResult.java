@@ -27,9 +27,9 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
  * @author Florian Kleedorfer
  */
 public class CachedTupleQueryResult implements TupleQueryResult {
-	private List<BindingSet> bindingSets;
+	private final List<BindingSet> bindingSets;
 	private Iterator<BindingSet> replayingIterator;
-	private List<String> bindingNames;
+	private final List<String> bindingNames;
 
 	CachedTupleQueryResult(List<BindingSet> bindingSets, List<String> bindingNames) {
 		this.bindingSets = new LinkedList<>(bindingSets);

@@ -28,11 +28,11 @@ import org.junit.Test;
  */
 public class TurtleWriterTest extends AbstractTurtleWriterTest {
 
-	private IRI uri1;
+	private final IRI uri1;
 
-	private IRI uri2;
+	private final IRI uri2;
 
-	private String exNs;
+	private final String exNs;
 
 	public TurtleWriterTest() {
 		super(new TurtleWriterFactory(), new TurtleParserFactory());

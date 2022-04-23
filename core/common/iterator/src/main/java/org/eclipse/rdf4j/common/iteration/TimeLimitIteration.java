@@ -96,7 +96,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 		}
 	}
 
-	private final void checkInterrupted() throws X {
+	private void checkInterrupted() throws X {
 		if (isInterrupted.get()) {
 			try {
 				throwInterruptedException();

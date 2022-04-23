@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
  * All other values in the subject and object position will be used as is.
  */
 class RDFStarDecodingValueFactory implements ValueFactory {
-	private ValueFactory delegate;
+	private final ValueFactory delegate;
 
 	RDFStarDecodingValueFactory(ValueFactory delegate) {
 		this.delegate = delegate;

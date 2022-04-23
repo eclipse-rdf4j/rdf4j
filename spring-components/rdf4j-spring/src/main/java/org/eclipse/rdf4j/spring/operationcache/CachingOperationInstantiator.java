@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory;
  */
 public class CachingOperationInstantiator extends DirectOperationInstantiator {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-	private Map<RepositoryConnection, Map<String, Operation>> cachedOperations = Collections
+	private final Map<RepositoryConnection, Map<String, Operation>> cachedOperations = Collections
 			.synchronizedMap(new WeakHashMap<>());
 
 	@Override

@@ -37,7 +37,7 @@ public abstract class AbstractLogConfiguration implements LogConfiguration {
 
 	private boolean debugLoggingEnabled;
 
-	private Set<String> packages;
+	private final Set<String> packages;
 
 	private AppConfiguration config;
 

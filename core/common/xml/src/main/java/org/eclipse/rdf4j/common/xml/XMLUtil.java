@@ -292,11 +292,11 @@ public class XMLUtil {
 		return _isAsciiBaseChar(c) || _isNonAsciiBaseChar(c) || isIdeographic(c);
 	}
 
-	private static final boolean _isAsciiBaseChar(char c) {
+	private static boolean _isAsciiBaseChar(char c) {
 		return _charInRange(c, 0x0041, 0x005A) || _charInRange(c, 0x0061, 0x007A);
 	}
 
-	private static final boolean _isNonAsciiBaseChar(char c) {
+	private static boolean _isNonAsciiBaseChar(char c) {
 		return _charInRange(c, 0x00C0, 0x00D6) || _charInRange(c, 0x00D8, 0x00F6) || _charInRange(c, 0x00F8, 0x00FF)
 				|| _charInRange(c, 0x0100, 0x0131) || _charInRange(c, 0x0134, 0x013E) || _charInRange(c, 0x0141, 0x0148)
 				|| _charInRange(c, 0x014A, 0x017E) || _charInRange(c, 0x0180, 0x01C3) || _charInRange(c, 0x01CD, 0x01F0)
@@ -400,11 +400,11 @@ public class XMLUtil {
 		return _isAsciiDigit(c) || _isNonAsciiDigit(c);
 	}
 
-	private static final boolean _isAsciiDigit(char c) {
+	private static boolean _isAsciiDigit(char c) {
 		return _charInRange(c, 0x0030, 0x0039);
 	}
 
-	private static final boolean _isNonAsciiDigit(char c) {
+	private static boolean _isNonAsciiDigit(char c) {
 		return _charInRange(c, 0x0660, 0x0669) || _charInRange(c, 0x06F0, 0x06F9) || _charInRange(c, 0x0966, 0x096F)
 				|| _charInRange(c, 0x09E6, 0x09EF) || _charInRange(c, 0x0A66, 0x0A6F) || _charInRange(c, 0x0AE6, 0x0AEF)
 				|| _charInRange(c, 0x0B66, 0x0B6F) || _charInRange(c, 0x0BE7, 0x0BEF) || _charInRange(c, 0x0C66, 0x0C6F)
@@ -418,7 +418,7 @@ public class XMLUtil {
 				|| _charInRange(c, 0x30FC, 0x30FE);
 	}
 
-	private static final boolean _charInRange(char c, int start, int end) {
+	private static boolean _charInRange(char c, int start, int end) {
 		return c >= start && c <= end;
 	}
 }

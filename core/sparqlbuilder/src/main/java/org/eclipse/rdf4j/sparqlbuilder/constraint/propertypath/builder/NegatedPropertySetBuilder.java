@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
  * @author Florian Kleedorfer
  */
 public class NegatedPropertySetBuilder {
-	private List<PredicatePathOrInversePredicatePath> propertySet = new ArrayList<>();
+	private final List<PredicatePathOrInversePredicatePath> propertySet = new ArrayList<>();
 
 	public NegatedPropertySetBuilder pred(IRI predicate) {
 		return pred(iri(predicate));

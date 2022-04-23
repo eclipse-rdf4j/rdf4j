@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 public interface SliceQueryEvaluationStep extends QueryEvaluationStep {
 
-	public static QueryEvaluationStep supply(Slice slice, QueryEvaluationStep argument) {
+	static QueryEvaluationStep supply(Slice slice, QueryEvaluationStep argument) {
 		// if there is no offset nor limit then the operator does nothing
 		// pass through the argument in one go.
 		if (!slice.hasOffset() && !slice.hasLimit()) {
@@ -31,7 +31,7 @@ public interface SliceQueryEvaluationStep extends QueryEvaluationStep {
 		}
 	}
 
-	static class OnlyOffsetQueryEvaluationStep implements SliceQueryEvaluationStep {
+	class OnlyOffsetQueryEvaluationStep implements SliceQueryEvaluationStep {
 
 		private final long offset;
 		private final QueryEvaluationStep argument;
@@ -47,7 +47,7 @@ public interface SliceQueryEvaluationStep extends QueryEvaluationStep {
 		}
 	}
 
-	static class OffSetAndLimitQueryEvaluationStep implements SliceQueryEvaluationStep {
+	class OffSetAndLimitQueryEvaluationStep implements SliceQueryEvaluationStep {
 
 		private final long offset;
 		private final long limit;
@@ -61,15 +61,12 @@ public interface SliceQueryEvaluationStep extends QueryEvaluationStep {
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-			CloseableIteration<BindingSet, QueryEvaluationException> evaluate = argument.evaluate(bs);
-			OffsetIteration<BindingSet, QueryEvaluationException> offsetIter = new OffsetIteration<>(
-					evaluate, offset);
-			LimitIteration<BindingSet, QueryEvaluationException> limitIter = new LimitIteration<>(offsetIter, limit);
-			return limitIter;
+			CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = argument.evaluate(bs);
+			return new LimitIteration<>(new OffsetIteration<>(evaluate, offset), limit);
 		}
 	}
 
-	static class OnlyLimitQueryEvaluationStep implements SliceQueryEvaluationStep {
+	class OnlyLimitQueryEvaluationStep implements SliceQueryEvaluationStep {
 
 		private final long limit;
 		private final QueryEvaluationStep argument;

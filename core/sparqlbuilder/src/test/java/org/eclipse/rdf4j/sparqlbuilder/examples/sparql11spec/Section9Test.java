@@ -30,31 +30,31 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class Section9Test extends BaseExamples {
-	private Prefix rdfs = SparqlBuilder.prefix("rdfs", iri(RDFS.NS.getName()));
-	private Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS));
-	private Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
-	private Prefix base = SparqlBuilder.prefix("", iri("http://example/"));
-	private Prefix ex = prefix("ex", iri("http://example/"));
-	private Prefix rdf = prefix("rdf", iri(RDF.NAMESPACE));
-	private Variable displayString = var("displayString");
-	private Variable x = var("x");
-	private Variable name = var("name");
-	private Variable y = var("y");
-	private Variable ancestor = var("ancestor");
-	private Variable type = var("type");
-	private Variable p = var("p");
-	private Variable v = var("v");
-	private Variable element = var("element");
-	private Variable s = var("s");
-	private Variable total = var("total");
-	private Variable person = var("person");
-	private Iri property = base.iri("property");
-	private Iri me = iri("#me");
-	private Iri thing = iri("http://example/thing");
-	private Iri book1 = base.iri("book1");
-	private Iri order = base.iri("order");
-	private Iri mailto = iri("mailto:alice@example");
-	private Iri list = base.iri("list");
+	private final Prefix rdfs = SparqlBuilder.prefix("rdfs", iri(RDFS.NS.getName()));
+	private final Prefix dc = SparqlBuilder.prefix("dc", iri(DC_NS));
+	private final Prefix foaf = SparqlBuilder.prefix("foaf", iri(FOAF_NS));
+	private final Prefix base = SparqlBuilder.prefix("", iri("http://example/"));
+	private final Prefix ex = prefix("ex", iri("http://example/"));
+	private final Prefix rdf = prefix("rdf", iri(RDF.NAMESPACE));
+	private final Variable displayString = var("displayString");
+	private final Variable x = var("x");
+	private final Variable name = var("name");
+	private final Variable y = var("y");
+	private final Variable ancestor = var("ancestor");
+	private final Variable type = var("type");
+	private final Variable p = var("p");
+	private final Variable v = var("v");
+	private final Variable element = var("element");
+	private final Variable s = var("s");
+	private final Variable total = var("total");
+	private final Variable person = var("person");
+	private final Iri property = base.iri("property");
+	private final Iri me = iri("#me");
+	private final Iri thing = iri("http://example/thing");
+	private final Iri book1 = base.iri("book1");
+	private final Iri order = base.iri("order");
+	private final Iri mailto = iri("mailto:alice@example");
+	private final Iri list = base.iri("list");
 
 	@Test
 	public void example_9_2__1_alt() {

@@ -57,9 +57,9 @@ public abstract class AbstractTriple implements Triple {
 
 		private static final long serialVersionUID = 7822116805598041700L;
 
-		private Resource subject;
-		private IRI predicate;
-		private Value object;
+		private final Resource subject;
+		private final IRI predicate;
+		private final Value object;
 
 		GenericTriple(Resource subject, IRI predicate, Value object) {
 			this.subject = subject;

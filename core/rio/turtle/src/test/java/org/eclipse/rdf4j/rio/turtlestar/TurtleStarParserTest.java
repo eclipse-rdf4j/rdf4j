@@ -46,7 +46,7 @@ import org.junit.Test;
 public class TurtleStarParserTest {
 	private TurtleStarParser parser;
 
-	private ValueFactory vf = SimpleValueFactory.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	private final ParseErrorCollector errorCollector = new ParseErrorCollector();
 
@@ -54,7 +54,7 @@ public class TurtleStarParserTest {
 
 	private final String baseURI = "http://example.org/";
 
-	private SimpleParseLocationListener locationListener = new SimpleParseLocationListener();
+	private final SimpleParseLocationListener locationListener = new SimpleParseLocationListener();
 
 	@Before
 	public void setUp() {

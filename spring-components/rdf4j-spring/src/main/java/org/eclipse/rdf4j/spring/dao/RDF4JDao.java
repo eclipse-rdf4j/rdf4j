@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 public abstract class RDF4JDao {
 	private final RDF4JTemplate rdf4JTemplate;
 
-	private Map<String, NamedSparqlSupplier> namedSparqlSuppliers = new ConcurrentHashMap<>();
+	private final Map<String, NamedSparqlSupplier> namedSparqlSuppliers = new ConcurrentHashMap<>();
 
 	public RDF4JDao(RDF4JTemplate rdf4JTemplate) {
 		this.rdf4JTemplate = rdf4JTemplate;
@@ -108,7 +108,7 @@ public abstract class RDF4JDao {
 	}
 
 	public class NamedSparqlSupplierFinishBuilder {
-		private String key;
+		private final String key;
 
 		public NamedSparqlSupplierFinishBuilder(String key) {
 			this.key = key;

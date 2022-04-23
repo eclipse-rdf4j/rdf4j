@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.federated.performance.RepositoryPerformance.TestVocabulary.DRUGBANK;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
@@ -51,7 +52,7 @@ public class RepositoryPerformance {
 
 		private static final int MAX_INSTANCES = Integer.MAX_VALUE;
 		private static final int N_QUERIES = 100;
-		private ExecutorService executor = Executors.newFixedThreadPool(30);
+		private final ExecutorService executor = Executors.newFixedThreadPool(30);
 
 		private final IRI type;
 
@@ -63,7 +64,7 @@ public class RepositoryPerformance {
 
 			RepositoryConnection conn = null;
 			long testStart = System.currentTimeMillis();
-			long start = 0;
+			long start;
 
 			try {
 				System.out.println("Creating connection ...");
@@ -119,24 +120,13 @@ public class RepositoryPerformance {
 		}
 
 		private List<IRI> retrieveInstances(RepositoryConnection conn) throws Exception {
-
-			List<IRI> res = new ArrayList<>();
-			RepositoryResult<Statement> qres = null;
-			try {
-				qres = conn.getStatements(null, RDF.TYPE, type, false);
-				while (qres.hasNext() && res.size() < MAX_INSTANCES) {
-					Statement next = qres.next();
-					res.add((IRI) next.getObject());
-				}
-			} finally {
-				try {
-					if (qres != null) {
-						qres.close();
-					}
-				} catch (Exception ignore) {
-				}
+			try (RepositoryResult<Statement> qres = conn.getStatements(null, RDF.TYPE, type, false)) {
+				return qres.stream()
+						.limit(MAX_INSTANCES)
+						.map(Statement::getObject)
+						.map(o -> ((IRI) o))
+						.collect(Collectors.toList());
 			}
-			return res;
 		}
 
 		private int runQuery(RepositoryConnection conn, IRI instance) throws Exception {
@@ -145,9 +135,7 @@ public class RepositoryPerformance {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL,
 					"SELECT * WHERE { <" + instance.stringValue() + "> ?p ?o }");
 
-			TupleQueryResult res = null;
-			try {
-				res = query.evaluate();
+			try (TupleQueryResult res = query.evaluate()) {
 				int count = 0;
 				while (res.hasNext()) {
 					res.next();
@@ -156,10 +144,6 @@ public class RepositoryPerformance {
 				System.out.println("Instance " + instance.stringValue() + " has " + count + " results. Duration: "
 						+ (System.currentTimeMillis() - start) + "ms");
 				return count;
-			} finally {
-				if (res != null) {
-					res.close();
-				}
 			}
 		}
 
@@ -239,7 +223,7 @@ public class RepositoryPerformance {
 		} catch (Exception e) {
 			System.out.println("Error while performing RemoteRepository test: " + e.getMessage());
 		}
-//		} 
+//		}
 
 		System.out.println("done");
 

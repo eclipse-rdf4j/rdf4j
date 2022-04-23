@@ -29,7 +29,7 @@ public class QueryLanguage {
 	/**
 	 * List of known query languages.
 	 */
-	private static List<QueryLanguage> QUERY_LANGUAGES = new ArrayList<>(1);
+	private static final List<QueryLanguage> QUERY_LANGUAGES = new ArrayList<>(1);
 
 	static {
 		register(SPARQL);
@@ -80,7 +80,7 @@ public class QueryLanguage {
 	/**
 	 * The query language's name.
 	 */
-	private String name;
+	private final String name;
 
 	/**
 	 * Creates a new QueryLanguage object.

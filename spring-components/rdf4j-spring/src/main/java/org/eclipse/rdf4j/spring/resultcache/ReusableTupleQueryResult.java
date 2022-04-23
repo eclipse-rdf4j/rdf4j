@@ -51,10 +51,10 @@ import org.eclipse.rdf4j.spring.support.query.DelegatingIterator;
  */
 public class ReusableTupleQueryResult implements TupleQueryResult, ThrowableRecorder {
 	private TupleQueryResult originalResult;
-	private List<BindingSet> bindingSets;
-	private AtomicBoolean recording = new AtomicBoolean(true);
-	private AtomicBoolean exceptionDuringRecording = new AtomicBoolean(false);
-	private BindingSet queryBindings;
+	private final List<BindingSet> bindingSets;
+	private final AtomicBoolean recording = new AtomicBoolean(true);
+	private final AtomicBoolean exceptionDuringRecording = new AtomicBoolean(false);
+	private final BindingSet queryBindings;
 	private List<String> bindingNames;
 
 	public ReusableTupleQueryResult(TupleQueryResult result, BindingSet queryBindings) {

@@ -11,6 +11,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -38,14 +39,14 @@ public class HashJoinIterationTest {
 		{
 			QueryBindingSet leftb = new QueryBindingSet();
 			leftb.addBinding("a", vf.createLiteral("1"));
-			left.setBindingSets(Arrays.<BindingSet>asList(leftb));
+			left.setBindingSets(List.<BindingSet>of(leftb));
 		}
 
 		BindingSetAssignment right = new BindingSetAssignment();
 		{
 			QueryBindingSet rightb = new QueryBindingSet();
 			rightb.addBinding("b", vf.createLiteral("2"));
-			right.setBindingSets(Arrays.<BindingSet>asList(rightb));
+			right.setBindingSets(List.<BindingSet>of(rightb));
 		}
 
 		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(), false);
@@ -62,7 +63,7 @@ public class HashJoinIterationTest {
 			QueryBindingSet leftb = new QueryBindingSet();
 			leftb.addBinding("a", vf.createLiteral("1"));
 			leftb.addBinding("i", vf.createLiteral("x"));
-			left.setBindingSets(Arrays.<BindingSet>asList(leftb));
+			left.setBindingSets(List.<BindingSet>of(leftb));
 		}
 
 		BindingSetAssignment right = new BindingSetAssignment();
@@ -70,7 +71,7 @@ public class HashJoinIterationTest {
 			QueryBindingSet rightb = new QueryBindingSet();
 			rightb.addBinding("b", vf.createLiteral("2"));
 			rightb.addBinding("i", vf.createLiteral("x"));
-			right.setBindingSets(Arrays.<BindingSet>asList(rightb));
+			right.setBindingSets(List.<BindingSet>of(rightb));
 		}
 
 		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(), false);
@@ -88,7 +89,7 @@ public class HashJoinIterationTest {
 			QueryBindingSet leftb = new QueryBindingSet();
 			leftb.addBinding("a", vf.createLiteral("1"));
 			leftb.addBinding("i", vf.createLiteral("x"));
-			left.setBindingSets(Arrays.<BindingSet>asList(leftb));
+			left.setBindingSets(List.<BindingSet>of(leftb));
 		}
 
 		BindingSetAssignment right = new BindingSetAssignment();
@@ -96,7 +97,7 @@ public class HashJoinIterationTest {
 			QueryBindingSet rightb = new QueryBindingSet();
 			rightb.addBinding("b", vf.createLiteral("2"));
 			rightb.addBinding("i", vf.createLiteral("y"));
-			right.setBindingSets(Arrays.<BindingSet>asList(rightb));
+			right.setBindingSets(List.<BindingSet>of(rightb));
 		}
 
 		HashJoinIteration iter = new HashJoinIteration(evaluator, left, right, EmptyBindingSet.getInstance(), true);

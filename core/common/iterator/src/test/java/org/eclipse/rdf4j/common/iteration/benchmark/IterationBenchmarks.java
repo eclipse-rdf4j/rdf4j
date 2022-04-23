@@ -168,7 +168,7 @@ public class IterationBenchmarks {
 	private Iteration<String, Exception> getIterator(List<String> list) throws Exception {
 		return new Iteration<String, Exception>() {
 
-			Iterator<String> iterator = list.iterator();
+			final Iterator<String> iterator = list.iterator();
 
 			@Override
 			public boolean hasNext() throws Exception {

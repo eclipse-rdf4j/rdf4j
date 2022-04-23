@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory;
  */
 public class GraphQueryResultView extends QueryResultView {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	private static final GraphQueryResultView INSTANCE = new GraphQueryResultView();
 

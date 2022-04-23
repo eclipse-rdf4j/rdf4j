@@ -34,7 +34,7 @@ public class ProxyRepositoryFactory implements RepositoryFactory {
 
 	@Override
 	public Repository getRepository(RepositoryImplConfig config) throws RepositoryConfigException {
-		ProxyRepository result = null;
+		ProxyRepository result;
 
 		if (config instanceof ProxyRepositoryConfig) {
 			result = new ProxyRepository(((ProxyRepositoryConfig) config).getProxiedRepositoryID());

@@ -16,13 +16,13 @@ class Att {
 	 * Variables *
 	 *-----------*/
 
-	private String namespace;
+	private final String namespace;
 
-	private String localName;
+	private final String localName;
 
-	private String qName;
+	private final String qName;
 
-	private String value;
+	private final String value;
 
 	/*--------------*
 	 * Constructors *

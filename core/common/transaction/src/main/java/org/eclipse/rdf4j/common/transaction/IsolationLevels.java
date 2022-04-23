@@ -61,7 +61,7 @@ public enum IsolationLevels implements IsolationLevel {
 
 	private final List<? extends IsolationLevels> compatibleLevels;
 
-	private IsolationLevels(IsolationLevels... compatibleLevels) {
+	IsolationLevels(IsolationLevels... compatibleLevels) {
 		this.compatibleLevels = Arrays.asList(compatibleLevels);
 	}
 

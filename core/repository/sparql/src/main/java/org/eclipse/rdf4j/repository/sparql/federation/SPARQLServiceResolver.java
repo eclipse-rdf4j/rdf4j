@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
  * @author James Leigh
  */
 public class SPARQLServiceResolver extends AbstractFederatedServiceResolver
-		implements FederatedServiceResolver, HttpClientDependent, SessionManagerDependent {
+		implements HttpClientDependent, SessionManagerDependent {
 
 	public SPARQLServiceResolver() {
 		super();

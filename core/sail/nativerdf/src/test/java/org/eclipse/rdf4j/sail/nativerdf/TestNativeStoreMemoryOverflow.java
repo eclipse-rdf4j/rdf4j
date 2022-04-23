@@ -50,7 +50,7 @@ public class TestNativeStoreMemoryOverflow {
 
 	private RepositoryConnection testCon2;
 
-	private IsolationLevel level;
+	private final IsolationLevel level;
 
 	public TestNativeStoreMemoryOverflow(IsolationLevel level) {
 		this.level = level;

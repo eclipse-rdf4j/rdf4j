@@ -35,9 +35,7 @@ public class NonUniqueTargetLang implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public NonUniqueTargetLang(PlanNode parent) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-
-		this.parent = parent;
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 	}
 
 	@Override

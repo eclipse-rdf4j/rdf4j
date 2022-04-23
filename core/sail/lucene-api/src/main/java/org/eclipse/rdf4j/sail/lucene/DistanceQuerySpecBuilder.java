@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.sail.SailException;
 
 public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
 
-	private SearchIndex index;
+	private final SearchIndex index;
 
 	public DistanceQuerySpecBuilder(SearchIndex index) {
 		this.index = index;

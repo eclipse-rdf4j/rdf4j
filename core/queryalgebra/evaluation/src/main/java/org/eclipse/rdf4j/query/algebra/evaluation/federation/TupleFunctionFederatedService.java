@@ -70,7 +70,7 @@ public class TupleFunctionFederatedService implements FederatedService {
 	@Override
 	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException {
 		try (final CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(service,
-				new SingletonIteration<>(bindings), baseUri);) {
+				new SingletonIteration<>(bindings), baseUri)) {
 			while (iter.hasNext()) {
 				BindingSet bs = iter.next();
 				String firstVar = service.getBindingNames().iterator().next();

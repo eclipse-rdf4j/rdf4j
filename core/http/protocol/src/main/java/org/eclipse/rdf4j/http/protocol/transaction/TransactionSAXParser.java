@@ -41,11 +41,11 @@ import org.xml.sax.SAXException;
  */
 class TransactionSAXParser extends SimpleSAXAdapter {
 
-	private ValueFactory valueFactory;
+	private final ValueFactory valueFactory;
 
 	protected Collection<TransactionOperation> txn;
 
-	private List<Value> parsedValues = new ArrayList<>();
+	private final List<Value> parsedValues = new ArrayList<>();
 
 	private List<Binding> bindings;
 

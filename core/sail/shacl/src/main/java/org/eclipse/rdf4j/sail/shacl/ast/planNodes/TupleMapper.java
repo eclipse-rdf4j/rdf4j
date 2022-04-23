@@ -22,8 +22,7 @@ public class TupleMapper implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public TupleMapper(PlanNode parent, Function<ValidationTuple, ValidationTuple> function) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-		this.parent = parent;
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.function = function;
 	}
 
@@ -103,8 +102,7 @@ public class TupleMapper implements PlanNode {
 			return false;
 		}
 		TupleMapper that = (TupleMapper) o;
-		return parent.equals(that.parent) &&
-				function.equals(that.function);
+		return parent.equals(that.parent) && function.equals(that.function);
 	}
 
 	@Override

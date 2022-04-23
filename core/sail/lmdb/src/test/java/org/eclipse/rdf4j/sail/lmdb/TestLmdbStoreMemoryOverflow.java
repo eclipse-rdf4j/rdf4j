@@ -50,7 +50,7 @@ public class TestLmdbStoreMemoryOverflow {
 
 	private RepositoryConnection testCon2;
 
-	private IsolationLevel level;
+	private final IsolationLevel level;
 
 	public TestLmdbStoreMemoryOverflow(IsolationLevel level) {
 		this.level = level;

@@ -180,12 +180,11 @@ public abstract class SPARQLQueryTest extends TestCase {
 			return;
 		}
 
-		RepositoryConnection con = dataRep.getConnection();
 		// Some SPARQL Tests have non-XSD datatypes that must pass for the test
 		// suite to complete successfully
-		con.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, Boolean.FALSE);
-		con.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, Boolean.FALSE);
-		try {
+		try (RepositoryConnection con = dataRep.getConnection()) {
+			con.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, Boolean.FALSE);
+			con.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, Boolean.FALSE);
 			String queryString = readQueryString();
 			Query query = con.prepareQuery(QueryLanguage.SPARQL, queryString, queryFileURL);
 			if (dataset != null) {
@@ -222,8 +221,6 @@ public abstract class SPARQLQueryTest extends TestCase {
 			} else {
 				throw new RuntimeException("Unexpected query type: " + query.getClass());
 			}
-		} finally {
-			con.close();
 		}
 	}
 
@@ -412,59 +409,46 @@ public abstract class SPARQLQueryTest extends TestCase {
 	}
 
 	protected final void uploadDataset(Dataset dataset) throws Exception {
-		RepositoryConnection con = dataRep.getConnection();
-		try {
-			// Merge default and named graphs to filter duplicates
-			Set<IRI> graphURIs = new HashSet<>();
-			graphURIs.addAll(dataset.getDefaultGraphs());
-			graphURIs.addAll(dataset.getNamedGraphs());
+		// Merge default and named graphs to filter duplicates
+		Set<IRI> graphURIs = new HashSet<>();
+		graphURIs.addAll(dataset.getDefaultGraphs());
+		graphURIs.addAll(dataset.getNamedGraphs());
 
-			for (Resource graphURI : graphURIs) {
-				upload(((IRI) graphURI), graphURI);
-			}
-		} finally {
-			con.close();
+		for (IRI graphURI : graphURIs) {
+			upload(graphURI, graphURI);
 		}
 	}
 
 	private void upload(IRI graphURI, Resource context) throws Exception {
-		RepositoryConnection con = dataRep.getConnection();
-
-		try {
-			con.begin();
-			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
-			RDFParser rdfParser = Rio.createParser(rdfFormat, dataRep.getValueFactory());
-			// rdfParser.setPreserveBNodeIDs(true);
-
-			RDFInserter rdfInserter = new RDFInserter(con);
-			rdfInserter.enforceContext(context);
-			rdfParser.setRDFHandler(rdfInserter);
-
-			URL graphURL = new URL(graphURI.toString());
-			InputStream in = graphURL.openStream();
+		try (RepositoryConnection con = dataRep.getConnection()) {
 			try {
-				rdfParser.parse(in, graphURI.toString());
-			} finally {
-				in.close();
-			}
+				con.begin();
+				RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);
+				RDFParser rdfParser = Rio.createParser(rdfFormat, dataRep.getValueFactory());
+				// rdfParser.setPreserveBNodeIDs(true);
 
-			con.commit();
-		} catch (Exception e) {
-			if (con.isActive()) {
-				con.rollback();
+				RDFInserter rdfInserter = new RDFInserter(con);
+				rdfInserter.enforceContext(context);
+				rdfParser.setRDFHandler(rdfInserter);
+
+				URL graphURL = new URL(graphURI.toString());
+				try (InputStream in = graphURL.openStream()) {
+					rdfParser.parse(in, graphURI.toString());
+				}
+
+				con.commit();
+			} catch (Exception e) {
+				if (con.isActive()) {
+					con.rollback();
+				}
+				throw e;
 			}
-			throw e;
-		} finally {
-			con.close();
 		}
 	}
 
 	protected final String readQueryString() throws IOException {
-		InputStream stream = new URL(queryFileURL).openStream();
-		try {
+		try (InputStream stream = new URL(queryFileURL).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 
@@ -472,8 +456,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 		Optional<QueryResultFormat> tqrFormat = QueryResultIO.getParserFormatForFileName(resultFileURL);
 
 		if (tqrFormat.isPresent()) {
-			InputStream in = new URL(resultFileURL).openStream();
-			try {
+			try (InputStream in = new URL(resultFileURL).openStream()) {
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat.get());
 				parser.setValueFactory(dataRep.getValueFactory());
 
@@ -482,8 +465,6 @@ public abstract class SPARQLQueryTest extends TestCase {
 
 				parser.parseQueryResult(in);
 				return qrBuilder.getQueryResult();
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult();
@@ -496,11 +477,8 @@ public abstract class SPARQLQueryTest extends TestCase {
 				.getFileFormatForFileName(resultFileURL);
 
 		if (bqrFormat.isPresent()) {
-			InputStream in = new URL(resultFileURL).openStream();
-			try {
+			try (InputStream in = new URL(resultFileURL).openStream()) {
 				return QueryResultIO.parseBoolean(in, bqrFormat.get());
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult();
@@ -519,11 +497,8 @@ public abstract class SPARQLQueryTest extends TestCase {
 		Set<Statement> result = new LinkedHashSet<>();
 		parser.setRDFHandler(new StatementCollector(result));
 
-		InputStream in = new URL(resultFileURL).openStream();
-		try {
+		try (InputStream in = new URL(resultFileURL).openStream()) {
 			parser.parse(in, resultFileURL);
-		} finally {
-			in.close();
 		}
 
 		return result;
@@ -632,7 +607,7 @@ public abstract class SPARQLQueryTest extends TestCase {
 					}
 
 					// Check for lax-cardinality conditions
-					boolean laxCardinality = false;
+					boolean laxCardinality;
 					laxCardinalityQuery.setBinding("testURI", testURI);
 					laxCardinality = laxCardinalityQuery.evaluate();
 
@@ -681,13 +656,10 @@ public abstract class SPARQLQueryTest extends TestCase {
 		TupleQuery manifestNameQuery = con
 				.prepareTupleQuery("SELECT ?ManifestName WHERE { ?ManifestURL rdfs:label ?ManifestName .}");
 		manifestNameQuery.setBinding("ManifestURL", manifestRep.getValueFactory().createIRI(manifestFileURL));
-		TupleQueryResult manifestNames = manifestNameQuery.evaluate();
-		try {
+		try (TupleQueryResult manifestNames = manifestNameQuery.evaluate()) {
 			if (manifestNames.hasNext()) {
 				return manifestNames.next().getValue("ManifestName").stringValue();
 			}
-		} finally {
-			manifestNames.close();
 		}
 
 		// Derive name from manifest URL

@@ -26,7 +26,7 @@ class AbstractSerializableParsedQuery {
 	 * A map that maps all subquery projections within this query to their corresponding SerializableParsedTupleQuery
 	 * instances.
 	 */
-	public Map<Projection, SerializableParsedTupleQuery> subQueriesByProjection = new HashMap<Projection, SerializableParsedTupleQuery>();
+	public Map<Projection, SerializableParsedTupleQuery> subQueriesByProjection = new HashMap<>();
 	public TupleExpr whereClause = null;
 	public Slice limit = null;
 	public BindingSetAssignment bindings = null;

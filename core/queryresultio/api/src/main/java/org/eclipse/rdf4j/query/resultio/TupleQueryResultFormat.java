@@ -11,6 +11,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
@@ -50,8 +51,8 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 */
 	@Experimental
 	public static final TupleQueryResultFormat SPARQL_STAR = new TupleQueryResultFormat("SPARQL-star/XML",
-			Arrays.asList("application/x-sparqlstar-results+xml"), StandardCharsets.UTF_8,
-			Arrays.asList("srxs"), null, SUPPORTS_RDF_STAR);
+			List.of("application/x-sparqlstar-results+xml"), StandardCharsets.UTF_8,
+			List.of("srxs"), null, SUPPORTS_RDF_STAR);
 
 	/**
 	 * Binary RDF results table format.
@@ -71,20 +72,20 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 */
 	@Experimental
 	public static final TupleQueryResultFormat JSON_STAR = new TupleQueryResultFormat("SPARQL-star/JSON",
-			Arrays.asList("application/x-sparqlstar-results+json"), StandardCharsets.UTF_8,
-			Arrays.asList("srjs"), null, SUPPORTS_RDF_STAR);
+			List.of("application/x-sparqlstar-results+json"), StandardCharsets.UTF_8,
+			List.of("srjs"), null, SUPPORTS_RDF_STAR);
 
 	/**
 	 * SPARQL Query Result CSV Format.
 	 */
-	public static final TupleQueryResultFormat CSV = new TupleQueryResultFormat("SPARQL/CSV", Arrays.asList("text/csv"),
-			StandardCharsets.UTF_8, Arrays.asList("csv"), SPARQL_RESULTS_CSV_URI, NO_RDF_STAR);
+	public static final TupleQueryResultFormat CSV = new TupleQueryResultFormat("SPARQL/CSV", List.of("text/csv"),
+			StandardCharsets.UTF_8, List.of("csv"), SPARQL_RESULTS_CSV_URI, NO_RDF_STAR);
 
 	/**
 	 * SPARQL Query Result TSV Format.
 	 */
 	public static final TupleQueryResultFormat TSV = new TupleQueryResultFormat("SPARQL/TSV",
-			Arrays.asList("text/tab-separated-values"), StandardCharsets.UTF_8, Arrays.asList("tsv"),
+			List.of("text/tab-separated-values"), StandardCharsets.UTF_8, List.of("tsv"),
 			SPARQL_RESULTS_TSV_URI, NO_RDF_STAR);
 
 	/**
@@ -92,7 +93,7 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 	 */
 	public static final TupleQueryResultFormat TSV_STAR = new TupleQueryResultFormat("SPARQL-star/TSV",
 			Arrays.asList("text/x-tab-separated-values-star", "application/x-sparqlstar-results+tsv"),
-			StandardCharsets.UTF_8, Arrays.asList("tsvs"), null, SUPPORTS_RDF_STAR);
+			StandardCharsets.UTF_8, List.of("tsvs"), null, SUPPORTS_RDF_STAR);
 
 	/*-----------*
 	 * Variables *

@@ -53,9 +53,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 
 	@Override
 	public PlanNode getPlanNode() {
-
 		return new BufferedSplitterPlaneNode(this);
-
 	}
 
 	@Override
@@ -88,7 +86,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 		@Override
 		public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 
-			return new CloseableIteration<ValidationTuple, SailException>() {
+			return new CloseableIteration<>() {
 
 				Iterator<ValidationTuple> iterator;
 
@@ -117,8 +115,7 @@ public class BufferedSplitter implements PlanNodeProvider {
 					if (validationExecutionLogger.isEnabled()) {
 						validationExecutionLogger.log(depth(),
 								bufferedSplitter.parent.getClass().getSimpleName() + ":BufferedSplitter.next()", tuple,
-								bufferedSplitter.parent,
-								getId(), null);
+								bufferedSplitter.parent, getId(), null);
 					}
 					return tuple;
 				}

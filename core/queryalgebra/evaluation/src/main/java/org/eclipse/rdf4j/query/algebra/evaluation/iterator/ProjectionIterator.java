@@ -85,7 +85,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			return consumer.andThen(next);
 	}
 
-	private final boolean determineOuterProjection(QueryModelNode ancestor) {
+	private boolean determineOuterProjection(QueryModelNode ancestor) {
 		while (ancestor.getParentNode() != null) {
 			ancestor = ancestor.getParentNode();
 			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {

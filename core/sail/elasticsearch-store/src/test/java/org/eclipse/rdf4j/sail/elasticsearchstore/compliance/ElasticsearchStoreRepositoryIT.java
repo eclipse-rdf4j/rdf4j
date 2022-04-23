@@ -24,7 +24,7 @@ import org.junit.Ignore;
 
 public class ElasticsearchStoreRepositoryIT extends RepositoryTest {
 
-	private static File installLocation = Files.newTemporaryFolder();
+	private static final File installLocation = Files.newTemporaryFolder();
 	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider clientPool;
 

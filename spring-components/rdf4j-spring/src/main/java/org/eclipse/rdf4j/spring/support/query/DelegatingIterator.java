@@ -17,7 +17,7 @@ import java.util.function.Consumer;
  * @author Florian Kleedorfer
  */
 public class DelegatingIterator<T> implements Iterator<T> {
-	private Iterator<T> delegate;
+	private final Iterator<T> delegate;
 
 	public DelegatingIterator(Iterator<T> delegate) {
 		this.delegate = delegate;

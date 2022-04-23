@@ -59,7 +59,7 @@ public class EvaluationStrategyWithRDFStarTest {
 	public boolean bRDFStarData;
 
 	// the triples over which the evaluations is carried
-	private ArrayList<Triple> triples = new ArrayList<>();
+	private final ArrayList<Triple> triples = new ArrayList<>();
 
 	ValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -81,7 +81,7 @@ public class EvaluationStrategyWithRDFStarTest {
 				IRI pred, Value obj)
 				throws QueryEvaluationException {
 			return new AbstractCloseableIteration<Triple, QueryEvaluationException>() {
-				Iterator<Triple> iter = triples.iterator();
+				final Iterator<Triple> iter = triples.iterator();
 
 				@Override
 				public boolean hasNext()
@@ -154,8 +154,6 @@ public class EvaluationStrategyWithRDFStarTest {
 		}
 
 	}
-
-	;
 
 	@Before
 	public void setUp() throws Exception {

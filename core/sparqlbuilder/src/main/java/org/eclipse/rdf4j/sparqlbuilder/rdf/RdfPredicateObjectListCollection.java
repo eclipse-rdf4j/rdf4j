@@ -27,8 +27,6 @@ public class RdfPredicateObjectListCollection extends QueryElementCollection<Rdf
 		super(DELIMITER);
 	}
 
-	;
-
 	/**
 	 * add predicate-object lists to this collection
 	 *

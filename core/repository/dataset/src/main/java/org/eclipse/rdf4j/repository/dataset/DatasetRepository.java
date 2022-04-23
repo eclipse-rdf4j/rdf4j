@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.rio.Rio;
  */
 public class DatasetRepository extends RepositoryWrapper {
 
-	private Map<URL, Long> lastModified = new ConcurrentHashMap<>();
+	private final Map<URL, Long> lastModified = new ConcurrentHashMap<>();
 
 	public DatasetRepository() {
 		super();

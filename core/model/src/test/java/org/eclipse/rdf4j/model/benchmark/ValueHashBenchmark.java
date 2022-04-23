@@ -47,37 +47,37 @@ public class ValueHashBenchmark {
 	}
 
 	// private ValueFactory factory=SimpleValueFactory.getInstance();
-	private ValueFactory factory = new BenchmarkValueFactory();
+	private final ValueFactory factory = new BenchmarkValueFactory();
 
-	private BNode bnode = factory.createBNode();
-	private BNode bnodeId = factory.createBNode(string("id"));
+	private final BNode bnode = factory.createBNode();
+	private final BNode bnodeId = factory.createBNode(string("id"));
 
-	private IRI iriUnary = factory.createIRI(string("http://example.com/name"));
-	private IRI iriBinary = factory.createIRI(string("http://example.com/"), string("name"));
+	private final IRI iriUnary = factory.createIRI(string("http://example.com/name"));
+	private final IRI iriBinary = factory.createIRI(string("http://example.com/"), string("name"));
 
-	private Literal plain = factory.createLiteral(string("text"));
-	private Literal typed = factory.createLiteral(string("text"), iriUnary);
-	private Literal tagged = factory.createLiteral(string("text"), string("en"));
+	private final Literal plain = factory.createLiteral(string("text"));
+	private final Literal typed = factory.createLiteral(string("text"), iriUnary);
+	private final Literal tagged = factory.createLiteral(string("text"), string("en"));
 
-	private Literal _boolean = factory.createLiteral(true);
+	private final Literal _boolean = factory.createLiteral(true);
 
-	private Literal _byte = factory.createLiteral((byte) 100);
-	private Literal _short = factory.createLiteral((short) 100);
-	private Literal _int = factory.createLiteral(100);
-	private Literal _long = factory.createLiteral(100L);
-	private Literal _float = factory.createLiteral(100.0F);
-	private Literal _double = factory.createLiteral(100.0D);
+	private final Literal _byte = factory.createLiteral((byte) 100);
+	private final Literal _short = factory.createLiteral((short) 100);
+	private final Literal _int = factory.createLiteral(100);
+	private final Literal _long = factory.createLiteral(100L);
+	private final Literal _float = factory.createLiteral(100.0F);
+	private final Literal _double = factory.createLiteral(100.0D);
 
-	private Literal integer = factory.createLiteral(new BigInteger("100"));
-	private Literal decimal = factory.createLiteral(new BigDecimal("100"));
+	private final Literal integer = factory.createLiteral(new BigInteger("100"));
+	private final Literal decimal = factory.createLiteral(new BigDecimal("100"));
 
-	private Literal calendar = factory.createLiteral(calendar("2020-10-22T15:53:12.345Z"));
-	private Literal date = factory.createLiteral(new Date(1_000_000L));
+	private final Literal calendar = factory.createLiteral(calendar("2020-10-22T15:53:12.345Z"));
+	private final Literal date = factory.createLiteral(new Date(1_000_000L));
 
-	private Triple triple = factory.createTriple(iriUnary, iriUnary, iriUnary);
+	private final Triple triple = factory.createTriple(iriUnary, iriUnary, iriUnary);
 
-	private Statement statement = factory.createStatement(iriUnary, iriUnary, iriUnary);
-	private Statement statementContext = factory.createStatement(iriUnary, iriUnary, iriUnary, iriUnary);
+	private final Statement statement = factory.createStatement(iriUnary, iriUnary, iriUnary);
+	private final Statement statementContext = factory.createStatement(iriUnary, iriUnary, iriUnary, iriUnary);
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

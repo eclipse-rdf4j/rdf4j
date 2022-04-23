@@ -30,7 +30,7 @@ import org.springframework.web.servlet.View;
  */
 public abstract class QueryResultView implements View {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	/**
 	 * Key by which the query result is stored in the model.
