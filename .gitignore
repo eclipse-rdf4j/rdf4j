@@ -28,6 +28,9 @@ dependency-reduced-pom.xml
 *.ipr
 *.iws
 
+# Hugo
+.hugo_build.lock 
+
 # Mac nonsense
 .DS_Store
 
