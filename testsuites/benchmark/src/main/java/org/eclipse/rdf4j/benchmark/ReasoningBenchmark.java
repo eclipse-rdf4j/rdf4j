@@ -48,6 +48,39 @@ public class ReasoningBenchmark {
 	@Benchmark
 	@BenchmarkMode(Mode.AverageTime)
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void noReasoning() throws IOException {
+		SailRepository sail = new SailRepository(new MemoryStore());
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+			connection.begin();
+
+			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			addAllDataSingleTransaction(connection);
+
+			connection.commit();
+		}
+	}
+
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
+	public void noReasoningMultipleTransactions() throws IOException {
+		SailRepository sail = new SailRepository(new MemoryStore());
+
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+
+			connection.begin();
+			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			connection.commit();
+
+			addAllDataMultipleTransactions(connection);
+
+		}
+	}
+
+	@Benchmark
+	@BenchmarkMode(Mode.AverageTime)
+	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencer() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
 
@@ -61,6 +94,23 @@ public class ReasoningBenchmark {
 		}
 
 		checkSize(sail);
+	}
+
+	private void checkSize(SailRepository sail) {
+
+		assert getSize(sail) == expectedCount : "Was " + getSize(sail) + " but expected " + expectedCount;
+
+	}
+
+	private int getSize(SailRepository sail) {
+		try (SailRepositoryConnection connection = sail.getConnection()) {
+			try (TupleQueryResult evaluate = connection
+					.prepareTupleQuery("select (count (*) as ?count) where {?a ?b ?c}")
+					.evaluate()) {
+				return ((Literal) evaluate.next().getBinding("count").getValue()).intValue();
+
+			}
+		}
 	}
 
 	@Benchmark
@@ -108,56 +158,6 @@ public class ReasoningBenchmark {
 		}
 		checkSize(sail);
 
-	}
-
-	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
-	public void noReasoning() throws IOException {
-		SailRepository sail = new SailRepository(new MemoryStore());
-
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-			connection.begin();
-
-			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-			addAllDataSingleTransaction(connection);
-
-			connection.commit();
-		}
-	}
-
-	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
-	public void noReasoningMultipleTransactions() throws IOException {
-		SailRepository sail = new SailRepository(new MemoryStore());
-
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-
-			connection.begin();
-			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-			connection.commit();
-
-			addAllDataMultipleTransactions(connection);
-
-		}
-	}
-
-	private void checkSize(SailRepository sail) {
-
-		assert getSize(sail) == expectedCount : "Was " + getSize(sail) + " but expected " + expectedCount;
-
-	}
-
-	private int getSize(SailRepository sail) {
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-			try (TupleQueryResult evaluate = connection
-					.prepareTupleQuery("select (count (*) as ?count) where {?a ?b ?c}")
-					.evaluate()) {
-				return ((Literal) evaluate.next().getBinding("count").getValue()).intValue();
-
-			}
-		}
 	}
 
 	private SailRepository createSchema() throws IOException {

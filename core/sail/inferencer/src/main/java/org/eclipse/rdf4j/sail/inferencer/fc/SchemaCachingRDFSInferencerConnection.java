@@ -134,8 +134,6 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		inferredCleared = true;
 	}
 
-	private long originalSchemaSize = -1;
-
 	@Override
 	public void commit() throws SailException {
 		super.commit();
@@ -195,7 +193,6 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			}
 		}
 		sail.calculateInferenceMaps(this, addInferredStatements);
-		originalSchemaSize = sail.getSchemaSize();
 	}
 
 	boolean addInferredStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)

@@ -68,11 +68,10 @@ class MemorySailStore implements SailStore {
 
 	private final static Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
 
-	public static final MemResource[] EMPTY_CONTEXT = new MemResource[0];
-	private static final MemResource[] NULL_CONTEXT = { null };
-
 	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
 	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
+	public static final MemResource[] EMPTY_CONTEXT = {};
+	public static final MemResource[] NULL_CONTEXT = { null };
 
 	private static final CloseableIteration<MemStatement, SailException> HAS_NEXT_ITERATION = new CloseableIteration<MemStatement, SailException>() {
 		@Override
@@ -283,24 +282,20 @@ class MemorySailStore implements SailStore {
 		if (contexts.length == 0) {
 			memContexts = EMPTY_CONTEXT;
 			smallestList = statements;
+		} else if (contexts.length == 1 && contexts[0] == null) {
+			memContexts = NULL_CONTEXT;
+			smallestList = statements;
 		} else if (contexts.length == 1) {
-			if (contexts[0] == null) {
-				memContexts = NULL_CONTEXT;
-				smallestList = statements;
+			MemResource memContext = valueFactory.getMemResource(contexts[0]);
+			if (memContext == null) {
+				// non-existent context
+				return EMPTY_ITERATION;
+			}
 
-			} else {
-				MemResource memContext = valueFactory.getMemResource(contexts[0]);
-				if (memContext == null) {
-					// non-existent context
-					return EMPTY_ITERATION;
-				}
-
-				memContexts = new MemResource[] { memContext };
-				smallestList = memContext.getContextStatementList();
-				if (smallestList.isEmpty()) {
-					return EMPTY_ITERATION;
-				}
-
+			memContexts = new MemResource[] { memContext };
+			smallestList = memContext.getContextStatementList();
+			if (smallestList.isEmpty()) {
+				return EMPTY_ITERATION;
 			}
 
 		} else {
@@ -876,7 +871,7 @@ class MemorySailStore implements SailStore {
 			MemResource memSubj = valueFactory.getOrCreateMemResource(subj);
 			MemIRI memPred = valueFactory.getOrCreateMemURI(pred);
 			MemValue memObj = valueFactory.getOrCreateMemValue(obj);
-			MemResource memContext = (context == null) ? null : valueFactory.getOrCreateMemResource(context);
+			MemResource memContext = context == null ? null : valueFactory.getOrCreateMemResource(context);
 
 			if (memSubj.hasSubjectStatements() && memPred.hasPredicateStatements() && memObj.hasObjectStatements()
 					&& (memContext == null || memContext.hasContextStatements())) {

@@ -75,26 +75,26 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	volatile protected boolean useInferredToCreateSchema;
 
 	// Schema cache
-	private final Collection<Resource> properties = new HashSet<>();
+	private Collection<Resource> properties = new HashSet<>();
 
-	private final Collection<Resource> types = new HashSet<>();
+	private Collection<Resource> types = new HashSet<>();
 
-	private final Collection<Statement> subClassOfStatements = new HashSet<>();
+	private Collection<Statement> subClassOfStatements = new HashSet<>();
 
-	private final Collection<Statement> subPropertyOfStatements = new HashSet<>();
+	private Collection<Statement> subPropertyOfStatements = new HashSet<>();
 
-	private final Collection<Statement> rangeStatements = new HashSet<>();
+	private Collection<Statement> rangeStatements = new HashSet<>();
 
-	private final Collection<Statement> domainStatements = new HashSet<>();
+	private Collection<Statement> domainStatements = new HashSet<>();
 
 	// Forward chained schema cache as lookup tables
-	private final Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
+	private Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
 
-	private final Map<Resource, Set<Resource>> calculatedProperties = new HashMap<>();
+	private Map<Resource, Set<Resource>> calculatedProperties = new HashMap<>();
 
-	private final Map<Resource, Set<Resource>> calculatedRange = new HashMap<>();
+	private Map<Resource, Set<Resource>> calculatedRange = new HashMap<>();
 
-	private final Map<Resource, Set<Resource>> calculatedDomain = new HashMap<>();
+	private Map<Resource, Set<Resource>> calculatedDomain = new HashMap<>();
 
 	// The inferencer has been instantiated from another inferencer and shares it's schema with that one
 	private boolean sharedSchema;
@@ -102,6 +102,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	// Inferred statements can either be added to the default context
 	// or to the context that the original inserted statement has
 	private boolean addInferredStatementsToDefaultContext = false;
+	private volatile boolean unmodifiable;
 
 	/**
 	 * Instantiate a new SchemaCachingRDFSInferencer
@@ -295,6 +296,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			boolean useAllRdfsRules) {
 
 		sailToInstantiateFrom.getConnection().close();
+		sailToInstantiateFrom.makeUnmodifiable();
 
 		SchemaCachingRDFSInferencer ret = new SchemaCachingRDFSInferencer(store,
 				sailToInstantiateFrom.predefinedSchema, useAllRdfsRules);
@@ -337,9 +339,85 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 	}
 
-	long getSchemaSize() {
-		return subClassOfStatements.size() + subPropertyOfStatements.size() + rangeStatements.size()
-				+ domainStatements.size() + properties.size() + types.size();
+	private void makeUnmodifiable() {
+
+		if (unmodifiable) {
+			return;
+		}
+
+		synchronized (this) {
+			if (!unmodifiable) {
+
+				unmodifiable = true;
+
+				if (properties.isEmpty()) {
+					properties = Collections.emptySet();
+				} else {
+					properties = Set.copyOf(properties);
+				}
+
+				if (types.isEmpty()) {
+					types = Collections.emptySet();
+				} else {
+					types = Set.copyOf(types);
+				}
+
+				if (subClassOfStatements.isEmpty()) {
+					subClassOfStatements = Collections.emptySet();
+				} else {
+					subClassOfStatements = Set.copyOf(subClassOfStatements);
+				}
+
+				if (subPropertyOfStatements.isEmpty()) {
+					subPropertyOfStatements = Collections.emptySet();
+				} else {
+					subPropertyOfStatements = Set.copyOf(subPropertyOfStatements);
+				}
+
+				if (rangeStatements.isEmpty()) {
+					rangeStatements = Collections.emptySet();
+				} else {
+					rangeStatements = Set.copyOf(rangeStatements);
+				}
+
+				if (domainStatements.isEmpty()) {
+					domainStatements = Collections.emptySet();
+				} else {
+					domainStatements = Set.copyOf(domainStatements);
+				}
+
+				calculatedTypes.replaceAll((k, v) -> Set.copyOf(v));
+				calculatedProperties.replaceAll((k, v) -> Set.copyOf(v));
+				calculatedRange.replaceAll((k, v) -> Set.copyOf(v));
+				calculatedDomain.replaceAll((k, v) -> Set.copyOf(v));
+
+				if (calculatedTypes.isEmpty()) {
+					calculatedTypes = Collections.emptyMap();
+				} else {
+					calculatedTypes = Map.copyOf(calculatedTypes);
+				}
+
+				if (calculatedProperties.isEmpty()) {
+					calculatedProperties = Collections.emptyMap();
+				} else {
+					calculatedProperties = Map.copyOf(calculatedProperties);
+				}
+
+				if (calculatedRange.isEmpty()) {
+					calculatedRange = Collections.emptyMap();
+				} else {
+					calculatedRange = Map.copyOf(calculatedRange);
+				}
+
+				if (calculatedDomain.isEmpty()) {
+					calculatedDomain = Collections.emptyMap();
+				} else {
+					calculatedDomain = Map.copyOf(calculatedDomain);
+				}
+
+			}
+		}
+
 	}
 
 	void calculateInferenceMaps(SchemaCachingRDFSInferencerConnection conn, boolean addInferred) {
@@ -362,7 +440,6 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			calculatedTypes.forEach((subClass, superClasses) -> {
 				superClasses.forEach(superClass -> {
 					conn.addInferredStatementInternal(subClass, RDFS.SUBCLASSOF, superClass, DEFAULT_CONTEXT);
-
 				});
 			});
 		}
@@ -378,24 +455,38 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	void addSubClassOfStatement(Statement st) {
+		if (!st.getObject().isResource()) {
+			throw new SailException("Object of rdfs:subClassOf should be a resource! " + st);
+		}
 		subClassOfStatements.add(st);
 		types.add(st.getSubject());
 		types.add((Resource) st.getObject());
 	}
 
 	void addSubPropertyOfStatement(Statement st) {
+		if (!st.getObject().isResource()) {
+			throw new SailException("Object of rdfs:subPropertyOf should be a resource! " + st);
+		}
+
 		subPropertyOfStatements.add(st);
 		properties.add(st.getSubject());
 		properties.add((Resource) st.getObject());
 	}
 
 	void addRangeStatement(Statement st) {
+		if (!st.getObject().isResource()) {
+			throw new SailException("Object of rdfs:range should be a resource! " + st);
+		}
 		rangeStatements.add(st);
 		properties.add(st.getSubject());
 		types.add((Resource) st.getObject());
+
 	}
 
 	void addDomainStatement(Statement st) {
+		if (!st.getObject().isResource()) {
+			throw new SailException("Object of rdfs:domain should be a resource! " + st);
+		}
 		domainStatements.add(st);
 		properties.add(st.getSubject());
 		types.add((Resource) st.getObject());
@@ -418,27 +509,19 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	Set<Resource> resolveTypes(Resource value) {
-		Set<Resource> iris = calculatedTypes.get(value);
-
-		return iris != null ? iris : Collections.emptySet();
+		return calculatedTypes.getOrDefault(value, Collections.emptySet());
 	}
 
 	Set<Resource> resolveProperties(Resource predicate) {
-		Set<Resource> iris = calculatedProperties.get(predicate);
-
-		return iris != null ? iris : Collections.emptySet();
+		return calculatedProperties.getOrDefault(predicate, Collections.emptySet());
 	}
 
 	Set<Resource> resolveRangeTypes(IRI predicate) {
-		Set<Resource> iris = calculatedRange.get(predicate);
-
-		return iris != null ? iris : Collections.emptySet();
+		return calculatedRange.getOrDefault(predicate, Collections.emptySet());
 	}
 
 	Set<Resource> resolveDomainTypes(IRI predicate) {
-		Set<Resource> iris = calculatedDomain.get(predicate);
-
-		return iris != null ? iris : Collections.emptySet();
+		return calculatedDomain.getOrDefault(predicate, Collections.emptySet());
 	}
 
 	private void calculateSubClassOf(Collection<Statement> subClassOfStatements) {
@@ -452,19 +535,20 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		logger.debug("Fill initial maps");
 		types.forEach(type -> {
 			if (!calculatedTypes.containsKey(type)) {
-				ConcurrentHashMap.KeySetView<Resource, Boolean> values = ConcurrentHashMap.newKeySet();
+				Set<Resource> values = ConcurrentHashMap.newKeySet();
 				values.add(RDFS.RESOURCE);
 				values.add(type);
 				calculatedTypes.put(type, values);
 			} else {
-				Set<Resource> resources = calculatedTypes.get(type);
-				assert resources instanceof ConcurrentHashMap.KeySetView;
-				resources.add(type);
+				calculatedTypes.get(type).add(type);
 			}
 
 		});
 
 		subClassOfStatements.forEach(s -> {
+			if (!s.getObject().isResource()) {
+				throw new SailException("Object of rdfs:subClassOf should be a resource! " + s);
+			}
 			Resource subClass = s.getSubject();
 			Resource superClass = (Resource) s.getObject();
 
@@ -495,8 +579,8 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			prevSize = newSize;
 
 			newSize = getStream(calculatedTypes)
-					.mapToInt(entry -> {
-						var value = entry.getValue();
+					.map(Map.Entry::getValue)
+					.mapToInt(value -> {
 
 						List<Set<Resource>> forwardChainedSets = new ArrayList<>(value.size());
 
@@ -506,18 +590,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 							}
 						}
 
-						if (forwardChainedSets.size() == 1) {
-							Set<Resource> forwardChained = forwardChainedSets.get(0);
-							if (forwardChained.size() != value.size()) {
-								value.addAll(forwardChained);
-							}
-						} else if (!forwardChainedSets.isEmpty()) {
-
-							for (Set<Resource> forwardChainedSet : forwardChainedSets) {
-								value.addAll(forwardChainedSet);
-							}
-
-						}
+						addAll(value, forwardChainedSets);
 
 						return value.size();
 					})
@@ -538,7 +611,9 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		Set<Map.Entry<Resource, Set<Resource>>> entries = map.entrySet();
 
 		if (entries.size() > 100) {
-			return entries.parallelStream();
+			return entries.parallelStream().peek(ent -> {
+				assert ent.getValue() instanceof ConcurrentHashMap.KeySetView;
+			});
 		} else {
 			return entries.stream();
 		}
@@ -554,17 +629,23 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		}
 
 		subPropertyOfStatemenets.forEach(s -> {
-			Resource subClass = s.getSubject();
-			Resource superClass = (Resource) s.getObject();
-			if (!calculatedProperties.containsKey(subClass)) {
-				calculatedProperties.put(subClass, ConcurrentHashMap.newKeySet());
+
+			if (!s.getObject().isResource()) {
+				throw new SailException("Object of rdfs:subPropertyOf should be a resource! " + s);
 			}
 
-			if (!calculatedProperties.containsKey(superClass)) {
-				calculatedProperties.put(superClass, ConcurrentHashMap.newKeySet());
+			Resource subProperty = s.getSubject();
+			Resource superProperty = (Resource) s.getObject();
+
+			if (!calculatedProperties.containsKey(subProperty)) {
+				calculatedProperties.put(subProperty, ConcurrentHashMap.newKeySet());
 			}
 
-			calculatedProperties.get(subClass).add(superClass);
+			if (!calculatedProperties.containsKey(superProperty)) {
+				calculatedProperties.put(superProperty, ConcurrentHashMap.newKeySet());
+			}
+
+			calculatedProperties.get(subProperty).add(superProperty);
 
 		});
 
@@ -585,13 +666,15 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			newSize = getStream(calculatedProperties)
 					.map(Map.Entry::getValue)
 					.mapToInt(value -> {
-						Set<Resource> forwardChained = value
-								.stream()
-								.map(this::resolveProperties)
-								.flatMap(Collection::stream)
-								.collect(Collectors
-										.toCollection(() -> Collections.newSetFromMap(new IdentityHashMap<>())));
-						value.addAll(forwardChained);
+
+						List<Set<Resource>> forwardChainedSets = new ArrayList<>(value.size());
+
+						for (Resource resource : value) {
+							forwardChainedSets.add(resolveProperties(resource));
+						}
+
+						addAll(value, forwardChainedSets);
+
 						return value.size();
 					})
 					.sum();
@@ -606,6 +689,19 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		}
 	}
 
+	private void addAll(Set<Resource> res, List<Set<Resource>> from) {
+		if (from.size() == 1) {
+			var forwardChained = from.get(0);
+			if (forwardChained.size() != res.size()) {
+				res.addAll(forwardChained);
+			}
+		} else {
+			for (var forwardChainedSet : from) {
+				res.addAll(forwardChainedSet);
+			}
+		}
+	}
+
 	private void calculateDomainAndRange(Collection<Statement> rangeOrDomainStatements,
 			Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
 
@@ -617,6 +713,10 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		logger.debug("Calculate rdfs:domain and rdfs:range inference map.");
 
 		rangeOrDomainStatements.forEach(s -> {
+			if (!s.getObject().isResource()) {
+				throw new SailException("Object of rdfs:range or rdfs:domain should be a resource! " + s);
+			}
+
 			Resource predicate = s.getSubject();
 			Resource object = (Resource) s.getObject();
 
@@ -731,26 +831,26 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	public void forFastInstantiate() {
 		/*
 		 * // Schema cache private final Collection<Resource> properties = new HashSet<>();
-		 * 
+		 *
 		 * private final Collection<Resource> types = new HashSet<>();
-		 * 
+		 *
 		 * private final Collection<Statement> subClassOfStatements = new HashSet<>();
-		 * 
+		 *
 		 * private final Collection<Statement> subPropertyOfStatements = new HashSet<>();
-		 * 
+		 *
 		 * private final Collection<Statement> rangeStatements = new HashSet<>();
-		 * 
+		 *
 		 * private final Collection<Statement> domainStatements = new HashSet<>();
-		 * 
+		 *
 		 * // Forward chained schema cache as lookup tables private final Map<Resource, Set<Resource>> calculatedTypes =
 		 * new HashMap<>();
-		 * 
+		 *
 		 * private final Map<Resource, Set<Resource>> calculatedProperties = new HashMap<>();
-		 * 
+		 *
 		 * private final Map<Resource, Set<Resource>> calculatedRange = new HashMap<>();
-		 * 
+		 *
 		 * private final Map<Resource, Set<Resource>> calculatedDomain = new HashMap<>();
-		 * 
+		 *
 		 */
 
 		calculatedTypes.replaceAll((k, v) -> new HashSet<>(v));
