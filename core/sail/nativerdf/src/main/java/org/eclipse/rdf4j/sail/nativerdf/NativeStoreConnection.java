@@ -103,19 +103,27 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 		sailChangedEvent.setStatementsAdded(true);
 
 		if (getTransactionIsolation() == IsolationLevels.NONE) {
-			addedCount++;
-			if (addedCount % 10000 == 0) {
+			if (++addedCount % 100000 == 0) {
 				flushUpdates();
 				addedCount = 0;
 			}
 		}
+
 	}
 
 	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+
 		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
+		if (getTransactionIsolation() == IsolationLevels.NONE) {
+			if (++addedCount % 100000 == 0) {
+				flushUpdates();
+				addedCount = 0;
+			}
+		}
+
 		return ret;
 	}
 
