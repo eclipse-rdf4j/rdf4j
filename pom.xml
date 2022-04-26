@@ -863,7 +863,7 @@
 				<plugin>
 					<groupId>com.github.siom79.japicmp</groupId>
 					<artifactId>japicmp-maven-plugin</artifactId>
-					<version>0.15.3</version>
+					<version>0.15.7</version>
 					<configuration>
 						<oldVersion>
 							<dependency>
@@ -880,8 +880,7 @@
 						</newVersion>
 						<parameter>
 							<onlyModified>true</onlyModified>
-							<breakBuildOnBinaryIncompatibleModifications>false</breakBuildOnBinaryIncompatibleModifications>
-							<breakBuildOnSourceIncompatibleModifications>false</breakBuildOnSourceIncompatibleModifications>
+							<breakBuildBasedOnSemanticVersioning>true</breakBuildBasedOnSemanticVersioning>
 							<ignoreMissingOldVersion>true</ignoreMissingOldVersion>
 							<excludes>
 								<exclude>@org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
@@ -889,21 +888,8 @@
 								<exclude>org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>org.eclipse.rdf4j.common.annotation.Experimental</exclude>
 							</excludes>
-							<overrideCompatibilityChangeParameters>
-								<overrideCompatibilityChangeParameter>
-									<compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
-									<binaryCompatible>true</binaryCompatible>
-									<sourceCompatible>true</sourceCompatible>
-								</overrideCompatibilityChangeParameter>
-								<overrideCompatibilityChangeParameter>
-									<compatibilityChange>METHOD_NEW_DEFAULT</compatibilityChange>
-									<binaryCompatible>true</binaryCompatible>
-									<sourceCompatible>true</sourceCompatible>
-								</overrideCompatibilityChangeParameter>
-							</overrideCompatibilityChangeParameters>
 						</parameter>
 					</configuration>
-					<!-- API compatibility checks disabled for major release. Should be re-enabled after 4.0.0 is final
 					<executions>
 						<execution>
 							<phase>verify</phase>
@@ -912,7 +898,6 @@
 							</goals>
 						</execution>
 					</executions>
-					-->
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
