@@ -26,7 +26,7 @@ public class GenericContextStatement<R extends Resource, I extends IRI, V extend
 	/**
 	 * The statement's context, if applicable.
 	 */
-	private final R context;
+	protected final R context;
 
 	/*--------------*
 	 * Constructors *

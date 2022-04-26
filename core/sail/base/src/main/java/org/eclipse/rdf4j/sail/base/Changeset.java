@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -961,6 +962,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 		public void unlockWriter(boolean writeLocked) {
 			if (writeLocked) {
+				VarHandle.fullFence();
 				this.writeLocked = false;
 				writeLock.set(false);
 			} else {

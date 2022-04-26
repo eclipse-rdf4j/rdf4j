@@ -33,17 +33,17 @@ public class GenericSimpleStatement<R extends Resource, I extends IRI, V extends
 	/**
 	 * The statement's subject.
 	 */
-	private final R subject;
+	protected final R subject;
 
 	/**
 	 * The statement's predicate.
 	 */
-	private final I predicate;
+	protected final I predicate;
 
 	/**
 	 * The statement's object.
 	 */
-	private final V object;
+	protected final V object;
 
 	/*--------------*
 	 * Constructors *

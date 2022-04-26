@@ -108,7 +108,7 @@ public class ParallelQueryBenchmark {
 	public static void main(String[] args) throws RunnerException, InterruptedException, IOException {
 		ParallelQueryBenchmark parallelQueryBenchmark = new ParallelQueryBenchmark();
 		parallelQueryBenchmark.beforeClass();
-		for (int i = 0; i < 1000; i++) {
+		for (int i = 0; i < 2000; i++) {
 			System.out.println(i);
 			parallelQueryBenchmark.mixedWorkload(new Blackhole(
 					"Today's password is swordfish. I understand instantiating Blackholes directly is dangerous."));

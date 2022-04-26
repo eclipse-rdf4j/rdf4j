@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -223,6 +224,8 @@ class MemorySailStore implements SailStore {
 	private enum LockRequirement {
 		none("Assume that read lock is already held"),
 		lateReadLock("Take a read lock if/when needed"),
+		wrapResults(
+				"Take an untracked read lock, add all results to an iteration based on a list and return the iteration after releasing the read lock."),
 		hasNext("Take an untracked read lock, call hasNext() and then release the lock and return.");
 
 		private final String message;
@@ -365,56 +368,112 @@ class MemorySailStore implements SailStore {
 			return EMPTY_ITERATION;
 		}
 
-		switch (lockRequirement) {
+		boolean singletonList = smallestList.size() == 1;
 
+		if (lockRequirement == LockRequirement.lateReadLock && singletonList) {
+			lockRequirement = LockRequirement.wrapResults;
+		}
+
+		return getIteration(subj, pred, obj, explicit, snapshot, memContexts, lockRequirement, smallestList,
+				singletonList);
+
+	}
+
+	private CloseableIteration<MemStatement, SailException> getIteration(MemResource subj, MemIRI pred, MemValue obj,
+			Boolean explicit, int snapshot, MemResource[] memContexts, LockRequirement lockRequirement,
+			MemStatementList smallestList, boolean singletonList) {
+		switch (lockRequirement) {
 		case none:
 			return MemStatementIterator.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot,
-					memContexts,
-					iteratorCache);
+					memContexts, iteratorCache);
 		case lateReadLock:
-			Lock lock = null;
-			LookAheadIteration<MemStatement, SailException> iteration = null;
-			try {
-				lock = openStatementsReadLock();
-				iteration = MemStatementIterator.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot,
-						memContexts, iteratorCache);
-				return LockedIteration.getInstance(iteration, lock);
-			} catch (Throwable t) {
-				if (iteration != null) {
-					iteration.close();
-				}
-				if (lock != null) {
-					lock.release();
-				}
-				if (t instanceof RuntimeException) {
-					throw t;
-				}
-				throw t;
-			}
+			return getIterationWithLateReadLock(subj, pred, obj, explicit, snapshot, memContexts, smallestList);
+		case wrapResults:
+			return getIterationWrapResults(subj, pred, obj, explicit, snapshot, memContexts, smallestList,
+					singletonList);
 		case hasNext:
-			boolean readLock = false;
-			try {
-				readLock = statementListLockManager.lockReadLock();
-				boolean hasNext = MemStatementIterator.cacheAwareHasStatement(smallestList, subj, pred, obj, explicit,
-						snapshot, memContexts, iteratorCache);
-
-				if (!hasNext) {
-					return EMPTY_ITERATION;
-				} else {
-					return HAS_NEXT_ITERATION;
-				}
-
-			} catch (InterruptedException e) {
-				throw convertToSailException(e);
-			} finally {
-				if (readLock) {
-					statementListLockManager.unlockReadLock(readLock);
-				}
-			}
+			return getIterationHasNext(subj, pred, obj, explicit, snapshot, memContexts, smallestList);
 		default:
 			throw new IllegalStateException("Unsupported lock requirement: " + lockRequirement);
 		}
+	}
 
+	private CloseableIteration<MemStatement, SailException> getIterationHasNext(MemResource subj, MemIRI pred,
+			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList smallestList) {
+		boolean readLock = false;
+		try {
+			readLock = statementListLockManager.lockReadLock();
+			return getStaticIteratorForHasNext(subj, pred, obj, explicit, snapshot, memContexts, smallestList);
+
+		} catch (InterruptedException e) {
+			throw convertToSailException(e);
+		} finally {
+			if (readLock) {
+				statementListLockManager.unlockReadLock(readLock);
+			}
+		}
+	}
+
+	private CloseableIteration<MemStatement, SailException> getIterationWrapResults(MemResource subj, MemIRI pred,
+			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList smallestList,
+			boolean singletonList) {
+		boolean readLock = false;
+		try {
+			readLock = statementListLockManager.lockReadLock();
+			if (singletonList) {
+				MemStatement memStatement = smallestList.get(0);
+				if (memStatement.matchesSPO(subj, pred, obj) && memStatement.matchesContext(memContexts)) {
+					if (explicit == null || (explicit == memStatement.isExplicit())
+							&& (snapshot < 0 || memStatement.isInSnapshot(snapshot))) {
+						return new SingletonIteration<>(memStatement);
+					}
+				}
+				return EMPTY_ITERATION;
+			} else {
+				throw new UnsupportedOperationException("Result too large to wrap: " + smallestList.size());
+			}
+		} catch (InterruptedException e) {
+			throw convertToSailException(e);
+		} finally {
+			if (readLock) {
+				statementListLockManager.unlockReadLock(readLock);
+			}
+		}
+	}
+
+	private CloseableIteration<MemStatement, SailException> getIterationWithLateReadLock(MemResource subj, MemIRI pred,
+			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList smallestList) {
+		Lock lock = null;
+		LookAheadIteration<MemStatement, SailException> iteration = null;
+		try {
+			lock = openStatementsReadLock();
+			iteration = MemStatementIterator.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot,
+					memContexts, iteratorCache);
+			return LockedIteration.getInstance(iteration, lock);
+		} catch (Throwable t) {
+			if (iteration != null) {
+				iteration.close();
+			}
+			if (lock != null) {
+				lock.release();
+			}
+			if (t instanceof RuntimeException) {
+				throw t;
+			}
+			throw t;
+		}
+	}
+
+	private CloseableIteration<MemStatement, SailException> getStaticIteratorForHasNext(MemResource subj, MemIRI pred,
+			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList smallestList) {
+		boolean hasNext = MemStatementIterator.cacheAwareHasStatement(smallestList, subj, pred, obj, explicit,
+				snapshot, memContexts, iteratorCache);
+
+		if (!hasNext) {
+			return EMPTY_ITERATION;
+		} else {
+			return HAS_NEXT_ITERATION;
+		}
 	}
 
 	private MemStatementList getSmallestStatementList(MemResource subj, MemIRI pred, MemValue obj) {

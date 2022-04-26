@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.common.concurrent.locks;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockCleaner;
@@ -35,6 +34,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	volatile boolean writeLocked;
 
 	private static final VarHandle WRITE_LOCKED;
+
 	static {
 		try {
 			WRITE_LOCKED = MethodHandles.lookup()
@@ -296,6 +296,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 				writeLocked = false;
 			}
 		}
+		VarHandle.fullFence();
 
 		return new WriteLock(this, writeLocked);
 	}
@@ -303,6 +304,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 	void unlockWrite(boolean writeLocked) {
 		assert writeLocked;
 		assert this.writeLocked;
+		VarHandle.fullFence();
 		this.writeLocked = false;
 	}
 
@@ -371,6 +373,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 			long lockedSum = readersLocked.sum();
 			if (unlockedSum == lockedSum) {
 				// No active readers.
+				VarHandle.fullFence();
 				return new WriteLock(this, writeLock);
 			} else {
 				unlockWrite(writeLocked);

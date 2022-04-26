@@ -16,11 +16,9 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.WeakHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.common.concurrent.locks.AbstractReadWriteLockManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -314,6 +312,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 		private volatile boolean writeLocked;
 
 		private static final VarHandle WRITE_LOCKED;
+
 		static {
 			try {
 				WRITE_LOCKED = MethodHandles.lookup()
@@ -323,6 +322,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 				throw new Error(e);
 			}
 		}
+
 		// LongAdder for handling readers. When the count is equal then there are no active readers.
 		private final LongAdder readersLocked = new LongAdder();
 		private final LongAdder readersUnlocked = new LongAdder();
@@ -379,6 +379,7 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 
 		public void unlockWriter(boolean writeLocked) {
 			if (writeLocked) {
+				VarHandle.fullFence();
 				this.writeLocked = false;
 			} else {
 				throw new IllegalMonitorStateException();

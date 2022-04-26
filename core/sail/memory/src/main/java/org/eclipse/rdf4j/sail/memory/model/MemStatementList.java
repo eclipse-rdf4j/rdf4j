@@ -187,4 +187,14 @@ public class MemStatementList {
 		}
 		return null;
 	}
+
+	/**
+	 * An internal method to retrieve the inner array that stores the statements. Useful to reduce the number of
+	 * volatile reads.
+	 *
+	 * @return the underlying array og MemStatements
+	 */
+	MemStatement[] getStatements() {
+		return statements;
+	}
 }

@@ -13,28 +13,13 @@ import java.util.NoSuchElementException;
 /**
  * An Iteration that contains exactly one element.
  */
-public class SingletonIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+public class SingletonIteration<E, X extends Exception> implements CloseableIteration<E, X> {
 
 	private E value;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
-	/**
-	 * Creates a new EmptyIteration.
-	 */
 	public SingletonIteration(E value) {
 		this.value = value;
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	@Override
 	public boolean hasNext() {
@@ -43,13 +28,12 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 
 	@Override
 	public E next() throws X {
-		E result = value;
-		value = null;
-		if (result == null) {
-			close();
+		if (value == null) {
 			throw new NoSuchElementException();
 		}
-		return result;
+		E temp = value;
+		value = null;
+		return temp;
 	}
 
 	@Override
@@ -58,7 +42,8 @@ public class SingletonIteration<E, X extends Exception> extends AbstractCloseabl
 	}
 
 	@Override
-	protected final void handleClose() throws X {
+	public final void close() throws X {
 		value = null;
 	}
+
 }
