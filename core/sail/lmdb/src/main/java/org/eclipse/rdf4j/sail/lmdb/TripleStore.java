@@ -61,11 +61,13 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.locks.StampedLock;
 
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
-import org.eclipse.rdf4j.sail.lmdb.TxnRef.Mode;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.lwjgl.PointerBuffer;
@@ -146,7 +148,7 @@ class TripleStore implements Closeable {
 	private final boolean autoGrow;
 	private long mapSize;
 	private long writeTxn;
-	private final TxnRef readTxnRef;
+	private final TxnManager txnManager;
 	private final Pool pool = new Pool();
 
 	private TxnRecordCache recordCache = null;
@@ -196,7 +198,7 @@ class TripleStore implements Closeable {
 		}
 		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
 
-		readTxnRef = new TxnRef(env, Mode.RESET);
+		txnManager = new TxnManager(env, Mode.RESET);
 
 		File propFile = new File(this.dir, PROPERTIES_FILE);
 		String indexSpecStr = config.getTripleIndexes();
@@ -274,6 +276,10 @@ class TripleStore implements Closeable {
 		}
 
 		return indexSpecs;
+	}
+
+	TxnManager getTxnManager() {
+		return txnManager;
 	}
 
 	/**
@@ -362,7 +368,7 @@ class TripleStore implements Closeable {
 						RecordIterator[] sourceIter = { null };
 						try {
 							sourceIter[0] = new LmdbRecordIterator(pool, sourceIndex, false, -1, -1, -1, -1,
-									explicit, new TxnRef(txn));
+									explicit, txnManager.createTxn(txn));
 
 							RecordIterator it = sourceIter[0];
 							long[] quad;
@@ -450,27 +456,27 @@ class TripleStore implements Closeable {
 	 * @return All triples sorted by context or null if no context index exists
 	 * @throws IOException
 	 */
-	public RecordIterator getAllTriplesSortedByContext() throws IOException {
+	public RecordIterator getAllTriplesSortedByContext(Txn txn) throws IOException {
 		for (TripleIndex index : indexes) {
 			if (index.getFieldSeq()[0] == 'c') {
 				// found a context-first index
-				return getTriplesUsingIndex(-1, -1, -1, -1, true, index, false);
+				return getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, false);
 			}
 		}
 		return null;
 	}
 
-	public RecordIterator getTriples(long subj, long pred, long obj, long context, boolean explicit)
+	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 		// System.out.println("get triples: " + Arrays.asList(subj, pred, obj,context));
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
-		return getTriplesUsingIndex(subj, pred, obj, context, explicit, index, doRangeSearch);
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
 
-	private RecordIterator getTriplesUsingIndex(long subj, long pred, long obj, long context,
+	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
-		return new LmdbRecordIterator(pool, index, rangeSearch, subj, pred, obj, context, explicit, readTxnRef);
+		return new LmdbRecordIterator(pool, index, rangeSearch, subj, pred, obj, context, explicit, txn);
 	}
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
@@ -480,7 +486,7 @@ class TripleStore implements Closeable {
 		for (boolean explicit : new boolean[] { true, false }) {
 			int dbi = index.getDB(explicit);
 			if (index.getPatternScore(subj, pred, obj, context) == 0) {
-				cardinality += readTxnRef.doWith((stack, txn) -> {
+				cardinality += txnManager.doWith((stack, txn) -> {
 					MDBStat stat = MDBStat.mallocStack(stack);
 					mdb_stat(txn, dbi, stat);
 					return (double) stat.ms_entries();
@@ -488,7 +494,7 @@ class TripleStore implements Closeable {
 			} else {
 				// TODO currently uses a scan to determine range size
 				long[] startValues = new long[4];
-				cardinality += readTxnRef.doWith((stack, txn) -> {
+				cardinality += txnManager.doWith((stack, txn) -> {
 					MDBVal maxKey = MDBVal.malloc(stack);
 					ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
 					index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
@@ -662,9 +668,10 @@ class TripleStore implements Closeable {
 	 * @return A mapping of each modified context to the number of statements removed in that context.
 	 * @throws IOException
 	 */
-	public Map<Long, Long> removeTriplesByContext(long subj, long pred, long obj, long context, boolean explicit)
+	public Map<Long, Long> removeTriplesByContext(Txn txn, long subj, long pred, long obj, long context,
+			boolean explicit)
 			throws IOException {
-		RecordIterator records = getTriples(subj, pred, obj, context, explicit);
+		RecordIterator records = getTriples(txn, subj, pred, obj, context, explicit);
 		return removeTriples(records, explicit);
 	}
 
@@ -767,9 +774,10 @@ class TripleStore implements Closeable {
 			if (commit) {
 				E(mdb_txn_commit(writeTxn));
 				if (recordCache != null) {
-					long stamp = readTxnRef.lock().writeLock();
+					StampedLock lock = txnManager.lock();
+					long stamp = lock.writeLock();
 					try {
-						readTxnRef.deactivate();
+						txnManager.deactivate();
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 						E(mdb_env_set_mapsize(env, mapSize));
 						// restart write transaction
@@ -783,13 +791,16 @@ class TripleStore implements Closeable {
 						E(mdb_txn_commit(writeTxn));
 					} finally {
 						recordCache = null;
-						readTxnRef.activate();
-						readTxnRef.lock().unlockWrite(stamp);
+						try {
+							txnManager.activate();
+						} finally {
+							lock.unlockWrite(stamp);
+						}
 					}
 				} else {
 					// invalidate open read transaction so that they are not re-used
 					// otherwise iterators won't see the updated data
-					readTxnRef.reset();
+					txnManager.reset();
 				}
 			} else {
 				mdb_txn_abort(writeTxn);
