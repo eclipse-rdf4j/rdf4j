@@ -15,13 +15,13 @@ import org.junit.Test;
 
 public class LimitIterationTest extends CloseableIterationTest {
 
-	protected static LimitIteration<CloseableIteration<? extends String, Exception>, String, Exception> createLimitIteration(
+	protected static LimitIteration<CloseableIteration<String, Exception>, String, Exception> createLimitIteration(
 			int limit) {
 		return new LimitIteration<>(createStringList1Iteration(), limit);
 	}
 
 	@Override
-	protected CloseableIteration<? extends String, Exception> createTestIteration() {
+	protected CloseableIteration<String, Exception> createTestIteration() {
 		return createLimitIteration(5);
 	}
 

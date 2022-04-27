@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.common.iteration.EmptyIteration;
  * before the lock is released. This iterator closes itself as soon as all elements have been read.
  */
 @InternalUseOnly
-public class LockedIteration<E, X extends Exception>
-		extends CloseableIterationWrapper<CloseableIteration<? extends E, X>, E, X> {
+public class LockedIteration<K extends CloseableIteration<? extends E, X>, E, X extends Exception>
+		extends CloseableIterationWrapper<K, E, X> {
 
 	/**
 	 * The lock to release when the Iteration is closed.
@@ -32,12 +32,13 @@ public class LockedIteration<E, X extends Exception>
 	 * @param iteration The underlying Iteration, must not be <var>null</var>.
 	 * @param lock      The lock to release when the iterator is closed, must not be <var>null</var>.
 	 */
-	public LockedIteration(CloseableIteration<? extends E, X> iteration, Lock lock) {
+	public LockedIteration(K iteration, Lock lock) {
 		super(iteration);
 		this.lock = lock;
 	}
 
-	public static <E, X extends Exception> CloseableIteration<E, X> getInstance(CloseableIteration<E, X> iteration,
+	public static <K extends CloseableIteration<E, X>, E, X extends Exception> CloseableIteration<E, X> getInstance(
+			K iteration,
 			Lock lock) {
 		if (iteration instanceof EmptyIteration) {
 			lock.release();
@@ -48,21 +49,17 @@ public class LockedIteration<E, X extends Exception>
 	}
 
 	@Override
-	protected void preHasNext() {
+	final protected void preHasNext() {
 
 	}
 
 	@Override
-	protected void preNext() {
+	final protected void preNext() {
 
 	}
 
 	@Override
-	protected final void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			lock.release();
-		}
+	protected final void onClose() {
+		lock.release();
 	}
 }

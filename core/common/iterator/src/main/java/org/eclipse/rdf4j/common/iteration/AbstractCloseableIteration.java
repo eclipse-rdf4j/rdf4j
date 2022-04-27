@@ -34,6 +34,7 @@ public abstract class AbstractCloseableIteration<E, X extends Exception> impleme
 	 *
 	 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
 	 */
+	@Override
 	public final boolean isClosed() {
 		return closed;
 	}

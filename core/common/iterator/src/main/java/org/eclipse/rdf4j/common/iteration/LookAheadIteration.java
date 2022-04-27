@@ -15,27 +15,17 @@ import java.util.NoSuchElementException;
  * super class for Iterations that have no easy way to tell if there are any more results, but still should implement
  * the <var>java.util.Iteration</var> interface.
  */
-public abstract class LookAheadIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+public abstract class LookAheadIteration<E, X extends Exception> implements CloseableIteration<E, X> {
 
 	private E nextElement;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
-	protected LookAheadIteration() {
-	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
+	private boolean closed = false;
 
 	/**
 	 * Gets the next element. Subclasses should implement this method so that it returns the next element.
+	 *
+	 * @implNote Implementations of this method should be effectively final to ensure that the JVM can optimize this to
+	 *           a monomorphic call. If you override another class's implementation of this method you will force the
+	 *           JVM to use a vtable stub.
 	 *
 	 * @return The next element, or <var>null</var> if no more elements are available.
 	 */
@@ -43,7 +33,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 
 	@Override
 	public final boolean hasNext() throws X {
-		if (isClosed()) {
+		if (closed) {
 			return false;
 		}
 		if (nextElement == null) {
@@ -54,7 +44,7 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 
 	@Override
 	public final E next() throws X {
-		if (isClosed()) {
+		if (closed) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
 
@@ -92,4 +82,27 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 		throw new UnsupportedOperationException();
 	}
 
+	/**
+	 * Calls {@link #handleClose()} upon first call and makes sure the resource closures are only executed once.
+	 */
+	@Override
+	public final void close() throws X {
+		if (!closed) {
+			closed = true;
+			handleClose();
+		}
+	}
+
+	/**
+	 * Called by {@link #close} when it is called for the first time. This method is only called once on each iteration.
+	 * By default, this method does nothing.
+	 *
+	 * @throws X
+	 */
+	abstract protected void handleClose() throws X;
+
+	@Override
+	public final boolean isClosed() {
+		return closed;
+	}
 }

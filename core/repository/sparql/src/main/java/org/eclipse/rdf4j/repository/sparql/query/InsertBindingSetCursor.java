@@ -30,7 +30,7 @@ public class InsertBindingSetCursor extends
 	}
 
 	@Override
-	protected void preHasNext() {
+	final protected void preHasNext() {
 
 	}
 
@@ -50,7 +50,12 @@ public class InsertBindingSetCursor extends
 	}
 
 	@Override
-	protected void preNext() {
+	final protected void preNext() {
+
+	}
+
+	@Override
+	protected void onClose() {
 
 	}
 

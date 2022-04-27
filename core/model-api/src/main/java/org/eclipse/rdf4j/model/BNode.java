@@ -32,23 +32,23 @@ public interface BNode extends Resource {
 	 */
 	String getID();
 
-	/**
-	 * Compares this blank node to another object.
-	 *
-	 * @param o the object to compare this blank node to
-	 *
-	 * @return {@code true}, if the other object is an instance of {@code BNode} and their {@linkplain #getID() IDs} are
-	 *         equal; {@code false}, otherwise.
-	 */
-	@Override
-	boolean equals(Object o);
-
-	/**
-	 * Computes the hash code of this blank node.
-	 *
-	 * @return a hash code for this blank node computed as {@link #getID()}{@code .hashCode()}
-	 */
-	@Override
-	int hashCode();
+//	/**
+//	 * Compares this blank node to another object.
+//	 *
+//	 * @param o the object to compare this blank node to
+//	 *
+//	 * @return {@code true}, if the other object is an instance of {@code BNode} and their {@linkplain #getID() IDs} are
+//	 *         equal; {@code false}, otherwise.
+//	 */
+//	@Override
+//	boolean equals(Object o);
+//
+//	/**
+//	 * Computes the hash code of this blank node.
+//	 *
+//	 * @return a hash code for this blank node computed as {@link #getID()}{@code .hashCode()}
+//	 */
+//	@Override
+//	int hashCode();
 
 }

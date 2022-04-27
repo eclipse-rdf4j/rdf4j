@@ -387,7 +387,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 							.sorted(Comparator.reverseOrder()) // delete files before directory
 							.forEach(File::delete);
 				} catch (IOException ioe) {
-					logger.error("Could not delete temp file " + dataDir);
+					logger.error("Could not delete innerGetNextElement file " + dataDir);
 				}
 			}
 		}

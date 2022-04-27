@@ -16,7 +16,7 @@ public final class GeoUnits {
 	private GeoUnits() {
 	}
 
-	public static final double toMiles(double distance, IRI units) {
+	public static double toMiles(double distance, IRI units) {
 		final double miles;
 		if (GEOF.UOM_METRE.equals(units)) {
 			miles = DistanceUtils.KM_TO_MILES * distance / 1000.0;
@@ -32,7 +32,7 @@ public final class GeoUnits {
 		return miles;
 	}
 
-	public static final double fromMiles(double miles, IRI units) {
+	public static double fromMiles(double miles, IRI units) {
 		double dist;
 		if (GEOF.UOM_METRE.equals(units)) {
 			dist = DistanceUtils.MILES_TO_KM * miles * 1000.0;
@@ -48,7 +48,7 @@ public final class GeoUnits {
 		return dist;
 	}
 
-	public static final double toKilometres(double distance, IRI units) {
+	public static double toKilometres(double distance, IRI units) {
 		final double kms;
 		if (GEOF.UOM_METRE.equals(units)) {
 			kms = distance / 1000.0;
@@ -64,7 +64,7 @@ public final class GeoUnits {
 		return kms;
 	}
 
-	public static final double fromKilometres(double kms, IRI units) {
+	public static double fromKilometres(double kms, IRI units) {
 		double dist;
 		if (GEOF.UOM_METRE.equals(units)) {
 			dist = kms * 1000.0;
@@ -80,7 +80,7 @@ public final class GeoUnits {
 		return dist;
 	}
 
-	public static final double toDegrees(double distance, IRI units) {
+	public static double toDegrees(double distance, IRI units) {
 		final double degs;
 		if (GEOF.UOM_METRE.equals(units)) {
 			degs = DistanceUtils.dist2Degrees(distance / 1000.0, DistanceUtils.EARTH_MEAN_RADIUS_KM);
@@ -96,7 +96,7 @@ public final class GeoUnits {
 		return degs;
 	}
 
-	public static final double fromDegrees(double degs, IRI units) {
+	public static double fromDegrees(double degs, IRI units) {
 		double dist;
 		if (GEOF.UOM_METRE.equals(units)) {
 			dist = DistanceUtils.degrees2Dist(degs, DistanceUtils.EARTH_MEAN_RADIUS_KM) * 1000.0;

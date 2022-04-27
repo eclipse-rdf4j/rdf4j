@@ -119,7 +119,7 @@ public class GroupIterator extends AbstractCloseableIteration<BindingSet, QueryE
 						.closeOnJvmShutdown()
 						.make();
 			} catch (IOException e) {
-				throw new QueryEvaluationException("could not initialize temp db", e);
+				throw new QueryEvaluationException("could not initialize innerGetNextElement db", e);
 			}
 		} else {
 			this.db = null;

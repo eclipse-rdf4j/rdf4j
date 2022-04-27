@@ -54,23 +54,23 @@ public interface IRI extends Resource {
 	 */
 	String getLocalName();
 
-	/**
-	 * Compares this IRI to another object.
-	 *
-	 * @param o the object to compare this IRI to
-	 *
-	 * @return {@code true}, if the other object is an instance of {@code IRI} and their {@linkplain #stringValue()
-	 *         string values} are equal; {@code false}, otherwise
-	 */
-	@Override
-	boolean equals(Object o);
-
-	/**
-	 * Computes the hash code of this IRI.
-	 *
-	 * @return a hash code for this IRI computed as {@link #stringValue()}{@code .hashCode()}
-	 */
-	@Override
-	int hashCode();
+//	/**
+//	 * Compares this IRI to another object.
+//	 *
+//	 * @param o the object to compare this IRI to
+//	 *
+//	 * @return {@code true}, if the other object is an instance of {@code IRI} and their {@linkplain #stringValue()
+//	 *         string values} are equal; {@code false}, otherwise
+//	 */
+//	@Override
+//	boolean equals(Object o);
+//
+//	/**
+//	 * Computes the hash code of this IRI.
+//	 *
+//	 * @return a hash code for this IRI computed as {@link #stringValue()}{@code .hashCode()}
+//	 */
+//	@Override
+//	int hashCode();
 
 }

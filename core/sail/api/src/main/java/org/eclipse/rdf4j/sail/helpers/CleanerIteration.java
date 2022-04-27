@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-class CleanerIteration<K extends AbstractCloseableIteration<? extends E, X>, E, X extends Exception>
+class CleanerIteration<K extends CloseableIteration<? extends E, X>, E, X extends Exception>
 		implements CloseableIteration<E, X> {
 
 	private static final Logger logger = LoggerFactory.getLogger(CleanerIteration.class);
@@ -52,7 +52,7 @@ class CleanerIteration<K extends AbstractCloseableIteration<? extends E, X>, E, 
 		delegate.remove();
 	}
 
-	static class CleanableState<K extends AbstractCloseableIteration<?, ?>> implements Runnable {
+	static class CleanableState<K extends CloseableIteration<?, ?>> implements Runnable {
 
 		private final K iteration;
 

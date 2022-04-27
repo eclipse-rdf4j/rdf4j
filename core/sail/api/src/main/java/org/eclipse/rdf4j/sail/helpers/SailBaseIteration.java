@@ -40,19 +40,15 @@ class SailBaseIteration<T, E extends Exception>
 	}
 
 	@Override
-	protected void preNext() {
+	final protected void preNext() {
 		if (!connection.isOpen()) {
 			throw new IllegalStateException("Iteration in use after connection has been closed!");
 		}
 	}
 
 	@Override
-	protected final void handleClose() throws E {
-		try {
-			super.handleClose();
-		} finally {
-			connection.iterationClosed(this);
-		}
+	protected final void onClose() {
+		connection.iterationClosed(this);
 	}
 
 	@Deprecated

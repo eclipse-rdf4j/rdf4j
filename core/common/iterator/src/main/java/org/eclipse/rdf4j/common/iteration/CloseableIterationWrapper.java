@@ -13,9 +13,11 @@ import java.util.Objects;
 import java.util.concurrent.CancellationException;
 
 public abstract class CloseableIterationWrapper<T extends CloseableIteration<? extends E, ? extends X>, E, X extends Exception>
-		extends AbstractCloseableIteration<E, X> {
+		implements CloseableIteration<E, X> {
 
 	protected final T wrappedIter;
+
+	private boolean closed = false;
 
 	/**
 	 * Creates a new IterationWrapper that operates on the supplied Iteration.
@@ -36,7 +38,7 @@ public abstract class CloseableIterationWrapper<T extends CloseableIteration<? e
 	 * @return <var>true</var> if the wrapped Iteration contains more elements, <var>false</var> otherwise.
 	 */
 	@Override
-	public boolean hasNext() throws X {
+	public final boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
 		} else if (Thread.currentThread().isInterrupted()) {
@@ -95,11 +97,27 @@ public abstract class CloseableIterationWrapper<T extends CloseableIteration<? e
 		}
 	}
 
+	protected abstract void onClose();
+
 	/**
-	 * Closes this Iteration and also closes the wrapped Iteration if it is a {@link CloseableIteration}.
+	 * Checks whether this CloseableIteration has been closed.
+	 *
+	 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
 	 */
 	@Override
-	protected void handleClose() throws X {
-		wrappedIter.close();
+	public final boolean isClosed() {
+		return closed;
+	}
+
+	@Override
+	public final void close() throws X {
+		if (!closed) {
+			closed = true;
+			try {
+				wrappedIter.close();
+			} finally {
+				onClose();
+			}
+		}
 	}
 }

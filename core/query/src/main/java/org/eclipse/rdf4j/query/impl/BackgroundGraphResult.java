@@ -65,33 +65,28 @@ public class BackgroundGraphResult
 	}
 
 	@Override
-	protected void preHasNext() {
+	final protected void preHasNext() {
 
 	}
 
 	@Override
-	protected void preNext() {
+	final protected void preNext() {
 
 	}
 
 	@Override
-	protected final void handleClose() throws QueryEvaluationException {
+	final protected void onClose() {
 		try {
-			super.handleClose();
+			queue.done();
 		} finally {
 			try {
-				queue.done();
+				finishedParsing.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
 			} finally {
-				try {
-					finishedParsing.await();
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-				} finally {
-					queue.checkException();
-				}
+				queue.checkException();
 			}
 		}
-
 	}
 
 	@Override

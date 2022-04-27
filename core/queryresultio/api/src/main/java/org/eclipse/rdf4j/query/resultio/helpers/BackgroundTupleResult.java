@@ -14,9 +14,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIterationWrapper;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
@@ -28,7 +31,9 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
  *
  * @author James Leigh
  */
-public class BackgroundTupleResult extends IteratingTupleQueryResult implements Runnable, TupleQueryResultHandler {
+public class BackgroundTupleResult extends
+		CloseableIterationWrapper<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException>
+		implements TupleQueryResult, Runnable, TupleQueryResultHandler {
 
 	private final TupleQueryResultParser parser;
 
@@ -47,30 +52,35 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult implements 
 	}
 
 	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser, InputStream in) {
-		super(Collections.emptyList(), queue);
+		super(queue);
 		this.queue = queue;
 		this.parser = parser;
 		this.in = in;
 	}
 
 	@Override
-	protected final void handleClose() throws QueryEvaluationException {
+	final protected void preHasNext() {
+
+	}
+
+	@Override
+	final protected void preNext() {
+
+	}
+
+	@Override
+	protected final void onClose() {
 		try {
-			super.handleClose();
+			queue.done();
 		} finally {
 			try {
-				queue.done();
+				finishedParsing.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
 			} finally {
-				try {
-					finishedParsing.await();
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-				} finally {
-					queue.checkException();
-				}
+				queue.checkException();
 			}
 		}
-
 	}
 
 	@Override

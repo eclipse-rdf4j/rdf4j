@@ -32,24 +32,24 @@ public interface Namespace extends Serializable, Comparable<Namespace> {
 	 */
 	String getName();
 
-	/**
-	 * Compares this namespace to another object.
-	 *
-	 * @param o The object to compare this namespace to
-	 *
-	 * @return {@code true} if the other object is an instance of {@code Namespace} and their {@linkplain #getPrefix()
-	 *         prefixes} and {@linkplain #getName() names} are equal, {@code false} otherwise.
-	 */
-	@Override
-	boolean equals(Object o);
-
-	/**
-	 * Computes the hash code of this namespace.
-	 *
-	 * @return a hash code for this namespace computed as {@link java.util.Objects#hash Objects.hash}(
-	 *         {@link #getPrefix()}, {@link #getName()})
-	 */
-	@Override
-	int hashCode();
+//	/**
+//	 * Compares this namespace to another object.
+//	 *
+//	 * @param o The object to compare this namespace to
+//	 *
+//	 * @return {@code true} if the other object is an instance of {@code Namespace} and their {@linkplain #getPrefix()
+//	 *         prefixes} and {@linkplain #getName() names} are equal, {@code false} otherwise.
+//	 */
+//	@Override
+//	boolean equals(Object o);
+//
+//	/**
+//	 * Computes the hash code of this namespace.
+//	 *
+//	 * @return a hash code for this namespace computed as {@link java.util.Objects#hash Objects.hash}(
+//	 *         {@link #getPrefix()}, {@link #getName()})
+//	 */
+//	@Override
+//	int hashCode();
 
 }

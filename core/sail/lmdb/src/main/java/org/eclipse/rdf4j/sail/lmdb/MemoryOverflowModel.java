@@ -267,7 +267,7 @@ abstract class MemoryOverflowModel extends AbstractModel {
 		try {
 			assert disk == null;
 			dataDir = Files.createTempDirectory("model").toFile();
-			logger.debug("memory overflow using temp directory {}", dataDir);
+			logger.debug("memory overflow using innerGetNextElement directory {}", dataDir);
 			store = createSailStore(dataDir);
 			disk = new SailSourceModel(store) {
 

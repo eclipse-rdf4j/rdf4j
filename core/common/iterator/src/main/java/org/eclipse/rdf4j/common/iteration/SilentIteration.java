@@ -14,22 +14,46 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * An {@link IterationWrapper} that silently ignores any errors that occur during processing.
+ * An iteration wrapper that silently ignores any errors that occur during processing.
  *
  * @author Jeen Broekstra
  */
-public class SilentIteration<T, E extends Exception> extends CloseableIterationWrapper<CloseableIteration<T, E>, T, E> {
+public class SilentIteration<T, E extends Exception> implements CloseableIteration<T, E> {
 
 	private static final Logger logger = LoggerFactory.getLogger(SilentIteration.class);
 
-	public SilentIteration(CloseableIteration<T, E> iter) {
-		super(iter);
+	private final CloseableIteration<T, E> delegate;
+
+	public SilentIteration(CloseableIteration<T, E> delegate) {
+		this.delegate = delegate;
+	}
+
+	@Override
+	public void close() throws E {
+		try {
+			delegate.close();
+		} catch (Exception e) {
+			if (logger.isTraceEnabled()) {
+				logger.trace("Suppressed error in SILENT iteration: " + e.getMessage(), e);
+			}
+		}
+	}
+
+	@Override
+	public void remove() throws E {
+		try {
+			delegate.remove();
+		} catch (Exception e) {
+			if (logger.isTraceEnabled()) {
+				logger.trace("Suppressed error in SILENT iteration: " + e.getMessage(), e);
+			}
+		}
 	}
 
 	@Override
 	public boolean hasNext() throws E {
 		try {
-			return super.hasNext();
+			return delegate.hasNext();
 		} catch (Exception e) {
 			if (logger.isTraceEnabled()) {
 				logger.trace("Suppressed error in SILENT iteration: " + e.getMessage(), e);
@@ -39,14 +63,9 @@ public class SilentIteration<T, E extends Exception> extends CloseableIterationW
 	}
 
 	@Override
-	protected void preHasNext() {
-
-	}
-
-	@Override
 	public T next() throws E {
 		try {
-			return super.next();
+			return delegate.next();
 		} catch (NoSuchElementException e) {
 			// pass through
 			throw e;
@@ -58,19 +77,4 @@ public class SilentIteration<T, E extends Exception> extends CloseableIterationW
 		}
 	}
 
-	@Override
-	protected void preNext() {
-
-	}
-
-	@Override
-	protected final void handleClose() throws E {
-		try {
-			super.handleClose();
-		} catch (Exception e) {
-			if (logger.isTraceEnabled()) {
-				logger.trace("Suppressed error in SILENT iteration: " + e.getMessage(), e);
-			}
-		}
-	}
 }

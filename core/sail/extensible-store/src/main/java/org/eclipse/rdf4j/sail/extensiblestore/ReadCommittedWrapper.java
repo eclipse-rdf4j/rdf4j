@@ -119,7 +119,7 @@ class ReadCommittedWrapper implements DataStructureInterface {
 									subject, predicate, object, inferred, context);
 
 					@Override
-					protected final void handleClose() throws SailException {
+					protected void handleClose() throws SailException {
 						right.close();
 					}
 

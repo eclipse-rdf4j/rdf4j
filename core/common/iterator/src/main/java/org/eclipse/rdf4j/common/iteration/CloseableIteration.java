@@ -9,7 +9,9 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
+import java.util.Spliterator;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * An {@link CloseableIteration} that can be closed to free resources that it is holding. CloseableIterations
@@ -36,8 +38,20 @@ public interface CloseableIteration<E, X extends Exception> extends AutoCloseabl
 	@Override
 	void close() throws X;
 
+	default boolean isClosed() {
+		return false;
+	}
+
 	default Stream<E> stream() {
-		return Iterations.stream(this);
+		return StreamSupport.stream(new CloseableIterationSpliterator<>(this), false).onClose(() -> {
+			try {
+				close();
+			} catch (RuntimeException e) {
+				throw e;
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
 	}
 
 	/**

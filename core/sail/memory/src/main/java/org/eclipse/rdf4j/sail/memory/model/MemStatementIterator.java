@@ -342,7 +342,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 		}
 
 		@Override
-		protected MemStatement getNextElement() throws X {
+		protected final MemStatement getNextElement() throws X {
 			if (e != null) {
 				throw ((X) e);
 			}

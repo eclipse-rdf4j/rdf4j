@@ -98,7 +98,7 @@ public class EvaluationStrategyWithRDFStarTest {
 				}
 
 				@Override
-				protected final void handleClose() throws QueryEvaluationException {
+				protected void handleClose() throws QueryEvaluationException {
 					// no-op
 				}
 			};

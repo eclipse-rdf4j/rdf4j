@@ -17,7 +17,7 @@ import java.util.function.Function;
  * Subclasses need to override {@link #convert(Exception)} to do the conversion.
  */
 public class CloseableExceptionConvertingIteration<E, X extends Exception, T extends CloseableIteration<? extends E, ? extends Exception>>
-		extends AbstractCloseableIteration<E, X> {
+		implements CloseableIteration<E, X> {
 
 	/*-----------*
 	 * Variables *
@@ -28,6 +28,10 @@ public class CloseableExceptionConvertingIteration<E, X extends Exception, T ext
 	 */
 	private final T iter;
 	private final Function<Exception, X> convert;
+	/**
+	 * Flag indicating whether this iteration has been closed.
+	 */
+	private boolean closed = false;
 
 	/*--------------*
 	 * Constructors *
@@ -110,14 +114,27 @@ public class CloseableExceptionConvertingIteration<E, X extends Exception, T ext
 	}
 
 	/**
-	 * Closes this Iteration as well as the wrapped Iteration if it happens to be a {@link CloseableIteration} .
+	 * Checks whether this CloseableIteration has been closed.
+	 *
+	 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
 	 */
 	@Override
-	protected final void handleClose() throws X {
-		try {
-			iter.close();
-		} catch (Exception e) {
-			throw convert.apply(e);
+	public final boolean isClosed() {
+		return closed;
+	}
+
+	/**
+	 * Calls {@link #handleClose()} upon first call and makes sure the resource closures are only executed once.
+	 */
+	@Override
+	public final void close() throws X {
+		if (!closed) {
+			closed = true;
+			try {
+				iter.close();
+			} catch (Exception e) {
+				throw convert.apply(e);
+			}
 		}
 	}
 }

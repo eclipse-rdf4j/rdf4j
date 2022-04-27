@@ -396,7 +396,7 @@ public class HashFile implements Closeable {
 		File tmpFile = new File(getFile().getParentFile(), "rehash_" + getFile().getName());
 		try (RandomAccessFile tmpRaf = createEmptyFile(tmpFile)) {
 			FileChannel tmpChannel = tmpRaf.getChannel();
-			// Transfer the overflow buckets to the temp file
+			// Transfer the overflow buckets to the innerGetNextElement file
 			// FIXME: work around java bug 6431344:
 			// "FileChannel.transferTo() doesn't work if address space runs out"
 			nioFile.transferTo(oldTableSize, oldFileSize - oldTableSize, tmpChannel);
@@ -488,7 +488,7 @@ public class HashFile implements Closeable {
 
 				bucket.clear();
 			}
-			// Discard the temp file
+			// Discard the innerGetNextElement file
 		}
 		tmpFile.delete();
 	}

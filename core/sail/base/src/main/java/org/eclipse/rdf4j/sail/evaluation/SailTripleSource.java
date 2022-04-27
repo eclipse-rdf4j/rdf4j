@@ -35,7 +35,8 @@ public class SailTripleSource implements TripleSource {
 	}
 
 	@Override
-	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+	public CloseableExceptionConvertingIteration<? extends Statement, QueryEvaluationException, CloseableIteration<? extends Statement, SailException>> getStatements(
+			Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement, SailException> iter = null;
 		CloseableExceptionConvertingIteration<? extends Statement, QueryEvaluationException, CloseableIteration<? extends Statement, SailException>> result = null;

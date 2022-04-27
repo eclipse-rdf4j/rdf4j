@@ -1519,7 +1519,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	/**
 	 * If all input is constant normally the function call output will be constant as well.
-	 * 
+	 *
 	 * @param context  used to precompile arguments of the function
 	 * @param function that might be constant
 	 * @param args     that the function must evaluate
@@ -1976,13 +1976,18 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		@Override
-		protected void preHasNext() {
+		final protected void preHasNext() {
 
 		}
 
 		@Override
-		protected void preNext() {
+		final protected void preNext() {
 			queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);
+
+		}
+
+		@Override
+		protected final void onClose() {
 
 		}
 
@@ -1991,8 +1996,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	/**
 	 * This class wraps an iterator and tracks the time used to execute next() and hasNext()
 	 */
-	private static class TimedIterator extends
-			CloseableIterationWrapper<CloseableIteration<BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException> {
+	private static class TimedIterator implements CloseableIteration<BindingSet, QueryEvaluationException> {
 
 		CloseableIteration<BindingSet, QueryEvaluationException> iterator;
 		QueryModelNode queryModelNode;
@@ -2001,7 +2005,6 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		public TimedIterator(CloseableIteration<BindingSet, QueryEvaluationException> iterator,
 				QueryModelNode queryModelNode) {
-			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
 		}
@@ -2015,31 +2018,31 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		}
 
 		@Override
-		protected void preNext() {
-
-		}
-
-		@Override
 		public boolean hasNext() throws QueryEvaluationException {
 			stopwatch.start();
-			boolean hasNext = super.hasNext();
+			boolean hasNext = iterator.hasNext();
 			stopwatch.stop();
 			return hasNext;
 		}
 
 		@Override
-		protected void preHasNext() {
-
-		}
-
-		@Override
-		protected final void handleClose() throws QueryEvaluationException {
+		public void close() throws QueryEvaluationException {
 			try {
-				super.handleClose();
+				iterator.close();
 			} finally {
 				queryModelNode.setTotalTimeNanosActual(
 						queryModelNode.getTotalTimeNanosActual() + stopwatch.elapsed(TimeUnit.NANOSECONDS));
 			}
+		}
+
+		@Override
+		public boolean isClosed() {
+			return iterator.isClosed();
+		}
+
+		@Override
+		public void remove() throws QueryEvaluationException {
+			iterator.remove();
 		}
 	}
 

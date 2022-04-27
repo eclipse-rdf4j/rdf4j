@@ -61,7 +61,7 @@ public class CloseableIterationSpliterator<T, K extends CloseableIteration<T, ? 
 	}
 
 	@Override
-	public void forEachRemaining(final Consumer<? super T> action) {
+	public void forEachRemaining(Consumer<? super T> action) {
 		Objects.requireNonNull(action, "action may not be null");
 		try {
 			while (iteration.hasNext()) {

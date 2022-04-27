@@ -142,9 +142,8 @@ public class MemStatement extends GenericContextStatement<MemResource, MemIRI, M
 	}
 
 	public boolean matchesSPO(MemResource subject, MemIRI predicate, MemValue object) {
-		return (subject == null || subject == this.subject) &&
-				(predicate == null || predicate == this.predicate) &&
-				(object == null || object == this.object);
+		return (object == null || object == this.object) && (subject == null || subject == this.subject) &&
+				(predicate == null || predicate == this.predicate);
 	}
 
 	public boolean matchesContext(MemResource[] memContexts) {

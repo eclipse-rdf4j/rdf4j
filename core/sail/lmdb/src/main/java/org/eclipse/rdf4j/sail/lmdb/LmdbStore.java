@@ -300,7 +300,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 							.sorted(Comparator.reverseOrder()) // delete files before directory
 							.forEach(File::delete);
 				} catch (IOException ioe) {
-					logger.error("Could not delete temp file " + dataDir);
+					logger.error("Could not delete innerGetNextElement file " + dataDir);
 				}
 			}
 		}

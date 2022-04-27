@@ -124,9 +124,9 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 	public static CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunction func,
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
 			throws QueryEvaluationException {
-		final CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = func
-				.evaluate(valueFactory, argValues);
 		return new LookAheadIteration<>() {
+			final CloseableIteration<? extends List<? extends Value>, QueryEvaluationException> iter = func
+					.evaluate(valueFactory, argValues);
 
 			@Override
 			public BindingSet getNextElement() throws QueryEvaluationException {
@@ -158,7 +158,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 			}
 
 			@Override
-			protected final void handleClose() throws QueryEvaluationException {
+			protected void handleClose() throws QueryEvaluationException {
 				iter.close();
 			}
 		};

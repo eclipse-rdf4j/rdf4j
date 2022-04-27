@@ -37,7 +37,7 @@ public class EmbeddedServer {
 
 		WebAppContext webapp = new WebAppContext();
 		webapp.setContextPath(contextPath);
-		webapp.setTempDirectory(new File("temp/webapp/"));
+		webapp.setTempDirectory(new File("innerGetNextElement/webapp/"));
 		webapp.setWar(warPath);
 		jetty.setHandler(webapp);
 	}

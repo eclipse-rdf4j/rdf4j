@@ -62,12 +62,18 @@ public class IteratingGraphQueryResult extends
 	}
 
 	@Override
-	protected void preHasNext() {
+	final protected void preHasNext() {
 
 	}
 
 	@Override
-	protected void preNext() {
+	final protected void preNext() {
 
 	}
+
+	@Override
+	final protected void onClose() {
+
+	}
+
 }

@@ -9,17 +9,16 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
+import java.util.stream.Stream;
 
 /**
  * An Iteration that limits the amount of elements that it returns from an underlying Iteration to a fixed amount. This
  * class returns the first <var>limit</var> elements from the underlying Iteration and drops the rest.
  */
-public class LimitIteration<K extends CloseableIteration<? extends E, X>, E, X extends Exception>
-		extends CloseableIterationWrapper<K, E, X> {
+public class LimitIteration<K extends CloseableIteration<E, X>, E, X extends Exception>
+		implements CloseableIteration<E, X> {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+	private final K delegate;
 
 	/**
 	 * The amount of elements to return.
@@ -38,15 +37,14 @@ public class LimitIteration<K extends CloseableIteration<? extends E, X>, E, X e
 	/**
 	 * Creates a new LimitIteration.
 	 *
-	 * @param iter  The underlying Iteration, must not be <var>null</var>.
-	 * @param limit The number of query answers to return, must be &gt;= 0.
+	 * @param delegate The underlying Iteration, must not be <var>null</var>.
+	 * @param limit    The number of query answers to return, must be &gt;= 0.
 	 */
-	public LimitIteration(K iter, long limit) {
-		super(iter);
-
-		assert iter != null;
+	public LimitIteration(K delegate, long limit) {
+		assert delegate != null;
 		assert limit >= 0;
 
+		this.delegate = delegate;
 		this.limit = limit;
 		this.returnCount = 0;
 	}
@@ -65,12 +63,7 @@ public class LimitIteration<K extends CloseableIteration<? extends E, X>, E, X e
 			close();
 			return false;
 		}
-		return super.hasNext();
-	}
-
-	@Override
-	protected void preHasNext() {
-
+		return delegate.hasNext();
 	}
 
 	@Override
@@ -84,11 +77,21 @@ public class LimitIteration<K extends CloseableIteration<? extends E, X>, E, X e
 		}
 
 		returnCount++;
-		return super.next();
+		return delegate.next();
 	}
 
 	@Override
-	protected void preNext() {
+	public void close() throws X {
+		delegate.close();
+	}
 
+	@Override
+	public boolean isClosed() {
+		return delegate.isClosed();
+	}
+
+	@Override
+	public void remove() throws X {
+		delegate.remove();
 	}
 }

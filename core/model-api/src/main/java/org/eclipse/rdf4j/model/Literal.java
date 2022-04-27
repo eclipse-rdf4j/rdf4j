@@ -285,27 +285,27 @@ public interface Literal extends Value {
 	 */
 	CoreDatatype getCoreDatatype();
 
-	/**
-	 * Compares this literal to another object.
-	 *
-	 * @param other the object to compare this literal to
-	 *
-	 * @return {@code true}, if the other object is an instance of {@code Literal} and if their {@linkplain #getLabel()
-	 *         labels}, {@linkplain #getLanguage() language tags} and {@linkplain #getDatatype() datatypes} are equal
-	 */
-	@Override
-	boolean equals(Object other);
-
-	/**
-	 * Computes the hash code of this literal.
-	 *
-	 * @return a hash code for this literal computed as {@link #getLabel()}{@code .hashCode()}
-	 *
-	 * @implNote {@linkplain #getLanguage() language} and {@linkplain #getDatatype() datatype} are deliberately not
-	 *           considered in the computation (see issue
-	 *           <a href="https://github.com/eclipse/rdf4j/issues/665">#655</a>)
-	 */
-	@Override
-	int hashCode();
+//	/**
+//	 * Compares this literal to another object.
+//	 *
+//	 * @param other the object to compare this literal to
+//	 *
+//	 * @return {@code true}, if the other object is an instance of {@code Literal} and if their {@linkplain #getLabel()
+//	 *         labels}, {@linkplain #getLanguage() language tags} and {@linkplain #getDatatype() datatypes} are equal
+//	 */
+//	@Override
+//	boolean equals(Object other);
+//
+//	/**
+//	 * Computes the hash code of this literal.
+//	 *
+//	 * @return a hash code for this literal computed as {@link #getLabel()}{@code .hashCode()}
+//	 *
+//	 * @implNote {@linkplain #getLanguage() language} and {@linkplain #getDatatype() datatype} are deliberately not
+//	 *           considered in the computation (see issue
+//	 *           <a href="https://github.com/eclipse/rdf4j/issues/665">#655</a>)
+//	 */
+//	@Override
+//	int hashCode();
 
 }

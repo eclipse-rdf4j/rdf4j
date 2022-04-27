@@ -52,25 +52,25 @@ public interface Triple extends Resource {
 	 */
 	Value getObject();
 
-	/**
-	 * Compares this triple to another object.
-	 *
-	 * @param other the object to compare this triple to
-	 *
-	 * @return {@code true} if the {@code other} object is an instance of {@code Triple} and if their
-	 *         {@linkplain #getSubject() subjects}, {@linkplain #getPredicate() predicates} and {@linkplain #getObject()
-	 *         objects} are equal; {@code false} otherwise
-	 */
-	@Override
-	boolean equals(Object other);
-
-	/**
-	 * Computes the hash code of this triple.
-	 *
-	 * @return a hash code for this triple computed as {@link java.util.Objects#hash Objects.hash}(
-	 *         {@link #getSubject()}, {@link #getPredicate()}, {@link #getObject()})
-	 */
-	@Override
-	int hashCode();
+//	/**
+//	 * Compares this triple to another object.
+//	 *
+//	 * @param other the object to compare this triple to
+//	 *
+//	 * @return {@code true} if the {@code other} object is an instance of {@code Triple} and if their
+//	 *         {@linkplain #getSubject() subjects}, {@linkplain #getPredicate() predicates} and {@linkplain #getObject()
+//	 *         objects} are equal; {@code false} otherwise
+//	 */
+//	@Override
+//	boolean equals(Object other);
+//
+//	/**
+//	 * Computes the hash code of this triple.
+//	 *
+//	 * @return a hash code for this triple computed as {@link java.util.Objects#hash Objects.hash}(
+//	 *         {@link #getSubject()}, {@link #getPredicate()}, {@link #getObject()})
+//	 */
+//	@Override
+//	int hashCode();
 
 }

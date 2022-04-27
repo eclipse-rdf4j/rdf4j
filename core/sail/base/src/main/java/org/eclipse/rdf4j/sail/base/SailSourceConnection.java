@@ -207,7 +207,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	@Override
-	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
+	protected SailClosableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
+			TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
@@ -249,7 +250,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			iteration = qes.evaluate(EmptyBindingSet.getInstance());
 			iteration = SailClosableIteration.getInstance(iteration, rdfDataset, branch);
 			allGood = true;
-			return iteration;
+			return (SailClosableIteration<? extends BindingSet, QueryEvaluationException>) iteration;
 		} catch (QueryEvaluationException e) {
 			throw new SailException(e);
 		} finally {

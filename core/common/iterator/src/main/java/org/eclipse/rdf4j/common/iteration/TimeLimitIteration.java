@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.NoSuchElementException;
 import java.util.Timer;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,8 +18,7 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Arjohn Kampman
  */
-public abstract class TimeLimitIteration<E, X extends Exception>
-		extends CloseableIterationWrapper<CloseableIteration<? extends E, ? extends X>, E, X> {
+public abstract class TimeLimitIteration<E, X extends Exception> implements CloseableIteration<E, X> {
 
 	private static final Timer timer = new Timer("TimeLimitIteration", true);
 
@@ -28,24 +28,16 @@ public abstract class TimeLimitIteration<E, X extends Exception>
 
 	private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
 
-	protected TimeLimitIteration(CloseableIteration<? extends E, ? extends X> iter, long timeLimit) {
-		super(iter);
+	private final CloseableIteration<? extends E, ? extends X> delegate;
+
+	protected TimeLimitIteration(CloseableIteration<? extends E, ? extends X> delegate, long timeLimit) {
+		this.delegate = delegate;
 
 		assert timeLimit > 0 : "time limit must be a positive number, is: " + timeLimit;
 
 		interruptTask = new InterruptTask<>(this);
 
 		timer.schedule(interruptTask, timeLimit);
-	}
-
-	@Override
-	protected void preHasNext() {
-
-	}
-
-	@Override
-	protected void preNext() {
-
 	}
 
 	@Override
@@ -56,7 +48,7 @@ public abstract class TimeLimitIteration<E, X extends Exception>
 		}
 		checkInterrupted();
 		try {
-			boolean result = super.hasNext();
+			boolean result = delegate.hasNext();
 			checkInterrupted();
 			return result;
 		} catch (NoSuchElementException e) {
@@ -74,7 +66,7 @@ public abstract class TimeLimitIteration<E, X extends Exception>
 		}
 		checkInterrupted();
 		try {
-			return super.next();
+			return delegate.next();
 		} catch (NoSuchElementException e) {
 			checkInterrupted();
 			close();
@@ -90,7 +82,7 @@ public abstract class TimeLimitIteration<E, X extends Exception>
 		}
 		checkInterrupted();
 		try {
-			super.remove();
+			delegate.remove();
 		} catch (IllegalStateException e) {
 			checkInterrupted();
 			close();
@@ -99,12 +91,17 @@ public abstract class TimeLimitIteration<E, X extends Exception>
 	}
 
 	@Override
-	protected final void handleClose() throws X {
+	public void close() throws X {
 		try {
-			super.handleClose();
+			delegate.close();
 		} finally {
 			interruptTask.cancel();
 		}
+	}
+
+	@Override
+	public boolean isClosed() {
+		return delegate.isClosed();
 	}
 
 	private void checkInterrupted() throws X {

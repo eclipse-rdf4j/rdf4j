@@ -203,14 +203,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 			}
 
 			@Override
-			public void remove() throws SailException {
-
-				throw new IllegalStateException("Does not support removing from iterator");
-
-			}
-
-			@Override
-			protected final void handleClose() throws SailException {
+			protected void handleClose() throws SailException {
 				iterator.close();
 			}
 

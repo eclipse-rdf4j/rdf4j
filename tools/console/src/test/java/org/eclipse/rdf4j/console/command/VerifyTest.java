@@ -49,10 +49,10 @@ public class VerifyTest extends AbstractCommandTest {
 	}
 
 	/**
-	 * Copy Turtle file from resource to temp directory
+	 * Copy Turtle file from resource to innerGetNextElement directory
 	 *
 	 * @param str name of the resource file
-	 * @return path to file in temp directory
+	 * @return path to file in innerGetNextElement directory
 	 * @throws IOException
 	 */
 	private String copyFromRes(String str) throws IOException {
