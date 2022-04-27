@@ -53,6 +53,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -70,6 +71,7 @@ import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
@@ -523,15 +525,18 @@ class TripleStore implements Closeable {
 								continue;
 							} else {
 								if (rangeSize == 0) {
+									// System.out.println("Address 1: " + MemoryUtil.memAddress(keyData.mv_data()));
 									Varint.readListUnsigned(keyData.mv_data(), startValues);
 								}
 								rangeSize++;
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 							}
 
 							if (rangeSize == 1000) {
 								long[] lastValues = new long[4];
 								long[] values = new long[4];
 
+								// System.out.println("Address 2: " + MemoryUtil.memAddress(keyData.mv_data()));
 								Varint.readListUnsigned(keyData.mv_data(), lastValues);
 
 								keyData.mv_data(maxKeyBuf);
@@ -549,7 +554,9 @@ class TripleStore implements Closeable {
 									while (pos < values.length && values[pos] == lastValues[pos]) {
 										pos++;
 									}
-									if (pos < values.length) {
+
+									// System.out.println(Arrays.toString(lastValues) + " --- " + Arrays.toString(startValues));
+									if (pos < values.length && lastValues[pos] != startValues[pos]) {
 										rangeSize += (values[pos] - lastValues[pos])
 												/ Math.max(1, lastValues[pos] - startValues[pos])
 												* 1000;

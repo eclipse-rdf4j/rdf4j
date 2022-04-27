@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.lmdb.model;
 
 import java.io.ObjectStreamException;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
@@ -123,6 +124,14 @@ public class LmdbIRI extends SimpleIRI implements LmdbResource {
 			}
 		}
 		return super.equals(o);
+	}
+
+	@Override
+	public int hashCode() {
+//		if (internalID != UNKNOWN_ID) {
+//			return (int)(internalID >>> 24);
+//		}
+		return super.hashCode();
 	}
 
 	protected Object writeReplace() throws ObjectStreamException {

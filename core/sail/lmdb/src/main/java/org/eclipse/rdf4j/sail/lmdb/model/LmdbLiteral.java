@@ -223,7 +223,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public int hashCode() {
-		init();
+//		if (internalID != UNKNOWN_ID) {
+//			return (int)(internalID >>> 24);
+//		}
 		return super.hashCode();
 	}
 

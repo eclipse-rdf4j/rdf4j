@@ -44,7 +44,6 @@ import java.util.Arrays;
 import java.util.Optional;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.zip.CRC32;
 
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.model.BNode;
@@ -83,14 +82,6 @@ class ValueStore extends AbstractValueFactory {
 
 	private static final byte ID_KEY = 0x4;
 
-	private static final byte HASH_KEY = 0x5;
-
-	private static final byte HASHID_KEY = 0x6;
-
-	/***
-	 * Maximum size of keys before hashing is used (size of two long values)
-	 */
-	private static final int MAX_KEY_SIZE = 16;
 	/**
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
@@ -130,10 +121,6 @@ class ValueStore extends AbstractValueFactory {
 	 * valid. In order to be valid, the ValueStoreRevision object of a LmdbValue needs to be equal to this object.
 	 */
 	private volatile ValueStoreRevision revision;
-	/**
-	 * The next ID that is associated with a stored value
-	 */
-	private long nextId;
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
@@ -148,33 +135,6 @@ class ValueStore extends AbstractValueFactory {
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
 
 		setNewRevision();
-
-		// read maximum id from store
-		readTransaction(env, (stack, txn) -> {
-			long cursor = 0;
-			try {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_cursor_open(txn, dbi, pp));
-				cursor = pp.get(0);
-
-				MDBVal keyData = MDBVal.calloc(stack);
-				// set cursor to min key
-				keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
-				MDBVal valueData = MDBVal.calloc(stack);
-				if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) == 0 &&
-						mdb_cursor_get(cursor, keyData, valueData, MDB_PREV) == 0) {
-					// remove lower 2 type bits
-					nextId = (data2id(keyData.mv_data()) >> 2) + 1;
-				} else {
-					nextId = 1;
-				}
-				return null;
-			} finally {
-				if (cursor != 0) {
-					mdb_cursor_close(cursor);
-				}
-			}
-		});
 	}
 
 	private void open() throws IOException {
@@ -222,28 +182,23 @@ class ValueStore extends AbstractValueFactory {
 		});
 	}
 
-	private long nextId(byte type) throws IOException {
-		long result = nextId;
-		nextId++;
-		// encode type in lower 2 bits of id
-		result = (result << 2) | type;
-		return result;
-	}
-
 	protected ByteBuffer idBuffer(MemoryStack stack) {
 		return stack.malloc(2 + Long.BYTES);
 	}
 
 	protected ByteBuffer id2data(ByteBuffer bb, long id) {
 		bb.put(ID_KEY);
-		Varint.writeUnsigned(bb, id);
+		final long hash = id >>> 24;
+		final long seq = id & 0xFFFFFFL;
+		Varint.writeUnsigned(bb, hash);
+		Varint.writeUnsigned(bb, seq);
 		return bb;
 	}
 
 	protected long data2id(ByteBuffer bb) {
 		// skip id marker
 		bb.get();
-		return Varint.readUnsigned(bb);
+		return Varint.readUnsigned(bb) << 24 | Varint.readUnsigned(bb);
 	}
 
 	/**
@@ -411,143 +366,83 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private long findId(byte[] data, boolean create) throws IOException {
+	private long findId(byte[] data, int hash, boolean create) throws IOException {
+		long hashUnsigned = hash & 0xFFFFFFFFL;
 		Long id = readTransaction(env, (stack, txn) -> {
-			if (data.length < MAX_KEY_SIZE) {
-				MDBVal dataVal = MDBVal.calloc(stack);
-				dataVal.mv_data(stack.bytes(data));
-				MDBVal idVal = MDBVal.calloc(stack);
-				if (mdb_get(txn, dbi, dataVal, idVal) == 0) {
-					return data2id(idVal.mv_data());
+			ByteBuffer dataBb = ByteBuffer.wrap(data);
+
+			int maxKeyLength = 1 + 1 * Long.BYTES + 1;
+			ByteBuffer idBb = stack.malloc(maxKeyLength);
+			idBb.put(ID_KEY);
+			Varint.writeUnsigned(idBb, hashUnsigned);
+			int hashLength = idBb.position();
+			idBb.flip();
+
+			MDBVal idVal = MDBVal.calloc(stack);
+			idVal.mv_data(idBb);
+			MDBVal dataVal = MDBVal.calloc(stack);
+
+			// the last ID present in the store
+			ByteBuffer lastId = null;
+
+			long cursor = 0;
+			try {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+
+				// iterate all entries for hash value
+				if (mdb_cursor_get(cursor, idVal, dataVal, MDB_SET_RANGE) == 0) {
+					do {
+						if (compareRegion(idVal.mv_data(), 0, idBb, 0, hashLength) != 0) {
+							break;
+						}
+						lastId = idVal.mv_data();
+						if (dataVal.mv_data().compareTo(dataBb) == 0) {
+							// id was found if stored value is equal to requested value
+							return data2id(idVal.mv_data());
+						}
+					} while (mdb_cursor_get(cursor, idVal, dataVal, MDB_NEXT) == 0);
 				}
-				if (!create) {
-					return null;
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
 				}
-				// id was not found, create a new one
-				resizeMap(txn, 2 * data.length + 2 * (2 + Long.BYTES));
-
-				long newId = nextId(data[0]);
-				writeTransaction((stack2, writeTxn) -> {
-					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
-
-					E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
-					E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
-					return null;
-				});
-				return newId;
-			} else {
-				MDBVal idVal = MDBVal.calloc(stack);
-
-				ByteBuffer dataBb = ByteBuffer.wrap(data);
-				long dataHash = hash(data);
-				int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
-				ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
-				hashBb.put(HASH_KEY);
-				Varint.writeUnsigned(hashBb, dataHash);
-				int hashLength = hashBb.position();
-				hashBb.flip();
-
-				MDBVal hashVal = MDBVal.calloc(stack);
-				hashVal.mv_data(hashBb);
-				MDBVal dataVal = MDBVal.calloc(stack);
-
-				// ID of first value is directly stored with hash as key
-				if (mdb_get(txn, dbi, hashVal, dataVal) == 0) {
-					idVal.mv_data(dataVal.mv_data());
-					if (mdb_get(txn, dbi, idVal, dataVal) == 0 &&
-							dataVal.mv_data().compareTo(dataBb) == 0) {
-						return data2id(idVal.mv_data());
-					}
-				} else {
-					// no value for hash exists
-					if (!create) {
-						return null;
-					}
-
-					resizeMap(txn, 2 * data.length + 2 * (2 + Long.BYTES));
-
-					long newId = nextId(data[0]);
-					writeTransaction((stack2, writeTxn) -> {
-						dataVal.mv_size(data.length);
-						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
-
-						// store mapping of hash -> ID
-						E(mdb_put(txn, dbi, hashVal, idVal, 0));
-						// store mapping of ID -> data
-						E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
-						dataVal.mv_data().put(data);
-						return null;
-					});
-					return newId;
-				}
-
-				// test existing entries for hash key against given value
-				hashBb.put(0, HASHID_KEY);
-				hashVal.mv_data(hashBb);
-
-				long cursor = 0;
-				try {
-					PointerBuffer pp = stack.mallocPointer(1);
-					E(mdb_cursor_open(txn, dbi, pp));
-					cursor = pp.get(0);
-
-					// iterate all entries for hash value
-					if (mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE) == 0) {
-						do {
-							if (compareRegion(hashVal.mv_data(), 0, hashBb, 0, hashLength) != 0) {
-								break;
-							}
-
-							// use only ID part of key for lookup of data
-							ByteBuffer hashIdBb = hashVal.mv_data();
-							hashIdBb.position(hashLength);
-							idVal.mv_data(hashIdBb);
-							if (mdb_get(txn, dbi, idVal, dataVal) == 0 &&
-									dataVal.mv_data().compareTo(dataBb) == 0) {
-								// id was found if stored value is equal to requested value
-								return data2id(hashIdBb);
-							}
-						} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == 0);
-					}
-				} finally {
-					if (cursor != 0) {
-						mdb_cursor_close(cursor);
-					}
-				}
-
-				if (!create) {
-					return null;
-				}
-
-				// id was not found, create a new one
-				resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2 * data.length);
-
-				long newId = nextId(data[0]);
-				writeTransaction((stack2, writeTxn) -> {
-					// encode ID
-					ByteBuffer idBb = id2data(idBuffer(stack), newId).flip();
-					idVal.mv_data(idBb);
-
-					// encode hash and ID
-					hashBb.limit(hashBb.capacity());
-					hashBb.position(hashLength);
-					hashBb.put(idBb);
-					idBb.rewind();
-					hashBb.flip();
-					hashVal.mv_data(hashBb);
-
-					// store mapping of hash+ID -> []
-					dataVal.mv_data(stack.bytes());
-					E(mdb_put(txn, dbi, hashVal, dataVal, 0));
-
-					dataVal.mv_size(data.length);
-					// store mapping of ID -> data
-					E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
-					dataVal.mv_data().put(data);
-					return null;
-				});
-				return newId;
 			}
+
+			if (!create) {
+				return null;
+			}
+
+			// id was not found, create a new one
+			resizeMap(txn, 1 + Long.BYTES + maxKeyLength + 2 * data.length);
+
+			byte type = data[0];
+
+			// compute next sequence nr
+			long sequenceNr = 0;
+			if (lastId != null) {
+				long lastIdValue = data2id(lastId);
+				sequenceNr = ((lastIdValue & 0XFFFFFFL) >>> 2) + 1;
+			}
+
+			// encode type in lower 2 bits of id
+			long newId = (hashUnsigned << 24) | (sequenceNr << 2) | type;
+
+			writeTransaction((stack2, writeTxn) -> {
+				// encode ID
+				idBb.clear();
+				id2data(idBb, newId).flip();
+				idVal.mv_data(idBb);
+
+				dataVal.mv_size(data.length);
+				// store mapping of ID -> data
+				E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
+				dataVal.mv_data().put(data);
+
+				return null;
+			});
+			return newId;
 		});
 		return id != null ? id : LmdbValue.UNKNOWN_ID;
 	}
@@ -634,7 +529,7 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		if (data != null) {
-			long id = findId(data, create);
+			long id = findId(data, value.hashCode(), create);
 
 			if (id != LmdbValue.UNKNOWN_ID) {
 				if (isOwnValue) {
@@ -697,18 +592,6 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	public long storeValue(Value value) throws IOException {
 		return getId(value, true);
-	}
-
-	/**
-	 * Computes a hash code for the supplied data.
-	 *
-	 * @param data The data to calculate the hash code for.
-	 * @return A hash code for the supplied data.
-	 */
-	private long hash(byte[] data) {
-		CRC32 crc32 = new CRC32();
-		crc32.update(data);
-		return crc32.getValue();
 	}
 
 	/**
@@ -957,7 +840,7 @@ class ValueStore extends AbstractValueFactory {
 		namespaceData[0] = NAMESPACE_VALUE;
 		System.arraycopy(namespaceBytes, 0, namespaceData, 1, namespaceBytes.length);
 
-		long id = findId(namespaceData, create);
+		long id = findId(namespaceData, namespace.hashCode(), create);
 		if (id != LmdbValue.UNKNOWN_ID) {
 			namespaceIDCache.put(namespace, id);
 		}
