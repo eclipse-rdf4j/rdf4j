@@ -110,11 +110,6 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
-
-		/*
-		 * if (getTransactionIsolation() == IsolationLevels.NONE) { addedCount++; if (addedCount % 10000 == 0) {
-		 * flushUpdates(); addedCount = 0; } }
-		 */
 	}
 
 	@Override
