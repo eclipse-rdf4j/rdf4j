@@ -10,11 +10,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation;
 import java.util.Queue;
 import java.util.Set;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.collections.CollectionFactory;
-import org.eclipse.rdf4j.model.collections.DefaultCollectionFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;

@@ -10,9 +10,9 @@ package org.eclipse.rdf4j.sail.helpers;
 import java.io.File;
 import java.util.List;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.collections.CollectionFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.sail.Sail;

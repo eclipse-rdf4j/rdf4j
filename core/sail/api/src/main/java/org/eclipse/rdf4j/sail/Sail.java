@@ -10,10 +10,10 @@ package org.eclipse.rdf4j.sail;
 import java.io.File;
 import java.util.List;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.collections.CollectionFactory;
-import org.eclipse.rdf4j.model.collections.DefaultCollectionFactory;
 
 /**
  * Sail (Storage And Inference Layer) is an interface for RDF storage. RDF Sails can store RDF statements and evaluate

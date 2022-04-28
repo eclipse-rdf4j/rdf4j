@@ -7,13 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.io.File;
-import java.io.IOException;
 import java.io.Serializable;
-import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,6 +23,8 @@ import java.util.function.LongFunction;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Literal;
@@ -58,8 +56,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.mapdb.DB;
-import org.mapdb.DBMaker;
 
 /**
  * @author David Huynh
@@ -82,14 +78,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private final Group group;
 
-	private final DB db;
-	/**
-	 * Number of items cached before internal collections are synced to disk. If set to 0, no disk-syncing is done and
-	 * all internal caching is kept in memory.
-	 */
-	private final long iterationCacheSyncThreshold;
-
 	private final QueryEvaluationContext context;
+
+	private final CollectionFactory cf;
 
 	/*--------------*
 	 * Constructors *
@@ -106,22 +97,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
-		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
+//		this is ignored as it is just a left over from earlier
+//		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 		this.context = context;
-
-		if (this.iterationCacheSyncThreshold > 0) {
-			try {
-				this.db = DBMaker
-						.newFileDB(File.createTempFile("group-eval", null))
-						.deleteFilesAfterClose()
-						.closeOnJvmShutdown()
-						.make();
-			} catch (IOException e) {
-				throw new QueryEvaluationException("could not initialize temp db", e);
-			}
-		} else {
-			this.db = null;
-		}
+		this.cf = this.strategy.getCollectionFactory();
 	}
 
 	/*---------*
@@ -147,116 +126,16 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			super.handleClose();
+			cf.close();
 		} finally {
-			if (db != null) {
-				db.close();
-			}
+			super.handleClose();
 		}
-	}
-
-	private <T> Set<T> createSet(String setName) {
-		if (db != null) {
-			return new MemoryTillSizeXSet<>(setName);
-		} else {
-			return new HashSet<>();
-		}
-	}
-
-	// The size 16 seems like a nice starting value but others could well
-	// be better.
-	private static final int SWITCH_TO_DISK_BASED_SET_AT_SIZE = 16;
-
-	/**
-	 * Only create a disk based set once the contents are large enough that it starts to pay off.
-	 *
-	 * @param <T> of the contents of the set.
-	 */
-	private class MemoryTillSizeXSet<T> extends AbstractSet<T> {
-		private Set<T> wrapped = new HashSet<>();
-		private final String setName;
-
-		public MemoryTillSizeXSet(String setName) {
-			super();
-			this.setName = setName;
-		}
-
-		@Override
-		public boolean add(T e) {
-			if (wrapped instanceof HashSet && wrapped.size() > SWITCH_TO_DISK_BASED_SET_AT_SIZE) {
-				Set<T> disk = db.getHashSet(setName);
-				disk.addAll(wrapped);
-				wrapped = disk;
-			}
-			return wrapped.add(e);
-		}
-
-		@Override
-		public boolean addAll(Collection<? extends T> arg0) {
-			if (wrapped instanceof HashSet && arg0.size() > SWITCH_TO_DISK_BASED_SET_AT_SIZE) {
-				Set<T> disk = db.getHashSet(setName);
-				disk.addAll(wrapped);
-				wrapped = disk;
-			}
-			return wrapped.addAll(arg0);
-		}
-
-		@Override
-		public void clear() {
-			wrapped.clear();
-		}
-
-		@Override
-		public boolean contains(Object o) {
-			return wrapped.contains(o);
-		}
-
-		@Override
-		public boolean containsAll(Collection<?> arg0) {
-			return wrapped.containsAll(arg0);
-		}
-
-		@Override
-		public boolean isEmpty() {
-			return wrapped.isEmpty();
-		}
-
-		@Override
-		public boolean remove(Object o) {
-			return wrapped.remove(o);
-		}
-
-		@Override
-		public boolean retainAll(Collection<?> c) {
-			return wrapped.retainAll(c);
-		}
-
-		@Override
-		public Object[] toArray() {
-			return wrapped.toArray();
-		}
-
-		@Override
-		public <T> T[] toArray(T[] arg0) {
-			return wrapped.toArray(arg0);
-		}
-
-		@Override
-		public Iterator<T> iterator() {
-			return wrapped.iterator();
-		}
-
-		@Override
-		public int size() {
-			return wrapped.size();
-		}
-
 	}
 
 	private Iterator<BindingSet> createIterator() throws QueryEvaluationException {
 		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates();
 		Collection<Entry> entries = buildEntries(aggregates);
-		Set<BindingSet> bindingSets = createSet("bindingsets");
+		Set<BindingSet> bindingSets = cf.createSet();
 
 		Supplier<MutableBindingSet> makeNewBindingSet;
 		if (parentBindings.isEmpty()) {
@@ -704,17 +583,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private final Set<Value> distinctValues;
 
 		public DistinctValues(long setId) {
-			distinctValues = createSet("distinct-values-" + setId);
+			distinctValues = cf.createValueSet();
 		}
 
 		@Override
 		public boolean test(Value value) {
-			final boolean result = distinctValues.add(value);
-			if (db != null && distinctValues.size() % iterationCacheSyncThreshold == 0) {
-				// write to disk every $iterationCacheSyncThreshold items
-				db.commit();
-			}
-			return result;
+			return distinctValues.add(value);
 		}
 	}
 
@@ -722,17 +596,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private final Set<BindingSet> distinctValues;
 
 		public DistinctBindingSets(long setId) {
-			distinctValues = createSet("distinct-values-" + setId);
+			distinctValues = cf.createSet();
 		}
 
 		@Override
 		public boolean test(BindingSet value) {
-			final boolean result = distinctValues.add(value);
-			if (db != null && distinctValues.size() % iterationCacheSyncThreshold == 0) {
-				// write to disk every $iterationCacheSyncThreshold items
-				db.commit();
-			}
-			return result;
+			return distinctValues.add(value);
 		}
 	}
 

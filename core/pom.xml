@@ -26,6 +26,7 @@
 		<module>spin</module>
 		<module>client</module>
 		<module>storage</module>
+		<module>collection-factory</module>
 	</modules>
 	<name>RDF4J: Core</name>
 	<description>Core modules for RDF4J</description>
