@@ -49,11 +49,11 @@ import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Logger;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 1)
+@Warmup(iterations = 4)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G",  "-XX:+UseSerialGC", "-XX:StartFlightRecording=delay=15s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 1
+@Measurement(iterations = 4
 )
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ParallelBenchmark {

@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
-import java.util.Spliterator;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 

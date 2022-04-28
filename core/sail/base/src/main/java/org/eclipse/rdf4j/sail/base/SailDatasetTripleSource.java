@@ -50,7 +50,7 @@ class SailDatasetTripleSource implements RDFStarTripleSource {
 			if (statements instanceof EmptyIteration) {
 				return EMPTY_ITERATION;
 			}
-			return new CloseableExceptionConvertingIteration<>(statements, QueryEvaluationException::new);
+			return new CloseableQueryEvalutationExceptionConvertingIteration<>(statements);
 		} catch (SailException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -71,7 +71,7 @@ class SailDatasetTripleSource implements RDFStarTripleSource {
 			if (triples instanceof EmptyIteration)
 				return EMPTY_TRIPLE_ITERATION;
 			return new DistinctIteration<>(
-					new CloseableExceptionConvertingIteration<>(triples, QueryEvaluationException::new));
+					new CloseableQueryEvalutationExceptionConvertingIteration<>(triples));
 		} catch (SailException e) {
 			throw new QueryEvaluationException(e);
 		}

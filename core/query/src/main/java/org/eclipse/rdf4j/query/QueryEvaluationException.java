@@ -40,6 +40,10 @@ public class QueryEvaluationException extends RDF4JException {
 		super(cause);
 	}
 
+	public QueryEvaluationException(Exception cause) {
+		super(cause);
+	}
+
 	/**
 	 * Creates a new TupleQueryResultHandlerException wrapping another exception.
 	 *

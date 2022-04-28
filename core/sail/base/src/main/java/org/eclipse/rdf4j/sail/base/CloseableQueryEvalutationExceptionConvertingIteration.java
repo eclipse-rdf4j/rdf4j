@@ -1,58 +1,58 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
-package org.eclipse.rdf4j.repository.sail;
+ ******************************************************************************/
+
+package org.eclipse.rdf4j.sail.base;
 
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-/**
- * @author Herko ter Horst
- */
-class SailCloseableIteration<E> implements CloseableIteration<E, RepositoryException> {
+public class CloseableQueryEvalutationExceptionConvertingIteration<E, X extends Exception, T extends CloseableIteration<? extends E, ? extends Exception>>
+		implements CloseableIteration<E, X> {
+
+	/*-----------*
+	 * Variables *
+	 *-----------*/
 
 	/**
 	 * The underlying Iteration.
 	 */
-	private final CloseableIteration<? extends E, ? extends SailException> iter;
+	private final T iter;
 	/**
 	 * Flag indicating whether this iteration has been closed.
 	 */
 	private boolean closed = false;
 
-	public SailCloseableIteration(CloseableIteration<? extends E, ? extends SailException> iter) {
-		this.iter = Objects.requireNonNull(iter, "The iterator was null");
-	}
+	/*--------------*
+	 * Constructors *
+	 *--------------*/
 
-	private RepositoryException convert(Exception e) {
-		if (e instanceof SailException) {
-			return new RepositoryException(e);
-		} else if (e instanceof RuntimeException) {
-			throw (RuntimeException) e;
-		} else if (e == null) {
-			throw new IllegalArgumentException("e must not be null");
-		} else {
-			throw new IllegalArgumentException("Unexpected exception type: " + e.getClass());
-		}
+	/**
+	 * Creates a new CloseableExceptionConvertingIteration that operates on the supplied iteration.
+	 *
+	 * @param iter The Iteration that this <var>CloseableExceptionConvertingIteration</var> operates on, must not be
+	 *             <var>null</var>.
+	 */
+	public CloseableQueryEvalutationExceptionConvertingIteration(T iter) {
+		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 
 	/**
 	 * Checks whether the underlying Iteration contains more elements.
 	 *
 	 * @return <var>true</var> if the underlying Iteration contains more elements, <var>false</var> otherwise.
-	 * @throws RepositoryException
+	 * @throws X
 	 */
 	@Override
-	public final boolean hasNext() throws org.eclipse.rdf4j.repository.RepositoryException {
+	public final boolean hasNext() throws X {
 		if (isClosed()) {
 			return false;
 		}
@@ -63,19 +63,19 @@ class SailCloseableIteration<E> implements CloseableIteration<E, RepositoryExcep
 			}
 			return result;
 		} catch (Exception e) {
-			throw convert(e);
+			throw new QueryEvaluationException(e);
 		}
 	}
 
 	/**
 	 * Returns the next element from the wrapped Iteration.
 	 *
-	 * @throws RepositoryException
-	 * @throws java.util.NoSuchElementException If all elements have been returned.
-	 * @throws IllegalStateException            If the Iteration has been closed.
+	 * @throws X
+	 * @throws NoSuchElementException If all elements have been returned.
+	 * @throws IllegalStateException  If the Iteration has been closed.
 	 */
 	@Override
-	public final E next() throws org.eclipse.rdf4j.repository.RepositoryException {
+	public final E next() throws X {
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -84,7 +84,7 @@ class SailCloseableIteration<E> implements CloseableIteration<E, RepositoryExcep
 		} catch (NoSuchElementException | IllegalStateException e) {
 			throw e;
 		} catch (Exception e) {
-			throw convert(e);
+			throw new QueryEvaluationException(e);
 		}
 	}
 
@@ -97,7 +97,7 @@ class SailCloseableIteration<E> implements CloseableIteration<E, RepositoryExcep
 	 *                                       {@link #next}.
 	 */
 	@Override
-	public final void remove() throws org.eclipse.rdf4j.repository.RepositoryException {
+	public final void remove() throws X {
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
@@ -106,7 +106,7 @@ class SailCloseableIteration<E> implements CloseableIteration<E, RepositoryExcep
 		} catch (UnsupportedOperationException | IllegalStateException e) {
 			throw e;
 		} catch (Exception e) {
-			throw convert(e);
+			throw new QueryEvaluationException(e);
 		}
 	}
 
@@ -124,13 +124,13 @@ class SailCloseableIteration<E> implements CloseableIteration<E, RepositoryExcep
 	 * Calls {@link #handleClose()} upon first call and makes sure the resource closures are only executed once.
 	 */
 	@Override
-	public final void close() throws org.eclipse.rdf4j.repository.RepositoryException {
+	public final void close() throws X {
 		if (!closed) {
 			closed = true;
 			try {
 				iter.close();
 			} catch (Exception e) {
-				throw convert(e);
+				throw new QueryEvaluationException(e);
 			}
 		}
 	}

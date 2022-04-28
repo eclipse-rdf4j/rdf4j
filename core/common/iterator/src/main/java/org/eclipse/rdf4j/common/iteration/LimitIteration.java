@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
-import java.util.stream.Stream;
 
 /**
  * An Iteration that limits the amount of elements that it returns from an underlying Iteration to a fixed amount. This

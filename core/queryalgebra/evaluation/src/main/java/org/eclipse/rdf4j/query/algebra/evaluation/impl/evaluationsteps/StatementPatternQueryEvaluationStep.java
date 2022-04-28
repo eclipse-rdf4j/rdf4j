@@ -15,7 +15,6 @@ import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.PredicateFilterIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -107,10 +106,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		return (bs) -> {
 			if (!bs.isEmpty()) {
-				return ((isSubjBound != null) && isSubjBound.test(bs)) ||
-						((isPredBound != null) && isPredBound.test(bs)) ||
-						((isObjBound != null) && isObjBound.test(bs)) ||
-						((isConBound != null) && isConBound.test(bs));
+				return ((isSubjBound != null) && isSubjBound.test(bs))
+						|| ((isPredBound != null) && isPredBound.test(bs))
+						|| ((isObjBound != null) && isObjBound.test(bs))
+						|| ((isConBound != null) && isConBound.test(bs));
 			}
 			return false;
 		};
@@ -143,23 +142,31 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		if (emptyGraph) {
 			return EMPTY_ITERATION;
 		} else if (bindings.isEmpty()) {
-			return getIteration();
+			ConvertStatementToBindingSetIterator iteration = getIteration();
+			if (iteration == null) {
+				return EMPTY_ITERATION;
+			}
+			return iteration;
 
 		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
 			// https://www.w3.org/TR/sparql11-query/#assignment
 			return EMPTY_ITERATION;
 		} else {
-			return getIteration(bindings);
+			JoinStatementWithBindingSetIterator iteration = getIteration(bindings);
+			if (iteration == null) {
+				return EMPTY_ITERATION;
+			}
+			return iteration;
 		}
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> getIteration(BindingSet bindings) {
+	private JoinStatementWithBindingSetIterator getIteration(BindingSet bindings) {
 		final Value contextValue = getContextVar.apply(bindings);
 
 		Resource[] contexts = contextSup.apply(contextValue);
 		if (contexts == null) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		// Check that the subject is a Resource and the predicate can be an IRI
@@ -167,12 +174,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Value subject = getSubjectVar.apply(bindings);
 		if (subject != null && !subject.isResource()) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		Value predicate = getPredicateVar.apply(bindings);
 		if (predicate != null && !predicate.isIRI()) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		Value object = getObjectVar.apply(bindings);
@@ -181,7 +188,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			if (iteration instanceof EmptyIteration) {
-				return EMPTY_ITERATION;
+				return null;
 			}
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
@@ -195,13 +202,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 	}
 
-	private CloseableIteration<BindingSet, QueryEvaluationException> getIteration() {
+	private ConvertStatementToBindingSetIterator getIteration() {
 
 		Var contextVar = statementPattern.getContextVar();
 		Resource[] contexts = contextSup.apply(contextVar != null ? contextVar.getValue() : null);
 
 		if (contexts == null) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		Value subject = statementPattern.getSubjectVar().getValue();
@@ -209,7 +216,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Value object = statementPattern.getObjectVar().getValue();
 
 		if ((subject != null && !subject.isResource()) || (predicate != null && !predicate.isIRI())) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
@@ -320,7 +327,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	/**
-	 *
 	 * @return the contexts that are valid for this statement pattern or null
 	 */
 	protected static Function<Value, Resource[]> extractContextsFromDatasets(final Var contextVar, boolean emptyGraph,
@@ -390,44 +396,112 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	/**
 	 * Converts statements into the required bindingsets. A lot of work is done in the constructor and then uses
 	 * invokedynamic code with lambdas for the actual conversion.
-	 *
+	 * <p>
 	 * This allows avoiding of significant work during the iteration. Which pays of if the iteration is long, otherwise
 	 * it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatementToBindingSetIterator
-			extends
-			ConvertingIteration<CloseableIteration<? extends Statement, ? extends QueryEvaluationException>, Statement, BindingSet, QueryEvaluationException> {
+			implements CloseableIteration<BindingSet, QueryEvaluationException> {
 
 		private final BiConsumer<MutableBindingSet, Statement> action;
 		private final QueryEvaluationContext context;
+		/**
+		 * The source type iteration.
+		 */
+		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter;
+		/**
+		 * Flag indicating whether this iteration has been closed.
+		 */
+		private boolean closed = false;
 
 		private ConvertStatementToBindingSetIterator(
 				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BiConsumer<MutableBindingSet, Statement> action, QueryEvaluationContext context) {
-			super(iter);
+			this.iter = Objects.requireNonNull(iter, "The iterator was null");
 			this.action = action;
 			this.context = context;
 		}
 
-		@Override
-		protected BindingSet convert(Statement st) {
+		private BindingSet convert(Statement st) {
 			MutableBindingSet made = context.createBindingSet();
 			action.accept(made, st);
 			return made;
 		}
+
+		/**
+		 * Checks whether the source type iteration contains more elements.
+		 *
+		 * @return <var>true</var> if the source type iteration contains more elements, <var>false</var> otherwise.
+		 * @throws QueryEvaluationException
+		 */
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			return iter.hasNext();
+		}
+
+		/**
+		 * Returns the next element from the source type iteration.
+		 *
+		 * @throws QueryEvaluationException
+		 * @throws java.util.NoSuchElementException If all elements have been returned.
+		 * @throws IllegalStateException            If the iteration has been closed.
+		 */
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			return convert(iter.next());
+		}
+
+		/**
+		 * Calls <var>remove()</var> on the underlying Iteration.
+		 *
+		 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <var>remove</var>
+		 *                                       operation.
+		 * @throws IllegalStateException         If the Iteration has been closed, or if {@link #next} has not yet been
+		 *                                       called, or {@link #remove} has already been called after the last call
+		 *                                       to {@link #next}.
+		 */
+		@Override
+		public void remove() throws QueryEvaluationException {
+			iter.remove();
+		}
+
+		/**
+		 * Checks whether this CloseableIteration has been closed.
+		 *
+		 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
+		 */
+		@Override
+		public boolean isClosed() {
+			return closed;
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			if (!closed) {
+				closed = true;
+				iter.close();
+			}
+		}
 	}
 
 	private static final class JoinStatementWithBindingSetIterator
-			extends
-			ConvertingIteration<CloseableIteration<? extends Statement, ? extends QueryEvaluationException>, Statement, BindingSet, QueryEvaluationException> {
+			implements CloseableIteration<BindingSet, QueryEvaluationException> {
 		private final BiConsumer<MutableBindingSet, Statement> action;
 		private final QueryEvaluationContext context;
 		private final BindingSet bindings;
+		/**
+		 * The source type iteration.
+		 */
+		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter;
+		/**
+		 * Flag indicating whether this iteration has been closed.
+		 */
+		private boolean closed = false;
 
 		private JoinStatementWithBindingSetIterator(
 				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
-			super(iter);
+			this.iter = Objects.requireNonNull(iter, "The iterator was null");
 			assert !bindings.isEmpty();
 			this.action = action;
 			this.context = context;
@@ -435,24 +509,78 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		}
 
-		@Override
-		protected BindingSet convert(Statement st) {
+		private BindingSet convert(Statement st) {
 			MutableBindingSet made = context.createBindingSet(bindings);
 			action.accept(made, st);
 			return made;
+		}
+
+		/**
+		 * Checks whether the source type iteration contains more elements.
+		 *
+		 * @return <var>true</var> if the source type iteration contains more elements, <var>false</var> otherwise.
+		 * @throws QueryEvaluationException
+		 */
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			return iter.hasNext();
+		}
+
+		/**
+		 * Returns the next element from the source type iteration.
+		 *
+		 * @throws QueryEvaluationException
+		 * @throws java.util.NoSuchElementException If all elements have been returned.
+		 * @throws IllegalStateException            If the iteration has been closed.
+		 */
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			return convert(iter.next());
+		}
+
+		/**
+		 * Calls <var>remove()</var> on the underlying Iteration.
+		 *
+		 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <var>remove</var>
+		 *                                       operation.
+		 * @throws IllegalStateException         If the Iteration has been closed, or if {@link #next} has not yet been
+		 *                                       called, or {@link #remove} has already been called after the last call
+		 *                                       to {@link #next}.
+		 */
+		@Override
+		public void remove() throws QueryEvaluationException {
+			iter.remove();
+		}
+
+		/**
+		 * Checks whether this CloseableIteration has been closed.
+		 *
+		 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
+		 */
+		@Override
+		public boolean isClosed() {
+			return closed;
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			if (!closed) {
+				closed = true;
+				iter.close();
+			}
 		}
 	}
 
 	/**
 	 * We are going to chain biconsumer functions allowing us to avoid a lot of equals etc. code
-	 *
+	 * <p>
 	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
 	 * evaluate(bs).
 	 *
 	 * @return a converter from statement into MutableBindingSet
 	 */
-	private static BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context,
-			Var subjVar, Var predVar, Var objVar, Var conVar) {
+	private static BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context, Var subjVar,
+			Var predVar, Var objVar, Var conVar) {
 
 		return Stream.of(subjVar, predVar, objVar, conVar)
 				.filter(Objects::nonNull)

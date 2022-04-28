@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
-import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /**

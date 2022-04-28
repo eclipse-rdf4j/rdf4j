@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.NoSuchElementException;
 import java.util.Timer;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

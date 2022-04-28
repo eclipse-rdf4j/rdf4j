@@ -28,6 +28,10 @@ public abstract class RDF4JException extends RuntimeException {
 		super(t);
 	}
 
+	public RDF4JException(Exception t) {
+		super(t);
+	}
+
 	public RDF4JException(String msg, Throwable t) {
 		super(msg, t);
 	}
