@@ -12,6 +12,8 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.collections.CollectionFactory;
+import org.eclipse.rdf4j.model.collections.DefaultCollectionFactory;
 
 /**
  * Sail (Storage And Inference Layer) is an interface for RDF storage. RDF Sails can store RDF statements and evaluate
@@ -93,5 +95,14 @@ public interface Sail {
 	 *         returned by {@link #getConnection()}.
 	 */
 	IsolationLevel getDefaultIsolationLevel();
+
+	/**
+	 * Gets a Collection factory that may return optimised collections that may spill to disk.
+	 * 
+	 * @return a CollectionFactory
+	 */
+	default CollectionFactory getCollectionFactory() {
+		return new DefaultCollectionFactory();
+	}
 
 }

@@ -7,14 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
-import java.util.ArrayDeque;
-import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.collections.CollectionFactory;
+import org.eclipse.rdf4j.model.collections.DefaultCollectionFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -158,11 +158,15 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		return new QueryValueEvaluationStep.Minimal(this, arg);
 	}
 
+	default CollectionFactory getCollectionFactory() {
+		return new DefaultCollectionFactory();
+	}
+
 	default <T> Set<T> makeSet() {
-		return new HashSet<>();
+		return getCollectionFactory().createSet();
 	}
 
 	default <T> Queue<T> makeQueue() {
-		return new ArrayDeque<>();
+		return getCollectionFactory().createQueue();
 	}
 }
