@@ -204,6 +204,10 @@
 			<properties>
 				<skipTests>true</skipTests>
 				<skipITs>true</skipITs>
+				<formatter.skip>true</formatter.skip>
+				<impsort.skip>true</impsort.skip>
+				<xml-format.skip>true</xml-format.skip>
+				<japicmp.skip>true</japicmp.skip>
 			</properties>
 		</profile>
 		<profile>
