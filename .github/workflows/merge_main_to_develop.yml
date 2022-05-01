@@ -12,7 +12,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v2
     - name: pull-request
-      uses: repo-sync/pull-request@v2.6.1
+      uses: repo-sync/pull-request@v2.6.2
       with:
         destination_branch: "develop"         # If blank, default: main
         pr_title: "Merge main into develop"
