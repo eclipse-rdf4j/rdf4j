@@ -15,6 +15,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Objects;
+import java.util.Random;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -519,6 +525,96 @@ abstract class AbstractReadWriteLockManagerTest {
 		writeLock.release();
 		assertFalse(writeLock.isActive());
 
+	}
+
+	@Test
+	void counter() {
+
+		long[] counter = { 0, 0, 0 };
+
+		ExecutorService executorService = Executors.newFixedThreadPool(8);
+
+		Random random = new Random(475824);
+
+		IntStream.range(0, 100)
+				.mapToObj(i -> {
+					int randomInt = random.nextInt(3);
+
+					return new Runnable() {
+						@Override
+						public void run() {
+							try {
+								for (int j = 0; j < 1000; j++) {
+
+									if (randomInt == 0) {
+										long counter2 = counter[2];
+										long counter0 = counter[0];
+										long counter1 = counter[1];
+										if (counter2 < counter1) {
+											throw new IllegalStateException();
+										}
+										if (counter1 < counter0) {
+											throw new IllegalStateException();
+										}
+
+										Lock writeLock = lockManager.getWriteLock();
+										counter[2]++;
+										writeLock.release();
+
+									} else if (randomInt == 1) {
+										long counter1 = counter[1];
+										long counter0 = counter[0];
+										long counter2 = counter[2];
+										if (counter2 < counter1) {
+											throw new IllegalStateException();
+										}
+										if (counter1 < counter0) {
+											throw new IllegalStateException();
+										}
+
+										Lock writeLock = lockManager.getWriteLock();
+										counter[1] = Math.max(counter[2], counter[1]);
+										writeLock.release();
+
+									} else if (randomInt == 2) {
+										long counter2 = counter[2];
+										long counter1 = counter[1];
+										long counter0 = counter[0];
+										if (counter2 < counter1) {
+											throw new IllegalStateException();
+										}
+										if (counter1 < counter0) {
+											throw new IllegalStateException();
+										}
+
+										Lock writeLock = lockManager.getWriteLock();
+										counter[0] = Math.max(counter[1], counter[0]);
+										writeLock.release();
+
+									}
+
+								}
+							} catch (InterruptedException ignored) {
+							}
+						}
+					};
+				})
+				.collect(Collectors.toList())
+				.stream()
+				.map(executorService::submit)
+				.forEach(f -> {
+					try {
+						f.get();
+					} catch (InterruptedException | ExecutionException e) {
+						throw new RuntimeException(e);
+					}
+				});
+
+		executorService.shutdownNow();
+
+		assertEquals(34000, counter[0]);
+		assertEquals(34000, counter[1]);
+		assertEquals(35000, counter[2]);
 	}
 
 	@Test

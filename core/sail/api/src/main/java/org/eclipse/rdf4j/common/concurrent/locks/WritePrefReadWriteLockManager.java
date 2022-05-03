@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
+import java.lang.invoke.VarHandle;
+
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 
 /**
