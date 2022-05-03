@@ -19,6 +19,12 @@
    box-shadow: 5px 5px 2px grey;
 }
 
+.news-image {
+  float: right;
+  padding-bottom: 20px;
+  padding-right: 20px;
+}
+
 .logo-vendor {
   float: right;
   padding-left: 6px;

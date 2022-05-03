@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
@@ -48,23 +49,43 @@ public class Select implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final ValueFactory valueFactory;
 
-	public Select(SailConnection connection, ValueFactory valueFactory, String query, String orderBy,
+	public Select(SailConnection connection, ValueFactory valueFactory, String queryFregment, String orderBy,
 			Function<BindingSet, ValidationTuple> mapper, Resource[] dataGraph) {
 		this.connection = connection;
 		this.valueFactory = valueFactory;
 		this.mapper = mapper;
-		if (query.trim().equals("")) {
+		if (queryFregment.trim().equals("")) {
 			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
 
 			// empty set
-			query = "" + "?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n"
+			queryFregment = "" + "?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n"
 					+ "FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
 		}
 		sorted = orderBy != null;
 
-		this.query = "select * where {\n" + query + "\n} " + (orderBy != null ? "order by " + orderBy : "");
+		if (!sorted && queryFregment.trim().startsWith("select ")) {
+			this.query = queryFregment;
+		} else {
+			this.query = "select * where {\n" + queryFregment + "\n} " + (sorted ? "order by " + orderBy : "");
+		}
+
 		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 
+	}
+
+	public Select(SailConnection connection, ValueFactory valueFactory, String query,
+			Function<BindingSet, ValidationTuple> mapper,
+			Resource[] dataGraph) {
+		assert !query.toLowerCase().contains("order by") : "Queries with order by are not supported.";
+		assert query.trim().toLowerCase().startsWith("select") : "Expected query to start with select.";
+
+		this.connection = connection;
+		this.valueFactory = valueFactory;
+		this.query = query;
+		this.mapper = mapper;
+		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+
+		this.sorted = false;
 	}
 
 	@Override
@@ -85,7 +106,8 @@ public class Select implements PlanNode {
 
 				try {
 					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null, valueFactory);
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset, new MapBindingSet(), true);
+					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset, EmptyBindingSet.getInstance(),
+							true);
 				} catch (MalformedQueryException e) {
 					logger.error("Malformed query: \n{}", query);
 					throw e;

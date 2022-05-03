@@ -134,7 +134,7 @@ public class ValidationQuery {
 		}
 		fullQuery.append("{\n").append(query).append("\n}");
 
-		Select select = new Select(baseConnection, valueFactory, fullQuery.toString(), null, bindings -> {
+		Select select = new Select(baseConnection, valueFactory, fullQuery.toString(), bindings -> {
 
 			if (scope_validationReport == ConstraintComponent.Scope.propertyShape) {
 				if (propertyShapeWithValue_validationReport) {

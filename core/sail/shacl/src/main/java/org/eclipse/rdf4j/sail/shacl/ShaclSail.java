@@ -161,6 +161,8 @@ import org.slf4j.LoggerFactory;
 //@formatter:on
 public class ShaclSail extends ShaclSailBaseConfiguration {
 
+	private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
+
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSail.class);
 	private static final ConcurrentCleaner cleaner = new ConcurrentCleaner();
 
@@ -239,9 +241,15 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 		this.supportsSnapshotIsolation = baseSail.getSupportedIsolationLevels().contains(IsolationLevels.SNAPSHOT);
 	}
 
-	private static RevivableExecutorService getExecutorService() {
+	/**
+	 * @implNote This is an extension point for configuring a different executor service for parallel validation. The
+	 *           code is marked as experimental because it may change from one minor release to another.
+	 * @return
+	 */
+	@Experimental
+	protected RevivableExecutorService getExecutorService() {
 		return new RevivableExecutorService(
-				() -> Executors.newCachedThreadPool(
+				() -> Executors.newFixedThreadPool(AVAILABLE_PROCESSORS,
 						r -> {
 							Thread t = Executors.defaultThreadFactory().newThread(r);
 							// this thread pool does not need to stick around if the all other threads are done, because
@@ -593,8 +601,14 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 		}
 	}
 
+	/**
+	 * @implNote This is an extension point for configuring a different executor service for parallel validation. The
+	 *           code is marked as experimental because it may change from one minor release to another.
+	 * @return
+	 */
+	@Experimental
 	@SuppressWarnings("NullableProblems")
-	private static class RevivableExecutorService implements ExecutorService {
+	protected static class RevivableExecutorService implements ExecutorService {
 		private final Supplier<ExecutorService> supplier;
 		ExecutorService delegate;
 		boolean initialized = false;
