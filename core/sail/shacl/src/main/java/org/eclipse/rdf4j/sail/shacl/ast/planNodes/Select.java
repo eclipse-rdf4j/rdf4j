@@ -102,8 +102,8 @@ public class Select implements PlanNode {
 
 				try {
 					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset,
-							EmptyBindingSet.getInstance(), true);
+					bindingSet = ResourceTracker.track(connection.evaluate(parsedQuery.getTupleExpr(), dataset,
+							EmptyBindingSet.getInstance(), true));
 				} catch (MalformedQueryException e) {
 					logger.error("Malformed query: \n{}", query);
 					throw e;

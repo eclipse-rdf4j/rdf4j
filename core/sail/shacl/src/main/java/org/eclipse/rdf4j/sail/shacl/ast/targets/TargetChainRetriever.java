@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LoggingCloseableIteration;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeHelper;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ResourceTracker;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
@@ -208,9 +209,9 @@ public class TargetChainRetriever implements PlanNode {
 
 						// TODO: Should really bulk this operation!
 
-						results = connectionsGroup.getBaseConnection()
+						results =  ResourceTracker.track(connectionsGroup.getBaseConnection()
 								.evaluate(parsedQuery.getTupleExpr(), dataset,
-										bindings, true);
+										bindings, true));
 
 					} catch (MalformedQueryException e) {
 						logger.error("Malformed query: \n{}", query);

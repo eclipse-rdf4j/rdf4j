@@ -61,8 +61,8 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 			Dataset dataset, ParsedQuery parsedQuery,
 			Function<BindingSet, ValidationTuple> mapper) {
 
-		try (Stream<? extends BindingSet> stream = connection
-				.evaluate(parsedQuery.getTupleExpr(), dataset, new MapBindingSet(), true)
+		try (Stream<? extends BindingSet> stream = ResourceTracker.track(connection
+				.evaluate(parsedQuery.getTupleExpr(), dataset, new MapBindingSet(), true))
 				.stream()) {
 			stream
 					.map(mapper)

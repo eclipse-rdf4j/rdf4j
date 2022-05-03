@@ -221,8 +221,8 @@ public class BindSelect implements PlanNode {
 
 					updateQuery(parsedQuery, bindingSets, targetChainSize);
 
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset,
-							EmptyBindingSet.getInstance(), true);
+					bindingSet =  ResourceTracker.track(connection.evaluate(parsedQuery.getTupleExpr(), dataset,
+							EmptyBindingSet.getInstance(), true));
 				}
 			}
 
