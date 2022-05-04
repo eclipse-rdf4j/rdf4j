@@ -44,11 +44,11 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 //@Fork(value = 1, jvmArgs = {"-Xms4G", "-Xmx4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=60s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Fork(value = 1, jvmArgs = { "-Xms4G", "-Xmx4G", "-XX:+UseSerialGC" })
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class LoadingBenchmark {
 

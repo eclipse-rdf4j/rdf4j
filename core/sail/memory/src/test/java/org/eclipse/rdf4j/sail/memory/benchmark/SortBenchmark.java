@@ -49,12 +49,12 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 10)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 // use UseSerialGC to make GC more evident
 @Fork(value = 1, jvmArgs = { "-Xms400M", "-Xmx400M", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms400M", "-Xmx400M", "-XX:+UseSerialGC",  "-XX:StartFlightRecording=delay=60s,duration=240s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class SortBenchmark {
 
