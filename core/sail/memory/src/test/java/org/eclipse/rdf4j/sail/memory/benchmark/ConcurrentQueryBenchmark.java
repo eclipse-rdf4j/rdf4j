@@ -49,8 +49,8 @@ public class ConcurrentQueryBenchmark extends BaseConcurrentBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("ConcurrentQueryBenchmark.getNamespaces") // adapt to run other benchmark tests
-				.forks(0)
+				.include("ConcurrentQueryBenchmark.*") // adapt to run other benchmark tests
+				.forks(1)
 				.build();
 
 		new Runner(opt).run();
