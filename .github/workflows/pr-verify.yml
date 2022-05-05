@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        jdk: [11, 17]
+        jdk: [11, 18]
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK
@@ -27,9 +27,9 @@ jobs:
       run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Test
       run: mvn -B test -P-formatting -DskipITs -Dmaven.javadoc.skip=true
-    - name: Print test failures
-      if: failure()
-      run: ./scripts/printTestResults.sh
+    - name: Publish Test Report
+      if: ${{ always() }}
+      uses: scacap/action-surefire-report@v1
     - name: Cancel workflow on failure
       uses: vishnudxb/cancel-workflow@v1.2
       if: failure()
@@ -58,9 +58,9 @@ jobs:
       run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Verify
       run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip=true -Denforcer.skip=true -Danimal.sniffer.skip=true
-    - name: Print test failures
-      if: failure()
-      run: ./scripts/printTestResults.sh
+    - name: Publish Test Report
+      if: ${{ always() }}
+      uses: scacap/action-surefire-report@v1
     - name: Cancel workflow on failure
       uses: vishnudxb/cancel-workflow@v1.2
       if: failure()
@@ -89,6 +89,6 @@ jobs:
       run: mvn -B -U -T 2 clean install -Pquick,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Verify
       run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
-    - name: Print test failures
-      if: failure()
-      run: ./scripts/printTestResults.sh
+    - name: Publish Test Report
+      if: ${{ always() }}
+      uses: scacap/action-surefire-report@v1

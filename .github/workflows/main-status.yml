@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        jdk: [11, 15]
+        jdk: [11, 18]
 
     steps:
     - uses: actions/checkout@v2
@@ -30,3 +30,6 @@ jobs:
       run: mvn -B -U -T 2 clean install -Pquick,-formatting
     - name: Run all tests
       run: mvn -B verify -P-skipSlowTests,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
+    - name: Publish Test Report
+      if: ${{ always() }}
+      uses: scacap/action-surefire-report@v1
