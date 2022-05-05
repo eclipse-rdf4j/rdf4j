@@ -8,14 +8,11 @@
 
 package org.eclipse.rdf4j.sail.shacl.rdf4jcompliance;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryTest;
-import org.junit.Test;
 
 public class ShaclRepositoryTest extends RepositoryTest {
 
@@ -23,10 +20,5 @@ public class ShaclRepositoryTest extends RepositoryTest {
 	protected Repository createRepository() {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		return new SailRepository(shaclSail);
-	}
-
-	@Test
-	public void temp() {
-		assertTrue(false, "hurray");
 	}
 }

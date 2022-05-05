@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
@@ -57,7 +55,6 @@ public abstract class MultithreadedTest {
 
 	@Test
 	public void testDataAndShapes() {
-		assertTrue(false, "yay");
 		System.out.println("testDataAndShapes");
 
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
