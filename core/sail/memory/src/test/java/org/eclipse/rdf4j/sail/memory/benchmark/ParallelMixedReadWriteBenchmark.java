@@ -4,7 +4,7 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ ******************************************************************************/
 
 package org.eclipse.rdf4j.sail.memory.benchmark;
 
@@ -24,10 +24,16 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -50,13 +56,13 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 10)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
 //@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=20s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints" })
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
+public class ParallelMixedReadWriteBenchmark extends BaseConcurrentBenchmark {
 
 	private static final String query1;
 	private static final String query4;
@@ -77,17 +83,18 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 	}
 
 	private SailRepository repository;
+	private Model data;
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
 		super.setup();
 		repository = new SailRepository(new MemoryStore());
-
+		try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl")) {
+			data = Rio.parse(resourceAsStream, RDFFormat.TURTLE);
+		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl")) {
-				connection.add(resourceAsStream, RDFFormat.TURTLE);
-			}
+			connection.add(data);
 			connection.commit();
 		}
 	}
@@ -98,9 +105,28 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 		super.tearDown();
 	}
 
+	@TearDown(Level.Invocation)
+	public void clearAfterInvocation() throws Exception {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			try (RepositoryResult<Resource> contextIDs = connection.getContextIDs()) {
+				for (Resource contextID : contextIDs) {
+					if (contextID != null) {
+//						System.out.println("Clearing: " + contextID);
+						connection.clear(contextID);
+					}
+				}
+			}
+			connection.commit();
+		}
+		System.gc();
+		Thread.sleep(100);
+		System.gc();
+	}
+
 	public static void main(String[] args) throws Exception {
 		Options opt = new OptionsBuilder()
-				.include("ParallelQueryBenchmark.*") // adapt to run other benchmark tests
+				.include("ParallelMixedReadWriteBenchmark.*") // adapt to run other benchmark tests
 				.forks(1)
 				.build();
 
@@ -108,7 +134,7 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 	}
 
 	@Benchmark
-	public void mixedQueriesAndReads(Blackhole blackhole) throws InterruptedException {
+	public void mixedQueriesAndReadsAndWrites(Blackhole blackhole) throws InterruptedException {
 		CountDownLatch startSignal = new CountDownLatch(1);
 
 		List<Future<?>> collect = getMixedWorkload(blackhole, startSignal, null)
@@ -126,6 +152,8 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 			}
 		}
 
+//		System.out.println("\n\n\n");
+
 	}
 
 	private ArrayList<Runnable> getMixedWorkload(Blackhole blackhole, CountDownLatch startSignal,
@@ -141,10 +169,12 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 						.count();
 
 				blackhole.consume(count);
+//				System.out.println("Finished query4");
+
 			}));
 		}
 
-		for (int i = 0; i < 10; i++) {
+		for (int i = 0; i < 30; i++) {
 			list.add(getRunnable(startSignal, connection, (localConnection) -> {
 				long count = localConnection
 						.prepareTupleQuery(query7_pathexpression1)
@@ -153,10 +183,12 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 						.count();
 
 				blackhole.consume(count);
+//				System.out.println("Finished query7_pathexpression1");
+
 			}));
 		}
 
-		for (int i = 0; i < 10; i++) {
+		for (int i = 0; i < 30; i++) {
 			list.add(getRunnable(startSignal, connection, (localConnection) -> {
 				long count = localConnection
 						.prepareTupleQuery(query8_pathexpression2)
@@ -165,22 +197,28 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 						.count();
 
 				blackhole.consume(count);
+//				System.out.println("Finished query8_pathexpression2");
+
 			}));
 		}
 
-		for (int i = 0; i < 100; i++) {
+		for (int i = 0; i < 400; i++) {
 			list.add(getRunnable(startSignal, connection, (localConnection) -> {
 				blackhole.consume(localConnection.hasStatement(null, RDF.TYPE, null, false));
+//				System.out.println("Finished hasStatement explicit");
+
 			}));
 		}
 
-		for (int i = 0; i < 100; i++) {
+		for (int i = 0; i < 400; i++) {
 			list.add(getRunnable(startSignal, connection, (localConnection) -> {
 				blackhole.consume(localConnection.hasStatement(null, RDF.TYPE, null, true));
+//				System.out.println("Finished hasStatement inferred");
+
 			}));
 		}
 
-		for (int i = 0; i < 5; i++) {
+		for (int i = 0; i < 20; i++) {
 			list.add(getRunnable(startSignal, connection, (localConnection) -> {
 				long count = localConnection
 						.prepareTupleQuery(query1)
@@ -189,8 +227,24 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 						.count();
 
 				blackhole.consume(count);
+//				System.out.println("Finished query1");
 			}));
 		}
+
+		for (int i = 0; i < 200; i++) {
+			list.add(getRunnable(startSignal, connection, (localConnection) -> {
+				for (int j = 0; j < 100; j++) {
+					localConnection.add(Values.bnode(), RDFS.LABEL, Values.literal(j),
+							Values.iri("http://example.com/g1"));
+				}
+//				System.out.println("      ### WRITE ### Finished adding data");
+			}));
+		}
+
+		list.add(getRunnable(startSignal, connection, (localConnection) -> {
+			localConnection.add(data, Values.iri("http://example.com/g2"));
+//			System.out.println("      ### WRITE ### Finished loading file");
+		}));
 
 		Collections.shuffle(list, new Random(2948234));
 		return list;

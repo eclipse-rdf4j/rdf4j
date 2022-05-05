@@ -38,10 +38,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard M. Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", })
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ConcurrentQueryBenchmark extends BaseConcurrentBenchmark {
 
@@ -49,8 +49,8 @@ public class ConcurrentQueryBenchmark extends BaseConcurrentBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("ConcurrentQueryBenchmark.getNamespaces") // adapt to run other benchmark tests
-				.forks(0)
+				.include("ConcurrentQueryBenchmark.*") // adapt to run other benchmark tests
+				.forks(1)
 				.build();
 
 		new Runner(opt).run();
