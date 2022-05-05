@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -47,6 +48,7 @@ public class ShaclSailSupportedPredicatesDocumentationIT extends AbstractShaclTe
 	@ParameterizedTest
 	@MethodSource("testCases")
 	public void testShaclSailSupportedPredicatesDocumentation(TestCase testCase) throws IOException {
+		Assertions.assertTrue(false, "boo");
 
 		HashSet<IRI> shaclPredicates = new HashSet<>(ShaclSail.getSupportedShaclPredicates());
 
