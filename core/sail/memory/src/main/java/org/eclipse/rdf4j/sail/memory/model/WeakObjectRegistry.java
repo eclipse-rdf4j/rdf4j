@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.lang.invoke.VarHandle;
 import java.lang.ref.WeakReference;
 import java.util.AbstractSet;
 import java.util.Arrays;
@@ -354,6 +355,10 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 
 		public void unlockWriter(long stamp) {
 			if (stamp != 0) {
+				// Make sure that readers in other threads will be able to read the writes that were made by the user
+				// within the write-locked section. The stamped lock only guarantees that writes are visible to other
+				// threads if those threads use a stamped lock read-lock.
+				VarHandle.fullFence();
 				lock.unlockWrite(stamp);
 			} else {
 				throw new IllegalMonitorStateException();
