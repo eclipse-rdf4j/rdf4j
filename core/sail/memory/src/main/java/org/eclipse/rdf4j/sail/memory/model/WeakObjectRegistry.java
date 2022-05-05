@@ -321,7 +321,9 @@ public class WeakObjectRegistry<E> extends AbstractSet<E> {
 				} else {
 					// Release our read lock so we don't block any writers.
 					readersUnlocked.increment();
-					Thread.onSpinWait();
+					while (lock.isWriteLocked()) {
+						Thread.onSpinWait();
+					}
 				}
 			}
 		}
