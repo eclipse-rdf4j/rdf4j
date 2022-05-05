@@ -31,7 +31,7 @@ jobs:
     - name: Run all tests
       run: mvn -B verify -P-skipSlowTests,-formatting -Dmaven.javadoc.skip=true -Djapicmp.skip -Denforcer.skip=true -Danimal.sniffer.skip=true
     - name: Publish Test Report
-      if: ${{ always() }}
+      if: failure()
       uses: scacap/action-surefire-report@v1
       with:
         check_name: Test report - main status - ${{ matrix.jdk }}
