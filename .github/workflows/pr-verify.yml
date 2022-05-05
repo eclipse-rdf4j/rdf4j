@@ -30,6 +30,8 @@ jobs:
     - name: Publish Test Report
       if: ${{ always() }}
       uses: scacap/action-surefire-report@v1
+      with:
+        check_name: Test report - build - ${{ matrix.jdk }}
     - name: Cancel workflow on failure
       uses: vishnudxb/cancel-workflow@v1.2
       if: failure()
@@ -61,6 +63,8 @@ jobs:
     - name: Publish Test Report
       if: ${{ always() }}
       uses: scacap/action-surefire-report@v1
+      with:
+        check_name: Test report - integration-tests
     - name: Cancel workflow on failure
       uses: vishnudxb/cancel-workflow@v1.2
       if: failure()
@@ -92,3 +96,6 @@ jobs:
     - name: Publish Test Report
       if: ${{ always() }}
       uses: scacap/action-surefire-report@v1
+      with:
+        check_name: Test report - slow-tests
+
