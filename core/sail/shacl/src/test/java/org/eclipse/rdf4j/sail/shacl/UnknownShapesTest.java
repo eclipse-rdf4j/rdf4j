@@ -48,13 +48,15 @@ public class UnknownShapesTest {
 
 		Thread.sleep(100);
 
-		Set<String> relevantLog = newAppender.logged.stream()
+		List<String> relevantLog = newAppender.logged.stream()
 				.filter(m -> m.startsWith("Unsupported SHACL feature"))
-				.collect(Collectors.toSet());
+				.distinct()
+				.sorted(String::compareTo)
+				.collect(Collectors.toList());
 
-		Set<String> expected = Set.of(
-				"Unsupported SHACL feature detected sh:unknownTarget in statement (http://example.com/ns#PersonShape, http://www.w3.org/ns/shacl#unknownTarget, http://www.w3.org/2000/01/rdf-schema#Class, http://rdf4j.org/schema/rdf4j#SHACLShapeGraph) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]",
-				"Unsupported SHACL feature detected sh:unknownShaclProperty in statement (http://example.com/ns#PersonPropertyShape, http://www.w3.org/ns/shacl#unknownShaclProperty, \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>, http://rdf4j.org/schema/rdf4j#SHACLShapeGraph) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]"
+		List<String> expected = List.of(
+				"Unsupported SHACL feature detected sh:unknownShaclProperty in statement (http://example.com/ns#PersonPropertyShape, http://www.w3.org/ns/shacl#unknownShaclProperty, \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]",
+				"Unsupported SHACL feature detected sh:unknownTarget in statement (http://example.com/ns#PersonShape, http://www.w3.org/ns/shacl#unknownTarget, http://www.w3.org/2000/01/rdf-schema#Class) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]"
 		);
 
 		assertEquals(expected, relevantLog);

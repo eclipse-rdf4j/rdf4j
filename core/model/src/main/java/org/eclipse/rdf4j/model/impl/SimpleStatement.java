@@ -20,7 +20,9 @@ import org.eclipse.rdf4j.model.base.AbstractStatement;
  * context. For statements that do have an associated context, {@link ContextStatement} can be used.
  *
  * @see org.eclipse.rdf4j.model.impl.SimpleValueFactory
+ * @deprecated Use {@link GenericStatement instead}
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public class SimpleStatement extends AbstractStatement {
 
 	/*-----------*
