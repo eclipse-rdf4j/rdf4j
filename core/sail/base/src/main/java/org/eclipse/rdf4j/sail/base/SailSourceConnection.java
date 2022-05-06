@@ -209,7 +209,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
-		flush();
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		if (cloneTupleExpression) {
@@ -385,7 +384,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
-		flush();
 		SailSource branch = branch(IncludeInferred.explicitOnly);
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getContextIDs(), snapshot, branch);
@@ -394,7 +392,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
-		flush();
 		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
 		SailDataset snapshot = branch.dataset(getIsolationLevel());
 		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
@@ -402,8 +399,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-
-		flush();
 		try (Stream<? extends Statement> stream = getStatementsInternal(null, null, null, false, contexts).stream()) {
 			return stream.count();
 		}
@@ -578,7 +573,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);
 		}
 		addStatementInternal(subj, pred, obj, contexts);
-
 	}
 
 	@Override
@@ -601,12 +595,18 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected void endUpdateInternal(UpdateContext op) throws SailException {
 		synchronized (datasets) {
+			if (inferredOnlySink == null && explicitOnlyDataset == null && inferredOnlyDataset == null
+					&& datasets.isEmpty() && explicitSinks.isEmpty()) {
+				return;
+			}
+
 			SailSink toCloseInferredSink = inferredOnlySink;
 			inferredOnlySink = null;
 			SailDataset toCloseExplicitOnlyDataset = explicitOnlyDataset;
 			explicitOnlyDataset = null;
 			SailDataset toCloseInferredDataset = inferredOnlyDataset;
 			inferredOnlyDataset = null;
+
 			try {
 				if (toCloseInferredSink != null) {
 					toCloseInferredSink.flush();
@@ -679,6 +679,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 						// exist
 						addStatementInternal(subj, pred, obj, contexts);
 						notifyStatementAdded(vf.createStatement(subj, pred, obj));
+						setStatementsAdded();
 						modified = true;
 					}
 				}
@@ -701,6 +702,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 							// already exist
 							addStatementInternal(subj, pred, obj, ctx);
 							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
+							setStatementsAdded();
 							modified = true;
 						}
 					}
@@ -712,17 +714,32 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
 			throws SailException {
-		if (contexts.length == 0) {
-			if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
-				notifyStatementAdded(vf.createStatement(subj, pred, obj));
+		if (contexts.length == 0 || (contexts.length == 1 && contexts[0] == null)) {
+			if (hasConnectionListeners()) {
+				if (!hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
+					notifyStatementAdded(vf.createStatement(subj, pred, obj));
+					sink.approve(subj, pred, obj, null);
+				}
+			} else {
+				sink.approve(subj, pred, obj, null);
 			}
-			sink.approve(subj, pred, obj, null);
 		} else {
 			for (Resource ctx : contexts) {
-				if (hasConnectionListeners() && !hasStatement(dataset, subj, pred, obj, ctx)) {
-					notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
+				Resource[] contextsToCheck;
+				if (contexts.length == 1) {
+					contextsToCheck = contexts;
+				} else {
+					contextsToCheck = new Resource[] { ctx };
 				}
-				sink.approve(subj, pred, obj, ctx);
+
+				if (hasConnectionListeners()) {
+					if (!hasStatement(dataset, subj, pred, obj, contextsToCheck)) {
+						notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
+						sink.approve(subj, pred, obj, ctx);
+					}
+				} else {
+					sink.approve(subj, pred, obj, ctx);
+				}
 			}
 		}
 	}
@@ -741,7 +758,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);
 			}
 			removeStatementsInternal(subj, pred, obj, contexts);
-			return remove(subj, pred, obj, inferredOnlyDataset, inferredOnlySink, contexts);
+			boolean removed = remove(subj, pred, obj, inferredOnlyDataset, inferredOnlySink, contexts);
+			if (removed) {
+				setStatementsRemoved();
+			}
+			return removed;
 		}
 	}
 
@@ -802,6 +823,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				remove(null, null, null, inferredOnlyDataset, inferredOnlySink, contexts);
 			}
 			inferredOnlySink.clear(contexts);
+			setStatementsRemoved();
 		}
 	}
 
