@@ -11,14 +11,19 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
+import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 
 /**
  * A DefaultColelctionFactory that provides lists/sets/maps using standard common java in memory types
@@ -68,5 +73,16 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	@Override
 	public void close() throws RDF4JException {
 		// Nothing to do here.
+	}
+
+	@Override
+	public <E> Map<BindingSetKey, E> createGroupByMap() {
+		return new LinkedHashMap<>();
+	}
+
+	@Override
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, Function<BindingSet, Integer> hashMaker,
+			BiFunction<BindingSet, BindingSet, Boolean> equalsTest) {
+		return new DefaultBindingSetKey(bindingSet, hashMaker, equalsTest);
 	}
 }

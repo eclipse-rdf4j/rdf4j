@@ -11,9 +11,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 
 /**
  * A Factory that may generate optimised and/or disk based collections
@@ -71,4 +75,11 @@ public interface CollectionFactory extends AutoCloseable {
 	 * @return a new queue
 	 */
 	public Queue<Value> createValueQueue();
+
+	@InternalUseOnly
+	public <E> Map<BindingSetKey, E> createGroupByMap();
+
+	@InternalUseOnly
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, Function<BindingSet, Integer> hashMaker,
+			BiFunction<BindingSet, BindingSet, Boolean> equalsTest);
 }

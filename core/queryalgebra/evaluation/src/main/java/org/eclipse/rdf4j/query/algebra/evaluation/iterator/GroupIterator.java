@@ -11,18 +11,20 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.LongFunction;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.BindingSetEntry;
+import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -230,15 +232,16 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		long setId = 0;
 
 		Function<BindingSet, Integer> hashMaker = hashMaker(context, group);
+		BiFunction<BindingSet, BindingSet, Boolean> equalsTest = equalsTestMaker(context, group);
 		try {
-			Map<Key, Entry> entries = new LinkedHashMap<>();
+			Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
 
 			if (!iter.hasNext()) {
 				emptySolutionSpecialCase(aggregates, entries);
 			} else {
 				while (iter.hasNext()) {
 					BindingSet sol = iter.next();
-					Key key = new Key(sol, hashMaker.apply(sol));
+					BindingSetKey key = cf.createBindingSetKey(sol, hashMaker, equalsTest);
 					Entry entry = entries.get(key);
 					if (entry == null) {
 						List<AggregateCollector> collectors = makeCollectors(aggregates);
@@ -262,7 +265,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	private void emptySolutionSpecialCase(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates,
-			Map<Key, Entry> entries) {
+			Map<BindingSetKey, Entry> entries) {
 		// no solutions, but if we are not explicitly grouping and aggregates are present,
 		// we still need to process them to produce a zero-result.
 		if (group.getGroupBindingNames().isEmpty()) {
@@ -311,12 +314,33 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		return hashFunction;
 	}
 
+	private static BiFunction<BindingSet, BindingSet, Boolean> equalsTestMaker(QueryEvaluationContext context,
+			Group group) {
+		List<Function<BindingSet, Value>> getValues = new ArrayList<>(group.getGroupBindingNames().size());
+		for (String name : group.getGroupBindingNames()) {
+			Function<BindingSet, Value> getValue = context.getValue(name);
+			getValues.add(getValue);
+		}
+
+		BiFunction<BindingSet, BindingSet, Boolean> equals = (bs1, bs2) -> {
+			for (Function<BindingSet, Value> getValue : getValues) {
+				Value value1 = getValue.apply(bs1);
+				Value value2 = getValue.apply(bs2);
+				if (!Objects.equals(value1, value2)) {
+					return false;
+				}
+			}
+			return true;
+		};
+		return equals;
+	}
+
 	/**
 	 * A unique key for a set of existing bindings.
 	 *
 	 * @author David Huynh
 	 */
-	protected class Key implements Serializable {
+	protected class Key implements Serializable, BindingSetKey {
 
 		private static final long serialVersionUID = 4461951265373324084L;
 
@@ -365,9 +389,14 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 			return false;
 		}
+
+		@Override
+		public BindingSet getBindingSet() {
+			return this.bindingSet;
+		}
 	}
 
-	private class Entry {
+	private class Entry implements BindingSetEntry {
 
 		private final BindingSet prototype;
 		private final List<AggregateCollector> collectors;
@@ -512,18 +541,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			);
 		}
 		return null;
-	}
-
-	private <T> Predicate<T> createPredicate(AggregateOperator operator, long setId)
-			throws QueryEvaluationException {
-		if (operator.isDistinct()) {
-			if (operator instanceof Count && ((Count) operator).getArg() == null) {
-				return (Predicate<T>) new DistinctBindingSets(setId);
-			} else {
-				return (Predicate<T>) new DistinctValues(setId);
-			}
-		}
-		return (v) -> true;
 	}
 
 	private interface AggregateCollector {
