@@ -81,8 +81,24 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, Function<BindingSet, Integer> hashMaker,
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
 			BiFunction<BindingSet, BindingSet, Boolean> equalsTest) {
+		Function<BindingSet, Integer> hashMaker = hashMaker(getValues);
 		return new DefaultBindingSetKey(bindingSet, hashMaker, equalsTest);
+	}
+
+	private static Function<BindingSet, Integer> hashMaker(List<Function<BindingSet, Value>> getValues) {
+
+		Function<BindingSet, Integer> hashFunction = (bs) -> {
+			int nextHash = 0;
+			for (Function<BindingSet, Value> getValue : getValues) {
+				Value value = getValue.apply(bs);
+				if (value != null) {
+					nextHash ^= value.hashCode();
+				}
+			}
+			return nextHash;
+		};
+		return hashFunction;
 	}
 }

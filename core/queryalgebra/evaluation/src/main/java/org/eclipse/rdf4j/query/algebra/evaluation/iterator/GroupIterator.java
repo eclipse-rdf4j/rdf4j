@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
@@ -26,7 +25,6 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetEntry;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
-import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Literal;
@@ -71,6 +69,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	/*-----------*
 	 * Constants *
 	 *-----------*/
+
+	private static final BindingSetKey EMPTY = new EmptyBindingSetKey();
 
 	private final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
@@ -231,8 +231,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings);
 		long setId = 0;
 
-		Function<BindingSet, Integer> hashMaker = hashMaker(context, group);
-		BiFunction<BindingSet, BindingSet, Boolean> equalsTest = equalsTestMaker(context, group);
+		List<Function<BindingSet, Value>> getValues = getValueFunctions(context, group);
+		BiFunction<BindingSet, BindingSet, Boolean> equalsTest = equalsTestMaker(getValues);
 		try {
 			Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
 
@@ -241,7 +241,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			} else {
 				while (iter.hasNext()) {
 					BindingSet sol = iter.next();
-					BindingSetKey key = cf.createBindingSetKey(sol, hashMaker, equalsTest);
+					BindingSetKey key = cf.createBindingSetKey(sol, getValues, equalsTest);
 					Entry entry = entries.get(key);
 					if (entry == null) {
 						List<AggregateCollector> collectors = makeCollectors(aggregates);
@@ -271,7 +271,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		if (group.getGroupBindingNames().isEmpty()) {
 			if (group.getGroupElements().isEmpty()) {
 				final Entry entry = new Entry(null, null, null);
-				entries.put(new Key(EmptyBindingSet.getInstance()), entry);
+				entries.put(EMPTY, entry);
 			} else {
 				List<AggregateCollector> collectors = makeCollectors(aggregates);
 				List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
@@ -280,7 +280,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				}
 				final Entry entry = new Entry(null, collectors, predicates);
 				entry.addSolution(EmptyBindingSet.getInstance(), aggregates);
-				entries.put(new Key(EmptyBindingSet.getInstance()), entry);
+				entries.put(EMPTY, entry);
 			}
 		}
 	}
@@ -294,33 +294,17 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		return collectors;
 	}
 
-	private static Function<BindingSet, Integer> hashMaker(QueryEvaluationContext context, Group group) {
+	private static List<Function<BindingSet, Value>> getValueFunctions(QueryEvaluationContext context, Group group) {
 		List<Function<BindingSet, Value>> getValues = new ArrayList<>(group.getGroupBindingNames().size());
 		for (String name : group.getGroupBindingNames()) {
 			Function<BindingSet, Value> getValue = context.getValue(name);
 			getValues.add(getValue);
 		}
-
-		Function<BindingSet, Integer> hashFunction = (bs) -> {
-			int nextHash = 0;
-			for (Function<BindingSet, Value> getValue : getValues) {
-				Value value = getValue.apply(bs);
-				if (value != null) {
-					nextHash ^= value.hashCode();
-				}
-			}
-			return nextHash;
-		};
-		return hashFunction;
+		return getValues;
 	}
 
-	private static BiFunction<BindingSet, BindingSet, Boolean> equalsTestMaker(QueryEvaluationContext context,
-			Group group) {
-		List<Function<BindingSet, Value>> getValues = new ArrayList<>(group.getGroupBindingNames().size());
-		for (String name : group.getGroupBindingNames()) {
-			Function<BindingSet, Value> getValue = context.getValue(name);
-			getValues.add(getValue);
-		}
+	private static BiFunction<BindingSet, BindingSet, Boolean> equalsTestMaker(
+			List<Function<BindingSet, Value>> getValues) {
 
 		BiFunction<BindingSet, BindingSet, Boolean> equals = (bs1, bs2) -> {
 			for (Function<BindingSet, Value> getValue : getValues) {
@@ -333,67 +317,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			return true;
 		};
 		return equals;
-	}
-
-	/**
-	 * A unique key for a set of existing bindings.
-	 *
-	 * @author David Huynh
-	 */
-	protected class Key implements Serializable, BindingSetKey {
-
-		private static final long serialVersionUID = 4461951265373324084L;
-
-		private final BindingSet bindingSet;
-
-		private final int hash;
-
-		public Key(BindingSet bindingSet) {
-			this.bindingSet = bindingSet;
-			int nextHash = 0;
-			for (String name : group.getGroupBindingNames()) {
-				Value value = bindingSet.getValue(name);
-				if (value != null) {
-					nextHash ^= value.hashCode();
-				}
-			}
-			this.hash = nextHash;
-		}
-
-		public Key(BindingSet bindingSet, int hash) {
-			this.bindingSet = bindingSet;
-			this.hash = hash;
-		}
-
-		@Override
-		public int hashCode() {
-			return hash;
-		}
-
-		@Override
-		public boolean equals(Object other) {
-			if (other instanceof Key && other.hashCode() == hash) {
-				BindingSet otherSolution = ((Key) other).bindingSet;
-
-				for (String name : group.getGroupBindingNames()) {
-					Value v1 = bindingSet.getValue(name);
-					Value v2 = otherSolution.getValue(name);
-
-					if (!Objects.equals(v1, v2)) {
-						return false;
-					}
-				}
-
-				return true;
-			}
-
-			return false;
-		}
-
-		@Override
-		public BindingSet getBindingSet() {
-			return this.bindingSet;
-		}
 	}
 
 	private class Entry implements BindingSetEntry {
@@ -872,6 +795,30 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				}
 				collector.concatenated.append(v.stringValue());
 			}
+		}
+
+	}
+
+	private static class EmptyBindingSetKey implements BindingSetKey {
+
+		@Override
+		public BindingSet getBindingSet() {
+			return EmptyBindingSet.getInstance();
+		}
+
+		@Override
+		public int hashCode() {
+			return 0;
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (obj instanceof EmptyBindingSet) {
+				return true;
+			} else if (obj instanceof BindingSet) {
+				return ((BindingSet) obj).isEmpty();
+			}
+			return false;
 		}
 
 	}

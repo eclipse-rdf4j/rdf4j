@@ -18,11 +18,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
+import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultBindingSetKey;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 
@@ -110,6 +115,34 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public void close() throws RDF4JException {
 		db.close();
+	}
+
+	@Override
+	public <E> Map<BindingSetKey, E> createGroupByMap() {
+		return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(), iterationCacheSyncThreshold,
+				db);
+	}
+
+	@Override
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
+			BiFunction<BindingSet, BindingSet, Boolean> equalsTest) {
+		Function<BindingSet, Integer> hashMaker = hashMaker(getValues);
+		return new DefaultBindingSetKey(bindingSet, hashMaker, equalsTest);
+	}
+
+	private static Function<BindingSet, Integer> hashMaker(List<Function<BindingSet, Value>> getValues) {
+
+		Function<BindingSet, Integer> hashFunction = (bs) -> {
+			int nextHash = 0;
+			for (Function<BindingSet, Value> getValue : getValues) {
+				Value value = getValue.apply(bs);
+				if (value != null) {
+					nextHash ^= value.hashCode();
+				}
+			}
+			return nextHash;
+		};
+		return hashFunction;
 	}
 
 	private static final class CommitingSet<T> extends AbstractSet<T> {

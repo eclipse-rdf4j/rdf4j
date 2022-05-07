@@ -80,6 +80,6 @@ public interface CollectionFactory extends AutoCloseable {
 	public <E> Map<BindingSetKey, E> createGroupByMap();
 
 	@InternalUseOnly
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, Function<BindingSet, Integer> hashMaker,
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
 			BiFunction<BindingSet, BindingSet, Boolean> equalsTest);
 }
