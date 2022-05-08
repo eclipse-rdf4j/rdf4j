@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
+import java.lang.invoke.VarHandle;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
@@ -393,6 +394,10 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 				throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
 			}
 
+			// Make sure that readers in other threads will be able to read the writes that were made by the user within
+			// the write-locked section. The stamped lock only guarantees that writes are visible to other threads if
+			// those threads use a stamped lock read-lock.
+			VarHandle.fullFence();
 			lock.unlockWrite(temp);
 		}
 	}
