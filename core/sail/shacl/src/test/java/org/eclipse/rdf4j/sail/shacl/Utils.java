@@ -56,20 +56,6 @@ public class Utils {
 
 	}
 
-	public static void loadShapeData(ShaclSail sail, Model shapes) throws IOException {
-		sail.init();
-		sail.disableValidation();
-		try (SailConnection conn = sail.getConnection()) {
-			conn.begin(IsolationLevels.NONE);
-			for (Statement st : shapes) {
-				conn.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());
-			}
-			conn.commit();
-		}
-		sail.enableValidation();
-
-	}
-
 	public static void loadShapeData(SailRepository repo, String resourceName) throws IOException {
 		assert resourceName.endsWith(".trig") : "Not a RDF Trig file: " + resourceName;
 

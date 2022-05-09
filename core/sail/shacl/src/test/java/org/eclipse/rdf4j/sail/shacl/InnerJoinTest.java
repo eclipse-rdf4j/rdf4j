@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static junit.framework.TestCase.assertTrue;
-
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -26,6 +24,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -274,8 +273,8 @@ public class InnerJoinTest {
 
 		Set<ValidationTuple> actualSet = new HashSet<>(actual);
 
-		assertTrue(collect.containsAll(actualSet));
-		assertTrue(actualSet.containsAll(collect));
+		Assertions.assertTrue(collect.containsAll(actualSet));
+		Assertions.assertTrue(actualSet.containsAll(collect));
 
 	}
 

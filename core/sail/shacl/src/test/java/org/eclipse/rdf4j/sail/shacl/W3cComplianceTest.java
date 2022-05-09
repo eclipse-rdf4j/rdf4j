@@ -24,7 +24,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -35,7 +34,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -86,10 +84,13 @@ public class W3cComplianceTest {
 
 		sailRepository.shutDown();
 
-		statements.filter(null, RDF.REST, null).subjects().stream().forEach(s -> {
-			int size = statements.filter(s, RDF.REST, null).objects().size();
-			assertEquals(s + " has more than one rdf:rest", size, 1);
-		});
+		statements
+				.filter(null, RDF.REST, null)
+				.subjects()
+				.forEach(s -> {
+					int size = statements.filter(s, RDF.REST, null).objects().size();
+					assertEquals(s + " has more than one rdf:rest", size, 1);
+				});
 
 //		System.out.println(AbstractShaclTest.modelToString(statements));
 
@@ -202,8 +203,6 @@ public class W3cComplianceTest {
 				System.out.println("\n######### Report ######### \n");
 				Rio.write(statements1, System.out, RDFFormat.TRIG);
 				System.out.println("\n##################### \n");
-			} else {
-				actualConforms = true;
 			}
 
 		} finally {
@@ -225,7 +224,7 @@ public class W3cComplianceTest {
 							.map(o -> (Literal) o)
 							.map(Literal::booleanValue)
 							.findFirst()
-							.get();
+							.orElseThrow();
 				}
 			}
 		}

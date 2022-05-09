@@ -123,8 +123,6 @@ public class TransactionValidationLimitTest {
 		((ShaclSail) shaclRepository.getSail()).setTransactionalValidationLimit(3);
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
-
 			connection.begin();
 			connection.add(RDFS.CLASS, RDFS.COMMENT, connection.getValueFactory().createLiteral("a"));
 			connection.commit();

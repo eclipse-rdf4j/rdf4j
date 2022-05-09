@@ -96,9 +96,7 @@ public class VisualizerTest {
 			connection.addStatement(bNode2, RDF.TYPE, RDFS.RESOURCE);
 			connection.removeStatement(null, bNode, RDFS.LABEL, vf.createLiteral(""));
 
-			assertThrows(SailException.class, () -> {
-				connection.commit();
-			});
+			assertThrows(SailException.class, connection::commit);
 		} finally {
 			shaclSail.shutDown();
 		}

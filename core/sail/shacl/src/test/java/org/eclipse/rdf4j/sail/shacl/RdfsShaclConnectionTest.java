@@ -8,9 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static junit.framework.TestCase.assertEquals;
-import static junit.framework.TestCase.assertTrue;
-
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -27,6 +24,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.VerySimpleRdfsBackwardsChainingConnection;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class RdfsShaclConnectionTest {
@@ -54,7 +52,7 @@ public class RdfsShaclConnectionTest {
 					connection,
 					((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
 
-			assertTrue(connection2.hasStatement(aSubSub, RDF.TYPE, sup, true));
+			Assertions.assertTrue(connection2.hasStatement(aSubSub, RDF.TYPE, sup, true));
 		}
 		shaclSail.shutDown();
 
@@ -81,7 +79,7 @@ public class RdfsShaclConnectionTest {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
 						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sup)));
-				assertEquals(expected, collect);
+				Assertions.assertEquals(expected, collect);
 			}
 
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sub, true)
@@ -89,7 +87,7 @@ public class RdfsShaclConnectionTest {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
 						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, sub)));
-				assertEquals(expected, collect);
+				Assertions.assertEquals(expected, collect);
 			}
 
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, subSub, true)
@@ -97,7 +95,7 @@ public class RdfsShaclConnectionTest {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				HashSet<Statement> expected = new HashSet<>(
 						Collections.singletonList(vf.createStatement(aSubSub, RDF.TYPE, subSub)));
-				assertEquals(expected, collect);
+				Assertions.assertEquals(expected, collect);
 			}
 		}
 
@@ -129,7 +127,7 @@ public class RdfsShaclConnectionTest {
 			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sup, true)
 					.stream()) {
 				List<Statement> collect = stream.collect(Collectors.toList());
-				assertEquals(new HashSet<>(collect).size(), collect.size());
+				Assertions.assertEquals(new HashSet<>(collect).size(), collect.size());
 
 			}
 		}
