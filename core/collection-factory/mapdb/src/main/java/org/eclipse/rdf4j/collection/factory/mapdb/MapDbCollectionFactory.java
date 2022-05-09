@@ -34,7 +34,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	// The size 16 seems like a nice starting value but others could well
 	// be better.
 	private static final int SWITCH_TO_DISK_BASED_SET_AT_SIZE = 16;
-	private final DB db;
+	private volatile DB db;
 	private volatile long colectionId = 0;
 	private final long iterationCacheSyncThreshold;
 	private final CollectionFactory delegate;
@@ -57,13 +57,22 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 		this.delegate = delegate;
-		try {
-			this.db = DBMaker.newFileDB(File.createTempFile("group-eval", null))
-					.deleteFilesAfterClose()
-					.closeOnJvmShutdown()
-					.make();
-		} catch (IOException e) {
-			throw new RDF4jMapDBException("could not initialize temp db", e);
+	}
+
+	private void init() {
+		if (this.db == null) {
+			synchronized (this) {
+				if (this.db == null) {
+					try {
+						this.db = DBMaker.newFileDB(File.createTempFile("group-eval", null))
+								.deleteFilesAfterClose()
+								.closeOnJvmShutdown()
+								.make();
+					} catch (IOException e) {
+						throw new RDF4jMapDBException("could not initialize temp db", e);
+					}
+				}
+			}
 		}
 	}
 
@@ -80,6 +89,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public <T> Set<T> createSet() {
 		if (iterationCacheSyncThreshold > 0) {
+			init();
 			MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<T>(colectionId++, delegate.createSet());
 			return new CommitingSet<T>(set, iterationCacheSyncThreshold, db);
 		} else {
@@ -90,6 +100,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public Set<Value> createValueSet() {
 		if (iterationCacheSyncThreshold > 0) {
+			init();
 			Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet());
 			return new CommitingSet<Value>(set, iterationCacheSyncThreshold, db);
 		} else {
@@ -100,6 +111,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public <K, V> Map<K, V> createMap() {
 		if (iterationCacheSyncThreshold > 0) {
+			init();
 			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
 					iterationCacheSyncThreshold, db);
 		} else {
@@ -110,6 +122,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public <V> Map<Value, V> createValueKeyedMap() {
 		if (iterationCacheSyncThreshold > 0) {
+			init();
 			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
 					iterationCacheSyncThreshold, db);
 		} else {
@@ -129,13 +142,20 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 	@Override
 	public void close() throws RDF4JException {
-		db.close();
+		if (db != null) {
+			db.close();
+		}
 	}
 
 	@Override
 	public <E> Map<BindingSetKey, E> createGroupByMap() {
-		return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(), iterationCacheSyncThreshold,
-				db);
+		if (iterationCacheSyncThreshold > 0) {
+			init();
+			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
+					iterationCacheSyncThreshold, db);
+		} else {
+			return delegate.createGroupByMap();
+		}
 	}
 
 	@Override
