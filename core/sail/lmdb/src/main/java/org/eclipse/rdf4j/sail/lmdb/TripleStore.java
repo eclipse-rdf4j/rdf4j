@@ -526,6 +526,7 @@ class TripleStore implements Closeable {
 									Varint.readListUnsigned(keyData.mv_data(), startValues);
 								}
 								rangeSize++;
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 							}
 
 							if (rangeSize == 1000) {
