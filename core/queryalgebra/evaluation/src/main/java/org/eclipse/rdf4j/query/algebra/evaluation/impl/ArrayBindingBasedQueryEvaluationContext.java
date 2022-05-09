@@ -33,6 +33,25 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIterati
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
+	private static final class GetValueImplementation implements Function<BindingSet, Value> {
+		private final Function<ArrayBindingSet, Value> directAccessForVariable;
+		private final String variableName;
+
+		private GetValueImplementation(Function<ArrayBindingSet, Value> directAccessForVariable, String variableName) {
+			this.directAccessForVariable = directAccessForVariable;
+			this.variableName = variableName;
+		}
+
+		@Override
+		public Value apply(BindingSet bs) {
+			if (bs instanceof ArrayBindingSet) {
+				return directAccessForVariable.apply((ArrayBindingSet) bs);
+			} else {
+				return bs.getValue(variableName);
+			}
+		}
+	}
+
 	private final QueryEvaluationContext context;
 	private final String[] allVariables;
 	private final LinkedHashSet<String> allVariablesSet;
@@ -91,13 +110,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		ArrayBindingSet abs = new ArrayBindingSet(allVariables);
 		Function<ArrayBindingSet, Value> directAccessForVariable = abs
 				.getDirectGetValue(variableName);
-		return (bs) -> {
-			if (bs instanceof ArrayBindingSet) {
-				return directAccessForVariable.apply((ArrayBindingSet) bs);
-			} else {
-				return bs.getValue(variableName);
-			}
-		};
+		return new GetValueImplementation(directAccessForVariable, variableName);
 	}
 
 	@Override

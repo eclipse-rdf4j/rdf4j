@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.io.Serializable;
 import java.util.Date;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -29,6 +30,39 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  *
  */
 public interface QueryEvaluationContext {
+
+	static final class GetBindingImplementation implements Function<BindingSet, Binding>, Serializable {
+		private static final long serialVersionUID = 1L;
+		private final String variableName;
+
+		private GetBindingImplementation(String variableName) {
+			this.variableName = variableName;
+		}
+
+		@Override
+		public Binding apply(BindingSet bs) {
+			return bs.getBinding(variableName);
+		}
+	}
+
+	static final class GetValueImplementation implements Function<BindingSet, Value>, Serializable {
+		private static final long serialVersionUID = 1L;
+		private final Function<BindingSet, Binding> getBinding;
+
+		private GetValueImplementation(Function<BindingSet, Binding> getBinding) {
+			this.getBinding = getBinding;
+		}
+
+		@Override
+		public Value apply(BindingSet bs) {
+			Binding binding = getBinding.apply(bs);
+			if (binding == null) {
+				return null;
+			} else {
+				return binding.getValue();
+			}
+		}
+	}
 
 	class Minimal implements QueryEvaluationContext {
 		public Minimal(Literal now, Dataset dataset) {
@@ -80,19 +114,12 @@ public interface QueryEvaluationContext {
 	}
 
 	default Function<BindingSet, Binding> getBinding(String variableName) {
-		return (bs) -> bs.getBinding(variableName);
+		return new GetBindingImplementation(variableName);
 	}
 
 	default Function<BindingSet, Value> getValue(String variableName) {
 		Function<BindingSet, Binding> getBinding = getBinding(variableName);
-		return (bs) -> {
-			Binding binding = getBinding.apply(bs);
-			if (binding == null) {
-				return null;
-			} else {
-				return binding.getValue();
-			}
-		};
+		return new GetValueImplementation(getBinding);
 	}
 
 	default BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
