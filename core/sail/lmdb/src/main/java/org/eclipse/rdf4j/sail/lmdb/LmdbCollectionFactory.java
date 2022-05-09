@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.AbstractSet;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -41,21 +42,28 @@ public class LmdbCollectionFactory extends DefaultCollectionFactory {
 	}
 
 	private int hash(BindingSet bs, List<Function<BindingSet, Value>> getValues) {
-		int nextHash = 0;
-		for (Function<BindingSet, Value> getValue : getValues) {
+		int size = getValues.size();
+		int[] hashes = new int[size];
+		for (int i = 0; i < size; i++) {
+			Function<BindingSet, Value> getValue = getValues.get(i);
 			Value value = getValue.apply(bs);
 			if (value instanceof LmdbValue) {
 				LmdbValue lv = (LmdbValue) value;
-				if (lv.getValueStoreRevision() == rev) {
-					nextHash ^= Long.hashCode(lv.getInternalID());
+				if (lv.getValueStoreRevision().equals(rev)) {
+					long id = lv.getInternalID();
+					if (id == LmdbValue.UNKNOWN_ID) {
+						hashes[i] = value.hashCode();
+					} else {
+						hashes[i] = (int) id;
+					}
 				} else {
-					nextHash ^= hashUnkown(value);
+					hashes[i] = hashUnkown(value);
 				}
 			} else if (value != null) {
-				nextHash ^= hashUnkown(value);
+				hashes[i] = hashUnkown(value);
 			}
 		}
-		return nextHash;
+		return Arrays.hashCode(hashes);
 	}
 
 	private static class LmdbValueStoreException extends RDF4JException {
@@ -77,7 +85,7 @@ public class LmdbCollectionFactory extends DefaultCollectionFactory {
 		return new DefaultBindingSetKey(bindingSet, hash(bindingSet, getValues), equalsTest);
 	}
 
-	private long hashUnkown(Value value) {
+	private int hashUnkown(Value value) {
 		long id;
 		try {
 			id = rev.getValueStore().getId(value, false);
@@ -87,7 +95,7 @@ public class LmdbCollectionFactory extends DefaultCollectionFactory {
 		if (id == LmdbValue.UNKNOWN_ID) {
 			return value.hashCode();
 		} else {
-			return Long.hashCode(id);
+			return (int) id;
 		}
 	}
 
