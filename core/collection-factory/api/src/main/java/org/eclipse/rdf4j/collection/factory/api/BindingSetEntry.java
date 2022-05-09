@@ -8,11 +8,13 @@
 
 package org.eclipse.rdf4j.collection.factory.api;
 
+import java.io.Serializable;
+
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
 
 @InternalUseOnly
-public interface BindingSetEntry {
+public interface BindingSetEntry extends Serializable {
 
 	public BindingSet getPrototype();
 }

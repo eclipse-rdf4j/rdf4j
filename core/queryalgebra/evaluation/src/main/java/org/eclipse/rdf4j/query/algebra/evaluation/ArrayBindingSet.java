@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -118,11 +119,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(bindingName)) {
 				final int idx = i;
-				return (v, a) -> {
-					a.values[idx] = v;
-					a.whichBindingsHaveBeenSet[idx] = true;
-					a.clearCache();
-				};
+				return new GetDirectSetBindingImplementation(idx);
 			}
 		}
 		assert false : "variable not known to ArrayBindingSet : " + bindingName;
@@ -166,9 +163,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(variableName)) {
 				final int idx = i;
-				return (a) -> {
-					return a.values[idx];
-				};
+				return new GetDirectGetValueImplementation(idx);
 			}
 		}
 		return null;
@@ -178,7 +173,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		for (int i = 0; i < this.bindingNames.length; i++) {
 			if (bindingNames[i].equals(bindingName)) {
 				final int idx = i;
-				return (a) -> a.whichBindingsHaveBeenSet[idx];
+				return new GetDirectHasBindingImplementation(idx);
 			}
 		}
 		return null;
@@ -291,6 +286,53 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	/*------------------------------------*
 	 * Inner class ArrayBindingSetIterator *
 	 *------------------------------------*/
+
+	private static final class GetDirectGetValueImplementation
+			implements Function<ArrayBindingSet, Value>, Serializable {
+		private static final long serialVersionUID = 1L;
+		private final int idx;
+
+		private GetDirectGetValueImplementation(int idx) {
+			this.idx = idx;
+		}
+
+		@Override
+		public Value apply(ArrayBindingSet a) {
+			return a.values[idx];
+		}
+	}
+
+	private static final class GetDirectHasBindingImplementation
+			implements Function<ArrayBindingSet, Boolean>, Serializable {
+		private static final long serialVersionUID = 1L;
+		private final int idx;
+
+		private GetDirectHasBindingImplementation(int idx) {
+			this.idx = idx;
+		}
+
+		@Override
+		public Boolean apply(ArrayBindingSet a) {
+			return a.whichBindingsHaveBeenSet[idx];
+		}
+	}
+
+	private static final class GetDirectSetBindingImplementation
+			implements BiConsumer<Value, ArrayBindingSet>, Serializable {
+		private static final long serialVersionUID = 1L;
+		private final int idx;
+
+		private GetDirectSetBindingImplementation(int idx) {
+			this.idx = idx;
+		}
+
+		@Override
+		public void accept(Value v, ArrayBindingSet a) {
+			a.values[idx] = v;
+			a.whichBindingsHaveBeenSet[idx] = true;
+			a.clearCache();
+		}
+	}
 
 	private class ArrayBindingSetIterator implements Iterator<Binding> {
 

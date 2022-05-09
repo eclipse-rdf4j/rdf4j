@@ -13,6 +13,9 @@ import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
@@ -149,6 +152,13 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	public void clearInferred(Resource... contexts) throws SailException {
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
+	}
+
+	@Override
+	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+		EvaluationStrategy strat = super.getEvaluationStrategy(dataset, tripleSource);
+		strat.setCollectionFactory(lmdbStore.getCollectionFactory());
+		return strat;
 	}
 
 }

@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -187,6 +189,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	private UUID uuid;
 
 	private QueryOptimizerPipeline pipeline;
+
+	private CollectionFactory cf = new DefaultCollectionFactory();
 
 	/*--------------*
 	 * Constructors *
@@ -2173,5 +2177,15 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				}
 			};
 		}
+	}
+
+	@Override
+	public CollectionFactory getCollectionFactory() {
+		return cf;
+	}
+
+	@Override
+	public void setCollectionFactory(CollectionFactory cf) {
+		this.cf = cf;
 	}
 }

@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.AbstractSet;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -40,6 +41,33 @@ public class LmdbCollectionFactory extends DefaultCollectionFactory {
 		return new LmdbValueSet(rev);
 	}
 
+	private final class FunctionImplementation implements Function<BindingSet, Integer>, Serializable {
+		private final List<Function<BindingSet, Value>> getValues;
+
+		private FunctionImplementation(List<Function<BindingSet, Value>> getValues) {
+			this.getValues = getValues;
+		}
+
+		@Override
+		public Integer apply(BindingSet bs) {
+			int nextHash = 0;
+			for (Function<BindingSet, Value> getValue : getValues) {
+				Value value = getValue.apply(bs);
+				if (value instanceof LmdbValue) {
+					LmdbValue lv = (LmdbValue) value;
+					if (lv.getValueStoreRevision() == rev) {
+						nextHash ^= Long.hashCode(lv.getInternalID());
+					} else {
+						nextHash ^= hashUnkown(value);
+					}
+				} else if (value != null) {
+					nextHash ^= hashUnkown(value);
+				}
+			}
+			return nextHash;
+		}
+	}
+
 	private static class LmdbValueStoreException extends RDF4JException {
 
 		public LmdbValueStoreException(IOException e) {
@@ -56,29 +84,13 @@ public class LmdbCollectionFactory extends DefaultCollectionFactory {
 	@Override
 	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
 			BiFunction<BindingSet, BindingSet, Boolean> equalsTest) {
-		Function<BindingSet, Integer> hashMaker = hashMaker(getValues);
+		Function<BindingSet, Integer> hashMaker = lmdbAwareHashMaker(getValues);
 		return new DefaultBindingSetKey(bindingSet, hashMaker, equalsTest);
 	}
 
-	private Function<BindingSet, Integer> hashMaker(List<Function<BindingSet, Value>> getValues) {
+	private Function<BindingSet, Integer> lmdbAwareHashMaker(List<Function<BindingSet, Value>> getValues) {
 
-		Function<BindingSet, Integer> hashFunction = (bs) -> {
-			int nextHash = 0;
-			for (Function<BindingSet, Value> getValue : getValues) {
-				Value value = getValue.apply(bs);
-				if (value instanceof LmdbValue) {
-					LmdbValue lv = (LmdbValue) value;
-					if (lv.getValueStoreRevision() == rev) {
-						nextHash ^= Long.hashCode(lv.getInternalID());
-					} else {
-						nextHash ^= hashUnkown(value);
-					}
-				} else if (value != null) {
-					nextHash ^= hashUnkown(value);
-				}
-			}
-			return nextHash;
-		};
+		Function<BindingSet, Integer> hashFunction = new FunctionImplementation(getValues);
 		return hashFunction;
 	}
 

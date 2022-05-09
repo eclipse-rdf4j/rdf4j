@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -234,7 +235,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		List<Function<BindingSet, Value>> getValues = getValueFunctions(context, group);
 		BiFunction<BindingSet, BindingSet, Boolean> equalsTest = equalsTestMaker(getValues);
 		try {
-			Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
+			Map<BindingSetKey, Entry> entries = new LinkedHashMap<>();
 
 			if (!iter.hasNext()) {
 				emptySolutionSpecialCase(aggregates, entries);
@@ -321,6 +322,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private class Entry implements BindingSetEntry {
 
+		private static final long serialVersionUID = 1L;
 		private final BindingSet prototype;
 		private final List<AggregateCollector> collectors;
 		private final List<Predicate<?>> predicates;

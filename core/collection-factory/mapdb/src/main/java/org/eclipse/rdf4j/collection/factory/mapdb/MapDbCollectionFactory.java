@@ -23,7 +23,6 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
-import org.eclipse.rdf4j.collection.factory.impl.DefaultBindingSetKey;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
@@ -80,26 +79,42 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 	@Override
 	public <T> Set<T> createSet() {
-		MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<T>(colectionId++, delegate.createSet());
-		return new CommitingSet<T>(set, iterationCacheSyncThreshold, db);
+		if (iterationCacheSyncThreshold > 0) {
+			MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<T>(colectionId++, delegate.createSet());
+			return new CommitingSet<T>(set, iterationCacheSyncThreshold, db);
+		} else {
+			return delegate.createSet();
+		}
 	}
 
 	@Override
 	public Set<Value> createValueSet() {
-		Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet());
-		return new CommitingSet<Value>(set, iterationCacheSyncThreshold, db);
+		if (iterationCacheSyncThreshold > 0) {
+			Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet());
+			return new CommitingSet<Value>(set, iterationCacheSyncThreshold, db);
+		} else {
+			return delegate.createValueSet();
+		}
 	}
 
 	@Override
 	public <K, V> Map<K, V> createMap() {
-		return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(), iterationCacheSyncThreshold,
-				db);
+		if (iterationCacheSyncThreshold > 0) {
+			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
+					iterationCacheSyncThreshold, db);
+		} else {
+			return delegate.createMap();
+		}
 	}
 
 	@Override
 	public <V> Map<Value, V> createValueKeyedMap() {
-		return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(), iterationCacheSyncThreshold,
-				db);
+		if (iterationCacheSyncThreshold > 0) {
+			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
+					iterationCacheSyncThreshold, db);
+		} else {
+			return delegate.createValueKeyedMap();
+		}
 	}
 
 	@Override
@@ -126,23 +141,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
 			BiFunction<BindingSet, BindingSet, Boolean> equalsTest) {
-		Function<BindingSet, Integer> hashMaker = hashMaker(getValues);
-		return new DefaultBindingSetKey(bindingSet, hashMaker, equalsTest);
-	}
-
-	private static Function<BindingSet, Integer> hashMaker(List<Function<BindingSet, Value>> getValues) {
-
-		Function<BindingSet, Integer> hashFunction = (bs) -> {
-			int nextHash = 0;
-			for (Function<BindingSet, Value> getValue : getValues) {
-				Value value = getValue.apply(bs);
-				if (value != null) {
-					nextHash ^= value.hashCode();
-				}
-			}
-			return nextHash;
-		};
-		return hashFunction;
+		return delegate.createBindingSetKey(bindingSet, getValues, equalsTest);
 	}
 
 	private static final class CommitingSet<T> extends AbstractSet<T> {

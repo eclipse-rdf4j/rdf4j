@@ -162,6 +162,13 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		return new DefaultCollectionFactory();
 	}
 
+	/*
+	 * Set a collection factory to be used during
+	 */
+	default void setCollectionFactory(CollectionFactory cf) {
+		// Do nothing;
+	}
+
 	default <T> Set<T> makeSet() {
 		return getCollectionFactory().createSet();
 	}
