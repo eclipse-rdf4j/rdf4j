@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class TransactionalIsolationTest {
@@ -143,6 +142,7 @@ public class TransactionalIsolationTest {
 		}
 	}
 
+	@Test
 	public void testAddingShapesAfterData() throws Throwable {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
@@ -214,6 +214,7 @@ public class TransactionalIsolationTest {
 		try {
 			connection2.commit();
 		} catch (Throwable ignored) {
+
 		}
 
 		connection2.rollback();
@@ -306,7 +307,7 @@ public class TransactionalIsolationTest {
 		try {
 			connection1.commit();
 		} catch (Throwable ignored) {
-			System.out.println(ignored.getMessage());
+
 		}
 
 		connection2.close();
@@ -362,7 +363,7 @@ public class TransactionalIsolationTest {
 		try {
 			connection1.commit();
 		} catch (Throwable ignored) {
-			System.out.println(ignored.getMessage());
+
 		}
 
 		connection2.close();
@@ -419,6 +420,7 @@ public class TransactionalIsolationTest {
 		try {
 			connection2.commit();
 		} catch (Throwable ignored) {
+
 		}
 
 		connection2.close();
@@ -479,6 +481,7 @@ public class TransactionalIsolationTest {
 		try {
 			connection2.commit();
 		} catch (Throwable ignored) {
+
 		}
 
 		connection2.close();
@@ -535,6 +538,7 @@ public class TransactionalIsolationTest {
 		try {
 			connection2.commit();
 		} catch (Throwable ignored) {
+
 		}
 
 		connection2.close();
@@ -591,6 +595,7 @@ public class TransactionalIsolationTest {
 		try {
 			connection2.commit();
 		} catch (Throwable ignored) {
+
 		}
 
 		connection2.close();
@@ -646,6 +651,7 @@ public class TransactionalIsolationTest {
 		try {
 			connection2.commit();
 		} catch (Throwable ignored) {
+
 		}
 
 		connection2.close();
@@ -701,7 +707,7 @@ public class TransactionalIsolationTest {
 		try {
 			connection1.commit();
 		} catch (Throwable ignored) {
-			System.out.println(ignored.getMessage());
+
 		}
 
 		connection2.close();

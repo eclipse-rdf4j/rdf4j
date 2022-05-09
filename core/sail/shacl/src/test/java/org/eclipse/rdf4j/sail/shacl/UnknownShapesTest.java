@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl;
 
-import static org.junit.Assert.assertEquals;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -21,6 +19,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -48,16 +47,18 @@ public class UnknownShapesTest {
 
 		Thread.sleep(100);
 
-		Set<String> relevantLog = newAppender.logged.stream()
+		List<String> relevantLog = newAppender.logged.stream()
 				.filter(m -> m.startsWith("Unsupported SHACL feature"))
-				.collect(Collectors.toSet());
+				.distinct()
+				.sorted(String::compareTo)
+				.collect(Collectors.toList());
 
-		Set<String> expected = Set.of(
-				"Unsupported SHACL feature detected sh:unknownTarget in statement (http://example.com/ns#PersonShape, http://www.w3.org/ns/shacl#unknownTarget, http://www.w3.org/2000/01/rdf-schema#Class, http://rdf4j.org/schema/rdf4j#SHACLShapeGraph) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]",
-				"Unsupported SHACL feature detected sh:unknownShaclProperty in statement (http://example.com/ns#PersonPropertyShape, http://www.w3.org/ns/shacl#unknownShaclProperty, \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>, http://rdf4j.org/schema/rdf4j#SHACLShapeGraph) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]"
+		List<String> expected = List.of(
+				"Unsupported SHACL feature detected sh:unknownShaclProperty in statement (http://example.com/ns#PersonPropertyShape, http://www.w3.org/ns/shacl#unknownShaclProperty, \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]",
+				"Unsupported SHACL feature detected sh:unknownTarget in statement (http://example.com/ns#PersonShape, http://www.w3.org/ns/shacl#unknownTarget, http://www.w3.org/2000/01/rdf-schema#Class) [http://rdf4j.org/schema/rdf4j#SHACLShapeGraph]"
 		);
 
-		assertEquals(expected, relevantLog);
+		Assertions.assertEquals(expected, relevantLog);
 
 		shaclRepository.shutDown();
 
@@ -93,12 +94,12 @@ public class UnknownShapesTest {
 				"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <http://example.com/ns#pathSequence> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#pathSequence> sh:path (<http://example.com/ns#parent> <http://example.com/ns#firstName>) .",
 				"Unsupported SHACL feature with complex path. Only single predicate paths, or single predicate inverse paths are supported. <http://example.com/ns#inverseOfWithComplex> shape has been deactivated!  @prefix sh: <http://www.w3.org/ns/shacl#> .  <http://example.com/ns#inverseOfWithComplex> sh:path [       sh:inversePath [           sh:zeroOrMorePath <http://example.com/ns#inverseThis>         ]     ] ."));
 
-		assertEquals(expected, relevantLog);
+		Assertions.assertEquals(expected, relevantLog);
 
 		shaclRepository.shutDown();
 	}
 
-	class MyAppender extends AppenderBase<ILoggingEvent> {
+	static class MyAppender extends AppenderBase<ILoggingEvent> {
 
 		List<String> logged = new ArrayList<>();
 

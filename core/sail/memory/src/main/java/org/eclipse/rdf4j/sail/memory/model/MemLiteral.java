@@ -129,4 +129,24 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 		objectStatements.cleanSnapshots(currentSnapshot);
 
 	}
+
+	@Override
+	public boolean hasSubjectStatements() {
+		return false;
+	}
+
+	@Override
+	public boolean hasPredicateStatements() {
+		return false;
+	}
+
+	@Override
+	public boolean hasObjectStatements() {
+		return !objectStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasContextStatements() {
+		return false;
+	}
 }

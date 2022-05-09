@@ -56,7 +56,7 @@ public class JSONLDInternalTripleCallbackTest {
 			final Statement stmt = statements.next();
 
 			System.out.println(stmt.toString());
-			assertEquals("Output was not as expected", stmt.toString(), expectedString);
+			assertEquals("Output was not as expected", expectedString, stmt.toString());
 		}
 
 		assertEquals(0, parseErrorListener.getFatalErrors().size());

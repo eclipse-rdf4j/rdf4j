@@ -55,7 +55,7 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	/**
 	 * The index of the last statement that has been returned.
 	 */
-	private volatile int statementIdx;
+	private int statementIdx;
 
 	/*--------------*
 	 * Constructors *
@@ -97,14 +97,14 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 		for (; statementIdx < statementList.size(); statementIdx++) {
 			MemStatement st = statementList.get(statementIdx);
 			if (isInSnapshot(st)) {
-				if (st.getSubject() instanceof MemTriple) {
+				if (st.getSubject().isTriple() && st.getSubject() instanceof MemTriple) {
 					MemTriple triple = (MemTriple) st.getSubject();
-					if (matchesPattern(triple)) {
+					if (triple.matchesSPO(subject, predicate, object)) {
 						return triple;
 					}
-				} else if (st.getObject() instanceof MemTriple) {
+				} else if (st.getObject().isTriple() && st.getObject() instanceof MemTriple) {
 					MemTriple triple = (MemTriple) st.getObject();
-					if (matchesPattern(triple)) {
+					if (triple.matchesSPO(subject, predicate, object)) {
 						return triple;
 					}
 				}
@@ -113,19 +113,6 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 
 		// No more matching statements.
 		return null;
-	}
-
-	private boolean matchesPattern(MemTriple triple) {
-		if (!(subject == null || subject.equals(triple.getSubject()))) {
-			return false;
-		}
-		if (!(predicate == null || predicate.equals(triple.getPredicate()))) {
-			return false;
-		}
-		if (!(object == null || object.equals(triple.getObject()))) {
-			return false;
-		}
-		return true;
 	}
 
 	private boolean isInSnapshot(MemStatement st) {
