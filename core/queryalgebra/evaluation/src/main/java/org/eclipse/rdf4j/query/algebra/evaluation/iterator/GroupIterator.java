@@ -19,7 +19,6 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-import java.util.function.LongFunction;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -135,7 +134,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private Iterator<BindingSet> createIterator() throws QueryEvaluationException {
 		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates();
 		Collection<Entry> entries = buildEntries(aggregates);
-		Set<BindingSet> bindingSets = cf.createSet();
 
 		Supplier<MutableBindingSet> makeNewBindingSet;
 		if (parentBindings.isEmpty()) {
@@ -146,7 +144,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		List<Function<BindingSet, Value>> getValues = new ArrayList<>();
 		List<BiConsumer<Value, MutableBindingSet>> setBindings = new ArrayList<>();
-		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
 		for (String name : group.getGroupBindingNames()) {
 			Function<BindingSet, Value> getValue = context.getValue(name);
 			BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(name);
@@ -156,6 +153,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 		}
 
+		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
+		Set<BindingSet> bindingSets = cf.createSet();
 		for (Entry entry : entries) {
 			MutableBindingSet sol = makeNewBindingSet.get();
 
@@ -227,7 +226,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			throws QueryEvaluationException {
 		CloseableIteration<BindingSet, QueryEvaluationException> iter;
 		iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings);
-		long setId = 0;
 
 		List<Function<BindingSet, Value>> getValues = getValueFunctions(context, group);
 		BiFunction<BindingSet, BindingSet, Boolean> equalsTest = equalsTestMaker(getValues);
@@ -245,7 +243,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 						List<AggregateCollector> collectors = makeCollectors(aggregates);
 						List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
 						for (AggregatePredicateCollectorSupplier<?, ?> a : aggregates) {
-							predicates.add(a.predicate.apply(setId++));
+							predicates.add(a.makePotentialDistinctTest.get());
 						}
 
 						entry = new Entry(sol, collectors, predicates);
@@ -286,7 +284,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private List<AggregateCollector> makeCollectors(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates) {
 		List<AggregateCollector> collectors = new ArrayList<>(aggregates.size());
 		for (AggregatePredicateCollectorSupplier<?, ?> a : aggregates) {
-			collectors.add(a.supplier.get());
+			collectors.add(a.makeAggregateCollector.get());
 		}
 
 		return collectors;
@@ -353,15 +351,16 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
 		public final String name;
 		private final Aggregate<T, D> agg;
-		private final LongFunction<Predicate<D>> predicate;
-		private final Supplier<T> supplier;
+		private final Supplier<Predicate<D>> makePotentialDistinctTest;
+		private final Supplier<T> makeAggregateCollector;
 
-		public AggregatePredicateCollectorSupplier(Aggregate<T, D> agg, LongFunction<Predicate<D>> predicate,
-				Supplier<T> supplier, String name) {
+		public AggregatePredicateCollectorSupplier(Aggregate<T, D> agg,
+				Supplier<Predicate<D>> makePotentialDistinctTest,
+				Supplier<T> makeAggregateCollector, String name) {
 			super();
 			this.agg = agg;
-			this.predicate = predicate;
-			this.supplier = supplier;
+			this.makePotentialDistinctTest = makePotentialDistinctTest;
+			this.makeAggregateCollector = makeAggregateCollector;
 			this.name = name;
 		}
 
@@ -372,7 +371,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private static final Predicate<BindingSet> ALWAYS_TRUE_BINDING_SET = (t) -> true;
 	private static final Predicate<Value> ALWAYS_TRUE_VALUE = (t) -> true;
-	private static final LongFunction<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = (l) -> ALWAYS_TRUE_VALUE;
+	private static final Supplier<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = () -> ALWAYS_TRUE_VALUE;
 
 	private AggregatePredicateCollectorSupplier<?, ?> create(GroupElem ge)
 			throws QueryEvaluationException {
@@ -381,17 +380,17 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		if (operator instanceof Count) {
 			if (((Count) operator).getArg() == null) {
 				WildCardCountAggregate wildCardCountAggregate = new WildCardCountAggregate();
-				LongFunction<Predicate<BindingSet>> predicate = operator.isDistinct() ? DistinctBindingSets::new
-						: (l) -> ALWAYS_TRUE_BINDING_SET;
+				Supplier<Predicate<BindingSet>> potentialDistinctTest = operator.isDistinct() ? DistinctBindingSets::new
+						: () -> ALWAYS_TRUE_BINDING_SET;
 				return new AggregatePredicateCollectorSupplier<>(
 						wildCardCountAggregate,
-						predicate,
+						potentialDistinctTest,
 						CountCollector::new,
 						ge.getName()
 				);
 			} else {
 				CountAggregate agg = new CountAggregate(strategy.precompile(((Count) operator).getArg(), context));
-				LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
+				Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 						: ALWAYS_TRUE_VALUE_SUPPLIER;
 				return new AggregatePredicateCollectorSupplier<>(
 						agg,
@@ -403,7 +402,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		} else if (operator instanceof Min) {
 			MinAggregate agg = new MinAggregate(strategy.precompile(((Min) operator).getArg(), context),
 					strategy instanceof ExtendedEvaluationStrategy);
-			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
+			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
 			return new AggregatePredicateCollectorSupplier<>(
 					agg,
@@ -414,7 +413,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		} else if (operator instanceof Max) {
 			MaxAggregate agg = new MaxAggregate(strategy.precompile(((Max) operator).getArg(), context),
 					strategy instanceof ExtendedEvaluationStrategy);
-			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
+			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
 			return new AggregatePredicateCollectorSupplier<>(
 					agg,
@@ -425,7 +424,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		} else if (operator instanceof Sum) {
 
 			SumAggregate agg = new SumAggregate(strategy.precompile(((Sum) operator).getArg(), context));
-			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
+			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
 			return new AggregatePredicateCollectorSupplier<>(
 					agg,
@@ -435,7 +434,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			);
 		} else if (operator instanceof Avg) {
 			AvgAggregate agg = new AvgAggregate(strategy.precompile(((Avg) operator).getArg(), context));
-			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
+			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
 			return new AggregatePredicateCollectorSupplier<>(
 					agg,
@@ -445,7 +444,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			);
 		} else if (operator instanceof Sample) {
 			SampleAggregate agg = new SampleAggregate(strategy.precompile(((Sample) operator).getArg(), context));
-			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
+			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
 			return new AggregatePredicateCollectorSupplier<>(
 					agg,
@@ -456,7 +455,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		} else if (operator instanceof GroupConcat) {
 			ConcatAggregate agg = new ConcatAggregate((GroupConcat) operator, this.context, this.strategy,
 					this.parentBindings);
-			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
+			Supplier<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
 			return new AggregatePredicateCollectorSupplier<>(
 					agg,
@@ -524,7 +523,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private class DistinctValues implements Predicate<Value> {
 		private final Set<Value> distinctValues;
 
-		public DistinctValues(long setId) {
+		public DistinctValues() {
 			distinctValues = cf.createValueSet();
 		}
 
@@ -537,7 +536,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private class DistinctBindingSets implements Predicate<BindingSet> {
 		private final Set<BindingSet> distinctValues;
 
-		public DistinctBindingSets(long setId) {
+		public DistinctBindingSets() {
 			distinctValues = cf.createSet();
 		}
 
