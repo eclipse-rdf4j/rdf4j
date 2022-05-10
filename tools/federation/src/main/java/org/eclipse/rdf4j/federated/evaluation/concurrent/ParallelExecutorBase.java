@@ -99,7 +99,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 	@Override
 	public void addResult(CloseableIteration<T, QueryEvaluationException> res) {
 		/* optimization: avoid adding empty results */
-		if (res instanceof EmptyIteration<?, ?>) {
+		if (res == null) {
 			return;
 		}
 		if (isClosed() || rightQueue.isClosed()) {

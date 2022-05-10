@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.common.iteration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.function.Supplier;
@@ -27,25 +28,28 @@ public class Iterations {
 	/**
 	 * Get a List containing all elements obtained from the specified Iteration.
 	 *
-	 * @param iter the Iteration to get the elements from
+	 * @param iteration the Iteration to get the elements from
 	 * @return a List containing all elements obtained from the specified Iteration.
 	 */
-	public static <E, X extends Exception> List<E> asList(CloseableIteration<? extends E, X> iter) throws X {
+	public static <E, X extends Exception> List<E> asList(CloseableIteration<? extends E, X> iteration) throws X {
+		Objects.requireNonNull(iteration);
 		// stream.collect is slightly slower than addAll for lists
 		List<E> list = new ArrayList<>();
 
 		// addAll closes the iteration
-		return addAll(iter, list);
+		return addAll(iteration, list);
 	}
 
 	/**
 	 * Get a Set containing all elements obtained from the specified Iteration.
 	 *
-	 * @param iter the Iteration to get the elements from
+	 * @param iteration the Iteration to get the elements from
 	 * @return a Set containing all elements obtained from the specified Iteration.
 	 */
-	public static <E, X extends Exception> Set<E> asSet(CloseableIteration<? extends E, ? extends X> iter) throws X {
-		try (Stream<? extends E> stream = iter.stream()) {
+	public static <E, X extends Exception> Set<E> asSet(CloseableIteration<? extends E, ? extends X> iteration)
+			throws X {
+		Objects.requireNonNull(iteration);
+		try (Stream<? extends E> stream = iteration.stream()) {
 			return stream.collect(Collectors.toSet());
 		}
 	}
@@ -54,16 +58,17 @@ public class Iterations {
 	 * Adds all elements from the supplied Iteration to the specified collection. If the supplied Iteration is an
 	 * instance of {@link CloseableIteration} it is automatically closed after consumption.
 	 *
-	 * @param iter       An Iteration containing elements to add to the container. If the Iteration is an instance of
+	 * @param iteration  An Iteration containing elements to add to the container. If the Iteration is an instance of
 	 *                   {@link CloseableIteration} it is automatically closed after consumption.
 	 * @param collection The collection to add the elements to.
 	 * @return The <var>collection</var> object that was supplied to this method.
 	 */
-	public static <E, X extends Exception, C extends Collection<E>> C addAll(CloseableIteration<? extends E, X> iter,
-			C collection) throws X {
-		try (iter) {
-			while (iter.hasNext()) {
-				collection.add(iter.next());
+	public static <E, X extends Exception, C extends Collection<E>> C addAll(
+			CloseableIteration<? extends E, X> iteration, C collection) throws X {
+		Objects.requireNonNull(iteration);
+		try (iteration) {
+			while (iteration.hasNext()) {
+				collection.add(iteration.next());
 			}
 		}
 
@@ -71,6 +76,7 @@ public class Iterations {
 	}
 
 	public static <T, X extends Exception, K extends CloseableIteration<T, X>> Stream<T> stream(K iteration) {
+		Objects.requireNonNull(iteration);
 		Spliterator<T> spliterator = new CloseableIterationSpliterator<>(iteration);
 
 		return StreamSupport.stream(spliterator, false).onClose(() -> {
@@ -88,13 +94,14 @@ public class Iterations {
 	 * Converts an Iteration to a string by concatenating all of the string representations of objects in the Iteration,
 	 * divided by a separator.
 	 *
-	 * @param iter      An Iteration over arbitrary objects that are expected to implement {@link Object#toString()}.
+	 * @param iteration An Iteration over arbitrary objects that are expected to implement {@link Object#toString()}.
 	 * @param separator The separator to insert between the object strings.
 	 * @return A String representation of the objects provided by the supplied Iteration.
 	 */
-	public static <X extends Exception> String toString(CloseableIteration<?, X> iter, String separator) throws X {
+	public static <X extends Exception> String toString(CloseableIteration<?, X> iteration, String separator) throws X {
+		Objects.requireNonNull(iteration);
 		StringBuilder sb = new StringBuilder();
-		toString(iter, separator, sb);
+		toString(iteration, separator, sb);
 		return sb.toString();
 	}
 
@@ -102,16 +109,18 @@ public class Iterations {
 	 * Converts an Iteration to a string by concatenating all of the string representations of objects in the Iteration,
 	 * divided by a separator.
 	 *
-	 * @param iter      An Iteration over arbitrary objects that are expected to implement {@link Object#toString()}.
+	 * @param iteration An Iteration over arbitrary objects that are expected to implement {@link Object#toString()}.
 	 * @param separator The separator to insert between the object strings.
 	 * @param sb        A StringBuilder to append the Iteration string to.
 	 */
-	public static <X extends Exception> void toString(CloseableIteration<?, X> iter, String separator, StringBuilder sb)
+	public static <X extends Exception> void toString(CloseableIteration<?, X> iteration, String separator,
+			StringBuilder sb)
 			throws X {
-		while (iter.hasNext()) {
-			sb.append(iter.next());
+		Objects.requireNonNull(iteration);
+		while (iteration.hasNext()) {
+			sb.append(iteration.next());
 
-			if (iter.hasNext()) {
+			if (iteration.hasNext()) {
 				sb.append(separator);
 			}
 		}
@@ -121,15 +130,17 @@ public class Iterations {
 	/**
 	 * Get a Set containing all elements obtained from the specified Iteration.
 	 *
-	 * @param iter     the Iteration to get the elements from
-	 * @param setMaker the Supplier that constructs a new set
+	 * @param iteration the Iteration to get the elements from
+	 * @param setMaker  the Supplier that constructs a new set
 	 * @return a Set containing all elements obtained from the specified Iteration.
 	 */
-	public static <E, X extends Exception> Set<E> asSet(CloseableIteration<? extends E, ? extends X> iter,
+	public static <E, X extends Exception> Set<E> asSet(CloseableIteration<? extends E, ? extends X> iteration,
 			Supplier<Set<E>> setMaker) throws X {
+		Objects.requireNonNull(iteration);
+
 		Set<E> set = setMaker.get();
-		while (iter.hasNext()) {
-			set.add(iter.next());
+		while (iteration.hasNext()) {
+			set.add(iteration.next());
 		}
 		return set;
 	}

@@ -148,12 +148,12 @@ public class TupleFunctionFederatedService implements FederatedService {
 			CloseableIteration<BindingSet, QueryEvaluationException> bindings, String baseUri)
 			throws QueryEvaluationException {
 		if (!bindings.hasNext()) {
-			return QueryEvaluationStep.EMPTY_ITERATION;
+			return null;
 		}
 
 		TupleExpr expr = service.getArg();
 		if (!(expr instanceof TupleFunctionCall)) {
-			return QueryEvaluationStep.EMPTY_ITERATION;
+			return null;
 		}
 
 		TupleFunctionCall funcCall = (TupleFunctionCall) expr;

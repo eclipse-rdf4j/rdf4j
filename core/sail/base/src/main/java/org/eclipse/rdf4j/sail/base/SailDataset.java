@@ -92,7 +92,7 @@ public interface SailDataset extends SailClosable {
 	default boolean hasStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> iteration = getStatements(subj, pred, obj,
 				contexts)) {
-			return iteration.hasNext();
+			return iteration != null && iteration.hasNext();
 		}
 	}
 
@@ -114,7 +114,7 @@ public interface SailDataset extends SailClosable {
 	/**
 	 * Probabilistic method that returns true if the sail dataset is empty and false if it is not empty, but may also
 	 * return false when the sail dataset is empty.
-	 * 
+	 *
 	 * @return
 	 */
 	default boolean isDefinitelyEmpty() {

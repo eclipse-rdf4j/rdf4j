@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.lang3.time.StopWatch;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockedIteration;
 import org.eclipse.rdf4j.common.concurrent.locks.Properties;
@@ -23,8 +24,6 @@ import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -65,13 +64,12 @@ import org.slf4j.LoggerFactory;
  *
  * @author James Leigh
  */
-class MemorySailStore implements SailStore {
+@InternalUseOnly
+public class MemorySailStore implements SailStore {
 
 	private final static Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
 	private static final Runtime RUNTIME = Runtime.getRuntime();
 
-	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
-	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 	public static final MemResource[] EMPTY_CONTEXT = {};
 	public static final MemResource[] NULL_CONTEXT = { null };
 
@@ -255,29 +253,29 @@ class MemorySailStore implements SailStore {
 		// Perform look-ups for value-equivalents of the specified values
 
 		if (explicit != null && !explicit && !mayHaveInferred && snapshot >= 0) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		if (statements.isEmpty()) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		MemResource memSubj = valueFactory.getMemResource(subj);
 		if (subj != null && memSubj == null) {
 			// non-existent subject
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		MemIRI memPred = valueFactory.getMemURI(pred);
 		if (pred != null && memPred == null) {
 			// non-existent predicate
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		MemValue memObj = valueFactory.getMemValue(obj);
 		if (obj != null && memObj == null) {
 			// non-existent object
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		MemResource[] memContexts;
@@ -293,13 +291,13 @@ class MemorySailStore implements SailStore {
 			MemResource memContext = valueFactory.getMemResource(contexts[0]);
 			if (memContext == null) {
 				// non-existent context
-				return EMPTY_ITERATION;
+				return null;
 			}
 
 			memContexts = new MemResource[] { memContext };
 			smallestList = memContext.getContextStatementList();
 			if (smallestList.isEmpty()) {
-				return EMPTY_ITERATION;
+				return null;
 			}
 
 		} else {
@@ -314,7 +312,7 @@ class MemorySailStore implements SailStore {
 
 			if (contextSet.isEmpty()) {
 				// no known contexts specified
-				return EMPTY_ITERATION;
+				return null;
 			}
 
 			memContexts = contextSet.toArray(new MemResource[0]);
@@ -329,11 +327,11 @@ class MemorySailStore implements SailStore {
 			MemValue obj, LockRequirement lockRequirement, MemResource... contexts) {
 
 		if (statements.isEmpty()) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		if (statements.isEmpty()) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		MemResource[] memContexts;
@@ -361,7 +359,7 @@ class MemorySailStore implements SailStore {
 		if (explicit != null && !explicit) {
 			// we are looking for inferred statements
 			if (!mayHaveInferred && snapshot >= 0) {
-				return EMPTY_ITERATION;
+				return null;
 			}
 		}
 
@@ -370,7 +368,7 @@ class MemorySailStore implements SailStore {
 		if (smallestList == null) {
 			smallestList = statementList;
 		} else if (smallestList.isEmpty()) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		boolean singletonList = smallestList.size() == 1;
@@ -433,7 +431,7 @@ class MemorySailStore implements SailStore {
 						return new SingletonIteration<>(memStatement);
 					}
 				}
-				return EMPTY_ITERATION;
+				return null;
 			} else {
 				throw new UnsupportedOperationException("Result too large to wrap: " + smallestList.size());
 			}
@@ -449,11 +447,15 @@ class MemorySailStore implements SailStore {
 	private CloseableIteration<MemStatement, SailException> getIterationWithLateReadLock(MemResource subj, MemIRI pred,
 			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList smallestList) {
 		Lock lock = null;
-		LookAheadIteration<MemStatement, SailException> iteration = null;
+		CloseableIteration<MemStatement, SailException> iteration = null;
 		try {
 			lock = openStatementsReadLock();
 			iteration = MemStatementIterator.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot,
 					memContexts, iteratorCache);
+			if (iteration == null) {
+				lock.release();
+				return iteration;
+			}
 			return LockedIteration.getInstance(iteration, lock);
 		} catch (Throwable t) {
 			if (iteration != null) {
@@ -475,7 +477,7 @@ class MemorySailStore implements SailStore {
 				snapshot, memContexts, iteratorCache);
 
 		if (!hasNext) {
-			return EMPTY_ITERATION;
+			return null;
 		} else {
 			return HAS_NEXT_ITERATION;
 		}
@@ -529,19 +531,19 @@ class MemorySailStore implements SailStore {
 
 		if (subj != null && memSubj == null) {
 			// non-existent subject
-			return EMPTY_TRIPLE_ITERATION;
+			return null;
 		}
 
 		MemIRI memPred = valueFactory.getMemURI(pred);
 		if (pred != null && memPred == null) {
 			// non-existent predicate
-			return EMPTY_TRIPLE_ITERATION;
+			return null;
 		}
 
 		MemValue memObj = valueFactory.getMemValue(obj);
 		if (obj != null && memObj == null) {
 			// non-existent object
-			return EMPTY_TRIPLE_ITERATION;
+			return null;
 		}
 
 		// TODO there is no separate index for Triples, so for now we iterate over all statements to find matches.
@@ -723,7 +725,7 @@ class MemorySailStore implements SailStore {
 		}
 	}
 
-	private final class MemorySailSource extends BackingSailSource {
+	final class MemorySailSource extends BackingSailSource {
 
 		private final boolean explicit;
 
@@ -805,13 +807,15 @@ class MemorySailStore implements SailStore {
 					}
 					try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(subj, pred, obj,
 							null, -1, LockRequirement.none, contexts)) {
-						while (iter.hasNext()) {
-							MemStatement st = iter.next();
-							int since = st.getSinceSnapshot();
-							int till = st.getTillSnapshot();
-							if (serializable < since && since < nextSnapshot
-									|| serializable < till && till < nextSnapshot) {
-								throw new SailConflictException("Observed State has Changed");
+						if (iter != null) {
+							while (iter.hasNext()) {
+								MemStatement st = iter.next();
+								int since = st.getSinceSnapshot();
+								int till = st.getTillSnapshot();
+								if (serializable < since && since < nextSnapshot
+										|| serializable < till && till < nextSnapshot) {
+									throw new SailConflictException("Observed State has Changed");
+								}
 							}
 						}
 					} catch (InterruptedException e) {
@@ -902,9 +906,11 @@ class MemorySailStore implements SailStore {
 			requireCleanup = true;
 			try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(null, null, null,
 					explicit, nextSnapshot, LockRequirement.none, contexts)) {
-				while (iter.hasNext()) {
-					MemStatement st = iter.next();
-					st.setTillSnapshot(nextSnapshot);
+				if (iter != null) {
+					while (iter.hasNext()) {
+						MemStatement st = iter.next();
+						st.setTillSnapshot(nextSnapshot);
+					}
 				}
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);
@@ -962,9 +968,11 @@ class MemorySailStore implements SailStore {
 						statement.getSubject(),
 						statement.getPredicate(), statement.getObject(),
 						explicit, nextSnapshot, LockRequirement.none, statement.getContext())) {
-					while (iter.hasNext()) {
-						MemStatement st = iter.next();
-						st.setTillSnapshot(nextSnapshot);
+					if (iter != null) {
+						while (iter.hasNext()) {
+							MemStatement st = iter.next();
+							st.setTillSnapshot(nextSnapshot);
+						}
 					}
 				} catch (InterruptedException e) {
 					throw convertToSailException(e);
@@ -1190,7 +1198,7 @@ class MemorySailStore implements SailStore {
 		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
 			if (!explicit && !mayHaveInferred && snapshot >= 0) {
-				return EMPTY_ITERATION;
+				return null;
 			}
 
 			try {
@@ -1211,7 +1219,7 @@ class MemorySailStore implements SailStore {
 
 			try (CloseableIteration<MemStatement, SailException> iterator = createStatementIterator(subj, pred, obj,
 					explicit, getCurrentSnapshot(), LockRequirement.hasNext, contexts)) {
-				return iterator.hasNext();
+				return iterator != null && iterator.hasNext();
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);
 			}
@@ -1222,7 +1230,7 @@ class MemorySailStore implements SailStore {
 		public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 				throws SailException {
 			if (!explicit && !mayHaveInferred && snapshot >= 0) {
-				return EMPTY_TRIPLE_ITERATION;
+				return null;
 			}
 
 			CloseableIteration<? extends Triple, SailException> stIter1 = null;
@@ -1231,6 +1239,10 @@ class MemorySailStore implements SailStore {
 			try {
 				CloseableIteration<MemTriple, SailException> tripleIterator = createTripleIterator(subj, pred, obj,
 						getCurrentSnapshot());
+				if (tripleIterator == null) {
+					stLock.release();
+					return null;
+				}
 				try {
 					return LockedIteration.getInstance(tripleIterator, stLock);
 				} catch (Throwable t) {
@@ -1261,7 +1273,7 @@ class MemorySailStore implements SailStore {
 
 			// Filter more thoroughly by considering snapshot and read-mode
 			// parameters
-			try (MemStatementIterator<SailException> iter = new MemStatementIterator<>(contextStatements, null, null,
+			try (MemStatementIterator iter = new MemStatementIterator(contextStatements, null, null,
 					null, null, snapshot)) {
 				return iter.hasNext();
 			}

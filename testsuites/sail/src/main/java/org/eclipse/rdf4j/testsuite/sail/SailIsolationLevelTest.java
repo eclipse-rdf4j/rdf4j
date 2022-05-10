@@ -602,12 +602,11 @@ public abstract class SailIsolationLevelTest {
 			Resource... contexts) throws SailException {
 		try (CloseableIteration<? extends Statement, SailException> stmts = con.getStatements(subj, pred, obj,
 				includeInferred, contexts)) {
-			long counter = 0;
-			while (stmts.hasNext()) {
-				stmts.next();
-				counter++;
+			if (stmts == null) {
+				return 0;
+			} else {
+				return stmts.stream().count();
 			}
-			return counter;
 		}
 	}
 
@@ -638,7 +637,7 @@ public abstract class SailIsolationLevelTest {
 
 	protected synchronized void assertNotFailed() {
 		if (failed != null) {
-			throw (AssertionError) new AssertionError(failedMessage).initCause(failed);
+			throw (AssertionError) new AssertionError(failedMessage, failed);
 		}
 	}
 

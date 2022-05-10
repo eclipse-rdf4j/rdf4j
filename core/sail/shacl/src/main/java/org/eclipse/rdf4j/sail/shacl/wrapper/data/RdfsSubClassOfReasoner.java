@@ -23,12 +23,14 @@ import java.util.stream.Stream;
 
 import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -153,15 +155,18 @@ public class RdfsSubClassOfReasoner {
 
 		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = new RdfsSubClassOfReasoner();
 
-		try (Stream<? extends Statement> stream = shaclSailConnection.getStatements(null, RDFS.SUBCLASSOF, null, false)
-				.stream()) {
-			stream.forEach(rdfsSubClassOfReasoner::addSubClassOfStatement);
+		try (CloseableIteration<? extends Statement, SailException> statements = shaclSailConnection.getStatements(null,
+				RDFS.SUBCLASSOF, null, false)) {
+			if (statements != null) {
+				statements.stream().forEach(rdfsSubClassOfReasoner::addSubClassOfStatement);
+			}
 		}
 
-		try (Stream<? extends Statement> stream = shaclSailConnection
-				.getStatements(null, RDFS.SUBCLASSOF, null, false, RDF4J.SHACL_SHAPE_GRAPH)
-				.stream()) {
-			stream.forEach(rdfsSubClassOfReasoner::addSubClassOfStatement);
+		try (CloseableIteration<? extends Statement, SailException> statements = shaclSailConnection.getStatements(null,
+				RDFS.SUBCLASSOF, null, false, RDF4J.SHACL_SHAPE_GRAPH)) {
+			if (statements != null) {
+				statements.stream().forEach(rdfsSubClassOfReasoner::addSubClassOfStatement);
+			}
 		}
 
 		rdfsSubClassOfReasoner.calculateSubClassOf(rdfsSubClassOfReasoner.subClassOfStatements);

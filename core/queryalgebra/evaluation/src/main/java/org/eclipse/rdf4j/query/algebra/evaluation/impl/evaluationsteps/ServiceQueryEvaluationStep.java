@@ -78,7 +78,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				if (exists) {
 					return new SingletonIteration<>(bindings);
 				} else {
-					return EMPTY_ITERATION;
+					return null;
 				}
 
 			}

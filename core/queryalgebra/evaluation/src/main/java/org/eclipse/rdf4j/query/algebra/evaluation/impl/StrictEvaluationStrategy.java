@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
@@ -367,12 +366,18 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
 		return QueryEvaluationStep.wrap(qes, (iter) -> {
 			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
+			if (iter == null) {
+				return null;
+			}
 			return new ResultSizeCountingIterator(iter, expr);
 		});
 	}
 
 	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
 		return QueryEvaluationStep.wrap(qes, (iter) -> {
+			if (iter == null) {
+				return null;
+			}
 			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
 			return new TimedIterator(iter, expr);
 		});
@@ -527,9 +532,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
 //			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			return bs -> QueryEvaluationStep.EMPTY_ITERATION;
+			return bs -> null;
 		}
-		return bs -> new FilterIterator(node, arg.evaluate(bs), ves, StrictEvaluationStrategy.this);
+		return bs -> {
+			CloseableIteration<BindingSet, QueryEvaluationException> evaluate = arg.evaluate(bs);
+			if (evaluate == null) {
+				return null;
+			}
+			try {
+				return new FilterIterator(node, evaluate, ves, StrictEvaluationStrategy.this);
+			} catch (Throwable t) {
+				evaluate.close();
+				throw t;
+			}
+		};
 	}
 
 	protected QueryEvaluationStep prepare(Order node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -565,18 +581,37 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	protected QueryEvaluationStep prepare(DescribeOperator node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep child = precompile(node.getArg(), context);
-		return bs -> new DescribeIteration(child.evaluate(bs), StrictEvaluationStrategy.this, node.getBindingNames(),
-				bs);
+		return bs -> {
+
+			CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bs);
+			if (evaluate == null) {
+				return null;
+			}
+			try {
+				return new DescribeIteration(evaluate, StrictEvaluationStrategy.this, node.getBindingNames(),
+						bs);
+			} catch (Throwable t) {
+				evaluate.close();
+				throw t;
+			}
+
+		};
 	}
 
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		final QueryEvaluationStep child = precompile(node.getArg(), context);
 		return bindings -> {
-			final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child
-					.evaluate(bindings);
-			return new DistinctIteration<>(evaluate,
-					StrictEvaluationStrategy.this::makeSet);
+			CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
+			if (evaluate == null) {
+				return null;
+			}
+			try {
+				return new DistinctIteration<>(evaluate, StrictEvaluationStrategy.this::makeSet);
+			} catch (Throwable t) {
+				evaluate.close();
+				throw t;
+			}
 		};
 
 	}
@@ -584,7 +619,18 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		return bindings -> new ReducedIteration<>(arg.evaluate(bindings));
+		return bindings -> {
+			CloseableIteration<BindingSet, QueryEvaluationException> evaluate = arg.evaluate(bindings);
+			if (evaluate == null) {
+				return null;
+			}
+			try {
+				return new ReducedIteration<>(evaluate);
+			} catch (Throwable t) {
+				evaluate.close();
+				throw t;
+			}
+		};
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(DescribeOperator operator,
@@ -830,12 +876,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(EmptySet emptySet,
 			BindingSet bindings)
 			throws QueryEvaluationException {
-		return QueryEvaluationStep.EMPTY_ITERATION;
+		return null;
 	}
 
 	protected QueryEvaluationStep prepare(EmptySet emptySet, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return bindings -> QueryEvaluationStep.EMPTY_ITERATION;
+		return bindings -> null;
 	}
 
 	@Override
@@ -1078,8 +1124,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			return new QueryValueEvaluationStep() {
 
 				@Override
-				public Value evaluate(BindingSet bindings)
-						throws ValueExprEvaluationException, QueryEvaluationException {
+				public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
 					try {
 						Value argValue = arg.evaluate(bindings);
 						return BooleanLiteral.valueOf(argValue != null);
@@ -1861,6 +1906,8 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			throws QueryEvaluationException {
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(),
 				bindings)) {
+			if (iter == null)
+				return BooleanLiteral.FALSE;
 			return BooleanLiteral.valueOf(iter.hasNext());
 		}
 	}
@@ -2020,7 +2067,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
 			stopwatch.start();
-			boolean hasNext = iterator.hasNext();
+			boolean hasNext = iterator != null && iterator.hasNext();
 			stopwatch.stop();
 			return hasNext;
 		}
@@ -2028,7 +2075,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		@Override
 		public void close() throws QueryEvaluationException {
 			try {
-				iterator.close();
+				if (iterator != null) {
+					iterator.close();
+				}
 			} finally {
 				queryModelNode.setTotalTimeNanosActual(
 						queryModelNode.getTotalTimeNanosActual() + stopwatch.elapsed(TimeUnit.NANOSECONDS));
@@ -2037,7 +2086,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 		@Override
 		public boolean isClosed() {
-			return iterator.isClosed();
+			return iterator != null && iterator.isClosed();
 		}
 
 		@Override

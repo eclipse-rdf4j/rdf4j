@@ -60,7 +60,7 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 		this.leftIter = strategy.evaluate(join.getLeftArg(), getFilteredBindings(inputBindings, problemVars));
 
 		// Initialize with empty iteration so that var is never null
-		this.rightIter = QueryEvaluationStep.EMPTY_ITERATION;
+		this.rightIter = null;
 
 		this.prepareRightArg = strategy.precompile(join.getRightArg(), context);
 		join.setAlgorithm(this);
@@ -87,7 +87,7 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 		this.leftIter = left.evaluate(getFilteredBindings(inputBindings, problemVars));
 
 		// Initialize with empty iteration so that var is never null
-		this.rightIter = QueryEvaluationStep.EMPTY_ITERATION;
+		this.rightIter = null;
 
 		this.prepareRightArg = right;
 		this.joinCondition = joinCondition;
@@ -140,18 +140,19 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 	protected BindingSet innerGetNextElement() throws QueryEvaluationException {
 		try {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> nextRightIter = rightIter;
-			while (nextRightIter.hasNext() || leftIter.hasNext()) {
+			while ((nextRightIter != null && nextRightIter.hasNext()) || leftIter.hasNext()) {
 				BindingSet leftBindings = null;
 
-				if (!nextRightIter.hasNext()) {
+				if (nextRightIter == null || !nextRightIter.hasNext()) {
 					// Use left arg's bindings in case join fails
 					leftBindings = leftIter.next();
 
-					nextRightIter.close();
+					if (nextRightIter != null)
+						nextRightIter.close();
 					nextRightIter = rightIter = prepareRightArg.evaluate(leftBindings);
 				}
 
-				while (nextRightIter.hasNext()) {
+				while (nextRightIter != null && nextRightIter.hasNext()) {
 					BindingSet rightBindings = nextRightIter.next();
 
 					try {
@@ -195,7 +196,8 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 		try {
 			leftIter.close();
 		} finally {
-			rightIter.close();
+			if (rightIter != null)
+				rightIter.close();
 		}
 	}
 }

@@ -63,9 +63,12 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> apply(BindingSet bindings) {
 			CloseableIteration<BindingSet, QueryEvaluationException> evaluate = leftPrepared.evaluate(bindings);
+			if (evaluate == null)
+				return null;
+
 			if (!evaluate.hasNext()) {
 				evaluate.close();
-				return EMPTY_ITERATION;
+				return null;
 			}
 
 			return new JoinIterator(evaluate, rightPrepared);

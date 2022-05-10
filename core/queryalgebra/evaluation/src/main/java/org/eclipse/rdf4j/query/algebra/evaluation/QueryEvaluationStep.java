@@ -23,8 +23,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 @FunctionalInterface
 public interface QueryEvaluationStep {
 
-	EmptyIteration<BindingSet, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
-
 	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings);
 
 	/**

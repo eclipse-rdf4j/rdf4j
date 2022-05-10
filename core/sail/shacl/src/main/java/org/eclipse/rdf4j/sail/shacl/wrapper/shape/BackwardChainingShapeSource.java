@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.sail.shacl.wrapper.shape;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -20,6 +21,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 
 public class BackwardChainingShapeSource implements ShapeSource {
 
@@ -47,25 +49,34 @@ public class BackwardChainingShapeSource implements ShapeSource {
 
 	public Stream<ShapesGraph> getAllShapeContexts() {
 		assert context != null;
-		try (Stream<? extends Statement> stream = connection
-				.getStatements(null, SHACL.SHAPES_GRAPH, null, false, context)
-				.stream()) {
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null,
+				SHACL.SHAPES_GRAPH, null, false, context)) {
+			if (statements == null) {
+				return Stream.empty();
+			}
 
-			return stream.collect(Collectors.groupingBy(Statement::getSubject))
+			return statements.stream()
+					.collect(Collectors.groupingBy(Statement::getSubject))
 					.entrySet()
 					.stream()
-					.map(entry -> new ShapeSource.ShapesGraph(entry.getKey(), entry.getValue()));
+					.map(entry -> new ShapesGraph(entry.getKey(), entry.getValue()));
 		}
-
 	}
 
 	public Stream<Resource> getTargetableShape() {
 		assert context != null;
+		Stream<Resource> inferred;
 
-		Stream<Resource> inferred = connection.getStatements(null, RDF.TYPE, RDFS.CLASS, true, context)
-				.stream()
-				.map(Statement::getSubject)
-				.filter(this::isNodeShapeOrPropertyShape);
+		CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, RDF.TYPE,
+				RDFS.CLASS, true, context);
+		if (statements != null) {
+			inferred = statements
+					.stream()
+					.map(Statement::getSubject)
+					.filter(this::isNodeShapeOrPropertyShape);
+		} else {
+			inferred = Stream.empty();
+		}
 
 		return Stream
 				.of(getSubjects(Predicates.TARGET_NODE), getSubjects(Predicates.TARGET_CLASS),
@@ -84,7 +95,13 @@ public class BackwardChainingShapeSource implements ShapeSource {
 	public Stream<Resource> getSubjects(Predicates predicate) {
 		assert context != null;
 
-		return connection.getStatements(null, predicate.getIRI(), null, true, context)
+		CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null,
+				predicate.getIRI(), null, true, context);
+		if (statements == null) {
+			return Stream.empty();
+		}
+
+		return statements
 				.stream()
 				.map(Statement::getSubject)
 				.distinct();
@@ -94,7 +111,12 @@ public class BackwardChainingShapeSource implements ShapeSource {
 	public Stream<Value> getObjects(Resource subject, Predicates predicate) {
 		assert context != null;
 
-		return connection.getStatements(subject, predicate.getIRI(), null, true, context)
+		CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
+				predicate.getIRI(), null, true, context);
+		if (statements == null) {
+			return Stream.empty();
+		}
+		return statements
 				.stream()
 				.map(Statement::getObject)
 				.distinct();
@@ -115,31 +137,40 @@ public class BackwardChainingShapeSource implements ShapeSource {
 					Stream.of(Statements.statement(id, SHACL.TARGET_CLASS, id, null)));
 		}
 
-		return Stream.concat(connection.getStatements(id, null, null, true, context).stream().map(s -> ((Statement) s)),
+		CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(id, null, null,
+				true, context);
+		if (statements == null) {
+			return backwardsChained;
+		}
+
+		return Stream.concat(statements.stream().map(s -> ((Statement) s)),
 				backwardsChained);
 	}
 
 	public Value getRdfFirst(Resource subject) {
 		assert context != null;
 
-		try (Stream<? extends Statement> stream = connection.getStatements(subject, RDF.FIRST, null, true, context)
-				.stream()) {
-			return stream.map(Statement::getObject).findAny().orElse(null);
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
+				RDF.FIRST, null, true, context)) {
+			if (statements == null) {
+				return null;
+			}
+
+			return statements.stream().map(Statement::getObject).findAny().orElse(null);
+
 		}
 		// .orElseThrow(() -> new IllegalStateException("Corrupt rdf:list at rdf:first: " + subject));
 	}
 
 	public Resource getRdfRest(Resource subject) {
 		assert context != null;
-
-		Value value;
-		try (Stream<? extends Statement> stream = connection.getStatements(subject, RDF.REST, null, true, context)
-				.stream()) {
-			value = stream.map(Statement::getObject).findAny().orElse(null);
+		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(subject,
+				RDF.REST, null, true, context)) {
+			if (statements == null) {
+				return null;
+			}
+			return (Resource) statements.stream().map(Statement::getObject).findAny().orElse(null);
 		}
-		// .orElseThrow(() -> new IllegalStateException("Corrupt rdf:list at rdf:rest: " + subject));
-
-		return ((Resource) value);
 	}
 
 	public boolean isType(Resource subject, IRI type) {

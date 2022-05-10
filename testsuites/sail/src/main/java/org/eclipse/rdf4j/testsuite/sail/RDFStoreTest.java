@@ -950,6 +950,8 @@ public abstract class RDFStoreTest {
 	}
 
 	private <T, X extends Exception> int countElements(CloseableIteration<T, X> iter) throws X {
+		if (iter == null)
+			return 0;
 		int count = 0;
 
 		try (iter) {

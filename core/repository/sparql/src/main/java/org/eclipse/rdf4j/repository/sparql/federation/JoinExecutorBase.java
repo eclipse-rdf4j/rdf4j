@@ -87,7 +87,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 
 	public void addResult(CloseableIteration<T, QueryEvaluationException> res) {
 		/* optimization: avoid adding empty results */
-		if (res instanceof EmptyIteration<?, ?>) {
+		if (res == null) {
 			return;
 		}
 

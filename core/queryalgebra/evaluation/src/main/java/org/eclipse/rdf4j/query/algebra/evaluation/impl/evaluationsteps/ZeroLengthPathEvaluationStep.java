@@ -55,7 +55,7 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 
 		if (subj != null && obj != null) {
 			if (!subj.equals(obj)) {
-				return EMPTY_ITERATION;
+				return null;
 			}
 		}
 		return getZeroLengthPathIterator(bindings, subjectVar, objVar, contextVar, subj, obj, context);

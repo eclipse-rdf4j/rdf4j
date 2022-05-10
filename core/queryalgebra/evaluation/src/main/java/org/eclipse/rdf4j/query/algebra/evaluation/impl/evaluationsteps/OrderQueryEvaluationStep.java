@@ -35,6 +35,14 @@ public class OrderQueryEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-		return new OrderIterator(preparedArg.evaluate(bs), cmp, limit, reduced, iterationCacheSyncThreshold);
+		CloseableIteration<BindingSet, QueryEvaluationException> evaluate = preparedArg.evaluate(bs);
+		if (evaluate == null)
+			return null;
+		try {
+			return new OrderIterator(evaluate, cmp, limit, reduced, iterationCacheSyncThreshold);
+		} catch (Throwable t) {
+			evaluate.close();
+			throw t;
+		}
 	}
 }

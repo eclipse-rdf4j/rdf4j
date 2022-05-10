@@ -140,22 +140,22 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
-			return EMPTY_ITERATION;
+			return null;
 		} else if (bindings.isEmpty()) {
 			ConvertStatementToBindingSetIterator iteration = getIteration();
 			if (iteration == null) {
-				return EMPTY_ITERATION;
+				return null;
 			}
 			return iteration;
 
 		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
 			// https://www.w3.org/TR/sparql11-query/#assignment
-			return EMPTY_ITERATION;
+			return null;
 		} else {
 			JoinStatementWithBindingSetIterator iteration = getIteration(bindings);
 			if (iteration == null) {
-				return EMPTY_ITERATION;
+				return null;
 			}
 			return iteration;
 		}
@@ -187,9 +187,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
-			if (iteration instanceof EmptyIteration) {
+			assert !(iteration instanceof EmptyIteration) : "Should be null instead of an EmptyIteration";
+			if (iteration == null)
 				return null;
-			}
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings
@@ -222,6 +222,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			if (iteration == null)
+				return null;
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings

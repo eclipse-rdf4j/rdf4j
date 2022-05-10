@@ -256,7 +256,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 
 	public OrderIterator(CloseableIteration<? extends BindingSet, QueryEvaluationException> iter,
 			Comparator<BindingSet> comparator, long limit, boolean distinct, long iterationSyncThreshold) {
-		this.iter = iter;
+		this.iter = Objects.requireNonNull(iter);
 		this.comparator = comparator;
 		this.limit = limit;
 		this.distinct = distinct;
@@ -304,7 +304,9 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		} finally {
-			iter.close();
+			if (iter != null) {
+				iter.close();
+			}
 		}
 
 		List<Iterator<BindingSet>> iterators = new ArrayList<>(serialized.size() + 1);

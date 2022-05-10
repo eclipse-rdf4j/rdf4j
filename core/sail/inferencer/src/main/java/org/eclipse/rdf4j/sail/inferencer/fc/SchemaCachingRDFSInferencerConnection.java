@@ -161,12 +161,14 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
 				null, false)) {
-			while (statements.hasNext()) {
-				Statement next = statements.next();
-				addStatement(false, next.getSubject(), next.getPredicate(), next.getObject(), next.getContext());
-				if (logger.isDebugEnabled()) {
-					if (++count % 1000000 == 0) {
-						logger.debug("Forward chained {} statements", count);
+			if (statements != null) {
+				while (statements.hasNext()) {
+					Statement next = statements.next();
+					addStatement(false, next.getSubject(), next.getPredicate(), next.getObject(), next.getContext());
+					if (logger.isDebugEnabled()) {
+						if (++count % 1000000 == 0) {
+							logger.debug("Forward chained {} statements", count);
+						}
 					}
 				}
 			}
@@ -186,10 +188,12 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 		try (CloseableIteration<? extends Statement, SailException> statements = connection.getStatements(null, null,
 				null, sail.useInferredToCreateSchema)) {
-			while (statements.hasNext()) {
-				Statement next = statements.next();
-				processForSchemaCache(sail.getValueFactory()
-						.createStatement(next.getSubject(), next.getPredicate(), next.getObject()));
+			if (statements != null) {
+				while (statements.hasNext()) {
+					Statement next = statements.next();
+					processForSchemaCache(sail.getValueFactory()
+							.createStatement(next.getSubject(), next.getPredicate(), next.getObject()));
+				}
 			}
 		}
 		sail.calculateInferenceMaps(this, addInferredStatements);

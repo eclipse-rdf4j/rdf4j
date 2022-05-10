@@ -763,7 +763,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * of active iterations.
 	 */
 	protected <T, E extends Exception> CloseableIteration<T, E> registerIteration(CloseableIteration<T, E> iter) {
-		if (iter instanceof EmptyIteration) {
+		if (iter == null) {
 			return iter;
 		}
 

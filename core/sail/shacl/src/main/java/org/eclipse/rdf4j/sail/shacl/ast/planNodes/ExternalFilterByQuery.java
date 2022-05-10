@@ -79,7 +79,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 
 		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = connection
 				.evaluate(query.getTupleExpr(), dataset, bindings, false)) {
-			return bindingSet.hasNext();
+			return bindingSet != null && bindingSet.hasNext();
 		}
 
 	}

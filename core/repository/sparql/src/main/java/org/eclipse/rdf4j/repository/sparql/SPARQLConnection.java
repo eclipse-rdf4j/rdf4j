@@ -259,7 +259,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 
 	@Override
 	public RepositoryResult<Namespace> getNamespaces() throws RepositoryException {
-		return new RepositoryResult<>(new EmptyIteration<>());
+		return new RepositoryResult<>(null);
 	}
 
 	@Override
@@ -350,7 +350,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 			cursor = new SingletonIteration<>(st);
 			return new RepositoryResult<>(cursor);
 		} else {
-			return new RepositoryResult<>(new EmptyIteration<>());
+			return new RepositoryResult<>(null);
 		}
 	}
 

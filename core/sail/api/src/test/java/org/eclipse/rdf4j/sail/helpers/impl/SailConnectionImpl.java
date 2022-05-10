@@ -38,12 +38,12 @@ public class SailConnectionImpl extends AbstractSailConnection {
 	@Override
 	protected EmptyIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
-		return new EmptyIteration<>();
+		return null;
 	}
 
 	@Override
 	protected CloseableIteration<? extends Resource, SailException> getContextIDsInternal() throws SailException {
-		return new EmptyIteration<>();
+		return null;
 	}
 
 	@Override
@@ -112,7 +112,7 @@ public class SailConnectionImpl extends AbstractSailConnection {
 
 	@Override
 	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
-		return new EmptyIteration<>();
+		return null;
 	}
 
 	@Override

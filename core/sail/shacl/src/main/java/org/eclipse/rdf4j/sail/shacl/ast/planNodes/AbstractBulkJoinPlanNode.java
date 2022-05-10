@@ -16,10 +16,12 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -60,10 +62,11 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 	private static void executeQuery(ArrayDeque<ValidationTuple> right, SailConnection connection, Dataset dataset,
 			ParsedQuery parsedQuery, Function<BindingSet, ValidationTuple> mapper) {
 
-		try (Stream<? extends BindingSet> stream = connection
-				.evaluate(parsedQuery.getTupleExpr(), dataset, new MapBindingSet(), true)
-				.stream()) {
-			stream.map(mapper).forEachOrdered(right::addFirst);
+		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate = connection
+				.evaluate(parsedQuery.getTupleExpr(), dataset, new MapBindingSet(), true)) {
+			if (evaluate != null) {
+				evaluate.stream().map(mapper).forEachOrdered(right::addFirst);
+			}
 		}
 
 	}

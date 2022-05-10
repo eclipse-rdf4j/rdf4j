@@ -31,7 +31,10 @@ public final class ExtensionQueryEvaluationStep implements QueryEvaluationStep {
 			// a type error in an extension argument should be silently ignored
 			// and
 			// result in zero bindings.
-			result = QueryEvaluationStep.EMPTY_ITERATION;
+			result = null;
+		}
+		if (result == null) {
+			return null;
 		}
 		return new ExtensionIterator(result, consumer, context);
 	}

@@ -62,7 +62,7 @@ public class RdfStarQueryEvaluationStep implements QueryEvaluationStep {
 		// the evaluation of the TripleRef should be suitably forwarded down the sail and filter/construct
 		// the correct solution out of the results of that call
 		if (extValue != null && !(extValue instanceof Resource)) {
-			return EMPTY_ITERATION;
+			return null;
 		}
 
 		// in case the

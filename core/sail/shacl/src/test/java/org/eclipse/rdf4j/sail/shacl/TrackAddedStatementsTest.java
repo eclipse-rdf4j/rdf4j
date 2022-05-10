@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
@@ -16,6 +18,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -403,11 +406,12 @@ public class TrackAddedStatementsTest {
 	}
 
 	private static long size(SailConnection connection) {
-		return connection.getStatements(null, null, null, true)
-				.stream()
-				.map(Object::toString)
-//					.peek(logger::info)
-				.count();
+		try (CloseableIteration<? extends Statement, SailException> iteration = connection.getStatements(null, null,
+				null, true)) {
+			if (iteration == null)
+				return 0;
+			return iteration.stream().count();
+		}
 	}
 
 	private static long size(RepositoryConnection connection) {

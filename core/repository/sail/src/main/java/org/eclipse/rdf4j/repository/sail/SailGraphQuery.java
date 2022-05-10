@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.repository.sail;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -56,6 +57,8 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 
 			SailConnection sailCon = getConnection().getSailConnection();
 			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+			if (bindingsIter1 == null)
+				bindingsIter1 = new EmptyIteration<>();
 
 			// Filters out all partial and invalid matches
 			bindingsIter2 = new FilterIteration<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException>(

@@ -13,7 +13,6 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
@@ -93,11 +92,6 @@ public class MemTripleSourceTest {
 		store.shutDown();
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsAllNull() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -111,11 +105,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextAllNull() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -129,11 +118,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsAllNull() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -147,11 +131,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsOnePredicate() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -165,11 +144,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextOnePredicate() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -183,11 +157,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsOnePredicate() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -201,11 +170,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsOnePredicateOneContext() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -213,17 +177,10 @@ public class MemTripleSourceTest {
 
 		try (CloseableIteration<? extends Statement, QueryEvaluationException> statements = source.getStatements(null,
 				RDFS.SUBCLASSOF, null, this.alice)) {
-			List<Statement> list = Iterations.asList(statements);
-
-			Assertions.assertEquals(0, list.size());
+			Assertions.assertNull(statements);
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextOnePredicateOneContext() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -237,11 +194,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsOnePredicateOneContext() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -255,11 +207,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsOnePredicateTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -267,17 +214,10 @@ public class MemTripleSourceTest {
 
 		try (CloseableIteration<? extends Statement, QueryEvaluationException> statements = source.getStatements(null,
 				RDFS.SUBCLASSOF, null, this.alice, this.bob)) {
-			List<Statement> list = Iterations.asList(statements);
-
-			Assertions.assertEquals(0, list.size());
+			Assertions.assertFalse(statements.hasNext());
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextOnePredicateTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -291,11 +231,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsOnePredicateTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -309,11 +244,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsPredicateOwlThingTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -321,17 +251,10 @@ public class MemTripleSourceTest {
 
 		try (CloseableIteration<? extends Statement, QueryEvaluationException> statements = source.getStatements(null,
 				RDFS.SUBCLASSOF, OWL.THING, this.alice, this.bob)) {
-			List<Statement> list = Iterations.asList(statements);
-
-			Assertions.assertEquals(0, list.size());
+			Assertions.assertNull(statements);
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextPredicateOwlThingTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -345,11 +268,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsPredicateOwlThingTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -363,11 +281,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsPredicateOwlClassTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -375,17 +288,10 @@ public class MemTripleSourceTest {
 
 		try (CloseableIteration<? extends Statement, QueryEvaluationException> statements = source.getStatements(null,
 				RDF.TYPE, OWL.CLASS, this.alice, this.bob)) {
-			List<Statement> list = Iterations.asList(statements);
-
-			Assertions.assertEquals(0, list.size());
+			Assertions.assertFalse(statements.hasNext());
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextPredicateOwlClassTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -399,11 +305,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsPredicateOwlClassTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -417,11 +318,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsPredicateOwlClassNoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -435,11 +331,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextPredicateOwlClassNoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -453,11 +344,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsPredicateOwlClassNoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -471,11 +357,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsPredicateExClassNoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -489,11 +370,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextPredicateExClassNoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -507,11 +383,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsPredicateExClassNoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -525,11 +396,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsPredicateExClassOneContext() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -537,17 +403,10 @@ public class MemTripleSourceTest {
 
 		try (CloseableIteration<? extends Statement, QueryEvaluationException> statements = source.getStatements(null,
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"), this.alice)) {
-			List<Statement> list = Iterations.asList(statements);
-
-			Assertions.assertEquals(0, list.size());
+			Assertions.assertNull(statements);
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextPredicateExClassOneContext() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -561,11 +420,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsPredicateExClassOneContext() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -579,11 +433,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsPredicateExClassTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -591,17 +440,10 @@ public class MemTripleSourceTest {
 
 		try (CloseableIteration<? extends Statement, QueryEvaluationException> statements = source.getStatements(null,
 				RDFS.SUBCLASSOF, f.createIRI(EX_NS, "A"), this.alice, this.bob)) {
-			List<Statement> list = Iterations.asList(statements);
-
-			Assertions.assertEquals(0, list.size());
+			Assertions.assertFalse(statements.hasNext());
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextPredicateExClassTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -615,11 +457,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsPredicateExClassTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -633,11 +470,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsExClassPredicateTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -645,17 +477,10 @@ public class MemTripleSourceTest {
 
 		try (CloseableIteration<? extends Statement, QueryEvaluationException> statements = source
 				.getStatements(f.createIRI(EX_NS, "C"), RDFS.SUBCLASSOF, null, this.alice, this.bob)) {
-			List<Statement> list = Iterations.asList(statements);
-
-			Assertions.assertEquals(0, list.size());
+			Assertions.assertFalse(statements.hasNext());
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextExClassPredicateTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -669,11 +494,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsExClassPredicateTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -687,11 +507,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsNoContextsExClassPredicateNoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl");
@@ -705,11 +520,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsOneContextExClassPredicateNoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice);
@@ -723,11 +533,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsTwoContextsExClassPredicateNoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob);
@@ -741,11 +546,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsThreeContextsAllNull() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob, this.mary);
@@ -759,11 +559,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsThreeContextsOneContext() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob, this.mary);
@@ -777,11 +572,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsThreeContextsTwoContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob, this.mary);
@@ -795,11 +585,6 @@ public class MemTripleSourceTest {
 		}
 	}
 
-	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.sail.memory.MemTripleSource#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
-	 * .
-	 */
 	@Test
 	public final void testGetStatementsThreeContextsThreeContexts() throws Exception {
 		loadTestData("/alp-testdata.ttl", this.alice, this.bob, this.mary);
@@ -849,11 +634,23 @@ public class MemTripleSourceTest {
 			@Override
 			public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj,
 					IRI pred, Value obj, Resource... contexts) throws QueryEvaluationException {
+				CloseableIteration<? extends Statement, SailException> statements = null;
 				try {
+					statements = snapshot.getStatements(subj, pred, obj, contexts);
+					if (statements == null) {
+						return null;
+					}
 					return new CloseableExceptionConvertingIteration<Statement, QueryEvaluationException, CloseableIteration<? extends Statement, SailException>>(
-							snapshot.getStatements(subj, pred, obj, contexts), QueryEvaluationException::new);
-				} catch (SailException e) {
-					throw new QueryEvaluationException(e);
+							statements, QueryEvaluationException::new);
+				} catch (Throwable t) {
+					if (statements != null) {
+						statements.close();
+					}
+					if (t instanceof SailException) {
+						throw new QueryEvaluationException(t);
+					} else {
+						throw t;
+					}
 				}
 			}
 

@@ -29,6 +29,16 @@ public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep 
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		return new ProjectionIterator(projection, qes.evaluate(bindings), bindings, context);
+
+		CloseableIteration<BindingSet, QueryEvaluationException> evaluate = qes.evaluate(bindings);
+		if (evaluate == null) {
+			return null;
+		}
+		try {
+			return new ProjectionIterator(projection, evaluate, bindings, context);
+		} catch (Throwable t) {
+			evaluate.close();
+			throw t;
+		}
 	}
 }

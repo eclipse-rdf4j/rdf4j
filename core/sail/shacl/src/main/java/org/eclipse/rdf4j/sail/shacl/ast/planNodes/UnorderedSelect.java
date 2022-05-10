@@ -62,12 +62,14 @@ public class UnorderedSelect implements PlanNode {
 
 			@Override
 			public void localClose() throws SailException {
-				statements.close();
+				if (statements != null) {
+					statements.close();
+				}
 			}
 
 			@Override
 			protected boolean localHasNext() throws SailException {
-				return statements.hasNext();
+				return statements != null && statements.hasNext();
 			}
 
 			@Override

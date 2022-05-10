@@ -55,10 +55,14 @@ class FileIO {
 	 * Constants *
 	 *-----------*/
 
-	/** Magic number for Binary Memory Store Files */
+	/**
+	 * Magic number for Binary Memory Store Files
+	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'B', 'M', 'S', 'F' };
 
-	/** The version number of the current format. */
+	/**
+	 * The version number of the current format.
+	 */
 	// Version 1: initial version
 	// Version 2: don't use read/writeUTF() to remove 64k limit on strings,
 	// removed dummy "up-to-date status" boolean for namespace records
@@ -227,19 +231,21 @@ class FileIO {
 	public void writeStatement(CloseableIteration<? extends Statement, SailException> stIter, int tripleMarker,
 			int quadMarker, DataOutputStream dataOut) throws IOException, SailException {
 		try (stIter) {
-			while (stIter.hasNext()) {
-				Statement st = stIter.next();
-				Resource context = st.getContext();
-				if (context == null) {
-					dataOut.writeByte(tripleMarker);
-				} else {
-					dataOut.writeByte(quadMarker);
-				}
-				writeValue(st.getSubject(), dataOut);
-				writeValue(st.getPredicate(), dataOut);
-				writeValue(st.getObject(), dataOut);
-				if (context != null) {
-					writeValue(context, dataOut);
+			if (stIter != null) {
+				while (stIter.hasNext()) {
+					Statement st = stIter.next();
+					Resource context = st.getContext();
+					if (context == null) {
+						dataOut.writeByte(tripleMarker);
+					} else {
+						dataOut.writeByte(quadMarker);
+					}
+					writeValue(st.getSubject(), dataOut);
+					writeValue(st.getPredicate(), dataOut);
+					writeValue(st.getObject(), dataOut);
+					if (context != null) {
+						writeValue(context, dataOut);
+					}
 				}
 			}
 		}
@@ -265,7 +271,7 @@ class FileIO {
 	private void writeValue(Value value, DataOutputStream dataOut) throws IOException {
 		if (value.isIRI()) {
 			dataOut.writeByte(URI_MARKER);
-			writeString(((IRI) value).stringValue(), dataOut);
+			writeString(value.stringValue(), dataOut);
 		} else if (value.isBNode()) {
 			dataOut.writeByte(BNODE_MARKER);
 			writeString(((BNode) value).getID(), dataOut);
