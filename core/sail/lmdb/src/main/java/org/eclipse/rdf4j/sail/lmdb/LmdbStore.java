@@ -122,6 +122,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
 				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
+		setIterationCacheSyncThreshold(config.getIterationCacheSyncThreshold());
 		EvaluationStrategyFactory evalStrategyFactory = config.getEvaluationStrategyFactory();
 		if (evalStrategyFactory != null) {
 			setEvaluationStrategyFactory(evalStrategyFactory);
