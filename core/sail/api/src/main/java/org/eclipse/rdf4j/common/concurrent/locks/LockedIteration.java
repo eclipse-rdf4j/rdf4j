@@ -40,7 +40,7 @@ public class LockedIteration<K extends CloseableIteration<? extends E, X>, E, X 
 	public static <K extends CloseableIteration<E, X>, E, X extends Exception> CloseableIteration<E, X> getInstance(
 			K iteration,
 			Lock lock) {
-		if (iteration == null) {
+		if (iteration instanceof EmptyIteration) {
 			lock.release();
 			return iteration;
 		} else {

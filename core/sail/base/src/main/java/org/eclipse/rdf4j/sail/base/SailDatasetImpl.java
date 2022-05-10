@@ -275,8 +275,10 @@ class SailDatasetImpl implements SailDataset {
 		} else if (changes.hasApproved()) {
 			Iterator<Statement> i = changes.getApprovedStatements(subj, pred, obj, contexts).iterator();
 			return new CloseableIteratorIteration<>(i);
-		} else {
+		} else if (iter != null) {
 			return iter;
+		} else {
+			return new EmptyIteration<>();
 		}
 	}
 
@@ -311,7 +313,10 @@ class SailDatasetImpl implements SailDataset {
 			return new CloseableIteratorIteration<>(i);
 		}
 
-		return iter;
+		if (iter != null) {
+			return iter;
+		}
+		return new EmptyIteration<>();
 	}
 
 	private CloseableIteration<? extends Statement, SailException> difference(

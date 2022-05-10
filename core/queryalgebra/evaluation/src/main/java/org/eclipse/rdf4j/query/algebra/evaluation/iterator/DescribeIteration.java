@@ -15,6 +15,7 @@ import java.util.Queue;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /**
  * Iteration that implements a simplified version of Symmetric Concise Bounded Description (omitting reified
@@ -108,26 +110,19 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			switch (currentMode) {
 			case OUTGOING_LINKS:
 				currentDescribeExprIter = createNextIteration(startValue, null);
-				if (currentDescribeExprIter != null && !currentDescribeExprIter.hasNext()) {
+				if (!currentDescribeExprIter.hasNext()) {
+					// start value has no outgoing links.
 					currentDescribeExprIter.close();
 					currentDescribeExprIter = null;
-				}
-
-				if (currentDescribeExprIter == null) {
-					// start value has no outgoing links.
 					currentMode = Mode.INCOMING_LINKS;
 				}
 				break;
 			case INCOMING_LINKS:
 				currentDescribeExprIter = createNextIteration(null, startValue);
-				if (currentDescribeExprIter != null && !currentDescribeExprIter.hasNext()) {
+				if (!currentDescribeExprIter.hasNext()) {
+					// no incoming links for this start value.
 					currentDescribeExprIter.close();
 					currentDescribeExprIter = null;
-				}
-
-				if (currentDescribeExprIter == null) {
-					// no incoming links for this start value.
-
 					startValue = null;
 					currentMode = Mode.OUTGOING_LINKS;
 				}
@@ -217,7 +212,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			Value object)
 			throws QueryEvaluationException {
 		if (subject == null && object == null) {
-			return null;
+			return QueryEvaluationStep.EMPTY_ITERATION;
 		}
 
 		Var subjVar = new Var(VARNAME_SUBJECT, subject);

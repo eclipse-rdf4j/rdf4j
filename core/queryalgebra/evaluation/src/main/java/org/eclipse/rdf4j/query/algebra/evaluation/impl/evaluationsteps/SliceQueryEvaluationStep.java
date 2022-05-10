@@ -78,10 +78,7 @@ public interface SliceQueryEvaluationStep extends QueryEvaluationStep {
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-			CloseableIteration<BindingSet, QueryEvaluationException> evaluate = argument.evaluate(bs);
-			if (evaluate == null)
-				return null;
-			return new LimitIteration<>(evaluate, limit);
+			return new LimitIteration<>(argument.evaluate(bs), limit);
 		}
 	}
 }

@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import org.eclipse.rdf4j.common.iteration.CloseableExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -18,6 +19,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -45,11 +47,9 @@ class SailDatasetTripleSource implements RDFStarTripleSource {
 		try {
 			CloseableIteration<? extends Statement, SailException> statements = dataset.getStatements(subj, pred, obj,
 					contexts);
-			assert !(statements instanceof EmptyIteration) : "Should be null instead of an EmptyIteration";
-			if (statements == null) {
-				return null;
+			if (statements instanceof EmptyIteration) {
+				return EMPTY_ITERATION;
 			}
-
 			return new CloseableQueryEvalutationExceptionConvertingIteration<>(statements);
 		} catch (SailException e) {
 			throw new QueryEvaluationException(e);
@@ -68,9 +68,8 @@ class SailDatasetTripleSource implements RDFStarTripleSource {
 			// In contrast to statement retrieval (which gets de-duplicated later on when handling things like
 			// projections and conversions) we need to make sure we de-duplicate the RDF-star triples here.
 			CloseableIteration<? extends Triple, SailException> triples = dataset.getTriples(subj, pred, obj);
-			if (triples == null) {
-				return null;
-			}
+			if (triples instanceof EmptyIteration)
+				return EMPTY_TRIPLE_ITERATION;
 			return new DistinctIteration<>(
 					new CloseableQueryEvalutationExceptionConvertingIteration<>(triples));
 		} catch (SailException e) {

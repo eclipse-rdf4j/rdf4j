@@ -31,9 +31,9 @@ public abstract class UnionIteration<E, X extends Exception> extends LookAheadIt
 			CloseableIteration<? extends E, X> leftIteration,
 			CloseableIteration<? extends E, X> rightIteration) {
 
-		if (rightIteration == null) {
+		if (rightIteration instanceof EmptyIteration) {
 			return (CloseableIteration<E, X>) leftIteration;
-		} else if (leftIteration == null) {
+		} else if (leftIteration instanceof EmptyIteration) {
 			return (CloseableIteration<E, X>) rightIteration;
 		} else {
 			return new DualUnionIteration<>(leftIteration, rightIteration);

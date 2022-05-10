@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.repository.sail;
 import java.util.ArrayList;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -49,9 +48,6 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 			SailConnection sailCon = getConnection().getSailConnection();
 
 			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
-			if (bindingsIter == null)
-				bindingsIter = new EmptyIteration<>();
-
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
 			IteratingTupleQueryResult result = new IteratingTupleQueryResult(

@@ -156,7 +156,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			} else {
 				disposeCache(scanList); // exhausted so can free
 
-				if (restIter != null && restIter.hasNext()) {
+				if (restIter.hasNext()) {
 					currentScanElem = restIter.next();
 				} else {
 					// no more elements available
@@ -265,21 +265,21 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 		if (!leftJoin) {
 			leftArgResults = makeIterationCache(leftIter);
 
-			while (leftIter != null && rightIter != null && leftIter.hasNext() && rightIter.hasNext()) {
+			while (leftIter.hasNext() && rightIter.hasNext()) {
 				add(leftArgResults, leftIter.next());
 				add(rightArgResults, rightIter.next());
 			}
 		} else {
 			leftArgResults = Collections.emptyList();
 
-			while (rightIter != null && rightIter.hasNext()) {
+			while (rightIter.hasNext()) {
 				add(rightArgResults, rightIter.next());
 			}
 		}
 
 		Collection<BindingSet> smallestResult;
 
-		if (leftJoin || (leftIter != null && leftIter.hasNext())) { // leftArg is the greater relation
+		if (leftJoin || leftIter.hasNext()) { // leftArg is the greater relation
 			smallestResult = rightArgResults;
 			scanList = leftArgResults.iterator();
 			restIter = leftIter;

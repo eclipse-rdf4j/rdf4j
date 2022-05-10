@@ -16,7 +16,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -479,8 +478,6 @@ public class SailUpdateExecutor {
 		boolean allGood = false;
 		try {
 			sourceBindings1 = con.evaluate(whereClause, uc.getDataset(), uc.getBindingSet(), uc.isIncludeInferred());
-			if (sourceBindings1 == null)
-				sourceBindings1 = new EmptyIteration<>();
 
 			if (maxExecutionTime > 0) {
 				sourceBindings2 = new TimeLimitIteration<BindingSet, QueryEvaluationException>(sourceBindings1,

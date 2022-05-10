@@ -239,7 +239,7 @@ public abstract class TripleSourceBase implements TripleSource {
 			CloseableIteration<T, QueryEvaluationException> res = resultHolder.get();
 
 			// do not wrap Empty and Pass-through Iterations
-			if (res == null) {
+			if (res instanceof EmptyIteration) {
 				conn.close();
 				return res;
 			}
@@ -272,8 +272,9 @@ public abstract class TripleSourceBase implements TripleSource {
 	 *
 	 * </pre>
 	 *
-	 * @param <T>
 	 * @author Andreas Schwarte
+	 *
+	 * @param <T>
 	 * @see TripleSourceBase#withConnection(ConnectionOperation)
 	 */
 	protected interface ConnectionOperation<T> {
@@ -284,8 +285,9 @@ public abstract class TripleSourceBase implements TripleSource {
 	 * Holder for a result iteration to be used with {@link TripleSourceBase#withConnection(ConnectionOperation)}. Note
 	 * that the result holder should also be set with temporary results to properly allow error handling.
 	 *
-	 * @param <T>
 	 * @author Andreas Schwarte
+	 *
+	 * @param <T>
 	 */
 	protected static class ResultHolder<T> implements Supplier<CloseableIteration<T, QueryEvaluationException>> {
 

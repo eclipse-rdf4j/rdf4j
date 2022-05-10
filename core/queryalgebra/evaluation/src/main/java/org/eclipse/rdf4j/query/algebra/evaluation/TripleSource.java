@@ -23,6 +23,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public interface TripleSource {
 
+	EmptyIteration<? extends Statement, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
+	EmptyIteration<? extends Triple, QueryEvaluationException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
+
 	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
 	 * indicate wildcards. Optionally a (set of) context(s) may be specified in which case the result will be restricted

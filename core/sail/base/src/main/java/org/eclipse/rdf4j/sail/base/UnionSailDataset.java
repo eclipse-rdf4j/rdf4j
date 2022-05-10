@@ -88,25 +88,8 @@ class UnionSailDataset implements SailDataset {
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
-		CloseableIteration<? extends Statement, SailException> dataset1Iteration = null;
-		CloseableIteration<? extends Statement, SailException> dataset2Iteration = null;
-
-		try {
-			dataset1Iteration = dataset1.getStatements(subj, pred, obj, contexts);
-			dataset2Iteration = dataset2.getStatements(subj, pred, obj, contexts);
-			return UnionIteration.getInstance(dataset1Iteration, dataset2Iteration);
-		} catch (Throwable t) {
-			try {
-				if (dataset1Iteration != null)
-					dataset1Iteration.close();
-			} finally {
-				if (dataset2Iteration != null)
-					dataset2Iteration.close();
-			}
-
-			throw t;
-		}
-
+		return UnionIteration.getInstance(dataset1.getStatements(subj, pred, obj, contexts),
+				dataset2.getStatements(subj, pred, obj, contexts));
 	}
 
 	@Override

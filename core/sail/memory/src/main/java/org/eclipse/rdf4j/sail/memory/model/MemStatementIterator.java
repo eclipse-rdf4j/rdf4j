@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.memory.model;
 import java.util.Arrays;
 import java.util.Iterator;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.sail.SailException;
@@ -20,7 +19,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * objects using the '==' operator, which is possible thanks to the extensive sharing of these objects in the
  * MemoryStore.
  */
-public class MemStatementIterator extends LookAheadIteration<MemStatement, SailException> {
+public class MemStatementIterator<X extends Exception> extends LookAheadIteration<MemStatement, X> {
 	public static final int MIN_SIZE_TO_CONSIDER_FOR_CACHE = 1000;
 
 	/*-----------*
@@ -58,7 +57,7 @@ public class MemStatementIterator extends LookAheadIteration<MemStatement, SailE
 	/**
 	 * Flag indicating whether this iterator should only return explicitly added statements or only return inferred
 	 * statements.
-	 * <p>
+	 *
 	 * If this has not been specified (null) and we should return both explicit and inferred statements, then the flag
 	 * below will be set to true.
 	 */
@@ -117,16 +116,16 @@ public class MemStatementIterator extends LookAheadIteration<MemStatement, SailE
 		this.statementIndex = 0;
 	}
 
-	public static CloseableIteration<MemStatement, SailException> cacheAwareInstance(MemStatementList smallestList,
+	public static LookAheadIteration<MemStatement, SailException> cacheAwareInstance(MemStatementList smallestList,
 			MemResource subj, MemIRI pred, MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts,
 			MemStatementIteratorCache iteratorCache) {
 
 		if (smallestList.size() > MemStatementIterator.MIN_SIZE_TO_CONSIDER_FOR_CACHE) {
-			return CacheAwareIteration.getInstance(
-					new MemStatementIterator(smallestList, subj, pred, obj, explicit, snapshot, memContexts),
+			return new CacheAwareIteration<>(
+					new MemStatementIterator<>(smallestList, subj, pred, obj, explicit, snapshot, memContexts),
 					iteratorCache);
 		} else {
-			return new MemStatementIterator(smallestList, subj, pred, obj, explicit, snapshot, memContexts);
+			return new MemStatementIterator<>(smallestList, subj, pred, obj, explicit, snapshot, memContexts);
 		}
 	}
 
@@ -135,13 +134,13 @@ public class MemStatementIterator extends LookAheadIteration<MemStatement, SailE
 			MemStatementIteratorCache iteratorCache) {
 
 		if (smallestList.size() > MemStatementIterator.MIN_SIZE_TO_CONSIDER_FOR_CACHE) {
-			try (CacheAwareIteration exceptionCacheAwareIteration = new CacheAwareIteration(
-					new MemStatementIterator(smallestList, subj, pred, obj, explicit, snapshot, memContexts),
+			try (CacheAwareIteration<SailException> exceptionCacheAwareIteration = new CacheAwareIteration<>(
+					new MemStatementIterator<>(smallestList, subj, pred, obj, explicit, snapshot, memContexts),
 					iteratorCache)) {
 				return exceptionCacheAwareIteration.hasNext();
 			}
 		} else {
-			try (MemStatementIterator exceptionMemStatementIterator = new MemStatementIterator(
+			try (MemStatementIterator<SailException> exceptionMemStatementIterator = new MemStatementIterator<>(
 					smallestList, subj, pred, obj, explicit, snapshot, memContexts)) {
 				return exceptionMemStatementIterator.hasNext();
 			}
@@ -188,7 +187,7 @@ public class MemStatementIterator extends LookAheadIteration<MemStatement, SailE
 	}
 
 	@Override
-	protected final void handleClose() throws SailException {
+	protected final void handleClose() throws X {
 		statementList = null;
 	}
 
@@ -199,7 +198,7 @@ public class MemStatementIterator extends LookAheadIteration<MemStatement, SailE
 	 */
 	private boolean isCandidateForCache() {
 		if (statementIndex == statementListSize) { // we will only consider caching if the iterator has been completely
-			// consumed
+													// consumed
 			if (statementIndex > MIN_SIZE_TO_CONSIDER_FOR_CACHE) { // minimum 1000 statements need to have been checked
 				// by the iterator
 				if (matchingStatements == 0) { // if the iterator was effectively empty we can always cache it
@@ -223,7 +222,7 @@ public class MemStatementIterator extends LookAheadIteration<MemStatement, SailE
 		if (!(o instanceof MemStatementIterator)) {
 			return false;
 		}
-		MemStatementIterator that = (MemStatementIterator) o;
+		MemStatementIterator<?> that = (MemStatementIterator<?>) o;
 		return explicit == that.explicit && explicitNotSpecified == that.explicitNotSpecified
 				&& snapshot == that.snapshot && noIsolation == that.noIsolation
 				&& subject == that.subject
@@ -307,50 +306,68 @@ public class MemStatementIterator extends LookAheadIteration<MemStatement, SailE
 	 *
 	 * @author Håvard M. Ottestad
 	 */
-	private static class CacheAwareIteration extends LookAheadIteration<MemStatement, SailException> {
+	private static class CacheAwareIteration<X extends Exception> extends LookAheadIteration<MemStatement, X> {
 
 		private final MemStatementIteratorCache iteratorCache;
-		private final MemStatementIterator memStatementIterator;
+		private final MemStatementIterator<X> memStatementIterator;
+		private final CloseableIteratorIteration<Iterator<MemStatement>, MemStatement, X> cachedIterator;
+		private Exception e;
 
-		private CacheAwareIteration(MemStatementIterator memStatementIterator,
-				MemStatementIteratorCache iteratorCache) {
-
-			this.memStatementIterator = memStatementIterator;
-
-			this.iteratorCache = iteratorCache;
-
-		}
-
-		private static CloseableIteration<MemStatement, SailException> getInstance(
-				MemStatementIterator memStatementIterator,
-				MemStatementIteratorCache iteratorCache) {
-			if (iteratorCache.shouldBeCached(memStatementIterator)) {
-				CloseableIteratorIteration<Iterator<MemStatement>, MemStatement, SailException> cachedIterator = iteratorCache
-						.getCachedIterator(memStatementIterator);
-				if (cachedIterator == null) {
-					return null;
+		private CacheAwareIteration(MemStatementIterator<X> memStatementIterator,
+				MemStatementIteratorCache iteratorCache) throws X {
+			try {
+				if (iteratorCache.shouldBeCached(memStatementIterator)) {
+					CloseableIteratorIteration<Iterator<MemStatement>, MemStatement, X> cachedIterator = null;
+					try {
+						cachedIterator = iteratorCache.getCachedIterator(memStatementIterator);
+					} catch (Exception e) {
+						this.e = e;
+					}
+					this.cachedIterator = cachedIterator;
+					this.memStatementIterator = null;
 				} else {
-					return cachedIterator;
+					this.memStatementIterator = memStatementIterator;
+					this.cachedIterator = null;
 				}
-			} else {
-				return new CacheAwareIteration(memStatementIterator, iteratorCache);
+
+				this.iteratorCache = iteratorCache;
+			} catch (Throwable t) {
+				memStatementIterator.close();
+				if (t instanceof RuntimeException) {
+					throw t;
+				}
+				throw t;
 			}
 
 		}
 
 		@Override
-		protected final MemStatement getNextElement() throws SailException {
-			if (memStatementIterator.hasNext()) {
-				return memStatementIterator.next();
+		protected final MemStatement getNextElement() throws X {
+			if (e != null) {
+				throw ((X) e);
+			}
+
+			if (memStatementIterator != null) {
+				if (memStatementIterator.hasNext()) {
+					return memStatementIterator.next();
+				}
+			} else {
+				if (cachedIterator.hasNext()) {
+					return cachedIterator.next();
+				}
 			}
 
 			return null;
 		}
 
 		@Override
-		protected final void handleClose() throws SailException {
-			if (memStatementIterator.isCandidateForCache()) {
-				iteratorCache.incrementIteratorFrequencyMap(memStatementIterator);
+		protected final void handleClose() throws X {
+			if (memStatementIterator != null) {
+				if (memStatementIterator.isCandidateForCache()) {
+					iteratorCache.incrementIteratorFrequencyMap(memStatementIterator);
+				}
+			} else {
+				cachedIterator.close();
 			}
 		}
 	}

@@ -491,8 +491,6 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	 * Wraps a CloseableIteration coming from a Sail in a RepositoryResult object, applying the required conversions
 	 */
 	protected <E> RepositoryResult<E> createRepositoryResult(CloseableIteration<? extends E, SailException> sailIter) {
-		if (sailIter == null)
-			return RepositoryResult.empty();
 		return new RepositoryResult<>(new SailCloseableIteration<E>(sailIter));
 	}
 

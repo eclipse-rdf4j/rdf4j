@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -247,9 +248,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
 			iteration = qes.evaluate(EmptyBindingSet.getInstance());
-			if (iteration == null) {
-				return null;
-			}
 			iteration = SailClosableIteration.getInstance(iteration, rdfDataset, branch);
 			allGood = true;
 			return (SailClosableIteration<? extends BindingSet, QueryEvaluationException>) iteration;
@@ -396,46 +394,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends Statement, SailException> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
-		SailSource branch = null;
-		SailDataset snapshot = null;
-		CloseableIteration<? extends Statement, SailException> statements = null;
-
-		try {
-			branch = branch(IncludeInferred.fromBoolean(includeInferred));
-			snapshot = branch.dataset(getIsolationLevel());
-			statements = snapshot.getStatements(subj, pred, obj, contexts);
-			if (statements == null) {
-				try {
-					return null;
-				} finally {
-					try {
-						snapshot.close();
-					} finally {
-						branch.close();
-					}
-				}
-			}
-
-			return SailClosableIteration.getInstance(statements, snapshot, branch);
-		} catch (Throwable t) {
-			try {
-				if (statements != null) {
-					statements.close();
-				}
-			} finally {
-				try {
-					if (snapshot != null) {
-						snapshot.close();
-					}
-				} finally {
-					if (branch != null) {
-						branch.close();
-					}
-				}
-			}
-			throw t;
-		}
-
+		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
+		SailDataset snapshot = branch.dataset(getIsolationLevel());
+		return SailClosableIteration.getInstance(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
 	}
 
 	@Override
@@ -450,12 +411,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-		try (CloseableIteration<? extends Statement, SailException> statementsInternal = getStatementsInternal(null,
-				null, null, false, contexts)) {
-			if (statementsInternal == null) {
-				return 0;
-			}
-			return statementsInternal.stream().count();
+		try (Stream<? extends Statement> stream = getStatementsInternal(null, null, null, false, contexts).stream()) {
+			return stream.count();
 		}
 	}
 
@@ -833,14 +790,12 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		try (CloseableIteration<? extends Statement, SailException> iter = dataset.getStatements(subj, pred, obj,
 				contexts)) {
-			if (iter != null) {
-				while (iter.hasNext()) {
-					Statement st = iter.next();
-					sink.deprecate(st);
+			while (iter.hasNext()) {
+				Statement st = iter.next();
+				sink.deprecate(st);
 
-					statementsRemoved = true;
-					notifyStatementRemoved(st);
-				}
+				statementsRemoved = true;
+				notifyStatementRemoved(st);
 			}
 		}
 		return statementsRemoved;

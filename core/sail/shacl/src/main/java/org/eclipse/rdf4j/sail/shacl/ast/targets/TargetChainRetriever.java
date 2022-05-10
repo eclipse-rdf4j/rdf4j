@@ -152,7 +152,7 @@ public class TargetChainRetriever implements PlanNode {
 					statements = connection.getStatements(currentStatementMatcher.getSubjectValue(),
 							currentStatementMatcher.getPredicateValue(), currentStatementMatcher.getObjectValue(),
 							false, dataGraph);
-				} while (statements == null || !statements.hasNext());
+				} while (!statements.hasNext());
 
 				previousBindings = null;
 

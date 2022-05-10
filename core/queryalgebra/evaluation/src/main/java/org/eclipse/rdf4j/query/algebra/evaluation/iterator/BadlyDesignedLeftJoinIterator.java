@@ -60,7 +60,7 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 		this.leftIter = strategy.evaluate(join.getLeftArg(), getFilteredBindings(inputBindings, problemVars));
 
 		// Initialize with empty iteration so that var is never null
-		this.rightIter = null;
+		this.rightIter = QueryEvaluationStep.EMPTY_ITERATION;
 
 		this.prepareRightArg = strategy.precompile(join.getRightArg(), context);
 		join.setAlgorithm(this);
@@ -87,7 +87,7 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 		this.leftIter = left.evaluate(getFilteredBindings(inputBindings, problemVars));
 
 		// Initialize with empty iteration so that var is never null
-		this.rightIter = null;
+		this.rightIter = QueryEvaluationStep.EMPTY_ITERATION;
 
 		this.prepareRightArg = right;
 		this.joinCondition = joinCondition;
@@ -140,19 +140,18 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 	protected BindingSet innerGetNextElement() throws QueryEvaluationException {
 		try {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> nextRightIter = rightIter;
-			while ((nextRightIter != null && nextRightIter.hasNext()) || leftIter.hasNext()) {
+			while (nextRightIter.hasNext() || leftIter.hasNext()) {
 				BindingSet leftBindings = null;
 
-				if (nextRightIter == null || !nextRightIter.hasNext()) {
+				if (!nextRightIter.hasNext()) {
 					// Use left arg's bindings in case join fails
 					leftBindings = leftIter.next();
 
-					if (nextRightIter != null)
-						nextRightIter.close();
+					nextRightIter.close();
 					nextRightIter = rightIter = prepareRightArg.evaluate(leftBindings);
 				}
 
-				while (nextRightIter != null && nextRightIter.hasNext()) {
+				while (nextRightIter.hasNext()) {
 					BindingSet rightBindings = nextRightIter.next();
 
 					try {
@@ -196,8 +195,7 @@ public class BadlyDesignedLeftJoinIterator extends LookAheadIteration<BindingSet
 		try {
 			leftIter.close();
 		} finally {
-			if (rightIter != null)
-				rightIter.close();
+			rightIter.close();
 		}
 	}
 }

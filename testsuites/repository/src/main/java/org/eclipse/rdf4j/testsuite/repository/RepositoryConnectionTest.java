@@ -1726,8 +1726,6 @@ public abstract class RepositoryConnectionTest {
 		dataset.addDefaultGraph(defaultGraph);
 		qry.setDataset(dataset);
 		try (TupleQueryResult result = qry.evaluate()) {
-			if (result == null)
-				return 0;
 			return result.stream().count();
 		}
 	}

@@ -49,16 +49,15 @@ class ConnectionHelper {
 
 	static void transferStatements(SailConnection from, TransferStatement transfer) {
 
-		try (CloseableIteration<? extends Statement, SailException> statements = from.getStatements(null, null, null,
-				false)) {
-			if (statements != null) {
-				while (statements.hasNext()) {
-					Statement next = statements.next();
+		try (CloseableIteration<? extends Statement, SailException> statements = from
+				.getStatements(null, null, null, false)) {
 
-					transfer.transfer(next.getSubject(), next.getPredicate(),
-							next.getObject(), next.getContext());
+			while (statements.hasNext()) {
+				Statement next = statements.next();
 
-				}
+				transfer.transfer(next.getSubject(), next.getPredicate(),
+						next.getObject(), next.getContext());
+
 			}
 		}
 

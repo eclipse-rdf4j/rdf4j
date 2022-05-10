@@ -124,7 +124,7 @@ public class Select implements PlanNode {
 			@Override
 			protected boolean localHasNext() throws SailException {
 				init();
-				return bindingSet != null && bindingSet.hasNext();
+				return bindingSet.hasNext();
 			}
 
 			@Override

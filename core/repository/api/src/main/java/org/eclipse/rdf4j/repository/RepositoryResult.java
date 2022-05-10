@@ -13,7 +13,6 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
-import org.eclipse.rdf4j.common.iterator.EmptyIterator;
 
 /**
  * A RepositoryResult is a result collection of objects (for example {@link org.eclipse.rdf4j.model.Statement} ,
@@ -28,28 +27,25 @@ import org.eclipse.rdf4j.common.iterator.EmptyIterator;
  * A RepositoryResult needs to be {@link #close() closed} after use to free up any resources (open connections, read
  * locks, etc.) it has on the underlying repository.
  *
- * @author Jeen Broekstra
- * @author Arjohn Kampman
  * @see RepositoryConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI,
  *      org.eclipse.rdf4j.model.Value, boolean, org.eclipse.rdf4j.model.Resource[])
  * @see RepositoryConnection#getNamespaces()
  * @see RepositoryConnection#getContextIDs()
+ * @author Jeen Broekstra
+ * @author Arjohn Kampman
  */
 public class RepositoryResult<T> extends AbstractCloseableIteration<T, RepositoryException> implements Iterable<T> {
 
 	private CloseableIteration<? extends T, RepositoryException> wrappedIter;
 
 	public RepositoryResult(CloseableIteration<? extends T, RepositoryException> iter) {
+		assert iter != null;
 		wrappedIter = iter;
-	}
-
-	public static <E> RepositoryResult<E> empty() {
-		return new RepositoryResult<>(null);
 	}
 
 	@Override
 	public boolean hasNext() throws RepositoryException {
-		return wrappedIter != null && wrappedIter.hasNext();
+		return wrappedIter.hasNext();
 	}
 
 	@Override
@@ -64,22 +60,20 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 
 	@Override
 	protected final void handleClose() throws RepositoryException {
-		if (wrappedIter != null) {
-			wrappedIter.close();
-		}
+		wrappedIter.close();
 	}
 
 	/**
 	 * Switches on duplicate filtering while iterating over objects. The RepositoryResult will keep track of the
 	 * previously returned objects in a {@link java.util.Set} and on calling next() or hasNext() will ignore any objects
 	 * that already occur in this Set.
-	 * <p>
+	 * <P>
 	 * Caution: use of this filtering mechanism is potentially memory-intensive.
 	 *
 	 * @throws RepositoryException if a problem occurred during initialization of the filter.
 	 */
 	public void enableDuplicateFilter() throws RepositoryException {
-		if (wrappedIter == null || wrappedIter instanceof DistinctIteration) {
+		if (wrappedIter instanceof DistinctIteration) {
 			return;
 		}
 
@@ -88,8 +82,6 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 
 	@Override
 	public Iterator<T> iterator() {
-		if (wrappedIter == null)
-			return new EmptyIterator<>();
 		return new CloseableIterationIterator<>(this);
 	}
 

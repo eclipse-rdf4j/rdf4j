@@ -57,7 +57,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 
 		// Initialize with empty iteration so that var is never null
-		rightIter = null;
+		rightIter = QueryEvaluationStep.EMPTY_ITERATION;
 
 		prepareRightArg = strategy.precompile(join.getRightArg(), context);
 		join.setAlgorithm(this);
@@ -77,7 +77,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		leftIter = left.evaluate(bindings);
 
 		// Initialize with empty iteration so that var is never null
-		rightIter = null;
+		rightIter = QueryEvaluationStep.EMPTY_ITERATION;
 
 		prepareRightArg = right;
 		this.joinCondition = joinCondition;
@@ -92,21 +92,18 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		try {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> nextRightIter = rightIter;
-
-			while ((nextRightIter != null && nextRightIter.hasNext()) || leftIter.hasNext()) {
+			while (nextRightIter.hasNext() || leftIter.hasNext()) {
 				BindingSet leftBindings = null;
 
-				if (nextRightIter == null || !nextRightIter.hasNext()) {
+				if (!nextRightIter.hasNext()) {
 					// Use left arg's bindings in case join fails
 					leftBindings = leftIter.next();
 
-					if (nextRightIter != null) {
-						nextRightIter.close();
-					}
+					nextRightIter.close();
 					nextRightIter = rightIter = prepareRightArg.evaluate(leftBindings);
 				}
 
-				while (nextRightIter != null && nextRightIter.hasNext()) {
+				while (nextRightIter.hasNext()) {
 					BindingSet rightBindings = nextRightIter.next();
 
 					try {
@@ -150,8 +147,7 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 		try {
 			leftIter.close();
 		} finally {
-			if (rightIter != null)
-				rightIter.close();
+			rightIter.close();
 		}
 	}
 }

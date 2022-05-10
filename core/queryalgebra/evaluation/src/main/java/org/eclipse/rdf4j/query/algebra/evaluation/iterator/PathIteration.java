@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
@@ -89,91 +90,66 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		if (currentIter == null) {
-			return null;
-		}
-
 		again: while (true) {
 			while (!currentIter.hasNext()) {
 				currentIter.close();
 				createIteration();
 				// stop condition: if the iter is an EmptyIteration
-				if (currentIter == null || currentIter instanceof EmptyIteration<?, ?>) {
+				if (currentIter instanceof EmptyIteration<?, ?>) {
 					break;
 				}
 			}
 
-			if (currentIter != null) {
-				while (currentIter.hasNext()) {
-					BindingSet potentialNextElement = currentIter.next();
-					MutableBindingSet nextElement;
-					// if it is not a compatible type of BindingSet
-					if (potentialNextElement instanceof QueryBindingSet) {
-						nextElement = (MutableBindingSet) potentialNextElement;
-					} else {
-						nextElement = new QueryBindingSet(potentialNextElement);
+			while (currentIter.hasNext()) {
+				BindingSet potentialNextElement = currentIter.next();
+				MutableBindingSet nextElement;
+				// if it is not a compatible type of BindingSet
+				if (potentialNextElement instanceof QueryBindingSet) {
+					nextElement = (MutableBindingSet) potentialNextElement;
+				} else {
+					nextElement = new QueryBindingSet(potentialNextElement);
+				}
+
+				if (!startVarFixed && !endVarFixed && currentVp != null) {
+					Value startValue = currentVp.getStartValue();
+
+					if (startValue != null) {
+						nextElement = new QueryBindingSet(nextElement);
+						addBinding(nextElement, startVar.getName(), startValue);
 					}
+				}
 
-					if (!startVarFixed && !endVarFixed && currentVp != null) {
-						Value startValue = currentVp.getStartValue();
+				Value v1, v2;
 
-						if (startValue != null) {
-							nextElement = new QueryBindingSet(nextElement);
-							addBinding(nextElement, startVar.getName(), startValue);
-						}
-					}
+				if (startVarFixed && endVarFixed && currentLength > 2) {
+					v1 = getVarValue(startVar, startVarFixed, nextElement);
+					v2 = nextElement.getValue("END_" + JOINVAR_PREFIX + this.hashCode());
+				} else if (startVarFixed && endVarFixed && currentLength == 2) {
+					v1 = getVarValue(startVar, startVarFixed, nextElement);
+					v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + "_" + this.hashCode());
+				} else {
+					v1 = getVarValue(startVar, startVarFixed, nextElement);
+					v2 = getVarValue(endVar, endVarFixed, nextElement);
+				}
 
-					Value v1, v2;
+				if (!isCyclicPath(v1, v2)) {
 
-					if (startVarFixed && endVarFixed && currentLength > 2) {
-						v1 = getVarValue(startVar, startVarFixed, nextElement);
-						v2 = nextElement.getValue("END_" + JOINVAR_PREFIX + this.hashCode());
-					} else if (startVarFixed && endVarFixed && currentLength == 2) {
-						v1 = getVarValue(startVar, startVarFixed, nextElement);
-						v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + "_" + this.hashCode());
-					} else {
-						v1 = getVarValue(startVar, startVarFixed, nextElement);
-						v2 = getVarValue(endVar, endVarFixed, nextElement);
-					}
-
-					if (!isCyclicPath(v1, v2)) {
-
-						ValuePair vp = new ValuePair(v1, v2);
-						if (reportedValues.contains(vp)) {
-							// new arbitrary-length path semantics: filter out
-							// duplicates
-							if (currentIter.hasNext()) {
-								continue;
-							} else {
-								// if the current iter is exhausted, we need to check
-								// that no further paths of greater length still exists.
-								continue again;
-							}
-						}
-
-						if (startVarFixed && endVarFixed) {
-							Value endValue = getVarValue(endVar, endVarFixed, nextElement);
-							if (endValue.equals(v2)) {
-								add(reportedValues, vp);
-								if (!v1.equals(v2)) {
-									addToQueue(valueQueue, vp);
-								}
-								if (!nextElement.hasBinding(startVar.getName())) {
-									addBinding(nextElement, startVar.getName(), v1);
-								}
-								if (!nextElement.hasBinding(endVar.getName())) {
-									addBinding(nextElement, endVar.getName(), v2);
-								}
-								return nextElement;
-							} else {
-								if (add(unreportedValues, vp)) {
-									if (!v1.equals(v2)) {
-										addToQueue(valueQueue, vp);
-									}
-								}
-								continue again;
-							}
+					ValuePair vp = new ValuePair(v1, v2);
+					if (reportedValues.contains(vp)) {
+						// new arbitrary-length path semantics: filter out
+						// duplicates
+						if (currentIter.hasNext()) {
+							continue;
 						} else {
+							// if the current iter is exhausted, we need to check
+							// that no further paths of greater length still exists.
+							continue again;
+						}
+					}
+
+					if (startVarFixed && endVarFixed) {
+						Value endValue = getVarValue(endVar, endVarFixed, nextElement);
+						if (endValue.equals(v2)) {
 							add(reportedValues, vp);
 							if (!v1.equals(v2)) {
 								addToQueue(valueQueue, vp);
@@ -185,10 +161,29 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 								addBinding(nextElement, endVar.getName(), v2);
 							}
 							return nextElement;
+						} else {
+							if (add(unreportedValues, vp)) {
+								if (!v1.equals(v2)) {
+									addToQueue(valueQueue, vp);
+								}
+							}
+							continue again;
 						}
 					} else {
-						continue again;
+						add(reportedValues, vp);
+						if (!v1.equals(v2)) {
+							addToQueue(valueQueue, vp);
+						}
+						if (!nextElement.hasBinding(startVar.getName())) {
+							addBinding(nextElement, startVar.getName(), v1);
+						}
+						if (!nextElement.hasBinding(endVar.getName())) {
+							addBinding(nextElement, endVar.getName(), v2);
+						}
+						return nextElement;
 					}
+				} else {
+					continue again;
 				}
 			}
 
@@ -255,7 +250,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 		if (isUnbound(startVar, bindings) || isUnbound(endVar, bindings)) {
 			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
-			currentIter = null;
+			currentIter = QueryEvaluationStep.EMPTY_ITERATION;
 		} else if (currentLength == 0L) {
 			ZeroLengthPath zlp = new ZeroLengthPath(scope, startVar.clone(), endVar.clone(),
 					contextVar != null ? contextVar.clone() : null);
@@ -313,7 +308,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 				currentIter = this.strategy.evaluate(pathExprClone, bindings);
 			} else {
-				currentIter = null;
+				currentIter = QueryEvaluationStep.EMPTY_ITERATION;
 			}
 			currentLength++;
 
