@@ -7,16 +7,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.*;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 public class ValidationQuery {
 	private String query;
