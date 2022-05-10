@@ -112,9 +112,9 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private IsolationLevel transactionIsolationLevel;
 
-	protected volatile boolean statementsAdded;
-
-	protected volatile boolean statementsRemoved;
+	// used to decide if we need to call flush()
+	private volatile boolean statementsAdded;
+	private volatile boolean statementsRemoved;
 
 	/*--------------*
 	 * Constructors *
@@ -724,6 +724,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private boolean pendingAdds() {
 		return statementsAdded;
+	}
+
+	protected void setStatementsAdded() {
+		statementsAdded = true;
+	}
+
+	protected void setStatementsRemoved() {
+		statementsRemoved = true;
 	}
 
 	/**

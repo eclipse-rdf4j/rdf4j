@@ -691,7 +691,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 						// exist
 						addStatementInternal(subj, pred, obj, contexts);
 						notifyStatementAdded(vf.createStatement(subj, pred, obj));
-						statementsAdded = true;
+						setStatementsAdded();
 						modified = true;
 					}
 				}
@@ -714,7 +714,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 							// already exist
 							addStatementInternal(subj, pred, obj, ctx);
 							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));
-							statementsAdded = true;
+							setStatementsAdded();
 							modified = true;
 						}
 					}
@@ -772,7 +772,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			removeStatementsInternal(subj, pred, obj, contexts);
 			boolean removed = remove(subj, pred, obj, inferredOnlyDataset, inferredOnlySink, contexts);
 			if (removed) {
-				statementsRemoved = true;
+				setStatementsRemoved();
 			}
 			return removed;
 		}
@@ -835,7 +835,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				remove(null, null, null, inferredOnlyDataset, inferredOnlySink, contexts);
 			}
 			inferredOnlySink.clear(contexts);
-			statementsRemoved = true;
+			setStatementsRemoved();
 		}
 	}
 

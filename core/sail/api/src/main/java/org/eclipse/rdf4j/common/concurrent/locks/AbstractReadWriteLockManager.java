@@ -450,6 +450,10 @@ class WriteLock implements Lock {
 			throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
 		}
 
+		// Make sure that readers in other threads will be able to read the writes that were made by the user within
+		// the write-locked section. The stamped lock only guarantees that writes are visible to other threads if
+		// those threads use a stamped lock read-lock.
+		VarHandle.fullFence();
 		lock.unlockWrite(tempWriteLocked);
 	}
 }

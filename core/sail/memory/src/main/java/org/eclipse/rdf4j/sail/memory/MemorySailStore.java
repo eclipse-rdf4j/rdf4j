@@ -68,6 +68,7 @@ import org.slf4j.LoggerFactory;
 class MemorySailStore implements SailStore {
 
 	private final static Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
+	private static final Runtime RUNTIME = Runtime.getRuntime();
 
 	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
 	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
@@ -115,7 +116,7 @@ class MemorySailStore implements SailStore {
 	 * are no inferred statements in the MemorySailStore. If it is `true` then an inferred statement was added at some
 	 * point, but we make no guarantees regarding if there still are inferred statements or if they are in the current
 	 * snapshot.
-	 *
+	 * <p>
 	 * The purpose of this variable is to optimize read operations that only read inferred statements when there are no
 	 * inferred statements.
 	 */
@@ -320,12 +321,16 @@ class MemorySailStore implements SailStore {
 			smallestList = statements;
 		}
 
-		return getMemStatementIterator(memSubj, memPred, memObj, explicit, snapshot, memContexts,
-				smallestList, lockRequirement);
+		return getMemStatementIterator(memSubj, memPred, memObj, explicit, snapshot, memContexts, smallestList,
+				lockRequirement);
 	}
 
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(MemResource subj, MemIRI pred,
 			MemValue obj, LockRequirement lockRequirement, MemResource... contexts) {
+
+		if (statements.isEmpty()) {
+			return EMPTY_ITERATION;
+		}
 
 		if (statements.isEmpty()) {
 			return EMPTY_ITERATION;
@@ -579,15 +584,20 @@ class MemorySailStore implements SailStore {
 		 * removes statements, (3) this list is cleared on close.
 		 */
 
-		int nextSnapshot = currentSnapshot;
-		for (int i = lastStmtPos; i >= 0; i--) {
-			if (Thread.currentThread().isInterrupted()) {
-				return;
-			}
+		boolean prioritiseCleaning = false;
+		Lock stWriteLock = null;
+		try {
+			int nextSnapshot = currentSnapshot;
+			for (int i = lastStmtPos; i >= 0; i--) {
+				if (Thread.currentThread().isInterrupted()) {
+					return;
+				}
 
-			// As we are running in the background, yield the write lock frequently to other writers.
-			Lock stWriteLock = statementListLockManager.getWriteLock();
-			try {
+				if (stWriteLock == null) {
+					// As we are running in the background, yield the write lock frequently to other writers.
+					stWriteLock = statementListLockManager.getWriteLock();
+				}
+
 				// guard against shrinkage, e.g. clear() on close()
 				lastStmtPos = statements.size() - 1;
 				i = Math.min(i, lastStmtPos);
@@ -617,18 +627,69 @@ class MemorySailStore implements SailStore {
 
 						// stale statement
 						statements.remove(i);
+
+						if (!prioritiseCleaning && RUNTIME.maxMemory() >= 256 * 1024 * 1024
+								&& getFreeToAllocateMemory() < 64 * 1024 * 1024) {
+							logger.info(
+									"Low memory! Prioritising cleaning of removed statements from the MemoryStore.");
+							prioritiseCleaning = true;
+						}
+
 					}
 				}
-			} finally {
-				stWriteLock.release();
+
+				if (i % 1000 == 0) {
+					if (getFreeToAllocateMemory() < 64 * 1024 * 1024) {
+						processedSubjects = new HashSet<>();
+						processedPredicates = new HashSet<>();
+						processedObjects = new HashSet<>();
+						processedContexts = new HashSet<>();
+						System.gc();
+					}
+				}
+
+				assert stWriteLock != null;
+
+				if (!prioritiseCleaning) {
+					stWriteLock.release();
+					stWriteLock = null;
+				}
 
 			}
+		} finally {
+			if (stWriteLock != null) {
+				stWriteLock.release();
+				stWriteLock = null;
+			}
 		}
+
+		processedSubjects.clear();
+		processedPredicates.clear();
+		processedObjects.clear();
+		processedContexts.clear();
 
 		if (logger.isDebugEnabled() && stopWatch != null) {
 			stopWatch.stop();
 			logger.debug("Cleaning snapshots took {} seconds.", stopWatch.getTime(TimeUnit.SECONDS));
 		}
+	}
+
+	private long getFreeToAllocateMemory() {
+		// maximum heap size the JVM can allocate
+		long maxMemory = RUNTIME.maxMemory();
+
+		// total currently allocated JVM memory
+		long totalMemory = RUNTIME.totalMemory();
+
+		// amount of memory free in the currently allocated JVM memory
+		long freeMemory = RUNTIME.freeMemory();
+
+		// estimated memory used
+		long used = totalMemory - freeMemory;
+
+		// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
+		long freeToAllocateMemory = maxMemory - used;
+		return freeToAllocateMemory;
 	}
 
 	protected void scheduleSnapshotCleanup() {
@@ -644,8 +705,8 @@ class MemorySailStore implements SailStore {
 				if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
 					Runnable runnable = () -> {
 						try {
-							// sleep for 10 seconds because we don't need to start snapshot cleanup immediately
-							Thread.sleep(10 * 1000);
+							// sleep for 5 seconds because we don't need to start snapshot cleanup immediately
+							Thread.sleep(5 * 1000);
 							cleanSnapshots();
 						} catch (InterruptedException e) {
 							Thread.currentThread().interrupt();
@@ -1154,6 +1215,7 @@ class MemorySailStore implements SailStore {
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);
 			}
+
 		}
 
 		@Override
@@ -1165,27 +1227,19 @@ class MemorySailStore implements SailStore {
 
 			CloseableIteration<? extends Triple, SailException> stIter1 = null;
 
-			boolean allGood = false;
 			Lock stLock = openStatementsReadLock();
 			try {
-				stIter1 = createTripleIterator(subj, pred, obj, getCurrentSnapshot());
-				CloseableIteration<? extends Triple, SailException> stIter2 = LockedIteration.getInstance(stIter1,
-						stLock
-				);
-				allGood = true;
-				return stIter2;
-			} finally {
-				if (!allGood) {
-					try {
-						if (stIter1 != null) {
-							stIter1.close();
-						}
-					} finally {
-						if (stLock != null) {
-							stLock.release();
-						}
-					}
+				CloseableIteration<MemTriple, SailException> tripleIterator = createTripleIterator(subj, pred, obj,
+						getCurrentSnapshot());
+				try {
+					return LockedIteration.getInstance(tripleIterator, stLock);
+				} catch (Throwable t) {
+					tripleIterator.close();
+					throw t;
 				}
+			} catch (Throwable t) {
+				stLock.release();
+				throw t;
 			}
 		}
 

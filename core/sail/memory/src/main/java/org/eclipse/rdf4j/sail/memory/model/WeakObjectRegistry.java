@@ -235,7 +235,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 	}
 
 	public V getOrAdd(K key, Supplier<V> supplier) {
-
 		int index = getIndex(key);
 		Map<V, WeakReference<V>> weakReferenceMap = objectMap[index];
 
@@ -330,13 +329,13 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 		public boolean readLock() {
 			while (true) {
 				readersLocked.increment();
-				if (!writeLocked) {
+				if (!((boolean) WRITE_LOCKED.getAcquire(this))) {
 					// Everything is good! We have acquired a read-lock and there are no active writers.
 					return true;
 				} else {
 					// Release our read lock so we don't block any writers.
 					readersUnlocked.increment();
-					while (writeLocked) {
+					while (((boolean) WRITE_LOCKED.getAcquire(this))) {
 						Thread.onSpinWait();
 					}
 				}
@@ -357,9 +356,6 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 			boolean writeLocked;
 			do {
 				writeLocked = WRITE_LOCKED.compareAndSet(this, false, true);
-				if (writeLocked) {
-					this.writeLocked = true;
-				}
 			} while (!writeLocked);
 
 			// Wait for active readers to finish.
@@ -379,13 +375,14 @@ public class WeakObjectRegistry<K, V extends K> extends AbstractSet<V> {
 
 		public void unlockWriter(boolean writeLocked) {
 			if (writeLocked) {
+				// Make sure that readers in other threads will be able to read the writes that were made by the user
+				// within the write-locked section. The stamped lock only guarantees that writes are visible to other
+				// threads if those threads use a stamped lock read-lock.
 				VarHandle.fullFence();
-				this.writeLocked = false;
+				WRITE_LOCKED.setRelease(this, false);
 			} else {
 				throw new IllegalMonitorStateException();
 			}
 		}
-
 	}
-
 }

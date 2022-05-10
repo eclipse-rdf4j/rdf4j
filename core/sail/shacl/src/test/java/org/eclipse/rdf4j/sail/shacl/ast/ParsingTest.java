@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast;
 
-import static org.junit.Assert.assertEquals;
-
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
@@ -18,6 +16,7 @@ import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.Utils;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class ParsingTest {
@@ -41,14 +40,15 @@ public class ParsingTest {
 
 		List<Shape> shapes = shaclSail.getCachedShapes().getDataAndRelease().get(0).getShapes();
 
-		assertEquals(8, shapes.size());
+		Assertions.assertEquals(8, shapes.size());
 
 		shapes.forEach(shape -> {
-			assertEquals(1, shape.target.size());
-			assertEquals(1, shape.constraintComponents.size());
+			Assertions.assertEquals(1, shape.target.size());
+			Assertions.assertEquals(1, shape.constraintComponents.size());
 
 			if (shape.constraintComponents.get(0) instanceof PropertyShape) {
-				assertEquals(1, ((PropertyShape) shape.constraintComponents.get(0)).constraintComponents.size());
+				Assertions.assertEquals(1,
+						((PropertyShape) shape.constraintComponents.get(0)).constraintComponents.size());
 			}
 		});
 

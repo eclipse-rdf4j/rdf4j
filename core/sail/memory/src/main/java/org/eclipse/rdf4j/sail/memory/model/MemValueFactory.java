@@ -227,15 +227,7 @@ public class MemValueFactory extends AbstractValueFactory {
 		} else if (isOwnMemTriple(triple)) {
 			return (MemTriple) triple;
 		} else {
-			MemTriple memTriple = null; // tripleCache.getIfPresent(triple);
-			if (memTriple == null) {
-				memTriple = tripleRegistry.get(triple);
-				if (memTriple != null) {
-//					tripleCache.put(triple, memTriple);
-				}
-			}
-
-			return memTriple;
+			return tripleRegistry.get(triple);
 		}
 	}
 
@@ -391,14 +383,7 @@ public class MemValueFactory extends AbstractValueFactory {
 		if (isOwnMemBnode(bnode)) {
 			return (MemBNode) bnode;
 		}
-
-		MemBNode memBnode = null; // bNodeCache.getIfPresent(bnode);
-		if (memBnode == null) {
-			memBnode = bnodeRegistry.getOrAdd(bnode, () -> new MemBNode(this, bnode.getID()));
-//			bNodeCache.put(bnode, memBnode);
-		}
-
-		return memBnode;
+		return bnodeRegistry.getOrAdd(bnode, () -> new MemBNode(this, bnode.getID()));
 	}
 
 	/**
@@ -409,48 +394,43 @@ public class MemValueFactory extends AbstractValueFactory {
 			return (MemLiteral) literal;
 		}
 
-		MemLiteral memLiteral = null; // literalCache.getIfPresent(literal);
-		if (memLiteral == null) {
-			memLiteral = literalRegistry.getOrAdd(literal, () -> {
-				String label = literal.getLabel();
-				CoreDatatype coreDatatype = literal.getCoreDatatype();
-				IRI datatype = coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : literal.getDatatype();
+		return literalRegistry.getOrAdd(literal, () -> {
+			String label = literal.getLabel();
+			CoreDatatype coreDatatype = literal.getCoreDatatype();
+			IRI datatype = coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : literal.getDatatype();
 
-				if (Literals.isLanguageLiteral(literal)) {
-					return new MemLiteral(this, label, literal.getLanguage().get());
-				} else {
-					try {
-						if (coreDatatype.isXSDDatatype()) {
-							if (((CoreDatatype.XSD) coreDatatype).isIntegerDatatype()) {
-								return new IntegerMemLiteral(this, label, literal.integerValue(), coreDatatype);
-							} else if (coreDatatype == CoreDatatype.XSD.DECIMAL) {
-								return new DecimalMemLiteral(this, label, literal.decimalValue(), coreDatatype);
-							} else if (coreDatatype == CoreDatatype.XSD.FLOAT) {
-								return new NumericMemLiteral(this, label, literal.floatValue(), coreDatatype);
-							} else if (coreDatatype == CoreDatatype.XSD.DOUBLE) {
-								return new NumericMemLiteral(this, label, literal.doubleValue(), coreDatatype);
-							} else if (coreDatatype == CoreDatatype.XSD.BOOLEAN) {
-								return new BooleanMemLiteral(this, label, literal.booleanValue());
-							} else if (coreDatatype == CoreDatatype.XSD.DATETIME) {
-								return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
-							} else if (coreDatatype == CoreDatatype.XSD.DATETIMESTAMP) {
-								return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
-							}
+			if (Literals.isLanguageLiteral(literal)) {
+				return new MemLiteral(this, label, literal.getLanguage().get());
+			} else {
+				try {
+					if (coreDatatype.isXSDDatatype()) {
+						if (((CoreDatatype.XSD) coreDatatype).isIntegerDatatype()) {
+							return new IntegerMemLiteral(this, label, literal.integerValue(), coreDatatype);
+						} else if (coreDatatype == CoreDatatype.XSD.DECIMAL) {
+							return new DecimalMemLiteral(this, label, literal.decimalValue(), coreDatatype);
+						} else if (coreDatatype == CoreDatatype.XSD.FLOAT) {
+							return new NumericMemLiteral(this, label, literal.floatValue(), coreDatatype);
+						} else if (coreDatatype == CoreDatatype.XSD.DOUBLE) {
+							return new NumericMemLiteral(this, label, literal.doubleValue(), coreDatatype);
+						} else if (coreDatatype == CoreDatatype.XSD.BOOLEAN) {
+							return new BooleanMemLiteral(this, label, literal.booleanValue());
+						} else if (coreDatatype == CoreDatatype.XSD.DATETIME) {
+							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
+						} else if (coreDatatype == CoreDatatype.XSD.DATETIMESTAMP) {
+							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
 						}
-
-						return new MemLiteral(this, label, datatype, coreDatatype);
-
-					} catch (IllegalArgumentException e) {
-						// Unable to parse literal label to primitive type
-						return new MemLiteral(this, label, datatype);
 					}
-				}
-			});
-//			literalCache.put(literal, memLiteral);
-		}
 
-		return memLiteral;
+					return new MemLiteral(this, label, datatype, coreDatatype);
+
+				} catch (IllegalArgumentException e) {
+					// Unable to parse literal label to primitive type
+					return new MemLiteral(this, label, datatype);
+				}
+			}
+		});
 	}
+
 
 	/**
 	 * See {@link #getOrCreateMemValue(Value)} for description.

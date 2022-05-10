@@ -165,7 +165,19 @@ public class MemStatementList {
 
 	}
 
-	public MemStatement getExact(MemResource memSubj, MemIRI memPred, MemValue memObj, MemResource memContext,
+	/**
+	 * Iterates through this list and returns the statement that exactly matches the provided arguments. The subject,
+	 * predicate and object should not be null. If the context is null it will match statements with null as their
+	 * context.
+	 *
+	 * @param subject
+	 * @param predicate
+	 * @param object
+	 * @param context
+	 * @param snapshot
+	 * @return
+	 */
+	public MemStatement getExact(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
 			int snapshot) {
 
 		// these variables are volatile, so we store them locally to avoid having to do a lot of volatile reads
@@ -179,9 +191,7 @@ public class MemStatementList {
 			}
 
 			// match predicate first, because the invoking method usually ends up with the subject list
-			if (memStatement.exactSamePredicate(memPred) && memStatement.exactSameSubject(memSubj)
-					&& memStatement.exactSameObject(memObj) && memStatement.exactSameContext(memContext)
-					&& memStatement.isInSnapshot(snapshot)) {
+			if (memStatement.exactMatch(subject, predicate, object, context) && memStatement.isInSnapshot(snapshot)) {
 				return memStatement;
 			}
 		}

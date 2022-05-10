@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.sail.memory.model;
 
 import java.lang.reflect.Field;
 
-import org.eclipse.rdf4j.model.impl.GenericContextStatement;
+import org.eclipse.rdf4j.model.impl.GenericStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  * A MemStatement is a Statement which contains context information and a flag indicating whether the statement is
  * explicit or inferred.
  */
-public class MemStatement extends GenericContextStatement<MemResource, MemIRI, MemValue> {
+public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue> {
 
 	private static final Logger logger = LoggerFactory.getLogger(MemStatement.class);
 
@@ -159,4 +159,10 @@ public class MemStatement extends GenericContextStatement<MemResource, MemIRI, M
 			return true;
 		}
 	}
+
+	public boolean exactMatch(MemResource subject, MemIRI predicate, MemValue object, MemResource context) {
+		return this.subject == subject && this.predicate == predicate && this.object == object
+				&& this.context == context;
+	}
+
 }

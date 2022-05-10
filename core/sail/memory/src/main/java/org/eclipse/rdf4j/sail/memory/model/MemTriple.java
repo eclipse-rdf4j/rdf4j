@@ -171,4 +171,9 @@ public class MemTriple extends MemResource implements Triple {
 	public boolean hasContextStatements() {
 		return false;
 	}
+
+	public boolean matchesSPO(MemResource subject, MemIRI predicate, MemValue object) {
+		return (object == null || object == this.object) && (subject == null || subject == this.subject) &&
+				(predicate == null || predicate == this.predicate);
+	}
 }
