@@ -5,44 +5,32 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-
 package org.eclipse.rdf4j.sail.shacl.ast;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationReportNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.*;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
-public class ValidationQuery {
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
+public class ValidationQuery {
 	private String query;
 	private ConstraintComponent.Scope scope;
 	private ConstraintComponent.Scope scope_validationReport;
-
 	private final List<StatementMatcher.Variable> variables;
-
 	private int targetIndex;
 	private int valueIndex;
-
 	private boolean propertyShapeWithValue;
 	private boolean propertyShapeWithValue_validationReport;
-
 	private int targetIndex_validationReport;
 	private int valueIndex_validationReport;
-
 	private SourceConstraintComponent constraintComponent;
 	private SourceConstraintComponent constraintComponent_validationReport;
-
 	private Severity severity;
 	private Shape shape;
 
@@ -50,7 +38,6 @@ public class ValidationQuery {
 			ConstraintComponent.Scope scope, SourceConstraintComponent constraintComponent, Severity severity,
 			Shape shape) {
 		this.query = query;
-
 		List<StatementMatcher.Variable> variables = new ArrayList<>(targets);
 		if (value != null) {
 			variables.add(value);
@@ -63,14 +50,12 @@ public class ValidationQuery {
 				valueIndex = variables.size() - 1;
 			} else {
 				propertyShapeWithValue = false;
-				valueIndex = variables.size();
+				valueIndex = variables.size() - 1;
 			}
 		} else {
 			targetIndex = variables.size() - 1;
 			valueIndex = variables.size() - 1;
-
 		}
-
 		this.scope = scope;
 		this.constraintComponent = constraintComponent;
 		this.severity = severity;
@@ -93,20 +78,15 @@ public class ValidationQuery {
 		if (b == Deactivated.instance) {
 			return a;
 		}
-
 		assert a.getTargetVariable(false).equals(b.getTargetVariable(false));
 		assert a.getValueVariable(false).equals(b.getValueVariable(false));
 		assert a.scope == b.scope;
 		assert a.targetIndex == b.targetIndex;
 		assert a.valueIndex == b.valueIndex;
-
 		String unionQuery = "{\n" + a.getQuery() + "\n} UNION {\n" + b.query + "\n}";
-
 		ValidationQuery validationQuery = new ValidationQuery(unionQuery, a.scope,
 				a.variables.subList(0, a.valueIndex + 1), a.targetIndex, a.valueIndex);
-
 		return validationQuery;
-
 	}
 
 	public String getQuery() {
@@ -119,22 +99,16 @@ public class ValidationQuery {
 
 	public PlanNode getValidationPlan(SailConnection baseConnection, Resource[] dataGraph,
 			Resource[] shapesGraphs) {
-
 		assert query != null;
-
 		StringBuilder fullQuery = new StringBuilder();
-
 		fullQuery.append("select distinct ");
-
 		fullQuery.append("?").append(getTargetVariable(true)).append(" ");
 		if (scope_validationReport == ConstraintComponent.Scope.propertyShape
 				&& propertyShapeWithValue_validationReport) {
 			fullQuery.append("?").append(getValueVariable(true)).append(" ");
 		}
 		fullQuery.append("{\n").append(query).append("\n}");
-
 		Select select = new Select(baseConnection, fullQuery.toString(), bindings -> {
-
 			if (scope_validationReport == ConstraintComponent.Scope.propertyShape) {
 				if (propertyShapeWithValue_validationReport) {
 					return new ValidationTuple(bindings.getValue(getTargetVariable(true)),
@@ -144,19 +118,16 @@ public class ValidationQuery {
 					return new ValidationTuple(bindings.getValue(getTargetVariable(true)),
 							scope_validationReport, false, dataGraph);
 				}
-
 			} else {
 				return new ValidationTuple(bindings.getValue(getTargetVariable(true)),
 						scope_validationReport, true, dataGraph);
 			}
-
 		}, dataGraph);
-
 		return new ValidationReportNode(select, t -> {
 			return new ValidationResult(t.getActiveTarget(), t.getValue(), shape,
-					constraintComponent_validationReport, severity, t.getScope(), t.getContexts(), shapesGraphs);
+					constraintComponent_validationReport, severity, t.getScope(), t.getContexts(),
+					shapesGraphs);
 		});
-
 	}
 
 	private String getValueVariable(boolean forValidationReport) {
@@ -217,7 +188,6 @@ public class ValidationQuery {
 
 	// used for sh:deactivated
 	public static class Deactivated extends ValidationQuery {
-
 		private static final Deactivated instance = new Deactivated();
 
 		private Deactivated() {
