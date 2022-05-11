@@ -8,13 +8,14 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.AbstractSet;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
@@ -66,6 +67,21 @@ public class LmdbCollectionFactory extends DefaultCollectionFactory {
 		return Arrays.hashCode(hashes);
 	}
 
+	private Object convertToLongIfPossible(Value value) {
+		if (value instanceof LmdbValue) {
+			LmdbValue lv = (LmdbValue) value;
+			if (lv.getValueStoreRevision().equals(rev)) {
+				long id = lv.getInternalID();
+				if (id == LmdbValue.UNKNOWN_ID) {
+					return value;
+				} else {
+					return Long.valueOf(id);
+				}
+			}
+		}
+		return value;
+	}
+
 	private static class LmdbValueStoreException extends RDF4JException {
 
 		public LmdbValueStoreException(IOException e) {
@@ -80,9 +96,57 @@ public class LmdbCollectionFactory extends DefaultCollectionFactory {
 	}
 
 	@Override
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
-			BiFunction<BindingSet, BindingSet, Boolean> equalsTest) {
-		return new DefaultBindingSetKey(bindingSet, hash(bindingSet, getValues), equalsTest);
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
+		int hash = hash(bindingSet, getValues);
+		List<Value> values = new ArrayList<>(getValues.size());
+//		List<Object> objects = new ArrayList<>(getValues.size());
+		for (int i = 0; i < getValues.size(); i++) {
+			values.add(getValues.get(i).apply(bindingSet));
+		}
+		boolean allLong = true;
+		long[] ids = new long[values.size()];
+		for (int i = 0; i < values.size(); i++) {
+			Value val = values.get(i);
+			Object obj = convertToLongIfPossible(val);
+			if (!(obj instanceof Long)) {
+				allLong = false;
+				break;
+			} else {
+				ids[i] = (Long) obj;
+			}
+		}
+		if (allLong) {
+			return new LmdbValueBindingSetKey(ids, hash);
+		} else {
+			return new DefaultBindingSetKey(values, hash);
+		}
+	}
+
+	private static class LmdbValueBindingSetKey implements BindingSetKey, Serializable {
+
+		private static final long serialVersionUID = 1;
+
+		private final long[] values;
+
+		private final int hash;
+
+		public LmdbValueBindingSetKey(long[] values, int hash) {
+			this.values = values;
+			this.hash = hash;
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (other instanceof LmdbValueBindingSetKey && other.hashCode() == hash) {
+				return Arrays.equals(values, ((LmdbValueBindingSetKey) other).values);
+			}
+			return false;
+		}
 	}
 
 	private int hashUnkown(Value value) {

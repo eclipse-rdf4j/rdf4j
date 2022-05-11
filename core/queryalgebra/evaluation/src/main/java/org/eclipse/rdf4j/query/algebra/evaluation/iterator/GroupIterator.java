@@ -13,11 +13,9 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -133,7 +131,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private Iterator<BindingSet> createIterator() throws QueryEvaluationException {
 		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates();
-		Collection<Entry> entries = buildEntries(aggregates);
 
 		Supplier<MutableBindingSet> makeNewBindingSet;
 		if (parentBindings.isEmpty()) {
@@ -154,6 +151,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
+		Collection<Entry> entries = buildEntries(aggregates);
 		Set<BindingSet> bindingSets = cf.createSet();
 		for (Entry entry : entries) {
 			MutableBindingSet sol = makeNewBindingSet.get();
@@ -228,7 +226,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings);
 
 		List<Function<BindingSet, Value>> getValues = getValueFunctions(context, group);
-		BiFunction<BindingSet, BindingSet, Boolean> equalsTest = equalsTestMaker(getValues);
 		try {
 			Map<BindingSetKey, Entry> entries = new LinkedHashMap<>();
 
@@ -237,7 +234,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			} else {
 				while (iter.hasNext()) {
 					BindingSet sol = iter.next();
-					BindingSetKey key = cf.createBindingSetKey(sol, getValues, equalsTest);
+					BindingSetKey key = cf.createBindingSetKey(sol, getValues);
 					Entry entry = entries.get(key);
 					if (entry == null) {
 						List<AggregateCollector> collectors = makeCollectors(aggregates);
@@ -297,22 +294,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			getValues.add(getValue);
 		}
 		return getValues;
-	}
-
-	private static BiFunction<BindingSet, BindingSet, Boolean> equalsTestMaker(
-			List<Function<BindingSet, Value>> getValues) {
-
-		BiFunction<BindingSet, BindingSet, Boolean> equals = (bs1, bs2) -> {
-			for (Function<BindingSet, Value> getValue : getValues) {
-				Value value1 = getValue.apply(bs1);
-				Value value2 = getValue.apply(bs2);
-				if (!Objects.equals(value1, value2)) {
-					return false;
-				}
-			}
-			return true;
-		};
-		return equals;
 	}
 
 	private class Entry implements BindingSetEntry {
@@ -798,11 +779,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	private static class EmptyBindingSetKey implements BindingSetKey {
-
-		@Override
-		public BindingSet getBindingSet() {
-			return EmptyBindingSet.getInstance();
-		}
 
 		@Override
 		public int hashCode() {

@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -80,6 +79,5 @@ public interface CollectionFactory extends AutoCloseable {
 	public <E> Map<BindingSetKey, E> createGroupByMap();
 
 	@InternalUseOnly
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
-			BiFunction<BindingSet, BindingSet, Boolean> equalsTest);
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues);
 }

@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
@@ -81,10 +80,13 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
-			BiFunction<BindingSet, BindingSet, Boolean> equalsTest) {
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
 		Function<BindingSet, Integer> hashMaker = hashMaker(getValues);
-		return new DefaultBindingSetKey(bindingSet, hashMaker, equalsTest);
+		List<Value> values = new ArrayList<>(getValues.size());
+		for (int i = 0; i < getValues.size(); i++) {
+			values.add(getValues.get(i).apply(bindingSet));
+		}
+		return new DefaultBindingSetKey(values, hashMaker.apply(bindingSet));
 	}
 
 	private static Function<BindingSet, Integer> hashMaker(List<Function<BindingSet, Value>> getValues) {

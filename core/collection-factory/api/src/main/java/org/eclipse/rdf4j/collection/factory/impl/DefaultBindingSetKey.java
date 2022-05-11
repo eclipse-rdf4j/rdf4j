@@ -9,33 +9,23 @@
 package org.eclipse.rdf4j.collection.factory.impl;
 
 import java.io.Serializable;
-import java.util.function.BiFunction;
-import java.util.function.Function;
+import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
-import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.model.Value;
 
 public class DefaultBindingSetKey implements BindingSetKey, Serializable {
-	private static final long serialVersionUID = 4461951265373324084L;
 
-	private final BindingSet bindingSet;
+	private static final long serialVersionUID = 1;
+
+	private final Value[] values;
 
 	private final int hash;
 
-	private final BiFunction<BindingSet, BindingSet, Boolean> equalsTest;
-
-	public DefaultBindingSetKey(BindingSet bindingSet, Function<BindingSet, Integer> hashCoder,
-			BiFunction<BindingSet, BindingSet, Boolean> equalsTest) {
-		this.bindingSet = bindingSet;
-		this.equalsTest = equalsTest;
-		this.hash = hashCoder.apply(bindingSet);
-	}
-
-	public DefaultBindingSetKey(BindingSet bindingSet, int hash,
-			BiFunction<BindingSet, BindingSet, Boolean> equalsTest) {
-		this.bindingSet = bindingSet;
+	public DefaultBindingSetKey(List<Value> values, int hash) {
+		this.values = values.toArray(new Value[0]);
 		this.hash = hash;
-		this.equalsTest = equalsTest;
 	}
 
 	@Override
@@ -45,16 +35,9 @@ public class DefaultBindingSetKey implements BindingSetKey, Serializable {
 
 	@Override
 	public boolean equals(Object other) {
-		if (other instanceof BindingSetKey && other.hashCode() == hash) {
-			BindingSet otherSolution = ((BindingSetKey) other).getBindingSet();
-			return equalsTest.apply(this.bindingSet, otherSolution);
+		if (other instanceof DefaultBindingSetKey && other.hashCode() == hash) {
+			return Arrays.deepEquals(values, ((DefaultBindingSetKey) other).values);
 		}
-
 		return false;
-	}
-
-	@Override
-	public BindingSet getBindingSet() {
-		return bindingSet;
 	}
 }

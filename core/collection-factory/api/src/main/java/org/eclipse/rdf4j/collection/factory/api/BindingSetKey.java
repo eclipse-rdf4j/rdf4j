@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.collection.factory.api;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import org.eclipse.rdf4j.query.BindingSet;
 
 /**
  * A marker interface used in the GroupBy logic to make a key out of the values being grouped by.
@@ -19,7 +18,5 @@ import org.eclipse.rdf4j.query.BindingSet;
  */
 @InternalUseOnly
 public interface BindingSetKey {
-
-	BindingSet getBindingSet();
 
 }
