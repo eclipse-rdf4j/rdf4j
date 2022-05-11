@@ -97,8 +97,11 @@ public class FileFormat {
 	public FileFormat(String name, Collection<String> mimeTypes, Charset charset, Collection<String> fileExtensions) {
 		assert name != null : "name must not be null";
 		assert mimeTypes != null : "mimeTypes must not be null";
-		assert !mimeTypes.isEmpty() : "mimeTypes must not be empty";
 		assert fileExtensions != null : "fileExtensions must not be null";
+
+		if (mimeTypes.isEmpty()) {
+			throw new IllegalArgumentException("mimeTypes must not be empty");
+		}
 
 		this.name = name;
 		this.mimeTypes.addAll(mimeTypes);
