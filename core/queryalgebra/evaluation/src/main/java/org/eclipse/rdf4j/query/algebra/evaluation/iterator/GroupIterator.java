@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
@@ -67,8 +69,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	 * Constants *
 	 *-----------*/
 
-	private static final BindingSetKey EMPTY = new EmptyBindingSetKey();
-
 	private final EvaluationStrategy strategy;
 
 	private final BindingSet parentBindings;
@@ -78,6 +78,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private final QueryEvaluationContext context;
 
 	private final CollectionFactory cf;
+
+	private final QueryEvaluationStep arguments;
 
 	/*--------------*
 	 * Constructors *
@@ -94,9 +96,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
-//		this is ignored as it is just a left over from earlier
+//		this is ignored as it is just a left over from earlier, this is now stored in the collection factory.
 //		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 		this.context = context;
+		this.arguments = strategy.precompile(group.getArg(), context);
 		this.cf = this.strategy.getCollectionFactory();
 	}
 
@@ -152,7 +155,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
 		Collection<Entry> entries = buildEntries(aggregates);
-		Set<BindingSet> bindingSets = cf.createSet();
+		Set<BindingSet> bindingSets = cf.createSetOfBindingSets();
 		for (Entry entry : entries) {
 			MutableBindingSet sol = makeNewBindingSet.get();
 
@@ -222,49 +225,51 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter;
-		iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings);
+		CloseableIteration<BindingSet, QueryEvaluationException> iter = arguments.evaluate(parentBindings);
 
-		List<Function<BindingSet, Value>> getValues = getValueFunctions(context, group);
 		try {
-			Map<BindingSetKey, Entry> entries = new LinkedHashMap<>();
-
 			if (!iter.hasNext()) {
-				emptySolutionSpecialCase(aggregates, entries);
+				return emptySolutionSpecialCase(aggregates);
 			} else {
-				while (iter.hasNext()) {
-					BindingSet sol = iter.next();
-					BindingSetKey key = cf.createBindingSetKey(sol, getValues);
-					Entry entry = entries.get(key);
-					if (entry == null) {
-						List<AggregateCollector> collectors = makeCollectors(aggregates);
-						List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
-						for (AggregatePredicateCollectorSupplier<?, ?> a : aggregates) {
-							predicates.add(a.makePotentialDistinctTest.get());
-						}
-
-						entry = new Entry(sol, collectors, predicates);
-						entries.put(key, entry);
-					}
-
-					entry.addSolution(sol, aggregates);
-				}
+				return constructEntries(aggregates, iter);
 			}
-			return entries.values();
 		} finally {
 			iter.close();
 		}
 
 	}
 
-	private void emptySolutionSpecialCase(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates,
-			Map<BindingSetKey, Entry> entries) {
+	private Collection<Entry> constructEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates,
+			CloseableIteration<BindingSet, QueryEvaluationException> iter) {
+		List<Function<BindingSet, Value>> getValues = getValueFunctions(context, group);
+		Map<BindingSetKey, Entry> entries = new LinkedHashMap<>();
+		while (iter.hasNext()) {
+			BindingSet sol = iter.next();
+			BindingSetKey key = cf.createBindingSetKey(sol, getValues);
+			Entry entry = entries.get(key);
+			if (entry == null) {
+				List<AggregateCollector> collectors = makeCollectors(aggregates);
+				List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
+				for (AggregatePredicateCollectorSupplier<?, ?> a : aggregates) {
+					predicates.add(a.makePotentialDistinctTest.get());
+				}
+
+				entry = new Entry(sol, collectors, predicates);
+				entries.put(key, entry);
+			}
+
+			entry.addSolution(sol, aggregates);
+		}
+		return entries.values();
+	}
+
+	private List<Entry> emptySolutionSpecialCase(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates) {
 		// no solutions, but if we are not explicitly grouping and aggregates are present,
 		// we still need to process them to produce a zero-result.
 		if (group.getGroupBindingNames().isEmpty()) {
 			if (group.getGroupElements().isEmpty()) {
 				final Entry entry = new Entry(null, null, null);
-				entries.put(EMPTY, entry);
+				return List.of(entry);
 			} else {
 				List<AggregateCollector> collectors = makeCollectors(aggregates);
 				List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
@@ -273,9 +278,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				}
 				final Entry entry = new Entry(null, collectors, predicates);
 				entry.addSolution(EmptyBindingSet.getInstance(), aggregates);
-				entries.put(EMPTY, entry);
+				return List.of(entry);
 			}
 		}
+		return Collections.emptyList();
 	}
 
 	private List<AggregateCollector> makeCollectors(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates) {
@@ -774,25 +780,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				}
 				collector.concatenated.append(v.stringValue());
 			}
-		}
-
-	}
-
-	private static class EmptyBindingSetKey implements BindingSetKey {
-
-		@Override
-		public int hashCode() {
-			return 0;
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if (obj instanceof EmptyBindingSet) {
-				return true;
-			} else if (obj instanceof BindingSet) {
-				return ((BindingSet) obj).isEmpty();
-			}
-			return false;
 		}
 
 	}

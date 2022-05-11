@@ -33,9 +33,9 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	// The size 16 seems like a nice starting value but others could well
 	// be better.
 	private static final int SWITCH_TO_DISK_BASED_SET_AT_SIZE = 16;
-	private volatile DB db;
-	private volatile long colectionId = 0;
-	private final long iterationCacheSyncThreshold;
+	protected volatile DB db;
+	protected volatile long colectionId = 0;
+	protected final long iterationCacheSyncThreshold;
 	private final CollectionFactory delegate;
 
 	private static final class RDF4jMapDBException extends RDF4JException {
@@ -58,7 +58,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		this.delegate = delegate;
 	}
 
-	private void init() {
+	protected void init() {
 		if (this.db == null) {
 			synchronized (this) {
 				if (this.db == null) {
@@ -83,6 +83,18 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public List<Value> createValueList() {
 		return delegate.createValueList();
+	}
+
+	@Override
+	public Set<BindingSet> createSetOfBindingSets() {
+		if (iterationCacheSyncThreshold > 0) {
+			init();
+			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,
+					delegate.createSetOfBindingSets());
+			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
+		} else {
+			return delegate.createSetOfBindingSets();
+		}
 	}
 
 	@Override
@@ -162,7 +174,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		return delegate.createBindingSetKey(bindingSet, getValues);
 	}
 
-	private static final class CommitingSet<T> extends AbstractSet<T> {
+	protected static final class CommitingSet<T> extends AbstractSet<T> {
 		private final Set<T> wrapped;
 		private final long iterationCacheSyncThreshold;
 		private final DB db;
@@ -208,7 +220,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		}
 	}
 
-	private static final class CommitingMap<K, V> extends AbstractMap<K, V> {
+	protected static final class CommitingMap<K, V> extends AbstractMap<K, V> {
 		private final Map<K, V> wrapped;
 		private final long iterationCacheSyncThreshold;
 		private final DB db;
@@ -249,7 +261,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	 *
 	 * @param <T> of the contents of the set.
 	 */
-	private class MemoryTillSizeXSet<V> extends AbstractSet<V> {
+	protected class MemoryTillSizeXSet<V> extends AbstractSet<V> {
 		private Set<V> wrapped;
 		private final long setName;
 
@@ -330,4 +342,5 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		}
 
 	}
+
 }

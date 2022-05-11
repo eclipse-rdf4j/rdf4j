@@ -50,6 +50,11 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
+	public Set<BindingSet> createSetOfBindingSets() {
+		return new HashSet<>();
+	}
+
+	@Override
 	public <K, V> Map<K, V> createMap() {
 		return new HashMap<K, V>();
 	}

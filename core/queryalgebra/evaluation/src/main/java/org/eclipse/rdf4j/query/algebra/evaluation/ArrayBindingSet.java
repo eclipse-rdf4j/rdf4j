@@ -58,6 +58,12 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.whichBindingsHaveBeenSet = new boolean[names.length];
 	}
 
+	public ArrayBindingSet(String[] names, Value[] values) {
+		this.bindingNames = names;
+		this.values = values;
+		this.whichBindingsHaveBeenSet = new boolean[names.length];
+	}
+
 	public ArrayBindingSet(BindingSet toCopy, LinkedHashSet<String> names, String[] namesArray) {
 		assert !(toCopy instanceof ArrayBindingSet);
 
