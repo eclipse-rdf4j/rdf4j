@@ -14,11 +14,12 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
  * Creates LMDB store configurations for benchmarking.
  */
 final class ConfigUtil {
-	static LmdbStoreConfig createConfig() {
+	static LmdbStoreConfig createConfig(long mapDbCommit) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L); // 1 GiB
 		config.setTripleDBSize(config.getValueDBSize());
+		config.setIterationCacheSyncThreshold(mapDbCommit);
 		return config;
 	}
 }

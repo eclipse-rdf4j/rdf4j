@@ -72,7 +72,7 @@ public class TransactionsPerSecondBenchmark {
 		i = 0;
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig());
+		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig(0));
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 

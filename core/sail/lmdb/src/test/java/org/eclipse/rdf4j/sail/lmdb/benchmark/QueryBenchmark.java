@@ -98,7 +98,7 @@ public class QueryBenchmark {
 		tempDir.create();
 		File file = tempDir.newFolder();
 
-		repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig()));
+		repository = new SailRepository(new LmdbStore(file, ConfigUtil.createConfig(0)));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
