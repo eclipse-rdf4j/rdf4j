@@ -34,22 +34,22 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class EffectiveTarget {
 
+	public static final String TARGET_VAR_PREFIX = "target_";
 	private final ArrayDeque<EffectiveTargetObject> chain;
 	private final EffectiveTargetObject optional;
 
-	public EffectiveTarget(ArrayDeque<Targetable> chain, Targetable optional, String targetVarPrefix,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public EffectiveTarget(ArrayDeque<Targetable> chain, Targetable optional,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		int index = 0;
 
 		this.chain = new ArrayDeque<>();
 
 		EffectiveTargetObject previous = null;
 
-		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
-
 		for (Targetable targetable : chain) {
 			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
-					new StatementMatcher.Variable(targetVarPrefix + String.format("%010d", index++)),
+					new StatementMatcher.Variable(TARGET_VAR_PREFIX + String.format("%010d", index++)),
 					targetable,
 					previous,
 					rdfsSubClassOfReasoner,
@@ -60,7 +60,7 @@ public class EffectiveTarget {
 
 		if (optional != null) {
 			this.optional = new EffectiveTargetObject(
-					new StatementMatcher.Variable(targetVarPrefix + String.format("%010d", index)),
+					new StatementMatcher.Variable(TARGET_VAR_PREFIX + String.format("%010d", index)),
 					optional,
 					previous,
 					rdfsSubClassOfReasoner,

@@ -368,6 +368,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	public PlanNode generatePlans(ConnectionsGroup connectionsGroup, ValidationSettings validationSettings) {
 		assert constraintComponents.size() == 1;
 
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
+
 		ValidationApproach validationApproach = ValidationApproach.SPARQL;
 		if (!validationSettings.isValidateEntireBaseSail()) {
 			validationApproach = constraintComponents.stream()
@@ -390,9 +392,9 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 
 				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, validationSettings,
 						() -> Shape.this.getTargetChain()
-								.getEffectiveTarget("_target",
+								.getEffectiveTarget(
 										this instanceof NodeShape ? Scope.nodeShape : Scope.propertyShape,
-										connectionsGroup.getRdfsSubClassOfReasoner())
+										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 								.getAllTargets(connectionsGroup,
 										validationSettings.getDataGraph(),
 										this instanceof NodeShape ? Scope.nodeShape : Scope.propertyShape),
@@ -402,7 +404,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		} else if (validationApproach == ValidationApproach.Transactional) {
 			logger.debug("Use validation approach {} for shape {}", validationApproach, this);
 
-			if (this.requiresEvaluation(connectionsGroup, Scope.none, validationSettings.getDataGraph())) {
+			if (this.requiresEvaluation(connectionsGroup, Scope.none, validationSettings.getDataGraph(),
+					stableRandomVariableProvider)) {
 				return Shape.this.generateTransactionalValidationPlan(connectionsGroup, validationSettings, null,
 						Scope.none);
 			} else {
@@ -429,8 +432,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	}
 
 	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph) {
-		return constraintComponents.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope, dataGraph));
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+		return constraintComponents.stream()
+				.anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider));
 	}
 
 	/**

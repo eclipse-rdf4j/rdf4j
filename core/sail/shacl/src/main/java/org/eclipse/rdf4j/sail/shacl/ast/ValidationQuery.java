@@ -61,14 +61,15 @@ public class ValidationQuery {
 			if (value != null) {
 				propertyShapeWithValue = true;
 				valueIndex = variables.size() - 1;
+				assert constraintComponent == null || constraintComponent.producesValidationResultValue();
 			} else {
 				propertyShapeWithValue = false;
 				valueIndex = variables.size();
+				assert constraintComponent == null || !constraintComponent.producesValidationResultValue();
 			}
 		} else {
 			targetIndex = variables.size() - 1;
 			valueIndex = variables.size() - 1;
-
 		}
 
 		this.scope = scope;
@@ -86,7 +87,18 @@ public class ValidationQuery {
 		this.valueIndex = valueIndex;
 	}
 
-	public static ValidationQuery union(ValidationQuery a, ValidationQuery b) {
+	/**
+	 * Creates the SPARQL UNION of two ValidationQuery objects.
+	 *
+	 * @param a              The first ValidationQuery.
+	 * @param b              The second ValidationQuery.
+	 * @param skipValueCheck Skips checks that the two ValidationQuery object are using the same value. This is useful
+	 *                       if the ValidationQuery is guaranteed to not use the current value because
+	 *                       {@link #shiftToNodeShape()} or {@link #popTargetChain()} will always called on the returned
+	 *                       ValidationQuery
+	 * @return
+	 */
+	public static ValidationQuery union(ValidationQuery a, ValidationQuery b, boolean skipValueCheck) {
 		if (a == Deactivated.instance) {
 			return b;
 		}
@@ -95,17 +107,31 @@ public class ValidationQuery {
 		}
 
 		assert a.getTargetVariable(false).equals(b.getTargetVariable(false));
-		assert a.getValueVariable(false).equals(b.getValueVariable(false));
+		assert skipValueCheck || !a.propertyShapeWithValue || !b.propertyShapeWithValue
+				|| a.getValueVariable(false).equals(b.getValueVariable(false));
+		assert a.scope != ConstraintComponent.Scope.nodeShape || a.valueIndex == a.targetIndex;
+		assert b.scope != ConstraintComponent.Scope.nodeShape || b.valueIndex == b.targetIndex;
 		assert a.scope == b.scope;
 		assert a.targetIndex == b.targetIndex;
 		assert a.valueIndex == b.valueIndex;
 
 		String unionQuery = "{\n" + a.getQuery() + "\n} UNION {\n" + b.query + "\n}";
 
-		ValidationQuery validationQuery = new ValidationQuery(unionQuery, a.scope,
-				a.variables.subList(0, a.valueIndex + 1), a.targetIndex, a.valueIndex);
+		List<StatementMatcher.Variable> variables = a.variables.size() >= b.variables.size() ? a.variables
+				: b.variables;
 
-		return validationQuery;
+		if (a.scope == ConstraintComponent.Scope.nodeShape) {
+			System.out.println();
+		}
+		if (a.propertyShapeWithValue || a.scope == ConstraintComponent.Scope.nodeShape) {
+			assert a.variables.size() > a.valueIndex;
+			return new ValidationQuery(unionQuery, a.scope, variables.subList(0, a.valueIndex + 1), a.targetIndex,
+					a.valueIndex);
+		} else {
+			assert a.variables.size() >= a.valueIndex;
+			return new ValidationQuery(unionQuery, a.scope, a.variables.subList(0, a.valueIndex), a.targetIndex,
+					a.valueIndex);
+		}
 
 	}
 
@@ -163,6 +189,7 @@ public class ValidationQuery {
 		if (forValidationReport) {
 			return variables.get(valueIndex_validationReport).name;
 		}
+		assert scope != ConstraintComponent.Scope.propertyShape || propertyShapeWithValue;
 		return variables.get(valueIndex).name;
 	}
 
@@ -191,12 +218,14 @@ public class ValidationQuery {
 	}
 
 	public void shiftToNodeShape() {
+		assert this.scope == ConstraintComponent.Scope.propertyShape;
 		this.scope = ConstraintComponent.Scope.nodeShape;
 		this.propertyShapeWithValue = false;
 		valueIndex--;
 	}
 
 	public void shiftToPropertyShape() {
+		assert this.scope == ConstraintComponent.Scope.nodeShape;
 		this.scope = ConstraintComponent.Scope.propertyShape;
 		this.propertyShapeWithValue = true;
 		targetIndex--;

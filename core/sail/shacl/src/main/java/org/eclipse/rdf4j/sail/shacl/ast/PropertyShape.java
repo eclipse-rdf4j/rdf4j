@@ -132,6 +132,12 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			return ValidationQuery.Deactivated.getInstance();
 		}
 
+		// We can safely skip the value check when calling union if there are more than one constraint component because
+		// we will always either call popTargetChain() or shiftToNodeShape() before the returned ValidationQuery is
+		// used. In some cases the variable name can be wrong when combining nested sh:node with node shape constraints
+		// and property shape constraints with values.
+		boolean skipValueCheck = constraintComponents.size() > 1;
+
 		ValidationQuery validationQuery = constraintComponents.stream()
 				.map(c -> {
 					ValidationQuery validationQuery1 = c.generateSparqlValidationQuery(connectionsGroup,
@@ -142,17 +148,18 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 					}
 					return validationQuery1;
 				})
-				.reduce(ValidationQuery::union)
+				.reduce((a, b) -> ValidationQuery.union(a, b, skipValueCheck))
 				.orElseThrow(IllegalStateException::new);
 
 		// since we split our shapes by constraint component we know that we will only have 1 constraint component
-		// unless we are within a logical operator like sh:not, in which case we don't need to create a validation
+		// unless we are within an sh:node or a logical operator like sh:not, in which case we don't need to create a
+		// validation
 		// report since sh:detail is not supported for sparql based validation
 		if (constraintComponents.size() == 1 && !(constraintComponents.get(0) instanceof PropertyShape)) {
+			assert !skipValueCheck;
 			validationQuery.withShape(this);
 			validationQuery.withSeverity(getSeverity());
 			validationQuery.makeCurrentStateValidationReport();
-
 		}
 
 		if (scope == Scope.propertyShape) {
@@ -232,17 +239,19 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		PlanNode planNode = constraintComponents.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.propertyShape))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.propertyShape,
+						stableRandomVariableProvider))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
 
 		planNode = UnionNode.getInstanceDedupe(planNode,
 				getTargetChain()
-						.getEffectiveTarget("_target", Scope.propertyShape,
-								connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(Scope.propertyShape,
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 						.getPlanNode(connectionsGroup, dataGraph, Scope.propertyShape, true, null));
 
 		if (scope == Scope.propertyShape) {

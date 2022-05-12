@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.PropertyShape;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclProperties;
 import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.NotValuesIn;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
@@ -89,13 +90,14 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 			ValidationSettings validationSettings,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 
-		// if (scope == Scope.nodeShape) {
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		PlanNodeProvider planNodeProvider;
 		if (overrideTargetNode != null) {
 			planNodeProvider = overrideTargetNode;
 		} else {
-			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope);
+			planNodeProvider = () -> getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
+					stableRandomVariableProvider);
 		}
 
 		PlanNode planNode = not.generateTransactionalValidationPlan(
@@ -111,14 +113,16 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 		if (overrideTargetNode != null) {
 			if (scope == Scope.propertyShape) {
 				allTargetsPlan = getTargetChain()
-						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
 						.extend(planNodeProvider.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
 								Scope.nodeShape,
 								EffectiveTarget.Extend.right, false, null);
 				allTargetsPlan = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 			} else {
 				allTargetsPlan = getTargetChain()
-						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
 						.extend(planNodeProvider.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
 								scope, EffectiveTarget.Extend.right,
 								false, null);
@@ -156,23 +160,26 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	 */
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		PlanNode allTargets;
 
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
 			allTargets = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		} else {
 			allTargets = getTargetChain()
-					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, scope, true, null);
 
 		}
 
-		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, dataGraph, scope);
+		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, dataGraph, scope, stableRandomVariableProvider);
 
 		return Unique.getInstance(UnionNode.getInstanceDedupe(allTargets, notTargets), false);
 	}
@@ -185,7 +192,8 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph) {
-		return not.requiresEvaluation(connectionsGroup, scope, dataGraph);
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+		return not.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider);
 	}
 }

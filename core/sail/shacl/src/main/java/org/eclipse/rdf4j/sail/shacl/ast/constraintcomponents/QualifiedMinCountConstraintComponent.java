@@ -120,15 +120,20 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 		assert scope == Scope.propertyShape;
 
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
+
 		PlanNode target;
 
 		if (overrideTargetNode != null) {
-			target = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+			target = getTargetChain()
+					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
 							scope, EffectiveTarget.Extend.right,
 							false, null);
 		} else {
-			target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope);
+			target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
+					stableRandomVariableProvider);
 		}
 
 		PlanNode planNode = negated(connectionsGroup, validationSettings, overrideTargetNode, scope);
@@ -147,7 +152,8 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNodeProvider planNodeProvider = () -> {
 
-			PlanNode target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope);
+			PlanNode target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
+					stableRandomVariableProvider);
 
 			if (overrideTargetNode != null) {
 				PlanNode planNode = overrideTargetNode.getPlanNode();
@@ -155,7 +161,8 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 					return planNode;
 				}
 				target = getTargetChain()
-						.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
 						.extend(planNode, connectionsGroup, validationSettings.getDataGraph(), scope,
 								EffectiveTarget.Extend.right,
 								false, null);
@@ -193,11 +200,13 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode invalid = Unique.getInstance(planNode, false);
 
-		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope);
+		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
+				stableRandomVariableProvider);
 
 		if (overrideTargetNode != null) {
 			allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
 							scope, EffectiveTarget.Extend.right,
 							false, null);
@@ -205,7 +214,8 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 		if (overrideTargetNode != null && overrideTargetNode.getPlanNode() instanceof AllTargetsPlanNode) {
 			allTargetsPlan = new ShiftToPropertyShape(getTargetChain()
-					.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape));
 		} else {
 			allTargetsPlan = Unique.getInstance(new TrimToTarget(allTargetsPlan), false);
@@ -231,14 +241,17 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		assert scope == Scope.propertyShape;
 
 		PlanNode allTargets = getTargetChain()
-				.getEffectiveTarget("target_", Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner())
+				.getEffectiveTarget(Scope.propertyShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+						stableRandomVariableProvider)
 				.getPlanNode(connectionsGroup, dataGraph, Scope.propertyShape, true, null);
 
-		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, dataGraph, scope);
+		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
+				stableRandomVariableProvider);
 
 		return Unique.getInstance(new TrimToTarget(UnionNode.getInstanceDedupe(allTargets, subTargets)), false);
 
@@ -250,7 +263,8 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 	}
 
 	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph) {
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		return true;
 	}
 

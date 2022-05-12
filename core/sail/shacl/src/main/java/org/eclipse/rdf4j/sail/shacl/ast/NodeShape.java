@@ -129,15 +129,12 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 					}
 					return validationQuery1;
 				})
-				.reduce(ValidationQuery::union)
+				.reduce((a, b) -> ValidationQuery.union(a, b, false))
 				.orElseThrow(IllegalStateException::new);
 
 		if (produceValidationReports) {
-			// since we split our shapes by constraint component we know that we will only have 1 constraint component
-			// unless we are within a logical operator like sh:not, in which case we don't need to create a validation
-			// report since sh:detail is not supported for sparql based validation
-			assert constraintComponents.size() == 1;
-			if (!(constraintComponents.get(0) instanceof PropertyShape)) {
+			assert !constraintComponents.isEmpty();
+			if (constraintComponents.size() == 1 && !(constraintComponents.get(0) instanceof PropertyShape)) {
 				validationQuery = validationQuery.withShape(this);
 				validationQuery = validationQuery.withSeverity(severity);
 				validationQuery.makeCurrentStateValidationReport();
@@ -201,17 +198,20 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		PlanNode planNode = constraintComponents.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.nodeShape))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.nodeShape,
+						stableRandomVariableProvider))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
 
 		planNode = UnionNode.getInstanceDedupe(planNode,
 				getTargetChain()
-						.getEffectiveTarget("_target", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
 						.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null));
 
 		if (scope == Scope.propertyShape) {
