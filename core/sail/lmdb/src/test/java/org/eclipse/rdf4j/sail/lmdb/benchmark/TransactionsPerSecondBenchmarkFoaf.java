@@ -51,7 +51,7 @@ public class TransactionsPerSecondBenchmarkFoaf extends BenchmarkBaseFoaf {
 
 	@Setup(Level.Iteration)
 	public void setup() throws IOException {
-		super.setup();
+		super.setup(0);
 	}
 
 	@TearDown(Level.Iteration)

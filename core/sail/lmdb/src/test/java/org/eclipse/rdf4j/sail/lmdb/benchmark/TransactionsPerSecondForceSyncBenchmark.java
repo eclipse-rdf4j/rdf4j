@@ -72,7 +72,7 @@ public class TransactionsPerSecondForceSyncBenchmark {
 		i = 0;
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig().setForceSync(true));
+		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig(0).setForceSync(true));
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 

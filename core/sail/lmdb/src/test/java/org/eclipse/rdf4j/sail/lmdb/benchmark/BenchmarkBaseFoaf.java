@@ -34,7 +34,7 @@ public class BenchmarkBaseFoaf {
 	private final String[] countries = Locale.getISOCountries();
 	private final String[] languages = Locale.getISOLanguages();
 
-	public void setup() throws IOException {
+	public void setup(long mapDbCommit) throws IOException {
 		i = 1;
 		if (connection != null) {
 			connection.close();
@@ -42,7 +42,7 @@ public class BenchmarkBaseFoaf {
 		}
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig());
+		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig(mapDbCommit));
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 

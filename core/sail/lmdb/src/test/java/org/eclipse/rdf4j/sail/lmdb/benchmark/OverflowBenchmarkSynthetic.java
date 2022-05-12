@@ -77,7 +77,7 @@ public class OverflowBenchmarkSynthetic {
 		File temporaryFolder = Files.newTemporaryFolder();
 		SailRepository sailRepository = null;
 		try {
-			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createConfig()));
+			sailRepository = new SailRepository(new LmdbStore(temporaryFolder, ConfigUtil.createConfig(0)));
 
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 

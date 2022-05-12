@@ -11,12 +11,10 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -25,6 +23,7 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
@@ -45,6 +44,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmarkFoaf extends BenchmarkBaseFoaf {
+
+	@Param({ "0", "128", "1024" })
+	public int mapDbCommit;
+
 	private static final String query1, query2, query3;
 
 	static {
@@ -71,7 +74,7 @@ public class QueryBenchmarkFoaf extends BenchmarkBaseFoaf {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
-		super.setup();
+		super.setup(mapDbCommit);
 
 		// add 100,000 persons => 1,000,000 triples
 		for (int i = 0; i < 10; i++) {
