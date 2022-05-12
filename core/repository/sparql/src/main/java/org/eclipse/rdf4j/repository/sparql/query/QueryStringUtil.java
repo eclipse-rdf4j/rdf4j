@@ -18,7 +18,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
 /**
- * Utility class to perfom query string manipulations as used in {@link SPARQLTupleQuery}, {@link SPARQLGraphQuery} and
+ * Utility class to perfom query string manipulations as used in
+ * {@link SPARQLTupleQuery}, {@link SPARQLGraphQuery} and
  * {@link SPARQLBooleanQuery}.
  *
  * @author Andreas Schwarte
@@ -31,7 +32,8 @@ public class QueryStringUtil {
 	// TODO maybe add BASE declaration here as well?
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given argument are replaced.
+	 * Retrieve a modified queryString into which all bindings of the given argument
+	 * are replaced.
 	 *
 	 * @param queryString
 	 * @param bindings
@@ -44,7 +46,8 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given argument are replaced, with the binding
+	 * Retrieve a modified queryString into which all bindings of the given argument
+	 * are replaced, with the binding
 	 * names included in the SELECT clause.
 	 *
 	 * @param queryString
@@ -65,7 +68,9 @@ public class QueryStringUtil {
 			if (replacement != null) {
 				String pattern = "[\\?\\$]" + name + "(?=\\W)";
 				select = select.replaceAll(pattern, "(" + Matcher.quoteReplacement(replacement) + " as ?" + name + ")");
-
+				pattern = "[\\?\\$]" + name + "(?=\\s?\\)\\W)";
+				select = select.replaceAll(pattern, Matcher.quoteReplacement(replacement));
+				pattern = "[\\?\\$]" + name + "(?=\\W)";
 				// we use Matcher.quoteReplacement to make sure things like newlines
 				// in literal values
 				// are preserved
@@ -76,7 +81,8 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their value.
+	 * Retrieve a modified queryString into which all bindings of the given argument
+	 * are replaced with their value.
 	 *
 	 * @param queryString
 	 * @param bindings
@@ -87,7 +93,8 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their value.
+	 * Retrieve a modified queryString into which all bindings of the given argument
+	 * are replaced with their value.
 	 *
 	 * @param queryString
 	 * @param bindings
@@ -98,7 +105,8 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Retrieve a modified queryString into which all bindings of the given argument are replaced with their value.
+	 * Retrieve a modified queryString into which all bindings of the given argument
+	 * are replaced with their value.
 	 *
 	 * @param queryString
 	 * @param bindings
@@ -135,7 +143,8 @@ public class QueryStringUtil {
 	}
 
 	/**
-	 * Converts a value to its SPARQL string representation and appends it to a StringBuilder.
+	 * Converts a value to its SPARQL string representation and appends it to a
+	 * StringBuilder.
 	 *
 	 * Null will be converted to UNDEF (may be used in VALUES only).
 	 *
