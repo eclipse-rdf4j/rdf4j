@@ -120,9 +120,6 @@ public class ValidationQuery {
 		List<StatementMatcher.Variable> variables = a.variables.size() >= b.variables.size() ? a.variables
 				: b.variables;
 
-		if (a.scope == ConstraintComponent.Scope.nodeShape) {
-			System.out.println();
-		}
 		if (a.propertyShapeWithValue || a.scope == ConstraintComponent.Scope.nodeShape) {
 			assert a.variables.size() > a.valueIndex;
 			return new ValidationQuery(unionQuery, a.scope, variables.subList(0, a.valueIndex + 1), a.targetIndex,
