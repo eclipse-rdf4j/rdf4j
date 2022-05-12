@@ -167,6 +167,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/languageIn/simple",
 			"test-cases/maxCount/not",
 			"test-cases/maxCount/nested",
+			"test-cases/maxCount/nestedCombination",
 			"test-cases/maxCount/not2",
 			"test-cases/maxCount/notNot",
 			"test-cases/maxCount/simple",
