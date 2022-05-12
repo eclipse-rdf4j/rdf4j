@@ -30,9 +30,6 @@ import org.mapdb.DB;
 import org.mapdb.DBMaker;
 
 public class MapDbCollectionFactory implements CollectionFactory {
-	// The size 16 seems like a nice starting value but others could well
-	// be better.
-	private static final int SWITCH_TO_DISK_BASED_SET_AT_SIZE = 16;
 	protected volatile DB db;
 	protected volatile long colectionId = 0;
 	protected final long iterationCacheSyncThreshold;
@@ -201,10 +198,15 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 		@Override
 		public boolean addAll(Collection<? extends T> c) {
+			int preinsertSize = wrapped.size();
 			boolean res = wrapped.addAll(c);
-			if (iterationCount + c.size() % iterationCacheSyncThreshold == 0) {
+			int inserted = preinsertSize - c.size();
+			if (inserted + iterationCount > iterationCacheSyncThreshold) {
 				// write to disk every $iterationCacheSyncThreshold items
 				db.commit();
+				iterationCount = 0;
+			} else {
+				iterationCount += inserted;
 			}
 			return res;
 		}
@@ -273,7 +275,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 		@Override
 		public boolean add(V e) {
-			if (wrapped instanceof HashSet && wrapped.size() > SWITCH_TO_DISK_BASED_SET_AT_SIZE) {
+			if (wrapped instanceof HashSet && wrapped.size() > iterationCacheSyncThreshold) {
 				Set<V> disk = db.getHashSet(Long.toHexString(setName));
 				disk.addAll(wrapped);
 				wrapped = disk;
@@ -283,7 +285,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 		@Override
 		public boolean addAll(Collection<? extends V> arg0) {
-			if (wrapped instanceof HashSet && arg0.size() > SWITCH_TO_DISK_BASED_SET_AT_SIZE) {
+			if (wrapped instanceof HashSet && arg0.size() > iterationCacheSyncThreshold) {
 				Set<V> disk = db.getHashSet(Long.toHexString(setName));
 				disk.addAll(wrapped);
 				wrapped = disk;
