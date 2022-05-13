@@ -120,6 +120,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/complex/dcat",
 			"test-cases/complex/foaf",
 			"test-cases/complex/targetShapeAndQualifiedShape",
+			"test-cases/complex/mms",
 //		"test-cases/complex/sparqlTarget",
 			"test-cases/datatype/allObjects",
 			"test-cases/datatype/not",
