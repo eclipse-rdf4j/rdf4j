@@ -278,7 +278,7 @@ public class EffectiveTarget {
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query, last.var,
-				ValidationTuple::getActiveTarget)
+				validationTuple -> validationTuple.getActiveTarget())
 						.getTrueNode(UnBufferedPlanNode.class);
 	}
 

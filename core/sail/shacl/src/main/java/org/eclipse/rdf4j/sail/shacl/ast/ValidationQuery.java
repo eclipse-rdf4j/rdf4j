@@ -144,6 +144,8 @@ public class ValidationQuery {
 			Resource[] shapesGraphs) {
 
 		assert query != null;
+		assert shape != null;
+		assert scope_validationReport != null;
 
 		StringBuilder fullQuery = new StringBuilder();
 

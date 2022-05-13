@@ -34,28 +34,24 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
 public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
 
-	protected boolean produceValidationReports;
-
-	public NodeShape(boolean produceValidationReports) {
-		this.produceValidationReports = produceValidationReports;
+	public NodeShape() {
 	}
 
 	public NodeShape(NodeShape nodeShape) {
 		super(nodeShape);
-		this.produceValidationReports = nodeShape.produceValidationReports;
 	}
 
 	public static NodeShape getInstance(ShaclProperties properties,
-			ShapeSource shapeSource, Cache cache, boolean produceValidationReports, ShaclSail shaclSail) {
+			ShapeSource shapeSource, Cache cache, ShaclSail shaclSail) {
 
-		Shape shape = cache.get(properties.getId());
+		NodeShape shape = (NodeShape) cache.get(properties.getId());
 		if (shape == null) {
-			shape = new NodeShape(produceValidationReports);
+			shape = new NodeShape();
 			cache.put(properties.getId(), shape);
 			shape.populate(properties, shapeSource, cache, shaclSail);
 		}
 
-		return (NodeShape) shape;
+		return shape;
 	}
 
 	@Override
@@ -133,12 +129,12 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 				.orElseThrow(IllegalStateException::new);
 
 		if (produceValidationReports) {
-			assert !constraintComponents.isEmpty();
-			if (constraintComponents.size() == 1 && !(constraintComponents.get(0) instanceof PropertyShape)) {
-				validationQuery = validationQuery.withShape(this);
-				validationQuery = validationQuery.withSeverity(severity);
-				validationQuery.makeCurrentStateValidationReport();
-			}
+			assert constraintComponents.size() == 1;
+			assert !(constraintComponents.get(0) instanceof PropertyShape);
+
+			validationQuery = validationQuery.withShape(this);
+			validationQuery = validationQuery.withSeverity(severity);
+			validationQuery.makeCurrentStateValidationReport();
 		}
 
 		if (scope == Scope.propertyShape) {
@@ -165,7 +161,10 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 					.generateTransactionalValidationPlan(connectionsGroup, validationSettings, overrideTargetNode,
 							Scope.nodeShape);
 
-			if (!(constraintComponent instanceof PropertyShape) && produceValidationReports) {
+			if (produceValidationReports) {
+				assert !(constraintComponent instanceof PropertyShape);
+				assert constraintComponents.size() == 1;
+
 				validationPlanNode = new ValidationReportNode(validationPlanNode, t -> {
 					return new ValidationResult(t.getActiveTarget(), t.getActiveTarget(), this,
 							constraintComponent.getConstraintComponent(), getSeverity(), t.getScope(), t.getContexts(),
@@ -177,8 +176,7 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 				validationPlanNode = Unique.getInstance(new ShiftToPropertyShape(validationPlanNode), true);
 			}
 
-			union = UnionNode.getInstance(union,
-					validationPlanNode);
+			union = UnionNode.getInstance(union, validationPlanNode);
 		}
 
 		return union;

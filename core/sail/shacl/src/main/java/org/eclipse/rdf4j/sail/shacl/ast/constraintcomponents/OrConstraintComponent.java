@@ -54,7 +54,7 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 				.map(r -> new ShaclProperties(r, shapeSource))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, shapeSource, cache, false, shaclSail);
+						return NodeShape.getInstance(p, shapeSource, cache, shaclSail);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 						return PropertyShape.getInstance(p, shapeSource, cache, shaclSail);
 					}

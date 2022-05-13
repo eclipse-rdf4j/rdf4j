@@ -85,7 +85,8 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			throw new IllegalStateException(properties.getId() + " is a sh:PropertyShape without a sh:path!");
 		}
 
-		constraintComponents = getConstraintComponents(properties, connection, cache, shaclSail);
+		constraintComponents = getConstraintComponents(properties, connection, cache, shaclSail
+		);
 	}
 
 	@Override
@@ -132,12 +133,6 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			return ValidationQuery.Deactivated.getInstance();
 		}
 
-		// We can safely skip the value check when calling union if there are more than one constraint component because
-		// we will always either call popTargetChain() or shiftToNodeShape() before the returned ValidationQuery is
-		// used. In some cases the variable name can be wrong when combining nested sh:node with node shape constraints
-		// and property shape constraints with values.
-		boolean skipValueCheck = constraintComponents.size() > 1;
-
 		ValidationQuery validationQuery = constraintComponents.stream()
 				.map(c -> {
 					ValidationQuery validationQuery1 = c.generateSparqlValidationQuery(connectionsGroup,
@@ -148,15 +143,13 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 					}
 					return validationQuery1;
 				})
-				.reduce((a, b) -> ValidationQuery.union(a, b, skipValueCheck))
+				.reduce((a, b) -> ValidationQuery.union(a, b, !produceValidationReports))
 				.orElseThrow(IllegalStateException::new);
 
-		// since we split our shapes by constraint component we know that we will only have 1 constraint component
-		// unless we are within an sh:node or a logical operator like sh:not, in which case we don't need to create a
-		// validation
-		// report since sh:detail is not supported for sparql based validation
-		if (constraintComponents.size() == 1 && !(constraintComponents.get(0) instanceof PropertyShape)) {
-			assert !skipValueCheck;
+		if (produceValidationReports) {
+			assert constraintComponents.size() == 1;
+			assert !(constraintComponents.get(0) instanceof PropertyShape);
+
 			validationQuery.withShape(this);
 			validationQuery.withSeverity(getSeverity());
 			validationQuery.makeCurrentStateValidationReport();

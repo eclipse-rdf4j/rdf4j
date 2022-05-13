@@ -84,6 +84,7 @@ import org.slf4j.LoggerFactory;
 abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
 
 	private static final Logger logger = LoggerFactory.getLogger(Shape.class);
+	protected boolean produceValidationReports;
 
 	Resource id;
 	TargetChain targetChain;
@@ -108,6 +109,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		this.id = shape.id;
 		this.targetChain = shape.targetChain;
 		this.contexts = shape.contexts;
+		this.produceValidationReports = shape.produceValidationReports;
 	}
 
 	public void populate(ShaclProperties properties, ShapeSource shapeSource,
@@ -173,7 +175,6 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 	protected abstract Shape shallowClone();
 
 	/**
-	 *
 	 * @param model the model to export the shapes into
 	 * @return the provided model
 	 */
@@ -212,7 +213,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		properties.getNode()
 				.stream()
 				.map(r -> new ShaclProperties(r, shapeSource))
-				.map(p -> NodeShape.getInstance(p, shapeSource, cache, true, shaclSail))
+				.map(p -> NodeShape.getInstance(p, shapeSource, cache, shaclSail))
 				.forEach(constraintComponent::add);
 
 		if (properties.getMinCount() != null) {
@@ -467,12 +468,43 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 					.map(contextWithShapes -> {
 						List<Shape> split = split(contextWithShapes.getShapes());
 						calculateTargetChain(split);
+						calculateIfProducesValidationResult(split);
 						return new ContextWithShapes(contextWithShapes.getDataGraph(),
 								contextWithShapes.getShapeGraph(), split);
 
 					})
 					.collect(Collectors.toList());
 
+		}
+
+		private static void calculateIfProducesValidationResult(List<Shape> split) {
+			for (Shape shape : split) {
+				assert shape.constraintComponents.size() == 1;
+
+				if (shape instanceof PropertyShape || shape.constraintComponents.get(0) instanceof PropertyShape) {
+
+					PropertyShape propertyShape;
+					if (shape instanceof PropertyShape) {
+						propertyShape = (PropertyShape) shape;
+					} else {
+						propertyShape = (PropertyShape) shape.constraintComponents.get(0);
+					}
+
+					// Nested PropertyShape constraints only produce a validation result for the last PropertyShape in
+					// the chain of PropertyShapes.
+					while (propertyShape.constraintComponents.get(0) instanceof PropertyShape) {
+						assert propertyShape.constraintComponents.size() == 1;
+						if (propertyShape.constraintComponents.get(0) instanceof PropertyShape) {
+							propertyShape = (PropertyShape) propertyShape.constraintComponents.get(0);
+						}
+					}
+
+					propertyShape.produceValidationReports = true;
+
+				} else if (shape instanceof NodeShape) {
+					shape.produceValidationReports = true;
+				}
+			}
 		}
 
 		private static void calculateTargetChain(List<Shape> parsed) {
@@ -493,19 +525,14 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 					s.constraintComponents.forEach(constraintComponent -> {
 
 						if (constraintComponent instanceof PropertyShape) {
-							((PropertyShape) constraintComponent).constraintComponents
-									.forEach(propertyConstraintComponent -> {
-										PropertyShape clonedConstraintComponent = (PropertyShape) ((PropertyShape) constraintComponent)
-												.shallowClone();
-										clonedConstraintComponent.constraintComponents
-												.add(propertyConstraintComponent.deepClone());
-
-										Shape shape = s.shallowClone();
-										shape.target.add(target);
-										shape.constraintComponents.add(clonedConstraintComponent);
-										temp.add(shape);
-									});
-
+							List<PropertyShape> split = splitPropertyShape(((PropertyShape) constraintComponent))
+									.collect(Collectors.toList());
+							for (PropertyShape propertyShape : split) {
+								Shape shape = s.shallowClone();
+								shape.target.add(target);
+								shape.constraintComponents.add(propertyShape);
+								temp.add(shape);
+							}
 						} else {
 							Shape shape = s.shallowClone();
 							shape.target.add(target);
@@ -518,6 +545,24 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 				});
 				return temp.stream();
 			}).collect(Collectors.toList());
+		}
+
+		private static Stream<PropertyShape> splitPropertyShape(PropertyShape propertyShape) {
+			return propertyShape.constraintComponents.stream()
+					.flatMap(constraintComponent -> {
+						if (constraintComponent instanceof PropertyShape) {
+							return splitPropertyShape(((PropertyShape) constraintComponent))
+									.map(splitConstraintComponent -> {
+										PropertyShape propertyShapeClone = (PropertyShape) propertyShape.shallowClone();
+										propertyShapeClone.constraintComponents.add(splitConstraintComponent);
+										return propertyShapeClone;
+									});
+						} else {
+							PropertyShape propertyShapeClone = (PropertyShape) propertyShape.shallowClone();
+							propertyShapeClone.constraintComponents.add(constraintComponent.deepClone());
+							return Stream.of(propertyShapeClone);
+						}
+					});
 		}
 
 		private static List<ContextWithShapes> parse(ShapeSource shapeSource, ShaclSail shaclSail) {
@@ -544,7 +589,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 						.map(r -> new ShaclProperties(r, shapeSourceWithContext))
 						.map(p -> {
 							if (p.getType() == SHACL.NODE_SHAPE) {
-								return NodeShape.getInstance(p, shapeSourceWithContext, cache, true, shaclSail);
+								return NodeShape.getInstance(p, shapeSourceWithContext, cache, shaclSail);
 							} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 								return PropertyShape.getInstance(p, shapeSourceWithContext, cache, shaclSail);
 							}
