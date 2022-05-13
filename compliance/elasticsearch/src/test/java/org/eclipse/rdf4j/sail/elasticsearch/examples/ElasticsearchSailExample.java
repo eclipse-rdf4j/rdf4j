@@ -40,7 +40,12 @@ public class ElasticsearchSailExample {
 	 * @param args
 	 */
 	public static void main(String[] args) throws Exception {
+		long startTime = System.nanoTime();
+        // QueryResultFunction();
 		createSimple();
+		long endTime = System.nanoTime();
+        long timeElapsed = endTime - startTime;
+        System.out.println("Execution time in milliseconds for All the Queries: " + timeElapsed / 1000000);
 	}
 
 	/**
