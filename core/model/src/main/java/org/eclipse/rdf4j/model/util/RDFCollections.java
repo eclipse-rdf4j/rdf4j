@@ -208,7 +208,7 @@ public class RDFCollections {
 
 		Resource current = head != null ? head : vf.createBNode();
 
-		Statements.consume(vf, current, RDF.TYPE, RDF.LIST, consumer, contexts);
+		//Statements.consume(vf, current, RDF.TYPE, RDF.LIST, consumer, contexts);
 
 		Iterator<?> iter = values.iterator();
 		while (iter.hasNext()) {
