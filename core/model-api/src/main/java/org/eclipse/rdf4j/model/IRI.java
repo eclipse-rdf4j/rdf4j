@@ -6,7 +6,6 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
-
 /**
  * An Internationalized Resource Identifier (IRI). IRIs may contain characters from the Universal Character Set
  * (Unicode/ISO 10646), including Chinese or Japanese kanji, Korean, Cyrillic characters, and so forth. It is defined by
@@ -45,6 +44,7 @@ public interface IRI extends Resource {
 	 */
 	String getNamespace();
 
+	IRI percentageDecode(IRI url); //abstract function for percent decoding. For Issue: 1291
 	/**
 	 * Gets the local name part of this IRI.
 	 * <p>

@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.model.impl;
 
 import java.util.Objects;
-
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.AbstractIRI;
 import org.eclipse.rdf4j.model.util.URIUtil;
@@ -100,6 +100,15 @@ public class SimpleIRI extends AbstractIRI {
 		}
 
 		return iriString.substring(localNameIdx);
+	}
+
+	//conversion function to decode percent-encoded chars, Issue: 1291
+	@Override
+	public IRI percentageDecode(IRI url){
+		String url_ = url.toString();
+		url_ = url_.replaceAll("%", "");
+		url = Values.iri(url_);
+        return url;
 	}
 
 }
