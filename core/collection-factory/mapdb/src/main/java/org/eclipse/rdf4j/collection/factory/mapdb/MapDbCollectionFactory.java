@@ -7,8 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.collection.factory.mapdb;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.IOError;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.Collection;
@@ -39,7 +38,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 		private static final long serialVersionUID = 1L;
 
-		public RDF4jMapDBException(String string, IOException e) {
+		public RDF4jMapDBException(String string, IOError e) {
 			super(string, e);
 		}
 
@@ -60,11 +59,12 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			synchronized (this) {
 				if (this.db == null) {
 					try {
-						this.db = DBMaker.newFileDB(File.createTempFile("group-eval", null))
+						this.db = DBMaker.newTempFileDB()
 								.deleteFilesAfterClose()
 								.closeOnJvmShutdown()
+								.commitFileSyncDisable()
 								.make();
-					} catch (IOException e) {
+					} catch (IOError e) {
 						throw new RDF4jMapDBException("could not initialize temp db", e);
 					}
 				}
