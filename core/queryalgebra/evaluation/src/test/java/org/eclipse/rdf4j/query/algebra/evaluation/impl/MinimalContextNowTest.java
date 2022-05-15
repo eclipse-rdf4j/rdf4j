@@ -28,7 +28,6 @@ public class MinimalContextNowTest {
 
 	@Test
 	public void testNow() {
-
 		// Tests that the now value is correctly initialized.
 		QueryEvaluationContext.Minimal context = new QueryEvaluationContext.Minimal(null);
 		QueryValueEvaluationStep prepared = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(
