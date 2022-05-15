@@ -55,7 +55,7 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(SPARQLSyntaxComplianceTest.class);
 
-	private static final List<String> excludedSubdirs = Arrays.asList();
+	private static final List<String> excludedSubdirs = List.of();
 
 	private String queryFileURL;
 	private boolean positiveTest;

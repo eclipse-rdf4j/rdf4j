@@ -19,8 +19,8 @@ import java.util.List;
 public enum EndpointType {
 	NativeStore(Arrays.asList("NativeStore", "lsail/NativeStore")),
 	SparqlEndpoint(Arrays.asList("SparqlEndpoint", "api/sparql")),
-	RemoteRepository(Arrays.asList("RemoteRepository")),
-	Other(Arrays.asList("Other"));
+	RemoteRepository(List.of("RemoteRepository")),
+	Other(List.of("Other"));
 
 	private List<String> formatNames;
 

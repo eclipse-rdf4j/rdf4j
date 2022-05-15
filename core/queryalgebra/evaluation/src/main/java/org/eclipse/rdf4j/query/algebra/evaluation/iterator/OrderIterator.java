@@ -209,7 +209,7 @@ public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationE
 			while (iterators.get(i).hasNext()) {
 				E key = iterators.get(i).next();
 				if (!head.containsKey(key)) {
-					head.put(key, new LinkedList<>(Arrays.asList(i)));
+					head.put(key, new LinkedList<>(List.of(i)));
 					break;
 				} else if (!distinct) {
 					head.get(key).add(i);

@@ -64,7 +64,7 @@ public class FileFormat {
 	 * @param fileExtension The (default) file extension for the file format, e.g. <var>txt</var> for plain text files.
 	 */
 	public FileFormat(String name, String mimeType, Charset charset, String fileExtension) {
-		this(name, Arrays.asList(mimeType), charset, Arrays.asList(fileExtension));
+		this(name, List.of(mimeType), charset, List.of(fileExtension));
 	}
 
 	/**
@@ -79,7 +79,7 @@ public class FileFormat {
 	 *                       item in the list is interpreted as the default file extension for the format.
 	 */
 	public FileFormat(String name, String mimeType, Charset charset, Collection<String> fileExtensions) {
-		this(name, Arrays.asList(mimeType), charset, fileExtensions);
+		this(name, List.of(mimeType), charset, fileExtensions);
 	}
 
 	/**

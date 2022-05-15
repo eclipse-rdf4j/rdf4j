@@ -139,17 +139,17 @@ public class BasicTests extends SPARQLBaseTest {
 					.prepareTupleQuery("SELECT ?person WHERE { ?person a <http://xmlns.com/foaf/0.1/Person> }");
 			TupleQueryResult result = tq.evaluate();
 
-			TupleQueryResult expected = tupleQueryResultBuilder(Arrays.asList("person"))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_6")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_7")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_8")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_9")))
-					.add(Arrays.asList(vf.createIRI(ns2, "Person_10")))
+			TupleQueryResult expected = tupleQueryResultBuilder(List.of("person"))
+					.add(List.of(vf.createIRI(ns1, "Person_1")))
+					.add(List.of(vf.createIRI(ns1, "Person_2")))
+					.add(List.of(vf.createIRI(ns1, "Person_3")))
+					.add(List.of(vf.createIRI(ns1, "Person_4")))
+					.add(List.of(vf.createIRI(ns1, "Person_5")))
+					.add(List.of(vf.createIRI(ns2, "Person_6")))
+					.add(List.of(vf.createIRI(ns2, "Person_7")))
+					.add(List.of(vf.createIRI(ns2, "Person_8")))
+					.add(List.of(vf.createIRI(ns2, "Person_9")))
+					.add(List.of(vf.createIRI(ns2, "Person_10")))
 					.build();
 
 			compareTupleQueryResults(result, expected, false);
@@ -161,12 +161,12 @@ public class BasicTests extends SPARQLBaseTest {
 			tq.setDataset(fedxDataset);
 			result = tq.evaluate();
 
-			expected = tupleQueryResultBuilder(Arrays.asList("person"))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_1")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_2")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_3")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_4")))
-					.add(Arrays.asList(vf.createIRI(ns1, "Person_5")))
+			expected = tupleQueryResultBuilder(List.of("person"))
+					.add(List.of(vf.createIRI(ns1, "Person_1")))
+					.add(List.of(vf.createIRI(ns1, "Person_2")))
+					.add(List.of(vf.createIRI(ns1, "Person_3")))
+					.add(List.of(vf.createIRI(ns1, "Person_4")))
+					.add(List.of(vf.createIRI(ns1, "Person_5")))
 					.build();
 
 			compareTupleQueryResults(result, expected, false);
@@ -192,8 +192,8 @@ public class BasicTests extends SPARQLBaseTest {
 
 		TupleQueryResult actual = query.evaluate();
 
-		TupleQueryResult expected = tupleQueryResultBuilder(Arrays.asList("name"))
-				.add(Arrays.asList(vf.createLiteral("Person1")))
+		TupleQueryResult expected = tupleQueryResultBuilder(List.of("name"))
+				.add(List.of(vf.createLiteral("Person1")))
 				.build();
 
 		compareTupleQueryResults(actual, expected, false);

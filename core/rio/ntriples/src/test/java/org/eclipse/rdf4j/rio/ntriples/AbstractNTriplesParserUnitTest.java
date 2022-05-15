@@ -493,7 +493,7 @@ public abstract class AbstractNTriplesParserUnitTest {
 				"http://example/");
 		assertEquals(2, model.size());
 		assertEquals(new TreeSet<>(Arrays.asList("o:1", "o:2")), Models.objectStrings(model));
-		assertEquals(Arrays.asList(commentStr), cc.comments);
+		assertEquals(List.of(commentStr), cc.comments);
 	}
 
 	@Test

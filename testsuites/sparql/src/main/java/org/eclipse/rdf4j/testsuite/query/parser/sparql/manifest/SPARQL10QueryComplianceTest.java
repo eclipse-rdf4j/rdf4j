@@ -44,7 +44,7 @@ public abstract class SPARQL10QueryComplianceTest extends SPARQLQueryComplianceT
 			"SELECT REDUCED ?x with strings"
 	};
 
-	private static final List<String> excludedSubdirs = Arrays.asList("service");
+	private static final List<String> excludedSubdirs = List.of("service");
 
 	/**
 	 * @param displayName

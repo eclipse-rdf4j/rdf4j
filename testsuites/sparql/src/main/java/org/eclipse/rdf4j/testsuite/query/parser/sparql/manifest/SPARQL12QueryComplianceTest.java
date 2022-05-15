@@ -32,7 +32,7 @@ public abstract class SPARQL12QueryComplianceTest extends SPARQLQueryComplianceT
 
 	private static final String[] defaultIgnoredTests = {};
 
-	private static final List<String> excludedSubdirs = Arrays.asList();
+	private static final List<String> excludedSubdirs = List.of();
 
 	@Parameterized.Parameters(name = "{0}")
 	public static Collection<Object[]> data() {

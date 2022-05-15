@@ -11,6 +11,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -35,7 +36,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 
 	@BeforeClass
 	public static void startServer() throws Exception {
-		server = new SPARQLEmbeddedServer(Arrays.asList(repositoryId));
+		server = new SPARQLEmbeddedServer(List.of(repositoryId));
 		try {
 			server.start();
 		} catch (Exception e) {
