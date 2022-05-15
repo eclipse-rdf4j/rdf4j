@@ -19,10 +19,8 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.locks.StampedLock;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;

@@ -32,7 +32,7 @@ import com.google.common.collect.Lists;
 
 /**
  * Specialized {@link DescribeIteration} for evaluation of DESCRIBE queries in the federation. ‚
- * 
+ *
  * @author Andreas Schwarte
  *
  */

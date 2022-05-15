@@ -171,7 +171,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new literal representing the specified bigDecimal that is typed as an <var>xsd:decimal</var>.
-	 * 
+	 *
 	 * @param bigDecimal The value for the literal.
 	 * @return An <var>xsd:decimal</var>-typed literal for the specified value.
 	 */
@@ -179,7 +179,7 @@ public interface ValueFactory {
 
 	/**
 	 * Creates a new literal representing the specified bigInteger that is typed as an <var>xsd:integer</var>.
-	 * 
+	 *
 	 * @param bigInteger The value for the literal.
 	 * @return An <var>xsd:integer</var>-typed literal for the specified value.
 	 */
@@ -245,7 +245,7 @@ public interface ValueFactory {
 	/**
 	 * Creates a new literal representing the specified date that is typed using the appropriate XML Schema date/time
 	 * datatype.
-	 * 
+	 *
 	 * @param date The value for the literal.
 	 * @return A typed literal for the specified date.
 	 */

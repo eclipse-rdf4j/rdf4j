@@ -28,7 +28,7 @@ import com.google.common.collect.Lists;
  * sent as is to the single relevant source. In this case no materialization and in-memory handling through FedX is
  * done, if a {@link TupleQueryResultHandler} is supplied.
  * </p>
- * 
+ *
  * @author Andreas Schwarte
  *
  */
@@ -63,7 +63,7 @@ public class PassThroughTupleExpr extends AbstractQueryModelNode implements FedX
 	}
 
 	/**
-	 * 
+	 *
 	 * @return if the query result has already been passed through to the supplied {@link TupleQueryResultHandler}
 	 */
 	public boolean isPassedThrough() {

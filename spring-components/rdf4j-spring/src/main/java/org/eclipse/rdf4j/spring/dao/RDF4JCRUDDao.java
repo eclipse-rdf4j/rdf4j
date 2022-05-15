@@ -75,7 +75,7 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 
 	/**
 	 * Saves the entity and returns its (possibly newly generated) ID.
-	 * 
+	 *
 	 * @param input the entity
 	 * @param id    the id or null for a new entity.
 	 * @return the id (a newly generated one if the specified <code>id</code> is null, otherwise just <code>id</code>.
@@ -97,7 +97,7 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 	 * When updating an entity via {@link #save(Object)}, its triples are removed first using this method. The default
 	 * implementation used {@link RDF4JTemplate#deleteTriplesWithSubject(IRI)}. If more complex deletion behaviour (e.g.
 	 * cascading) is needed, this method should be overriden.
-	 * 
+	 *
 	 */
 	protected void deleteForUpdate(ID id) {
 		IRI iri = convertIdToIri(id);
@@ -119,7 +119,7 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 
 	/**
 	 * Converts the provided id to an IRI. The default implementation only works for DAOs that use IRI ids.
-	 * 
+	 *
 	 * @param id
 	 * @return
 	 */
@@ -136,7 +136,7 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 
 	/**
 	 * Generates a new id for an entity. The default implementation only works for IRI ids.
-	 * 
+	 *
 	 * @param providedId
 	 * @return a new id.
 	 */
@@ -166,7 +166,7 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 
 	/**
 	 * Obtains the entity with the specified id, throwing an exception if none is found.
-	 * 
+	 *
 	 * @param id the id
 	 * @throws IncorrectResultSetSizeException if no entity is found with the specified id
 	 * @return the entity
@@ -180,7 +180,7 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 
 	/**
 	 * Obtains an optional entity with the specified id.
-	 * 
+	 *
 	 * @param id the id
 	 * @return an Optional maybe containing the entity
 	 */
@@ -194,7 +194,7 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 	/**
 	 * Naive implementation using {@link RDF4JTemplate#delete(IRI)}. DAOs that need more complex deletion behaviour
 	 * (e.g. cascading) should override this method.
-	 * 
+	 *
 	 */
 	public void delete(ID id) {
 		if (idClass.equals(IRI.class)) {

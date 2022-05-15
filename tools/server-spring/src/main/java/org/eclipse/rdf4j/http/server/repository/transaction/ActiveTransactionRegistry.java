@@ -77,6 +77,9 @@ public enum ActiveTransactionRegistry {
 		return secondaryCache;
 	}
 
+	/**
+	 * private constructor.
+	 */
 	ActiveTransactionRegistry() {
 		final String configuredValue = System.getProperty(Protocol.CACHE_TIMEOUT_PROPERTY);
 		if (configuredValue != null) {

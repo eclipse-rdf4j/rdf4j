@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -20,8 +21,13 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.base.CoreDatatype.XSD;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -153,5 +159,26 @@ public class StrictEvaluationStrategyTest {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
 		assertNotNull(prepared);
+	}
+
+	@Test
+	public void testNow() {
+		String query = "SELECT ?now WHERE {BIND(NOW() AS ?now)}";
+		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryEvaluationStep prepared = strategy.precompile(pq.getTupleExpr());
+		assertNotNull(prepared);
+		try (CloseableIteration<BindingSet, QueryEvaluationException> evaluate = prepared
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertTrue(evaluate.hasNext());
+			BindingSet next = evaluate.next();
+			assertNotNull(next);
+			Binding nowBound = next.getBinding("now");
+			assertNotNull(nowBound);
+			assertNotNull(nowBound.getValue());
+			Value nowValue = nowBound.getValue();
+			assertTrue(nowValue.isLiteral());
+			Literal nowLiteral = (Literal) nowValue;
+			assertEquals(CoreDatatype.XSD.DATETIME, nowLiteral.getCoreDatatype());
+		}
 	}
 }

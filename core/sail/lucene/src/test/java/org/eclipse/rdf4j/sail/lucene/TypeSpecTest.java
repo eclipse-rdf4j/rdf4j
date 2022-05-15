@@ -124,7 +124,7 @@ public class TypeSpecTest {
 
 	/**
 	 * assert the repository only contains the excepted documents
-	 * 
+	 *
 	 * @param exceptedDocuments the excepted documents
 	 */
 	private void assertQuery(String... exceptedDocuments) {

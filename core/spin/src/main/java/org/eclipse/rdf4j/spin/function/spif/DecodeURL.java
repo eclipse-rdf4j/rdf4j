@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin.function.spif;
 
-import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.charset.UnsupportedCharsetException;

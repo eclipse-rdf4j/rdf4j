@@ -50,7 +50,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 	/**
 	 * Construct a new instance with 20 workers.
-	 * 
+	 *
 	 * @deprecated use {@link #ControlledWorkerScheduler(int, String)}. Scheduled to be removed in 4.0
 	 */
 	@Deprecated

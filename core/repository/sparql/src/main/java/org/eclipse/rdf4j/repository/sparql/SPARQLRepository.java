@@ -259,9 +259,9 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 
 	/**
 	 * Retrieve the passThroughEnabled setting to be used for any newly created {@link RepositoryConnection}s.
-	 * 
+	 *
 	 * @return the passThroughEnabled setting. May be <code>null</code> if not explicitly configured.
-	 * 
+	 *
 	 * @see SPARQLProtocolSession#isPassThroughEnabled()
 	 */
 	public Boolean getPassThroughEnabled() {
@@ -271,7 +271,7 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	/**
 	 * Set the passThroughEnabled configuration. Changing this will influence behavior of any new
 	 * {@link RepositoryConnection}s, but not of existing ones.
-	 * 
+	 *
 	 * @param passThroughEnabled the passThroughEnabled to set
 	 * @see SPARQLProtocolSession#setPassThroughEnabled()
 	 */
