@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.spring.support;
 
 import java.lang.invoke.MethodHandles;
 import java.util.Objects;
-import java.util.Set;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;

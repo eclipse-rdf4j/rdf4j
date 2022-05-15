@@ -16,7 +16,7 @@ import org.junit.Test;
 
 /**
  * Test cases for handling of base URIs by {@link RDFParser} implementations.
- * 
+ *
  * @author Jeen Broekstra
  *
  */
@@ -77,21 +77,21 @@ public abstract class BaseURIHandlingTest {
 
 	/**
 	 * Get an {@link InputStream} with data serialized in the parser format, containing no relative IRIs
-	 * 
+	 *
 	 */
 	protected abstract InputStream getDataWithAbsoluteIris();
 
 	/**
 	 * Get an {@link InputStream} with data serialized in the parser format, containing some relative IRIs, and no base
 	 * IRI provided inside the data itself.
-	 * 
+	 *
 	 */
 	protected abstract InputStream getDataWithRelativeIris();
 
 	/**
 	 * Get an {@link InputStream} with data serialized in the parser format, containing some relative IRIs, and a base
 	 * IRI provided inside the data itself.
-	 * 
+	 *
 	 */
 	protected abstract InputStream getDataWithRelativeIris_InternalBase();
 

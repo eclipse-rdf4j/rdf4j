@@ -10,7 +10,18 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder;
 
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.*;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.AlternativePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePredicatePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.NegatedPropertySet;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.OneOrMorePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePathOrInversePredicatePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.SequencePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrMorePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrOnePath;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 
 abstract class PropertyPaths {

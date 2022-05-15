@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sparqlbuilder.core.query;
 
-import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.*;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.datatype;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.lt;
+import static org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions.strlen;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 

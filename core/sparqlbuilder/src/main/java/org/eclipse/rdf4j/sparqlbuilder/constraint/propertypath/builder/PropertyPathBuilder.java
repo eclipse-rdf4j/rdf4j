@@ -24,7 +24,6 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;

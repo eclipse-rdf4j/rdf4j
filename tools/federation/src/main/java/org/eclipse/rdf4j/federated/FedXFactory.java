@@ -129,7 +129,7 @@ public class FedXFactory {
 	/**
 	 * Specify the {@link WriteStrategyFactory} to be used. If not explicitly set, {@link DefaultWriteStrategyFactory}
 	 * is used.
-	 * 
+	 *
 	 * @param writeStrategyFactory the {@link WriteStrategyFactory} to be used.
 	 * @return this factory
 	 */

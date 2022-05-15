@@ -129,7 +129,7 @@ public class QueryInfo {
 	}
 
 	/**
-	 * 
+	 *
 	 * @return the {@link FederationEvalStrategy} active in the current query context
 	 */
 	public FederationEvalStrategy getStrategy() {
@@ -180,7 +180,7 @@ public class QueryInfo {
 	/**
 	 * Returns a {@link TupleQueryResultHandler} if this query is executed using.
 	 * {@link TupleQuery#evaluate(TupleQueryResultHandler)}.
-	 * 
+	 *
 	 * @return the {@link TupleQueryResultHandler} that can be used for pass through
 	 * @see PassThroughTupleExpr
 	 */
@@ -191,7 +191,7 @@ public class QueryInfo {
 	/**
 	 * Set the {@link TupleQueryResultHandler} if the query is executed using
 	 * {@link TupleQuery#evaluate(TupleQueryResultHandler)} allowing for passing through results to the handler.
-	 * 
+	 *
 	 * @param resultHandler the {@link TupleQueryResultHandler}
 	 */
 	public void setResultHandler(TupleQueryResultHandler resultHandler) {
