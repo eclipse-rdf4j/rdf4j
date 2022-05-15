@@ -146,7 +146,7 @@ class TripleStore implements Closeable {
 	private final boolean autoGrow;
 	private long mapSize;
 	private long writeTxn;
-	private TxnRef readTxnRef;
+	private final TxnRef readTxnRef;
 	private final Pool pool = new Pool();
 
 	private TxnRecordCache recordCache = null;
