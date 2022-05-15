@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
@@ -40,13 +39,14 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 public class RSXTargetShape extends Target {
 
 	private final Shape targetShape;
+	private final StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider(
+			"rsx_");
 
 	public RSXTargetShape(Resource targetShape, ShapeSource shapeSource, ShaclSail shaclSail) {
-
 		ShaclProperties p = new ShaclProperties(targetShape, shapeSource);
 
 		if (p.getType() == SHACL.NODE_SHAPE) {
-			this.targetShape = NodeShape.getInstance(p, shapeSource, new Cache(), false, shaclSail);
+			this.targetShape = NodeShape.getInstance(p, shapeSource, new Cache(), shaclSail);
 		} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 			this.targetShape = PropertyShape.getInstance(p, shapeSource, new Cache(), shaclSail);
 		} else {
@@ -68,8 +68,7 @@ public class RSXTargetShape extends Target {
 	}
 
 	@Override
-	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
-			ConstraintComponent.Scope scope) {
+	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph, ConstraintComponent.Scope scope) {
 		return getAddedRemovedInner(connectionsGroup, dataGraph, scope);
 	}
 
@@ -79,8 +78,7 @@ public class RSXTargetShape extends Target {
 		StatementMatcher.Variable object = new StatementMatcher.Variable("temp1");
 
 		SparqlFragment sparqlFragment = this.targetShape.buildSparqlValidNodes_rsx_targetShape(null, object,
-				connectionsGroup.getRdfsSubClassOfReasoner(), null,
-				new StatementMatcher.StableRandomVariableProvider());
+				connectionsGroup.getRdfsSubClassOfReasoner(), null, stableRandomVariableProvider);
 
 		List<StatementMatcher> statementMatchers = sparqlFragment.getStatementMatchers();
 
@@ -109,28 +107,26 @@ public class RSXTargetShape extends Target {
 	}
 
 	@Override
-	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
-			PlanNode parent) {
+	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph, PlanNode parent) {
 
-		String query = getTargetQueryFragment(null, new StatementMatcher.Variable("temp1"),
-				connectionsGroup.getRdfsSubClassOfReasoner(), new StatementMatcher.StableRandomVariableProvider());
+		StatementMatcher.Variable variable = stableRandomVariableProvider.next();
+
+		String query = getTargetQueryFragment(null, variable, connectionsGroup.getRdfsSubClassOfReasoner(),
+				stableRandomVariableProvider);
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
-		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query,
-				new StatementMatcher.Variable("temp1"),
-				ValidationTuple::getActiveTarget)
-						.getTrueNode(UnBufferedPlanNode.class);
+		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query, variable,
+				validationTuple -> validationTuple.getActiveTarget()).getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	@Override
 	public Stream<StatementMatcher> getStatementMatcher(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+			StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
 		assert (subject == null);
 
 		return this.targetShape
 				.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null,
-						new StatementMatcher.StableRandomVariableProvider())
+						stableRandomVariableProvider)
 				.getStatementMatchers()
 				.stream();
 	}
@@ -143,7 +139,7 @@ public class RSXTargetShape extends Target {
 
 		return this.targetShape
 				.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner, null,
-						new StatementMatcher.StableRandomVariableProvider())
+						stableRandomVariableProvider)
 				.getFragment();
 
 	}

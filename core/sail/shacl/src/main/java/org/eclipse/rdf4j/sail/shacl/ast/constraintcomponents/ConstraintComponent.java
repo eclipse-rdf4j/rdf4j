@@ -45,17 +45,19 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	ValidationApproach getOptimalBulkValidationApproach();
 
 	/**
-	 *
 	 * @param connectionsGroup
 	 * @param scope
 	 * @param dataGraph
+	 * @param stableRandomVariableProvider
 	 * @return true if the constraint component should be evaluated, eg. if validation is needed.
 	 */
-	boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph);
+	boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
 
 	SourceConstraintComponent getConstraintComponent();
 
-	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope);
+	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
 
 	SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
 			StatementMatcher.Variable object,

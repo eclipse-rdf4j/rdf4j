@@ -54,7 +54,7 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 				.map(r -> new ShaclProperties(r, shapeSource))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, shapeSource, cache, false, shaclSail);
+						return NodeShape.getInstance(p, shapeSource, cache, shaclSail);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 						return PropertyShape.getInstance(p, shapeSource, cache, shaclSail);
 					}
@@ -109,13 +109,15 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 			ValidationSettings validationSettings,
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 		PlanNodeProvider planNodeProvider;
 
 		if (overrideTargetNode != null) {
 			planNodeProvider = overrideTargetNode;
 		} else {
 			planNodeProvider = new BufferedSplitter(
-					getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope));
+					getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
+							stableRandomVariableProvider));
 		}
 
 		PlanNode orPlanNodes = or.stream()
@@ -129,30 +131,31 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 				.reduce((a, b) -> new EqualsJoinValue(a, b, false))
 				.orElse(EmptyNode.getInstance());
 
-		PlanNode invalid = Unique.getInstance(orPlanNodes, false);
-
-		return invalid;
+		return Unique.getInstance(orPlanNodes, false);
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		PlanNode allTargets;
 
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
 			allTargets = Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);
 		} else {
 			allTargets = getTargetChain()
-					.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, scope, true, null);
 
 		}
 
 		PlanNode planNode = or.stream()
-				.map(or -> or.getAllTargetsPlan(connectionsGroup, dataGraph, scope))
+				.map(or -> or.getAllTargetsPlan(connectionsGroup, dataGraph, scope, stableRandomVariableProvider))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
@@ -172,8 +175,10 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 	}
 
 	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph) {
-		return or.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope, dataGraph));
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+		return or.stream()
+				.anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider));
 	}
 
 	@Override

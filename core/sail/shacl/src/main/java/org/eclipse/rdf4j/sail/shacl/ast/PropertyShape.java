@@ -85,7 +85,8 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			throw new IllegalStateException(properties.getId() + " is a sh:PropertyShape without a sh:path!");
 		}
 
-		constraintComponents = getConstraintComponents(properties, connection, cache, shaclSail);
+		constraintComponents = getConstraintComponents(properties, connection, cache, shaclSail
+		);
 	}
 
 	@Override
@@ -142,17 +143,16 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 					}
 					return validationQuery1;
 				})
-				.reduce(ValidationQuery::union)
+				.reduce((a, b) -> ValidationQuery.union(a, b, !produceValidationReports))
 				.orElseThrow(IllegalStateException::new);
 
-		// since we split our shapes by constraint component we know that we will only have 1 constraint component
-		// unless we are within a logical operator like sh:not, in which case we don't need to create a validation
-		// report since sh:detail is not supported for sparql based validation
-		if (constraintComponents.size() == 1 && !(constraintComponents.get(0) instanceof PropertyShape)) {
+		if (produceValidationReports) {
+			assert constraintComponents.size() == 1;
+			assert !(constraintComponents.get(0) instanceof PropertyShape);
+
 			validationQuery.withShape(this);
 			validationQuery.withSeverity(getSeverity());
 			validationQuery.makeCurrentStateValidationReport();
-
 		}
 
 		if (scope == Scope.propertyShape) {
@@ -232,17 +232,19 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		PlanNode planNode = constraintComponents.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.propertyShape))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.propertyShape,
+						stableRandomVariableProvider))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
 
 		planNode = UnionNode.getInstanceDedupe(planNode,
 				getTargetChain()
-						.getEffectiveTarget("_target", Scope.propertyShape,
-								connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(Scope.propertyShape,
+								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 						.getPlanNode(connectionsGroup, dataGraph, Scope.propertyShape, true, null));
 
 		if (scope == Scope.propertyShape) {
