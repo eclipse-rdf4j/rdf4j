@@ -154,7 +154,7 @@ public abstract class AbstractTupleQueryResultWriterTest {
 	 * Get the {@link RioSetting}s expected to be returned by {@link QueryResultWriter#getSupportedSettings()}. Used by
 	 * {@link #testGetSupportedSettings()} to determine if the output of
 	 * {@link QueryResultWriter#getSupportedSettings()} is as expected for the concrete writer implementation.
-	 * 
+	 *
 	 * @return an array of {@link RioSetting}s.
 	 */
 	protected abstract RioSetting<?>[] getExpectedSupportedSettings();

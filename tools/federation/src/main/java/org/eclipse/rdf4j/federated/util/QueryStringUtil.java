@@ -391,7 +391,7 @@ public class QueryStringUtil {
 
 		// TODO evaluate filter expression remote
 //		if (filterExpr!=null) {
-//		
+//
 //		}
 
 		res.append(" }");
@@ -408,11 +408,11 @@ public class QueryStringUtil {
 	 * <pre>
 	 * SELECT ?v ?__index WHERE {
 	 *    VALUES (?s ?__index) {
-	 *      (:s1 1) (:s2 2) 
-	 *      ... 
-	 *      (:sN N) 
+	 *      (:s1 1) (:s2 2)
+	 *      ...
+	 *      (:sN N)
 	 *    }
-	 *    ?s name ?v. 
+	 *    ?s name ?v.
 	 * }
 	 * </pre>
 	 *
@@ -448,7 +448,7 @@ public class QueryStringUtil {
 
 		// TODO evaluate filter expression remote
 //		if (filterExpr!=null) {
-//		
+//
 //		}
 
 		// add VALUES clause

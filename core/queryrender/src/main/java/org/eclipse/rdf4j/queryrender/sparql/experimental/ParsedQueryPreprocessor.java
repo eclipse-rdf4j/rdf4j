@@ -55,7 +55,6 @@ import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.Like;
 import org.eclipse.rdf4j.query.algebra.Load;
 import org.eclipse.rdf4j.query.algebra.LocalName;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
@@ -104,7 +103,7 @@ import com.google.common.collect.Lists;
  * A query visitor that parses the incoming query or TupleExpr and collects meta-level information that is later used by
  * the {@link SparqlQueryRenderer} (e.g., information about the included subquery, all group, order, and slice
  * operations etc.).
- * 
+ *
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
@@ -129,7 +128,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	/**
 	 * Processes the incoming parsed query collecting the information required for rendering.
-	 * 
+	 *
 	 * @param query standard {@link ParsedTupleQuery}
 	 * @return {@link SerializableParsedTupleQuery} containing the original query and the required additional
 	 *         information.
@@ -223,7 +222,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	/**
 	 * Processes the incoming parsed ASK query collecting the information required for rendering.
-	 * 
+	 *
 	 * @param query standard {@link ParsedBooleanQuery}
 	 * @return {@link SerializableParsedBooleanQuery} containing the original query and the required additional
 	 *         information.
@@ -267,7 +266,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	/**
 	 * Processes the incoming parsed {@link TupleExpr} collecting the information required for rendering.
-	 * 
+	 *
 	 * @param tupleExpr standard {@link TupleExpr}
 	 * @return {@link SerializableParsedTupleQuery} containing the original query and the required additional
 	 *         information.

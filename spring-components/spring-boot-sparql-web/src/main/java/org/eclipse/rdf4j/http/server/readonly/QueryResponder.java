@@ -180,7 +180,7 @@ public class QueryResponder {
 		/**
 		 * Test if the query is of a type that can be answered. And that the accept headers allow for the response to be
 		 * send.
-		 * 
+		 *
 		 * @param preparedQuery
 		 * @param acceptHeader
 		 * @return true if the query is of the right type and acceptHeaders are acceptable.

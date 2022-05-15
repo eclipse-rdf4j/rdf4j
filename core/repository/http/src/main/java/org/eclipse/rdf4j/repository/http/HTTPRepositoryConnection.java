@@ -19,7 +19,6 @@ import java.io.Reader;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -452,7 +451,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 			// create a new format constant with identical properties as the
 			// N-Triples format, just with a different
 			// default MIME-type.
-			return new RDFFormat(NTRIPLES.getName(), Arrays.asList("text/plain"), NTRIPLES.getCharset(),
+			return new RDFFormat(NTRIPLES.getName(), List.of("text/plain"), NTRIPLES.getCharset(),
 					NTRIPLES.getFileExtensions(), NTRIPLES.supportsNamespaces(), NTRIPLES.supportsContexts(),
 					NTRIPLES.supportsRDFStar());
 		}

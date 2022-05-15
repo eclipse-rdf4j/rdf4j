@@ -9,7 +9,7 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import java.io.BufferedWriter;
 import java.io.PrintWriter;
-import java.util.Arrays;
+import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
@@ -70,7 +70,7 @@ public class DeleteServlet extends TransformationServlet {
 			throws RepositoryException, QueryResultHandlerException {
 		builder.transform(xslPath, "delete.xsl");
 		builder.start("readable", "writeable", "id", "description", "location");
-		builder.link(Arrays.asList(INFO));
+		builder.link(List.of(INFO));
 		for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
 			builder.result(info.isReadable(), info.isWritable(), info.getId(), info.getDescription(),
 					info.getLocation());

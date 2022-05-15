@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import java.util.Arrays;
+import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
@@ -44,7 +44,7 @@ public class NamespacesServlet extends TransformationServlet {
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 			builder.start("prefix", "namespace");
-			builder.link(Arrays.asList(INFO));
+			builder.link(List.of(INFO));
 			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
 				builder.result(ns.getPrefix(), ns.getName());
 			}

@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.elasticsearch;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -115,12 +114,12 @@ public class ElasticsearchIndexTest extends ESIntegTestCase {
 
 	@Override
 	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-		return Arrays.asList(ReindexPlugin.class);
+		return List.of(ReindexPlugin.class);
 	}
 
 	@Override
 	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return Arrays.asList(ReindexPlugin.class);
+		return List.of(ReindexPlugin.class);
 	}
 
 	@After

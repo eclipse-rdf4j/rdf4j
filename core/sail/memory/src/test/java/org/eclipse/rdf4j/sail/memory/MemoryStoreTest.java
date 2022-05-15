@@ -40,7 +40,7 @@ public class MemoryStoreTest extends RDFNotifyingStoreTest {
 
 	/**
 	 * reproduces GH-3053
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test

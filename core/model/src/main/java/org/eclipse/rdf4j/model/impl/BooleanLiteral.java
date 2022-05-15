@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
-import java.util.Optional;
-
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 

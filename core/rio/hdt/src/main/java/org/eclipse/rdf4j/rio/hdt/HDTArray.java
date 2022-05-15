@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  *
  * <pre>
  * +------+--------+---------+------+------...
- * | type | nrbits | entries | CRC8 | data 
+ * | type | nrbits | entries | CRC8 | data
  * +------+--------+---------+------+------...
  * </pre>
  *
@@ -48,7 +48,7 @@ abstract class HDTArray extends HDTPart {
 			return value;
 		}
 
-		private Type(int value) {
+		Type(int value) {
 			this.value = value;
 		}
 	}

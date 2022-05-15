@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  *
  * <pre>
  * +------+--------------+--------------+-------+------+-------+--------+...+-------+
- * | type | totalStrings | stringsBlock | array | CRC8 | index | buffer |...| CRC32 | 
+ * | type | totalStrings | stringsBlock | array | CRC8 | index | buffer |...| CRC32 |
  * +------+--------------+--------------+-------+------+-------+--------+...+-------+
  * </pre>
  *

@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * A delegating {@link ParallelExecutor} which arrives and de-registers on the phaser on completion of a task.
- * 
+ *
  * @author Andreas Schwarte
  *
  */

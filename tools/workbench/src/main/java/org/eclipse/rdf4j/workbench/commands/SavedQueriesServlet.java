@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.List;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -55,7 +55,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		builder.transform(xslPath, "saved-queries.xsl");
 		builder.start();
-		builder.link(Arrays.asList(INFO));
+		builder.link(List.of(INFO));
 		this.getSavedQueries(req, builder);
 		builder.end();
 	}

@@ -26,7 +26,7 @@ public interface QueryEvaluationStep {
 	 * Utility class that removes code duplication and makes a precompiled QueryEvaluationStep available as an iteration
 	 * that may be created and used later.
 	 */
-	public class DelayedEvaluationIteration
+	class DelayedEvaluationIteration
 			extends DelayedIteration<BindingSet, QueryEvaluationException> {
 		private final QueryEvaluationStep arg;
 		private final BindingSet bs;
@@ -43,7 +43,7 @@ public interface QueryEvaluationStep {
 		}
 	}
 
-	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings);
+	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings);
 
 	/**
 	 * A fall back implementation that wraps a pre-existing evaluate method on a strategy
@@ -52,7 +52,7 @@ public interface QueryEvaluationStep {
 	 * @param expr     that is going to be evaluated
 	 * @return a thin wrapper arround the evaluation call.
 	 */
-	public static QueryEvaluationStep minimal(EvaluationStrategy strategy, TupleExpr expr) {
+	static QueryEvaluationStep minimal(EvaluationStrategy strategy, TupleExpr expr) {
 		return new QueryEvaluationStep() {
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
@@ -69,7 +69,7 @@ public interface QueryEvaluationStep {
 	 * @param wrap the function that will do the modification
 	 * @return a new evaluation step that executes wrap on the inner qes.
 	 */
-	public static QueryEvaluationStep wrap(QueryEvaluationStep qes,
+	static QueryEvaluationStep wrap(QueryEvaluationStep qes,
 			Function<CloseableIteration<BindingSet, QueryEvaluationException>, CloseableIteration<BindingSet, QueryEvaluationException>> wrap) {
 		return new QueryEvaluationStep() {
 			@Override

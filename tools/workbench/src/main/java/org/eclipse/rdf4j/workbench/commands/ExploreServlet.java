@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import java.util.Arrays;
+import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;
 
@@ -54,7 +54,7 @@ public class ExploreServlet extends TupleServlet {
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(xslPath, "explore.xsl");
 			builder.start("error-message");
-			builder.link(Arrays.asList(INFO));
+			builder.link(List.of(INFO));
 			builder.result(exc.getMessage());
 			builder.end();
 		}

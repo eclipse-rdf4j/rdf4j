@@ -1870,7 +1870,7 @@ public abstract class RDFWriterTest {
 	 * Get the {@link RioSetting}s expected to be returned by {@link RDFWriter#getSupportedSettings()}. Used by
 	 * {@link #testGetSupportedSettings()} to determine if the output of {@link RDFWriter#getSupportedSettings()} is as
 	 * expected for the concrete writer implementation.
-	 * 
+	 *
 	 * @return an array of {@link RioSetting}s.
 	 */
 	protected abstract RioSetting<?>[] getExpectedSupportedSettings();

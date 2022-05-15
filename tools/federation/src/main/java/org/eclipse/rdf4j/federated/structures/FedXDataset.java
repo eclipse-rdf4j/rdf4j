@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.Dataset;
  * </p>
  *
  * <pre>
- * TupleQuery tq = ...; 
+ * TupleQuery tq = ...;
  * FedXDataset ds = new FedXDataset(tq.getDataset);
  * ds.addEndpoint("myEndpoint");
  * ds.addEndpoint("otherEndpoint");

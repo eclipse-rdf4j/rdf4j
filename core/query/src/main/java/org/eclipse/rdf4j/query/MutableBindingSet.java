@@ -23,7 +23,7 @@ public interface MutableBindingSet extends BindingSet {
 	 * @param name  The binding's name.
 	 * @param value The binding's value.
 	 */
-	public default void addBinding(String name, Value value) {
+	default void addBinding(String name, Value value) {
 		addBinding(new SimpleBinding(name, value));
 	}
 
@@ -32,9 +32,9 @@ public interface MutableBindingSet extends BindingSet {
 	 *
 	 * @param binding The binding to add to the binding set.
 	 */
-	public void addBinding(Binding binding);
+	void addBinding(Binding binding);
 
-	public void setBinding(String name, Value value);
+	void setBinding(String name, Value value);
 
-	public void setBinding(Binding binding);
+	void setBinding(Binding binding);
 }

@@ -204,7 +204,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	/**
 	 * Get the IDs of all available repositories. Note that this is potentially slow as it may initialize all available
 	 * repository configurations.
-	 * 
+	 *
 	 * @return a list of repository ID strings.
 	 * @throws RepositoryException
 	 * @see {@link #getInitializedRepositoryIDs()}
@@ -432,7 +432,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 
 	/**
 	 * Retrieve meta information of all configured repositories.
-	 * 
+	 *
 	 * @return a collection of {@link RepositoryInfo} objects
 	 * @throws RepositoryException if the repository meta information could not be retrieved.
 	 */

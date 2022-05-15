@@ -648,7 +648,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	private interface AggregateCollector {
-		public Value getFinalValue();
+		Value getFinalValue();
 	}
 
 	private class CountCollector implements AggregateCollector {

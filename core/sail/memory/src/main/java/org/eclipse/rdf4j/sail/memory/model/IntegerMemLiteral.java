@@ -12,7 +12,6 @@ import java.math.BigInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * An extension of MemLiteral that stores an integer value to avoid parsing.

@@ -76,7 +76,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	/**
 	 * Note: consumers must obtain the instance through
 	 * {@link FederationManager#getFederationEvaluationStrategyFactory()}
-	 * 
+	 *
 	 * @return the {@link FederationEvaluationStrategyFactory}
 	 */
 	/* package */ FederationEvaluationStrategyFactory getFederationEvaluationStrategyFactory() {
@@ -91,7 +91,7 @@ public class FedX extends AbstractSail implements RepositoryResolverClient {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param writeStrategyFactory the {@link WriteStrategyFactory}
 	 */
 	public void setWriteStrategyFactory(WriteStrategyFactory writeStrategyFactory) {

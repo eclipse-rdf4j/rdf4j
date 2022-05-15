@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -22,7 +22,7 @@ public class InformationServlet extends TransformationServlet {
 		// final TupleResultBuilder builder = getTupleResultBuilder(req, resp);
 		builder.transform(xslPath, "information.xsl");
 		builder.start("version", "os", "jvm", "user", "memory-used", "maximum-memory");
-		builder.link(Arrays.asList(INFO));
+		builder.link(List.of(INFO));
 		final String version = this.appConfig.getVersion().toString();
 		final String osName = getOsName();
 		final String jvm = getJvmName();

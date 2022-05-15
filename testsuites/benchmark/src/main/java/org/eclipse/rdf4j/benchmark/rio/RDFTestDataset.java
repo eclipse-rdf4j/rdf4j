@@ -147,7 +147,7 @@ public enum RDFTestDataset {
 
 	/**
 	 * Download the dataset file to {@code {java.io.tmpdir}/rdf4j-benchmark-datasets/{fileName}}.
-	 * 
+	 *
 	 * @return The {@link File} to which the dataset was downloaded and extracted.
 	 */
 	public File download() {

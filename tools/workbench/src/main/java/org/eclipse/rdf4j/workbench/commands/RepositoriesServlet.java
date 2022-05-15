@@ -7,7 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
-import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -22,7 +22,7 @@ public class RepositoriesServlet extends TransformationServlet {
 			throws RepositoryException, QueryResultHandlerException {
 		builder.transform(xslPath, "repositories.xsl");
 		builder.start("readable", "writeable", "id", "description", "location");
-		builder.link(Arrays.asList(INFO));
+		builder.link(List.of(INFO));
 		for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
 			builder.result(info.isReadable(), info.isWritable(), info.getId(), info.getDescription(),
 					info.getLocation().toString());

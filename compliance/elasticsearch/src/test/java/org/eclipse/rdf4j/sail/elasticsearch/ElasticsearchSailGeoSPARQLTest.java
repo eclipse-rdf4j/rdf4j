@@ -7,8 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -53,12 +53,12 @@ public class ElasticsearchSailGeoSPARQLTest extends ESIntegTestCase {
 
 	@Override
 	protected Collection<Class<? extends Plugin>> transportClientPlugins() {
-		return Arrays.asList(ReindexPlugin.class);
+		return List.of(ReindexPlugin.class);
 	}
 
 	@Override
 	protected Collection<Class<? extends Plugin>> nodePlugins() {
-		return Arrays.asList(ReindexPlugin.class);
+		return List.of(ReindexPlugin.class);
 	}
 
 	@After

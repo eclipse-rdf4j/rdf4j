@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Obtains connections from the delegate factory and manages them in the object pool.
- * 
+ *
  * @since 4.0.0
  * @author Florian Kleedorfer
  */

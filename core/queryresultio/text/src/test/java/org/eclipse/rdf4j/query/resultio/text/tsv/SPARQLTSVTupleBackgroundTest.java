@@ -16,7 +16,7 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
+import java.util.List;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -102,7 +102,7 @@ public class SPARQLTSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);
 		writer.startDocument();
 		writer.startHeader();
-		writer.handleLinks(Arrays.<String>asList());
+		writer.handleLinks(List.<String>of());
 		QueryResults.report(results, writer);
 
 		return out.toString(StandardCharsets.UTF_8);

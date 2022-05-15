@@ -14,7 +14,7 @@ public class Message {
 
 	public static final String ATTRIBUTE_KEY = "message";
 
-	public static enum Type {
+	public enum Type {
 		ERROR,
 		WARN,
 		INFO

@@ -48,7 +48,7 @@ abstract class HDTPart {
 			return value;
 		}
 
-		private Type(byte value) {
+		Type(byte value) {
 			this.value = value;
 		}
 	}

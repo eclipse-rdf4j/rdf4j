@@ -72,7 +72,7 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 //			"sq03 - Subquery within graph pattern, graph variable is not bound"
 	};
 
-	private static final List<String> excludedSubdirs = Arrays.asList("service");
+	private static final List<String> excludedSubdirs = List.of("service");
 
 	private String queryFileURL;
 	private String resultFileURL;

@@ -128,7 +128,7 @@ public class DefaultFedXCostModel implements FedXCostModel {
 	 * </p>
 	 *
 	 * <pre>
-	 * ?x p o . ?x p2 o2 => cost is 0 
+	 * ?x p o . ?x p2 o2 => cost is 0
 	 *
 	 * ?x p ?s . ?s ?p2 val => additional cost is 0.5
 	 * </pre>
