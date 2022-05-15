@@ -29,7 +29,7 @@ abstract class HDTDictionarySection extends HDTPart {
 			return value;
 		}
 
-		private Type(int value) {
+		Type(int value) {
 			this.value = value;
 		}
 	}

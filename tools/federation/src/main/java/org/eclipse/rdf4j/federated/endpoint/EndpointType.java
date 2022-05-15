@@ -24,7 +24,7 @@ public enum EndpointType {
 
 	private List<String> formatNames;
 
-	private EndpointType(List<String> formatNames) {
+	EndpointType(List<String> formatNames) {
 		this.formatNames = formatNames;
 	}
 

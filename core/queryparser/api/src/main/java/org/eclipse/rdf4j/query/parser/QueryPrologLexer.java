@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  */
 public class QueryPrologLexer {
 
-	public static enum TokenType {
+	public enum TokenType {
 		PREFIX_KEYWORD,
 		PREFIX,
 		BASE_KEYWORD,
