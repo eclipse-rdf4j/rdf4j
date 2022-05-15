@@ -10,7 +10,11 @@ package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
-import org.eclipse.rdf4j.sparqlbuilder.core.*;
+import org.eclipse.rdf4j.sparqlbuilder.core.Dataset;
+import org.eclipse.rdf4j.sparqlbuilder.core.From;
+import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
+import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
+import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.examples.BaseExamples;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns;

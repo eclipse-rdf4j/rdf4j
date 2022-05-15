@@ -207,7 +207,7 @@ public class URIUtil {
 	/**
 	 * Checks whether the specified name is allowed as the local name part of an IRI according to the SPARQL 1.1/Turtle
 	 * 1.1 spec.
-	 * 
+	 *
 	 * @param name the candidate local name
 	 * @return true if it is a local name
 	 */

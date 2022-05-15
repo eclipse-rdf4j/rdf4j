@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.lucene;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -225,7 +224,7 @@ public class LuceneSailBuffer {
 
 	/**
 	 * Add this type statement to the buffer
-	 * 
+	 *
 	 * @param s the statement
 	 */
 	public synchronized void addTypeStatement(Statement s, boolean rightType) {

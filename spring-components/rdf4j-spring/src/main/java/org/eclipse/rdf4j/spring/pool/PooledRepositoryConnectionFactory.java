@@ -22,7 +22,7 @@ import org.springframework.beans.factory.DisposableBean;
 
 /**
  * Uses the delegate factory to actually obtain connections and provides these connections, managing an internal pool.
- * 
+ *
  * @since 4.0.0
  * @author Florian Kleedorfer
  */

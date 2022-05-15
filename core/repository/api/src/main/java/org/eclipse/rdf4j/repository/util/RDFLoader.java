@@ -97,7 +97,7 @@ public class RDFLoader {
 	 * <var>true</var> will also follow redirects from HTTP to HTTPS. The maximum number of redirects can be controlled
 	 * using system property <var>http.maxRedirects</var>.
 	 *
-	 * 
+	 *
 	 * @param url        The URL of the RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.net.URL#toExternalForm() url.toExternalForm()} if the value is set to
@@ -191,7 +191,7 @@ public class RDFLoader {
 
 	/**
 	 * Returns whether a given HTTP status code represents a redirection (i.e. 3xx)
-	 * 
+	 *
 	 * @param statusCode
 	 * @return
 	 */

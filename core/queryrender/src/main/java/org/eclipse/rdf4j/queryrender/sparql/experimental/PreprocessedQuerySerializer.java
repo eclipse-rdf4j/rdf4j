@@ -66,7 +66,6 @@ import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.Like;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Load;
 import org.eclipse.rdf4j.query.algebra.LocalName;
@@ -116,7 +115,7 @@ import com.google.common.collect.Sets;
 
 /**
  * This class processes a {@link SerializableParsedTupleQuery} and renders it as a SPARQL string.
- * 
+ *
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
@@ -127,7 +126,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	/**
 	 * Enumeration of standard SPARQL 1.1 functions that are neither recognized by RDF4J as special value expressions
 	 * nor defined as IRI functions in the <i>fn:</i> namespace (see {@link FNFunction}).
-	 * 
+	 *
 	 */
 	protected enum NonIriFunctions {
 		STRLANG,
@@ -171,7 +170,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	/**
 	 * Serializes a {@link SerializableParsedTupleQuery} passed as an input.
-	 * 
+	 *
 	 * @param query a parsed tuple query previously produced by {@link ParsedQueryPreprocessor}
 	 * @return string SPARQL serialization of the query
 	 */
@@ -188,7 +187,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	/**
 	 * Serializes a {@link SerializableParsedBooleanQuery} passed as an input.
-	 * 
+	 *
 	 * @param query a parsed tuple query previously produced by {@link ParsedQueryPreprocessor}
 	 * @return string SPARQL serialization of the query
 	 */
@@ -383,7 +382,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	/**
 	 * Serializes the TupleExpr serving as a WHERE clause of the query.
-	 * 
+	 *
 	 * @param whereClause a TupleExpr representing a WHERE clause
 	 */
 	public void meetWhereClause(TupleExpr whereClause) {
@@ -1218,7 +1217,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	/**
 	 * A special case check: we project a variable from a subquery that has the same name We must avoid writing SELECT
 	 * (?x as ?x) WHERE { { SELECT ?x WHERE { ... } } }
-	 * 
+	 *
 	 */
 	private boolean isTautologicalExtensionElem(ExtensionElem val) {
 		String varName = val.getName();

@@ -1572,7 +1572,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	/**
 	 * If all input is constant normally the function call output will be constant as well.
-	 * 
+	 *
 	 * @param context  used to precompile arguments of the function
 	 * @param function that might be constant
 	 * @param args     that the function must evaluate

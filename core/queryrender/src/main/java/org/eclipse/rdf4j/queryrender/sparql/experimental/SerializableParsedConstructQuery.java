@@ -38,7 +38,7 @@ class SerializableParsedConstructQuery extends AbstractSerializableParsedQuery {
 
 	/**
 	 * Returns the names of the variables projected by this query (as strings).
-	 * 
+	 *
 	 * @return list of projected variable names
 	 */
 	public List<String> getProjectionResultVars() {

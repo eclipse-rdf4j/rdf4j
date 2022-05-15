@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.elasticsearch;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;

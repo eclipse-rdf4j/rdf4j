@@ -274,7 +274,7 @@ public class RDF4JTemplate {
 
 	/**
 	 * Deletes the specified resource: all triples are deleted in which <code>id</code> is the subject or the object.
-	 * 
+	 *
 	 * @param id
 	 */
 	public void delete(IRI id) {

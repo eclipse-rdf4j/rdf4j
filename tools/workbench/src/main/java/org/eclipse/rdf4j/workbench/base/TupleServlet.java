@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.base;
 
-import java.util.Arrays;
 import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;

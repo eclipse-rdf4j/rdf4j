@@ -86,7 +86,7 @@ public class IndependentJoingroupBindingsIteration2 extends LookAheadIteration<B
 //			int tmp = b.getName().indexOf("_");
 //			String pattern = b.getName().substring(tmp+1);
 //			String split[] = pattern.split("_");
-//			
+//
 //			int bIndex = Integer.parseInt(split[0]);
 //			int bindingsIdx = Integer.parseInt(split[1]);
 //			BindingInfo bInfo = new BindingInfo(b.getName().substring(0, tmp), bindingsIdx, b.getValue());

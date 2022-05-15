@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import java.io.BufferedWriter;
 import java.io.PrintWriter;
-import java.util.Arrays;
 import java.util.List;
 
 import javax.servlet.http.HttpServletResponse;

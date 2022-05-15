@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.common.lang;
 
 import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;

@@ -129,18 +129,18 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * SPARQL `CLEAR GRAPH` update operation. This operation has an optional <code>SILENT</code> modifier, which can be
 	 * enabled by setting this flag to <code>true</code>. The behavior of this modifier is speficied as follows in the
 	 * SPARQL 1.1 Recommendation:
-	 * 
+	 *
 	 * <blockquote> If the store records the existence of empty graphs, then the SPARQL 1.1 Update service, by default,
 	 * SHOULD return failure if the specified graph does not exist. If SILENT is present, the result of the operation
 	 * will always be success.
 	 * <p>
 	 * Stores that do not record empty graphs will always return success. </blockquote>
-	 * 
+	 *
 	 * Note that in most SPARQL endpoint implementations not recording empty graphs is the default behavior, and setting
 	 * this flag to <code>true</code> will have no effect. Setting this flag will have no effect on any other errors or
 	 * other API or SPARQL operations: <strong>only</strong> the behavior of the {@link #clear(Resource...)} API
 	 * operation is modified to respond with a success message when removing a non-existent named graph.
-	 * 
+	 *
 	 * @param silent the value to set this to.
 	 * @see https://www.w3.org/TR/sparql11-update/#clear
 	 */
@@ -156,18 +156,18 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * SPARQL `CLEAR GRAPH` update operation. This operation has an optional <code>SILENT</code> modifier, which can be
 	 * enabled by setting this flag to <code>true</code>. The behavior of this modifier is speficied as follows in the
 	 * SPARQL 1.1 Recommendation:
-	 * 
+	 *
 	 * <blockquote> If the store records the existence of empty graphs, then the SPARQL 1.1 Update service, by default,
 	 * SHOULD return failure if the specified graph does not exist. If SILENT is present, the result of the operation
 	 * will always be success.
 	 * <p>
 	 * Stores that do not record empty graphs will always return success. </blockquote>
-	 * 
+	 *
 	 * Note that in most SPARQL endpoint implementations not recording empty graphs is the default behavior, and setting
 	 * this flag to <code>true</code> will have no effect. Setting this flag will have no effect on any other errors or
 	 * other API or SPARQL operations: <strong>only</strong> the behavior of the {@link #clear(Resource...)} API
 	 * operation is modified to respond with a success message when removing a non-existent named graph.
-	 * 
+	 *
 	 * @param silent the value to set this to.
 	 * @see https://www.w3.org/TR/sparql11-update/#clear
 	 * @deprecated since 3.6.0 - use {@link #setSilentClear(boolean)} instead.

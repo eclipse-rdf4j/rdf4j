@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.sparqlbuilder.examples.sparql11spec;
 
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
-import static org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPatterns.and;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;

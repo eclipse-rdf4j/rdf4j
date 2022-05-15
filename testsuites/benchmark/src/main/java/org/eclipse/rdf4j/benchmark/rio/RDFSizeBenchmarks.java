@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
  * <p>
  * Please note that the datasets from {@link RDFTestDataset} are fairly large files
  * </p>
- * 
+ *
  * @author Frens Jan Rumph
  */
 public class RDFSizeBenchmarks {

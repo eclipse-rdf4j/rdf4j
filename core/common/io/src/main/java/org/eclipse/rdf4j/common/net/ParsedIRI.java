@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.common.net;
 
 import java.io.Serializable;
-import java.io.UnsupportedEncodingException;
 import java.net.IDN;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;

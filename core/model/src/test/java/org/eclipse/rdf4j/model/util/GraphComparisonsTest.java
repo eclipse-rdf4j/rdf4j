@@ -120,7 +120,7 @@ public class GraphComparisonsTest {
 
 	/**
 	 * Graph from example 4.9 in http://aidanhogan.com/docs/rdf-canonicalisation.pdf
-	 * 
+	 *
 	 */
 	private Model buildExample49Model() {
 		// @formatter:off
