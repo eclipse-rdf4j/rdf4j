@@ -67,8 +67,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNodeProvider overrideTargetNode, Scope scope) {
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		EffectiveTarget target = getTargetChain().getEffectiveTarget("_target", scope,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget target = getTargetChain().getEffectiveTarget(scope,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 
 		if (scope == Scope.propertyShape) {
 			Path path = getTargetChain().getPath().get();
@@ -99,15 +99,15 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 
 					deletedTypes = getTargetChain()
-							.getEffectiveTarget("target_", Scope.nodeShape,
-									connectionsGroup.getRdfsSubClassOfReasoner())
+							.getEffectiveTarget(Scope.nodeShape,
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 							.extend(deletedTypes, connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape,
 									EffectiveTarget.Extend.left,
 									false, null);
 
 					deletedTypes = getTargetChain()
-							.getEffectiveTarget("target_", Scope.nodeShape,
-									connectionsGroup.getRdfsSubClassOfReasoner())
+							.getEffectiveTarget(Scope.nodeShape,
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 							.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(), deletedTypes);
 
 					addedTargets = UnionNode.getInstance(addedTargets,
@@ -156,10 +156,12 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 							clazz, validationSettings.getDataGraph(),
 							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));
 					deletedTypes = getTargetChain()
-							.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+							.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+									stableRandomVariableProvider)
 							.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(), deletedTypes);
 					deletedTypes = getTargetChain()
-							.getEffectiveTarget("target_", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+							.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+									stableRandomVariableProvider)
 							.extend(deletedTypes, connectionsGroup, validationSettings.getDataGraph(), scope,
 									EffectiveTarget.Extend.left, false, null);
 					addedTargets = UnionNode.getInstance(addedTargets, new TrimToTarget(deletedTypes));
@@ -181,10 +183,12 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
 			// removed type statements that match clazz could affect sh:or
@@ -192,10 +196,12 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
 						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 				deletedTypes = getTargetChain()
-						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
 						.getTargetFilter(connectionsGroup, dataGraph, deletedTypes);
 				deletedTypes = getTargetChain()
-						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
 						.extend(deletedTypes, connectionsGroup, dataGraph, Scope.nodeShape, EffectiveTarget.Extend.left,
 								false,
 								null);
@@ -207,10 +213,12 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE,
 						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 				addedTypes = getTargetChain()
-						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
 						.getTargetFilter(connectionsGroup, dataGraph, addedTypes);
 				addedTypes = getTargetChain()
-						.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+								stableRandomVariableProvider)
 						.extend(addedTypes, connectionsGroup, dataGraph, Scope.nodeShape, EffectiveTarget.Extend.left,
 								false,
 								null);
@@ -226,10 +234,12 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE, clazz,
 					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 			deletedTypes = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getTargetFilter(connectionsGroup, dataGraph, deletedTypes);
 			deletedTypes = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.extend(deletedTypes, connectionsGroup, dataGraph, Scope.nodeShape, EffectiveTarget.Extend.left,
 							false, null);
 			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, deletedTypes);
@@ -241,10 +251,12 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE, clazz,
 					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));
 			addedTypes = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getTargetFilter(connectionsGroup, dataGraph, addedTypes);
 			addedTypes = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.extend(addedTypes, connectionsGroup, dataGraph, Scope.nodeShape, EffectiveTarget.Extend.left,
 							false, null);
 			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, addedTypes);
@@ -255,8 +267,9 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph) {
-		return super.requiresEvaluation(connectionsGroup, scope, dataGraph)
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+		return super.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider)
 				|| connectionsGroup.getRemovedStatements().hasStatement(null, RDF.TYPE, clazz, true, dataGraph)
 				|| connectionsGroup.getAddedStatements().hasStatement(null, RDF.TYPE, clazz, true, dataGraph);
 	}
@@ -265,11 +278,10 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
 			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
 
-		String targetVarPrefix = "target_";
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 		String query = effectiveTarget.getQuery(false);
 
 		StatementMatcher.Variable value;

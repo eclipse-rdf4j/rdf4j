@@ -18,10 +18,23 @@ ex:PersonShape
 		sh:minCount 2 ;
 
 	], [
-         		sh:path rdf:type ;
-         		sh:maxCount 2 ;
-         		sh:minCount 2 ;
-         	]
+                sh:path rdf:type ;
+                sh:maxCount 2 ;
+                sh:minCount 2 ;
+                sh:property [
+                        sh:path rdfs:label;
+                        sh:maxCount 2;
+                        sh:not [sh:nodeKind sh:IRI];
+                        sh:node [
+                                sh:nodeKind sh:Literal;
+                                sh:minLength 1;
+                                sh:property [
+                                        sh:path [sh:inversePath rdfs:label];
+                                        sh:minCount 1;
+                                ]
+                        ]
+                ]
+        ]
 	 .
 
 }

@@ -7,17 +7,21 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -29,7 +33,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * An extension of RDFStoreTest for testing the class {@link LmdbStore}.
+ * Extended test for {@link LmdbStore}.
  */
 public class LmdbSailStoreTest {
 
@@ -121,6 +125,73 @@ public class LmdbSailStoreTest {
 			assertTrue("Statement 0 incorrectly removed", conn.hasStatement(S0, false));
 			assertFalse("Statement 1 still not removed", conn.hasStatement(S1, false, CTX_1));
 			assertFalse("Statement 2 still not removed", conn.hasStatement(S2, false, CTX_2));
+		}
+	}
+
+	@Test
+	public void testPassConnectionBetweenThreads() throws InterruptedException {
+		RepositoryConnection[] conn = { null };
+		TupleQuery[] query = { null };
+		TupleQueryResult[] result = { null };
+
+		try {
+			Thread t = new Thread(() -> {
+				conn[0] = repo.getConnection();
+			});
+			t.start();
+			t.join();
+
+			t = new Thread(() -> {
+				query[0] = conn[0].prepareTupleQuery("select * { ?s ?p ?o } ");
+			});
+			t.start();
+			t.join();
+
+			t = new Thread(() -> {
+				result[0] = query[0].evaluate();
+			});
+			t.start();
+			t.join();
+
+			assertEquals(3, result[0].stream().count());
+		} finally {
+			conn[0].close();
+		}
+	}
+
+	@Test
+	public void testPassConnectionBetweenThreadsWithTx() throws InterruptedException {
+		RepositoryConnection[] conn = { null };
+		TupleQuery[] query = { null };
+		TupleQueryResult[] result = { null };
+
+		try {
+			Thread t = new Thread(() -> {
+				conn[0] = repo.getConnection();
+				conn[0].setIsolationLevel(IsolationLevels.READ_UNCOMMITTED);
+				conn[0].begin();
+			});
+			t.start();
+			t.join();
+
+			t = new Thread(() -> {
+				query[0] = conn[0].prepareTupleQuery("select * { ?s ?p ?o } ");
+			});
+			t.start();
+			t.join();
+
+			t = new Thread(() -> {
+				result[0] = query[0].evaluate();
+			});
+			t.start();
+			t.join();
+
+			if (result[0].hasNext()) {
+				conn[0].commit();
+			}
+			assertEquals(3, result[0].stream().count());
+		} finally {
+			conn[0].close();
 		}
 	}
 

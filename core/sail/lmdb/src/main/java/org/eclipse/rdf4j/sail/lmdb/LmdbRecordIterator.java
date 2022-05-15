@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.locks.StampedLock;
 
 import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -43,7 +44,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private final GroupMatcher groupMatcher;
 
-	private final TxnRef txnRef;
+	private final Txn txnRef;
 
 	private long txnRefVersion;
 
@@ -67,8 +68,10 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private boolean fetchNext = false;
 
+	private final StampedLock txnLock;
+
 	LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, TxnRef txnRef) throws IOException {
+			long context, boolean explicit, Txn txnRef) throws IOException {
 		this.pool = pool;
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
@@ -94,27 +97,28 @@ class LmdbRecordIterator implements RecordIterator {
 		} else {
 			this.groupMatcher = null;
 		}
-		this.txnRef = txnRef;
-
-		long stamp = txnRef.lock().readLock();
-		this.txnRefVersion = txnRef.version();
-		this.txn = txnRef.create();
 		this.dbi = index.getDB(explicit);
+		this.txnRef = txnRef;
+		this.txnLock = txnRef.lock();
+
+		long stamp = txnLock.readLock();
 		try {
+			this.txnRefVersion = txnRef.version();
+			this.txn = txnRef.get();
+
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
 				E(mdb_cursor_open(txn, dbi, pp));
 				cursor = pp.get(0);
 			}
 		} finally {
-			txnRef.lock().unlockRead(stamp);
+			txnLock.unlockRead(stamp);
 		}
 	}
 
 	@Override
 	public long[] next() throws IOException {
-		StampedLock lock = txnRef.lock();
-		long stamp = lock.readLock();
+		long stamp = txnLock.readLock();
 		try {
 			if (txnRefVersion != txnRef.version()) {
 				// cursor must be renewed
@@ -174,7 +178,7 @@ class LmdbRecordIterator implements RecordIterator {
 			close();
 			return null;
 		} finally {
-			lock.unlockRead(stamp);
+			txnLock.unlockRead(stamp);
 		}
 	}
 
@@ -192,7 +196,6 @@ class LmdbRecordIterator implements RecordIterator {
 					pool.free(maxKeyBuf);
 					pool.free(maxKey);
 				}
-				txnRef.free(txn);
 			} finally {
 				closed = true;
 			}
