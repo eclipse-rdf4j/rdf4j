@@ -26,48 +26,48 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 
 /**
  * A QueryEvaluationContext stores values and methods that are valid throughout the lifetime of a query execution.
- *
+ * <p>
  * A classic case is the case of NOW() evaluation to the same instant for all invocations of that function in one query
  * evaluation.
- *
  */
 public interface QueryEvaluationContext {
 
-	public class Minimal implements QueryEvaluationContext {
-		// Doubly checked locking is simpler but with Project Loom coming
-		// synchronized on this is less interesting.
-		private static final VarHandle HANDLE_TO_THE_NOW_LITERAL;
+	class Minimal implements QueryEvaluationContext {
+
+		private static final VarHandle NOW;
+
 		static {
 			try {
-				HANDLE_TO_THE_NOW_LITERAL = MethodHandles
+				NOW = MethodHandles
 						.privateLookupIn(QueryEvaluationContext.Minimal.class, MethodHandles.lookup())
-						.findVarHandle(QueryEvaluationContext.Minimal.class, "nowInLiteral", Literal.class);
+						.findVarHandle(QueryEvaluationContext.Minimal.class, "now", Literal.class);
 
 			} catch (NoSuchFieldException | IllegalAccessException e) {
 				throw new UnsupportedOperationException("The nowInLiteral field is missing");
 			}
 		}
-		// The now time as a literal, lazy set if not yet known.
-		// No need for volatile as we use the varhandle for this.
-		private Literal nowInLiteral;
+
+		// The now time as a literal, lazy set if not yet known. We use a VarHandle to access this field. By convention
+		// this field is volatile, as a precaution in case we call it directly.
+		private volatile Literal now;
 		private final Dataset dataset;
 		private final ValueFactory vf;
 
 		/**
-		 * Set the shared now value to an prexisting object
-		 * 
+		 * Set the shared now value to a preexisting object
+		 *
 		 * @param now     that is shared.
-		 * @param dataset that a query should use to the evaluate
+		 * @param dataset that a query should use to evaluate
 		 */
 		public Minimal(Literal now, Dataset dataset) {
 			super();
-			this.nowInLiteral = now;
+			this.now = now;
 			this.dataset = dataset;
 			this.vf = SimpleValueFactory.getInstance();
 		}
 
 		/**
-		 * @param dataset that a query should use to the evaluate
+		 * @param dataset that a query should use to evaluate
 		 */
 		public Minimal(Dataset dataset) {
 			this.dataset = dataset;
@@ -84,14 +84,19 @@ public interface QueryEvaluationContext {
 
 		@Override
 		public Literal getNow() {
+			Literal now = (Literal) NOW.get(this);
+
 			// creating a new date is expensive because it uses the XMLGregorianCalendar implementation which is very
 			// complex.
-			if (nowInLiteral == null) {
-				HANDLE_TO_THE_NOW_LITERAL.compareAndExchange(this, null,
-						vf.createLiteral(new Date()));
-				nowInLiteral = (Literal) HANDLE_TO_THE_NOW_LITERAL.getVolatile(this);
+			if (now == null) {
+				now = vf.createLiteral(new Date());
+				boolean success = NOW.compareAndSet(this, null, now);
+				if (!success) {
+					now = (Literal) NOW.getAcquire(this);
+				}
 			}
-			return nowInLiteral;
+
+			return now;
 		}
 
 		@Override

@@ -19,12 +19,12 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
  */
 public interface QueryValueEvaluationStep {
 	Value evaluate(BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException;
+			throws QueryEvaluationException;
 
 	/**
 	 * If an value expression results in a constant then it may be executed once per query invocation. This can reduce
 	 * computation time significantly.
-	 * 
+	 *
 	 * @return if this ValueExpresionStep will always return the same value
 	 */
 	default boolean isConstant() {
@@ -35,7 +35,7 @@ public interface QueryValueEvaluationStep {
 	 * A QueryValueEvalationStep that will return the same constant value throughout the query execution. As these
 	 * rather result just in a value we set the value at precompile time.
 	 */
-	public static class ConstantQueryValueEvaluationStep implements QueryValueEvaluationStep {
+	class ConstantQueryValueEvaluationStep implements QueryValueEvaluationStep {
 		private final Value value;
 
 		public ConstantQueryValueEvaluationStep(ValueConstant valueConstant) {
@@ -47,7 +47,7 @@ public interface QueryValueEvaluationStep {
 		}
 
 		@Override
-		public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
 			return value;
 		}
 
@@ -59,7 +59,7 @@ public interface QueryValueEvaluationStep {
 	/**
 	 * A minimal implementation that falls back to calling evaluate in the strategy.
 	 */
-	public static final class Minimal implements QueryValueEvaluationStep {
+	final class Minimal implements QueryValueEvaluationStep {
 		private final ValueExpr ve;
 		private final EvaluationStrategy strategy;
 
@@ -70,7 +70,7 @@ public interface QueryValueEvaluationStep {
 		}
 
 		@Override
-		public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
 			return strategy.evaluate(ve, bindings);
 		}
 	}
