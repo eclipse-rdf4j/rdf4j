@@ -40,7 +40,7 @@ public class ParsingTest {
 
 		List<Shape> shapes = shaclSail.getCachedShapes().getDataAndRelease().get(0).getShapes();
 
-		Assertions.assertEquals(8, shapes.size());
+		Assertions.assertEquals(14, shapes.size());
 
 		shapes.forEach(shape -> {
 			Assertions.assertEquals(1, shape.target.size());
