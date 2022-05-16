@@ -892,6 +892,22 @@
 								<exclude>org.eclipse.rdf4j.common.annotation.InternalUseOnly</exclude>
 								<exclude>org.eclipse.rdf4j.common.annotation.Experimental</exclude>
 							</excludes>
+							<overrideCompatibilityChangeParameters>
+								<!-- The override below was previously activated, left as a comment in case we want to activate it again.
+                                <overrideCompatibilityChangeParameter>
+                                	<compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
+                                	<binaryCompatible>true</binaryCompatible>
+                                	<sourceCompatible>true</sourceCompatible>
+                                	<semanticVersionLevel>MINOR</semanticVersionLevel>
+                                </overrideCompatibilityChangeParameter>
+                                 -->
+								<overrideCompatibilityChangeParameter>
+									<compatibilityChange>METHOD_NEW_DEFAULT</compatibilityChange>
+									<binaryCompatible>true</binaryCompatible>
+									<sourceCompatible>true</sourceCompatible>
+									<semanticVersionLevel>MINOR</semanticVersionLevel>
+								</overrideCompatibilityChangeParameter>
+							</overrideCompatibilityChangeParameters>
 						</parameter>
 					</configuration>
 					<executions>
