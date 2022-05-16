@@ -11,6 +11,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DelayedIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -57,6 +58,15 @@ public interface QueryEvaluationStep {
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
 				return strategy.evaluate(expr, bs);
+			}
+		};
+	}
+
+	public static QueryEvaluationStep empty() {
+		return new QueryEvaluationStep() {
+			@Override
+			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
+				return new EmptyIteration<BindingSet, QueryEvaluationException>();
 			}
 		};
 	}

@@ -533,6 +533,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
+		if (FilterIterator.isPartOfSubQuery(node)) {
+			context = new FilterIterator.RetainedVariableFilteredQueryEvaluationContext(node, context);
+		}
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
 		QueryValueEvaluationStep ves;
 		try {
@@ -541,12 +544,17 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
 //			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			return new QueryEvaluationStep() {
-				@Override
-				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-					return new EmptyIteration<>();
-				}
-			};
+			return QueryEvaluationStep.empty();
+		}
+		// if the query evaluation is constant it is either FILTER(true) or FILTER(false)
+		// in one case we can remove this step from the evaluated plan
+		// in the other case nothing can pass the filter so we can return the empty set.
+		if (ves.isConstant()) {
+			if (StrictEvaluationStrategy.this.isTrue(ves, EmptyBindingSet.getInstance())) {
+				return arg;
+			} else {
+				return QueryEvaluationStep.empty();
+			}
 		}
 		return new QueryEvaluationStep() {
 
@@ -874,13 +882,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	protected QueryEvaluationStep prepare(EmptySet emptySet, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return new QueryEvaluationStep() {
-
-			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-				return new EmptyIteration<>();
-			}
-		};
+		return QueryEvaluationStep.empty();
 	}
 
 	@Override
@@ -949,7 +951,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (expr instanceof CompareAll) {
 			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Exists) {
-			return new QueryValueEvaluationStep.Minimal(this, expr);
+			return prepare((Exists) expr, context);
 		} else if (expr instanceof If) {
 			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof ListMemberOperator) {
@@ -1912,6 +1914,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = evaluate(node.getSubQuery(), bindings)) {
 			return BooleanLiteral.valueOf(iter.hasNext());
 		}
+	}
+
+	private QueryValueEvaluationStep prepare(Exists node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep subQuery = precompile(node.getSubQuery(), context);
+		return new QueryValueEvaluationStep() {
+
+			@Override
+			public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+				try (CloseableIteration<BindingSet, QueryEvaluationException> iter = subQuery.evaluate(bindings)) {
+					return BooleanLiteral.valueOf(iter.hasNext());
+				}
+			}
+		};
 	}
 
 	@Override
