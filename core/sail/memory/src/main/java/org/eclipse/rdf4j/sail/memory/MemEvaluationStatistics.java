@@ -71,63 +71,71 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 
 			if (subj == null && pred == null && obj == null && context == null) {
 				return memStatementList.size();
+			} else {
+				return minStatementCount(subj, pred, obj, context);
 			}
 
+		}
+
+		private int minStatementCount(Value subj, Value pred, Value obj, Value context) {
 			int minListSizes = Integer.MAX_VALUE;
-			boolean found = false;
 
 			if (subj != null) {
-				// Perform look-ups for value-equivalents of the specified values
 				MemResource memSubj = valueFactory.getMemResource((Resource) subj);
 				if (memSubj != null) {
-					found = true;
 					minListSizes = memSubj.getSubjectStatementCount();
 					if (minListSizes == 0) {
 						return 0;
 					}
+				} else {
+					// couldn't find the value in the value factory, which means that there are no statements with that
+					// value
+					return 0;
 				}
 			}
 
 			if (pred != null) {
 				MemIRI memPred = valueFactory.getMemURI((IRI) pred);
 				if (memPred != null) {
-					found = true;
-
 					minListSizes = Math.min(minListSizes, memPred.getPredicateStatementCount());
 					if (minListSizes == 0) {
 						return 0;
 					}
+				} else {
+					// couldn't find the value in the value factory, which means that there are no statements with that
+					// value
+					return 0;
 				}
 			}
 
 			if (obj != null) {
 				MemValue memObj = valueFactory.getMemValue(obj);
 				if (memObj != null) {
-					found = true;
 					minListSizes = Math.min(minListSizes, memObj.getObjectStatementCount());
 					if (minListSizes == 0) {
 						return 0;
 					}
+				} else {
+					// couldn't find the value in the value factory, which means that there are no statements with that
+					// value
+					return 0;
 				}
 			}
 
 			if (context != null) {
 				MemResource memContext = valueFactory.getMemResource((Resource) context);
 				if (memContext != null) {
-					found = true;
 					minListSizes = Math.min(minListSizes, memContext.getContextStatementCount());
-					if (minListSizes == 0) {
-						return 0;
-					}
+				} else {
+					// couldn't find the value in the value factory, which means that there are no statements with that
+					// value
+					return 0;
 				}
 			}
 
-			if (found) {
-				return minListSizes;
-			} else {
-				return 0;
-			}
+			assert minListSizes != Integer.MAX_VALUE : "minListSizes should have been updated before this point";
 
+			return minListSizes;
 		}
 
 		protected Value getConstantValue(Var var) {
@@ -138,4 +146,5 @@ class MemEvaluationStatistics extends EvaluationStatistics {
 			return null;
 		}
 	}
-} // end inner class MemCardinalityCalculator
+
+}

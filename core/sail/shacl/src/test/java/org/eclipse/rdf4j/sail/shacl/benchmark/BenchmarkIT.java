@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.benchmark;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -29,7 +28,6 @@ import org.openjdk.jmh.runner.options.TimeValue;
 public class BenchmarkIT {
 
 	@Test
-	@Disabled
 	public void test() throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("")
