@@ -169,6 +169,7 @@ public class StatementMatcher {
 		// We just need a random base that isn't used elsewhere in the ShaclSail, but we don't want it to be stable so
 		// we can compare the SPARQL queries where these variables are used
 		private static final String BASE = UUID.randomUUID().toString().replace("-", "") + "_";
+		private final String prefix;
 
 		private int counter = 0;
 
@@ -178,12 +179,21 @@ public class StatementMatcher {
 		}
 
 		public Variable current() {
-			return new Variable(BASE + counter);
+			return new Variable(prefix + BASE + counter);
 		}
 
+		public StableRandomVariableProvider() {
+			this.prefix = "";
+		}
+
+		public StableRandomVariableProvider(String prefix) {
+			this.prefix = prefix;
+		}
 	}
 
 	public static class Variable {
+		public static final Variable VALUE = new Variable("value");
+
 		String name;
 		Value value;
 

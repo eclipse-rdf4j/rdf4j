@@ -251,7 +251,7 @@ public class FedXConfig {
 	/**
 	 * Sets a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. If no such wrapper is
 	 * explicitly configured, the unmodified task is returned. See {@link TaskWrapper} for more information.
-	 * 
+	 *
 	 * @param taskWrapper the {@link TaskWrapper}
 	 * @return the current config
 	 * @see TaskWrapper
@@ -413,7 +413,7 @@ public class FedXConfig {
 	/**
 	 * Returns a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. If no such wrapper
 	 * is explicitly configured, the unmodified task is returned. See {@link TaskWrapper} for more information.
-	 * 
+	 *
 	 * @return the {@link TaskWrapper}, an empty {@link Optional} if none is explicitly configured
 	 */
 	public Optional<TaskWrapper> getTaskWrapper() {

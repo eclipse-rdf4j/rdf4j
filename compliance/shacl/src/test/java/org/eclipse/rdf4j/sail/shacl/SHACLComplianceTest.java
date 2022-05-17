@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.testsuite.shacl.manifest.AbstractSHACLTest;

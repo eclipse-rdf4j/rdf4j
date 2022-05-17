@@ -19,7 +19,7 @@ import com.google.common.collect.Lists;
  * The SerializableParsedTupleQuery class is an intermediate structure holding main parts of a query or a subquery:
  * projection, WHERE clause, GROUP BY clause, ORDER BY clause, LIMIT element, HAVING clause, and BINDINGS clause. These
  * fields are extracted from the {@link ParsedTupleQuery} tree.
- * 
+ *
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
@@ -39,7 +39,7 @@ class SerializableParsedUpdate extends AbstractSerializableParsedQuery {
 
 	/**
 	 * Returns the names of the variables projected by this query (as strings).
-	 * 
+	 *
 	 * @return list of projected variable names
 	 */
 	public List<String> getProjectionResultVars() {

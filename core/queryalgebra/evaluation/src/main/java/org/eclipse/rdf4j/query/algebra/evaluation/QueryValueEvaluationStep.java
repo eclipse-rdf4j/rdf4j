@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
  */
 public interface QueryValueEvaluationStep {
 	Value evaluate(BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException;
+			throws QueryEvaluationException;
 
 	/**
 	 * If an value expression results in a constant then it may be executed once per query invocation. This can reduce
@@ -47,7 +47,7 @@ public interface QueryValueEvaluationStep {
 		}
 
 		@Override
-		public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
 			return value;
 		}
 
@@ -70,7 +70,7 @@ public interface QueryValueEvaluationStep {
 		}
 
 		@Override
-		public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
 			return strategy.evaluate(ve, bindings);
 		}
 	}

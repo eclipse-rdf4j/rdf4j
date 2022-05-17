@@ -143,7 +143,7 @@ public class Statements {
 	 * @param statement a statement to convert to an RDF-star triple
 	 * @return an {@link Triple RDF-star triple} with the same subject, predicate and object as the input statement.
 	 * @since 3.4.0
-	 * 
+	 *
 	 * @deprecated since 3.5.0 - use {@link Values#triple(ValueFactory, Statement)} instead
 	 */
 	@Deprecated

@@ -17,20 +17,6 @@ import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.AlternativePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePredicatePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.NegatedPropertySet;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.OneOrMorePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePathOrInversePredicatePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.SequencePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrMorePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrOnePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Assignable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
@@ -231,7 +217,7 @@ public class Expressions {
 
 	/**
 	 * {@code operand IN (expression1, expression2...)}
-	 * 
+	 *
 	 * @param searchTerm
 	 * @param expressions
 	 * @return an {@code IN} function
@@ -244,7 +230,7 @@ public class Expressions {
 
 	/**
 	 * {@code operand NOT IN (expression1, expression2...)}
-	 * 
+	 *
 	 * @param searchTerm
 	 * @param expressions
 	 * @return an {@code NOT IN} function

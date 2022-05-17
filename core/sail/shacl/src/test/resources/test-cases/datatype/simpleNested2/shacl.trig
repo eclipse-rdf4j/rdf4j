@@ -13,7 +13,18 @@ rdf4j:SHACLShapeGraph {
         sh:path ex:knows;
         sh:property [
             sh:path ex:age;
-            sh:datatype xsd:integer
+            sh:datatype xsd:integer;
+            sh:nodeKind sh:Literal;
+          ] , [
+            sh:path ex:temp;
+            sh:not [ sh:nodeKind sh:Literal ];
+            sh:maxCount 1;
+            sh:property [
+                sh:path ex:age;
+                sh:datatype xsd:integer;
+                sh:nodeKind sh:Literal;
+                sh:maxCount 1;
+              ]
           ]
       ] .
 }

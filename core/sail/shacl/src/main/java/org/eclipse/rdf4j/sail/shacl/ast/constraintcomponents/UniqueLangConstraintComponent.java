@@ -58,13 +58,11 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		String targetVarPrefix = "target_";
-
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 		String query = effectiveTarget.getQuery(false);
 
-		StatementMatcher.Variable value1 = new StatementMatcher.Variable("value1");
+		StatementMatcher.Variable value1 = stableRandomVariableProvider.next();
 
 		String pathQuery1 = getTargetChain().getPath()
 				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value1,
@@ -73,7 +71,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 		query += pathQuery1;
 
-		StatementMatcher.Variable value2 = new StatementMatcher.Variable("value2");
+		StatementMatcher.Variable value2 = stableRandomVariableProvider.next();
 
 		String pathQuery2 = getTargetChain().getPath()
 				.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value2,
@@ -104,10 +102,11 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 //		assert !negateChildren : "There are no subplans!";
 //		assert !negatePlan;
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget("target_", Scope.propertyShape,
-				connectionsGroup.getRdfsSubClassOfReasoner());
-		Optional<Path> path = getTargetChain().getPath();
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
+
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(Scope.propertyShape,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
+		Optional<Path> path = getTargetChain().getPath();
 
 		if (!path.isPresent() || scope != Scope.propertyShape) {
 			throw new IllegalStateException("UniqueLang only operates on paths");
@@ -177,10 +176,12 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
 			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);

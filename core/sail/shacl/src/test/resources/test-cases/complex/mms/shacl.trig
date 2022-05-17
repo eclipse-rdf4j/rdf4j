@@ -1,0 +1,21 @@
+@prefix mms:   <https://mms.researchstudio.at/mms#> .
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix dtype: <http://www.linkedmodel.org/schema/dtype#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+
+rdf4j:SHACLShapeGraph {
+    mms:EnumerationTypeShape
+        a              sh:NodeShape ;
+        sh:targetClass mms:EnumerationType ;
+        sh:property    [ sh:path     dtype:hasMember ;
+                         sh:minCount 1 ;
+                         sh:node     mms:EnumerationMemberShape ] .
+
+    mms:EnumerationMemberShape
+        a           sh:NodeShape ;
+        sh:property [ sh:path     [ sh:inversePath dtype:hasMember ] ;
+                      sh:minCount 1 ;
+                      sh:maxCount 1 ;
+                      sh:class    mms:EnumerationType ] .
+}

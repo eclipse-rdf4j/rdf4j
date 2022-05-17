@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
 
 import javax.servlet.ServletConfig;

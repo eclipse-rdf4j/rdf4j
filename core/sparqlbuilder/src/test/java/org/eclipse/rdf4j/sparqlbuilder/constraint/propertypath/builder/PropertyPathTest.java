@@ -10,7 +10,6 @@
 
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder;
 
-import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.prefix;
 import static org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder.var;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.toRdfLiteralArray;
@@ -18,7 +17,6 @@ import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.toRdfLiteralArray;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
 import org.junit.Assert;

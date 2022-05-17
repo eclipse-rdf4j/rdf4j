@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.DelayedIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -24,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 public interface QueryEvaluationStep {
 
 	EmptyIteration<BindingSet, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
+	QueryEvaluationStep EMPTY = bindings -> EMPTY_ITERATION;
 
 	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings);
 

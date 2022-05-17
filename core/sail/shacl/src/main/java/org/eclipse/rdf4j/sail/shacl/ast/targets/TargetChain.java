@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
 
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.Targetable;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
@@ -69,8 +70,9 @@ public class TargetChain {
 		return Optional.empty();
 	}
 
-	public EffectiveTarget getEffectiveTarget(String targetVarPrefix, ConstraintComponent.Scope scope,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public EffectiveTarget getEffectiveTarget(ConstraintComponent.Scope scope,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		ArrayDeque<Targetable> newChain = new ArrayDeque<>(chain);
 
@@ -80,7 +82,7 @@ public class TargetChain {
 			targetable = newChain.removeLast();
 		}
 
-		return new EffectiveTarget(newChain, targetable, targetVarPrefix, rdfsSubClassOfReasoner);
+		return new EffectiveTarget(newChain, targetable, rdfsSubClassOfReasoner, stableRandomVariableProvider);
 	}
 
 }

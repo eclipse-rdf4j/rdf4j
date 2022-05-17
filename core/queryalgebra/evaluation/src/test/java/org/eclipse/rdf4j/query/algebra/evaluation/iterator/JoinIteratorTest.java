@@ -15,7 +15,12 @@ import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -24,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -36,7 +42,20 @@ public class JoinIteratorTest {
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(null, null);
+	private final EvaluationStrategy evaluator = new StrictEvaluationStrategy(new TripleSource() {
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return SimpleValueFactory.getInstance();
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
+				Value obj, Resource... contexts) throws QueryEvaluationException {
+			// TODO Auto-generated method stub
+			return null;
+		}
+	}, null);
 	private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
 			vf.createLiteral(Date.from(Instant.now())), null);
 

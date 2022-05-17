@@ -34,22 +34,22 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class EffectiveTarget {
 
+	public static final String TARGET_VAR_PREFIX = "target_";
 	private final ArrayDeque<EffectiveTargetObject> chain;
 	private final EffectiveTargetObject optional;
 
-	public EffectiveTarget(ArrayDeque<Targetable> chain, Targetable optional, String targetVarPrefix,
-			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+	public EffectiveTarget(ArrayDeque<Targetable> chain, Targetable optional,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		int index = 0;
 
 		this.chain = new ArrayDeque<>();
 
 		EffectiveTargetObject previous = null;
 
-		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
-
 		for (Targetable targetable : chain) {
 			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
-					new StatementMatcher.Variable(targetVarPrefix + EffectiveTarget.formatVariableIndex(index++)),
+					new StatementMatcher.Variable(TARGET_VAR_PREFIX + EffectiveTarget.formatVariableIndex(index++)),
 					targetable, previous, rdfsSubClassOfReasoner, stableRandomVariableProvider);
 			previous = effectiveTargetObject;
 			this.chain.addLast(effectiveTargetObject);
@@ -57,7 +57,7 @@ public class EffectiveTarget {
 
 		if (optional != null) {
 			this.optional = new EffectiveTargetObject(
-					new StatementMatcher.Variable(targetVarPrefix + EffectiveTarget.formatVariableIndex(index)),
+					new StatementMatcher.Variable(TARGET_VAR_PREFIX + EffectiveTarget.formatVariableIndex(index)),
 					optional, previous, rdfsSubClassOfReasoner, stableRandomVariableProvider);
 		} else {
 			this.optional = null;

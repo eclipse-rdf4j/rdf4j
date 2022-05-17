@@ -82,8 +82,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 		boolean negatePlan = false;
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget("target_", scope,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(scope,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 		Optional<Path> path = targetChain.getPath();
 
 		if (overrideTargetNode != null) {
@@ -114,8 +114,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					// We are cheating a bit here by retrieving all the targets and values at the same time by
 					// pretending to be in node shape scope and then shifting the results back to property shape scope
 					PlanNode allTargets = targetChain
-							.getEffectiveTarget("target_", Scope.nodeShape,
-									connectionsGroup.getRdfsSubClassOfReasoner())
+							.getEffectiveTarget(Scope.nodeShape,
+									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 							.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape);
 					allTargets = new ShiftToPropertyShape(allTargets);
 
@@ -198,10 +198,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		String targetVarPrefix = "target_";
-
-		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(targetVarPrefix, scope,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(scope,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 		String query = effectiveTarget.getQuery(false);
 
 		StatementMatcher.Variable value;
@@ -213,7 +211,7 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 			query += getSparqlFilter(negatePlan, effectiveTarget.getTargetVar());
 
 		} else {
-			value = new StatementMatcher.Variable("value");
+			value = StatementMatcher.Variable.VALUE;
 
 			String pathQuery = targetChain.getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
@@ -293,10 +291,12 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		if (scope == Scope.propertyShape) {
 			PlanNode allTargetsPlan = getTargetChain()
-					.getEffectiveTarget("target_", Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner())
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
 
 			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);

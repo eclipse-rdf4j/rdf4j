@@ -116,7 +116,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 					return hasStatement;
 
 				})
-				.map(ValidationTuple::getActiveTarget)
+				.map(validationTuple -> validationTuple.getActiveTarget())
 				.map(r -> new SimpleBindingSet(Collections.singleton("a"), Collections.singletonList("a"),
 						Collections.singletonList(r)))
 				.collect(Collectors.toList());

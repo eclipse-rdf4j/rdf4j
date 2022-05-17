@@ -431,7 +431,6 @@ public class MemValueFactory extends AbstractValueFactory {
 		});
 	}
 
-
 	/**
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */

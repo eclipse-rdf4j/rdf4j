@@ -9,7 +9,6 @@
 package org.eclipse.rdf4j.model.base;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Value;
 
 /**
  * Base class for {@link IRI}, offering common functionality.

@@ -173,7 +173,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	// shared return value for successive calls of the NOW() function within the
 	// same query. Will be reset upon each new query being evaluated. See
 	// SES-869.
-	private Value sharedValueOfNow;
+	private Literal sharedValueOfNow;
 
 	private final long iterationCacheSyncThreshold;
 
@@ -314,7 +314,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
-		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory());
 		if (expr instanceof QueryRoot) {
 			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
 					.findAllVariablesUsedInQuery((QueryRoot) expr);
@@ -519,6 +519,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
+		if (FilterIterator.isPartOfSubQuery(node)) {
+			context = new FilterIterator.RetainedVariableFilteredQueryEvaluationContext(node, context);
+		}
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
 		QueryValueEvaluationStep ves;
 		try {
@@ -527,7 +530,17 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
 //			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
-			return bs -> QueryEvaluationStep.EMPTY_ITERATION;
+			return QueryEvaluationStep.EMPTY;
+		}
+		// if the query evaluation is constant it is either FILTER(true) or FILTER(false)
+		// in one case we can remove this step from the evaluated plan
+		// in the other case nothing can pass the filter so we can return the empty set.
+		if (ves.isConstant()) {
+			if (StrictEvaluationStrategy.this.isTrue(ves, EmptyBindingSet.getInstance())) {
+				return arg;
+			} else {
+				return QueryEvaluationStep.EMPTY;
+			}
 		}
 		return bs -> new FilterIterator(node, arg.evaluate(bs), ves, StrictEvaluationStrategy.this);
 	}
@@ -904,7 +917,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 		} else if (expr instanceof CompareAll) {
 			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Exists) {
-			return new QueryValueEvaluationStep.Minimal(this, expr);
+			return prepare((Exists) expr, context);
 		} else if (expr instanceof If) {
 			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof ListMemberOperator) {
@@ -1322,7 +1335,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	@Deprecated(forRemoval = true)
 	public Value evaluate(Regex node, BindingSet bindings)
 			throws QueryEvaluationException {
-		return prepare(node, new QueryEvaluationContext.Minimal(dataset)).evaluate(bindings);
+		return prepare(node, new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset)).evaluate(bindings);
 	}
 
 	/**
@@ -1863,6 +1876,20 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				bindings)) {
 			return BooleanLiteral.valueOf(iter.hasNext());
 		}
+	}
+
+	private QueryValueEvaluationStep prepare(Exists node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		QueryEvaluationStep subQuery = precompile(node.getSubQuery(), context);
+		return new QueryValueEvaluationStep() {
+
+			@Override
+			public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+				try (CloseableIteration<BindingSet, QueryEvaluationException> iter = subQuery.evaluate(bindings)) {
+					return BooleanLiteral.valueOf(iter.hasNext());
+				}
+			}
+		};
 	}
 
 	@Override
