@@ -629,7 +629,7 @@ class MemorySailStore implements SailStore {
 						statements.remove(i);
 
 						if (!prioritiseCleaning && RUNTIME.maxMemory() >= 256 * 1024 * 1024
-								&& getFreeToAllocateMemory() < 64 * 1024 * 1024) {
+								&& getFreeToAllocateMemory() < 128 * 1024 * 1024) {
 							logger.info(
 									"Low memory! Prioritising cleaning of removed statements from the MemoryStore.");
 							prioritiseCleaning = true;

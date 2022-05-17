@@ -97,7 +97,7 @@ public class QueryBenchmarkTest {
 					.evaluate()
 					.stream()
 					.count();
-			System.out.println(count);
+//			System.out.println(count);
 		}
 	}
 
@@ -109,7 +109,7 @@ public class QueryBenchmarkTest {
 					.evaluate()
 					.stream()
 					.count();
-			System.out.println("count: " + count);
+//			System.out.println("count: " + count);
 		}
 	}
 
@@ -121,7 +121,7 @@ public class QueryBenchmarkTest {
 					.evaluate()
 					.stream()
 					.count();
-			System.out.println(count);
+//			System.out.println(count);
 		}
 	}
 

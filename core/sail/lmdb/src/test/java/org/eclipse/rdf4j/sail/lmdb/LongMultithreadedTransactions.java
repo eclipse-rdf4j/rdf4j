@@ -80,10 +80,10 @@ public class LongMultithreadedTransactions {
 						boolean b3 = connection2.hasStatement(null, null, null, true);
 						boolean b4 = connection3.hasStatement(null, null, null, true);
 
-						System.out.println(b1);
-						System.out.println(b2);
-						System.out.println(b3);
-						System.out.println(b4);
+//						System.out.println(b1);
+//						System.out.println(b2);
+//						System.out.println(b3);
+//						System.out.println(b4);
 
 						connection0.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
 						connection1.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
@@ -282,7 +282,7 @@ public class LongMultithreadedTransactions {
 			connection.prepare();
 			Thread.yield();
 			connection.commit();
-			System.out.println(b);
+//			System.out.println(b);
 
 		} catch (SailConflictException ignore) {
 
