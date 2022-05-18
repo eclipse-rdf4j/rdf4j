@@ -91,4 +91,5 @@ public class RDFS {
 		SEEALSO = Vocabularies.createIRI(RDFS.NAMESPACE, "seeAlso");
 		CONTAINERMEMBERSHIPPROPERTY = Vocabularies.createIRI(RDFS.NAMESPACE, "ContainerMembershipProperty");
 	}
+
 }

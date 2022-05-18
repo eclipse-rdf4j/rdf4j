@@ -7,8 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -20,10 +27,13 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.base.CoreDatatypeHelper;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.Vocabularies;
 
 /**
  * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
@@ -33,6 +43,47 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
  * @author David Huynh
  */
 public class MemValueFactory extends AbstractValueFactory {
+
+	private final static Set<IRI> VOCABULARY = Stream
+			.of(
+					List.of(RDF.TYPE,
+							RDF.PROPERTY,
+							RDF.SUBJECT,
+							RDF.PREDICATE,
+							RDF.OBJECT,
+							RDF.STATEMENT,
+							RDF.BAG,
+							RDF.ALT,
+							RDF.SEQ,
+							RDF.VALUE,
+							RDF.LI,
+							RDF.LIST,
+							RDF.FIRST,
+							RDF.REST,
+							RDF.NIL,
+							RDF.XMLLITERAL,
+							RDF.LANGSTRING,
+							RDF.HTML
+					),
+					List.of(RDFS.RESOURCE,
+							RDFS.LITERAL,
+							RDFS.CLASS,
+							RDFS.SUBCLASSOF,
+							RDFS.SUBPROPERTYOF,
+							RDFS.DOMAIN,
+							RDFS.RANGE,
+							RDFS.COMMENT,
+							RDFS.LABEL,
+							RDFS.DATATYPE,
+							RDFS.CONTAINER,
+							RDFS.MEMBER,
+							RDFS.ISDEFINEDBY,
+							RDFS.SEEALSO,
+							RDFS.CONTAINERMEMBERSHIPPROPERTY
+					)
+			)
+			.flatMap(Collection::stream)
+			.collect(Collectors.toSet());
 
 	/*------------*
 	 * Attributes *
@@ -72,12 +123,18 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * A cache of the most common IRIs to improve lookup performance when users use our vocabularies (eg.
 	 * {@link RDF#TYPE}).
 	 */
+	private final IdentityHashMap<IRI, MemIRI> vocabulariesCache = new IdentityHashMap<>(VOCABULARY.size());
 
-//	private final Cache<Value, MemLiteral> literalCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
-//	private final Cache<Value, MemIRI> iriCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
-//	private final Cache<Value, MemBNode> bNodeCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
-//	private final Cache<Value, MemTriple> tripleCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
 	public MemValueFactory() {
+		initializeVocabulariesCache();
+	}
+
+	private void initializeVocabulariesCache() {
+		for (IRI iri : VOCABULARY) {
+			assert isVocabularyIRI(iri);
+			MemIRI put = vocabulariesCache.put(iri, this.getOrCreateMemURI(iri));
+			assert put == null;
+		}
 	}
 
 	public void clear() {
@@ -132,13 +189,19 @@ public class MemValueFactory extends AbstractValueFactory {
 	/**
 	 * See getMemValue() for description.
 	 */
-	public MemIRI getMemURI(IRI uri) {
-		if (uri == null) {
+	public MemIRI getMemURI(IRI iri) {
+		if (iri == null) {
 			return null;
-		} else if (isOwnMemIRI(uri)) {
-			return (MemIRI) uri;
+		} else if (isOwnMemIRI(iri)) {
+			return (MemIRI) iri;
 		} else {
-			return iriRegistry.get(uri);
+			if (isVocabularyIRI(iri)) {
+				MemIRI memIRI = vocabulariesCache.get(iri);
+				if (memIRI != null) {
+					return memIRI;
+				}
+			}
+			return iriRegistry.get(iri);
 		}
 	}
 
@@ -306,15 +369,24 @@ public class MemValueFactory extends AbstractValueFactory {
 			return (MemIRI) uri;
 		}
 
-		return iriRegistry.getOrAdd(uri, () -> {
+		MemIRI memIRI = vocabulariesCache.get(uri);
+		if (memIRI != null) {
+			return memIRI;
+		} else {
+			return iriRegistry.getOrAdd(uri, () -> {
 
-			String namespace = uri.getNamespace();
+				String namespace = uri.getNamespace();
 
-			String sharedNamespace = namespaceRegistry.getOrAdd(namespace, () -> namespace);
+				String sharedNamespace = namespaceRegistry.getOrAdd(namespace, () -> namespace);
 
-			// Create a MemURI and add it to the registry
-			return new MemIRI(this, sharedNamespace, uri.getLocalName());
-		});
+				// Create a MemURI and add it to the registry
+				return new MemIRI(this, sharedNamespace, uri.getLocalName());
+			});
+		}
+	}
+
+	private boolean isVocabularyIRI(IRI iri) {
+		return iri instanceof Vocabularies.VocabularyIRI || iri instanceof CoreDatatypeHelper.DatatypeIRI;
 	}
 
 	/**

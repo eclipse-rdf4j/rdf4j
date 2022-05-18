@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.model.vocabulary;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
