@@ -364,27 +364,25 @@ public class MemValueFactory extends AbstractValueFactory {
 	/**
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
-	public MemIRI getOrCreateMemURI(IRI iri) {
-		if (isOwnMemIRI(iri)) {
-			return (MemIRI) iri;
+	public MemIRI getOrCreateMemURI(IRI uri) {
+		if (isOwnMemIRI(uri)) {
+			return (MemIRI) uri;
 		}
 
-		if (isVocabularyIRI(iri)) {
-			MemIRI memIRI = vocabulariesCache.get(iri);
-			if (memIRI != null) {
-				return memIRI;
-			}
+		MemIRI memIRI = vocabulariesCache.get(uri);
+		if (memIRI != null) {
+			return memIRI;
+		} else {
+			return iriRegistry.getOrAdd(uri, () -> {
+
+				String namespace = uri.getNamespace();
+
+				String sharedNamespace = namespaceRegistry.getOrAdd(namespace, () -> namespace);
+
+				// Create a MemURI and add it to the registry
+				return new MemIRI(this, sharedNamespace, uri.getLocalName());
+			});
 		}
-
-		return iriRegistry.getOrAdd(iri, (innerIri) -> {
-
-			String namespace = innerIri.getNamespace();
-
-			String sharedNamespace = namespaceRegistry.getOrAdd(namespace, Function.identity());
-
-			// Create a MemURI and add it to the registry
-			return new MemIRI(this, sharedNamespace, innerIri.getLocalName());
-		});
 	}
 
 	private boolean isVocabularyIRI(IRI iri) {
@@ -398,7 +396,7 @@ public class MemValueFactory extends AbstractValueFactory {
 		if (isOwnMemBnode(bnode)) {
 			return (MemBNode) bnode;
 		}
-		return bnodeRegistry.getOrAdd(bnode, (innerBnode) -> new MemBNode(this, innerBnode.getID()));
+		return bnodeRegistry.getOrAdd(bnode, () -> new MemBNode(this, bnode.getID()));
 	}
 
 	/**
@@ -409,47 +407,41 @@ public class MemValueFactory extends AbstractValueFactory {
 			return (MemLiteral) literal;
 		}
 
-		return literalRegistry.getOrAdd(literal, (innerLiteral) -> {
-			String label = innerLiteral.getLabel();
-			CoreDatatype coreDatatype = innerLiteral.getCoreDatatype();
+		return literalRegistry.getOrAdd(literal, () -> {
+			String label = literal.getLabel();
+			CoreDatatype coreDatatype = literal.getCoreDatatype();
+			IRI datatype = coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : literal.getDatatype();
 
-			if (Literals.isLanguageLiteral(innerLiteral)) {
-				return new MemLiteral(this, label, innerLiteral.getLanguage().get());
+			if (Literals.isLanguageLiteral(literal)) {
+				return new MemLiteral(this, label, literal.getLanguage().get());
 			} else {
 				try {
 					if (coreDatatype.isXSDDatatype()) {
 						if (((CoreDatatype.XSD) coreDatatype).isIntegerDatatype()) {
-							return new IntegerMemLiteral(this, label, innerLiteral.integerValue(), coreDatatype);
+							return new IntegerMemLiteral(this, label, literal.integerValue(), coreDatatype);
 						} else if (coreDatatype == CoreDatatype.XSD.DECIMAL) {
-							return new DecimalMemLiteral(this, label, innerLiteral.decimalValue(), coreDatatype);
+							return new DecimalMemLiteral(this, label, literal.decimalValue(), coreDatatype);
 						} else if (coreDatatype == CoreDatatype.XSD.FLOAT) {
-							return new NumericMemLiteral(this, label, innerLiteral.floatValue(), coreDatatype);
+							return new NumericMemLiteral(this, label, literal.floatValue(), coreDatatype);
 						} else if (coreDatatype == CoreDatatype.XSD.DOUBLE) {
-							return new NumericMemLiteral(this, label, innerLiteral.doubleValue(), coreDatatype);
+							return new NumericMemLiteral(this, label, literal.doubleValue(), coreDatatype);
 						} else if (coreDatatype == CoreDatatype.XSD.BOOLEAN) {
-							return new BooleanMemLiteral(this, label, innerLiteral.booleanValue());
+							return new BooleanMemLiteral(this, label, literal.booleanValue());
 						} else if (coreDatatype == CoreDatatype.XSD.DATETIME) {
-							return new CalendarMemLiteral(this, label, coreDatatype, innerLiteral.calendarValue());
+							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
 						} else if (coreDatatype == CoreDatatype.XSD.DATETIMESTAMP) {
-							return new CalendarMemLiteral(this, label, coreDatatype, innerLiteral.calendarValue());
+							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());
 						}
 					}
-
-					IRI datatype = getDatatype(innerLiteral, coreDatatype);
 
 					return new MemLiteral(this, label, datatype, coreDatatype);
 
 				} catch (IllegalArgumentException e) {
 					// Unable to parse literal label to primitive type
-					IRI datatype = getDatatype(innerLiteral, coreDatatype);
 					return new MemLiteral(this, label, datatype);
 				}
 			}
 		});
-	}
-
-	private static IRI getDatatype(Literal literal, CoreDatatype coreDatatype) {
-		return coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : literal.getDatatype();
 	}
 
 	/**
@@ -465,7 +457,7 @@ public class MemValueFactory extends AbstractValueFactory {
 			boolean wasNew = tripleRegistry.add(newMemTriple);
 
 			if (!wasNew) {
-				return tripleRegistry.getOrAdd(triple, (ignored) -> newMemTriple);
+				return tripleRegistry.getOrAdd(triple, () -> newMemTriple);
 			} else {
 				return newMemTriple;
 			}
@@ -476,13 +468,13 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	@Override
-	public IRI createIRI(String iri) {
-		return getOrCreateMemURI(super.createIRI(iri));
+	public IRI createIRI(String uri) {
+		return getOrCreateMemURI(super.createIRI(uri));
 	}
 
 	@Override
 	public IRI createIRI(String namespace, String localName) {
-		return iriRegistry.getOrAdd(SimpleValueFactory.getInstance().createIRI(namespace, localName), (ignored) -> {
+		return iriRegistry.getOrAdd(SimpleValueFactory.getInstance().createIRI(namespace, localName), () -> {
 
 			if (namespace.indexOf(':') == -1) {
 				throw new IllegalArgumentException("Not a valid (absolute) URI: " + namespace + localName);
@@ -501,7 +493,7 @@ public class MemValueFactory extends AbstractValueFactory {
 				correctLocalName = localName;
 			}
 
-			String sharedNamespace = namespaceRegistry.getOrAdd(correctNamespace, Function.identity());
+			String sharedNamespace = namespaceRegistry.getOrAdd(correctNamespace, () -> correctNamespace);
 
 			// Create a MemURI and add it to the registry
 			return new MemIRI(this, sharedNamespace, correctLocalName);
@@ -548,7 +540,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	private Literal getSharedLiteral(MemLiteral newLiteral) {
-		return literalRegistry.getOrAdd(newLiteral, Function.identity());
+		return literalRegistry.getOrAdd(newLiteral, () -> newLiteral);
 	}
 
 }
