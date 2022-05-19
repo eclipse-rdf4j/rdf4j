@@ -86,7 +86,7 @@ public class BindSelect implements PlanNode {
 			throw new IllegalStateException();
 		}
 
-		this.query = query;
+		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
 		this.direction = direction;
 		this.includePropertyShapeValues = includePropertyShapeValues;
 
