@@ -123,27 +123,4 @@ public class LanguageInBenchmarkEmpty {
 
 	}
 
-	@Benchmark
-	public void noShacl() {
-
-		SailRepository repository = new SailRepository(new TestNotifyingSail(new MemoryStore()));
-
-		repository.init();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.commit();
-		}
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.add(statements);
-				connection.commit();
-			}
-		}
-
-		repository.shutDown();
-
-	}
-
 }

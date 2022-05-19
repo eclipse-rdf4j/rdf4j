@@ -112,15 +112,11 @@ public class ComplexTargetBenchmark {
 		((ShaclSail) repository.getSail()).setDashDataShapes(true);
 		((ShaclSail) repository.getSail()).setEclipseRdf4jShaclExtensions(true);
 
-		((ShaclSail) repository.getSail()).disableValidation();
-
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 			connection.add(initialStatements);
 			connection.commit();
 		}
-
-		((ShaclSail) repository.getSail()).enableValidation();
 
 		System.gc();
 		Thread.sleep(100);
