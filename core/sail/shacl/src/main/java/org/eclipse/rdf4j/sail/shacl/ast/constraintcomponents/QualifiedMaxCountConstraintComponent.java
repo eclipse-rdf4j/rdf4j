@@ -237,7 +237,7 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 				.getPlanNode(connectionsGroup, dataGraph, Scope.propertyShape, true, null);
 
 		PlanNode subTargets = qualifiedValueShape.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
-				stableRandomVariableProvider);
+				new StatementMatcher.StableRandomVariableProvider());
 
 		return Unique.getInstance(new TrimToTarget(UnionNode.getInstanceDedupe(allTargets, subTargets)), false);
 
