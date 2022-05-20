@@ -58,7 +58,7 @@ class SailDatasetTripleSource implements RDFStarTripleSource {
 
 	public static class Eval extends ExceptionConvertingIteration<Statement, QueryEvaluationException> {
 
-		public Eval(CloseableIteration<? extends Statement, ? extends Exception> iter) {
+		public Eval(Iteration<? extends Statement, ? extends Exception> iter) {
 			super(iter);
 		}
 
