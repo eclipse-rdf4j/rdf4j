@@ -11,20 +11,43 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 
 /**
- * Wraps an Iteration as an Iterator. If the Iteration is a CloseableIteration then this.close() will close it and it
- * will also be automatically closed when this Iterator is exhausted.
+ * Wraps a {@link CloseableIteration} as an {@link Iterator}.
  *
  * @author Mark
  */
 public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 
-	private final Iteration<? extends E, ? extends RuntimeException> iteration;
+	private final CloseableIteration<? extends E, ? extends RuntimeException> iteration;
 
+	@Deprecated(since = "4.1.0", forRemoval = true)
 	public CloseableIterationIterator(Iteration<? extends E, ? extends RuntimeException> iteration) {
+		this.iteration = new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() throws RuntimeException {
+				return iteration.hasNext();
+			}
+
+			@Override
+			public E next() throws RuntimeException {
+				return iteration.next();
+			}
+
+			@Override
+			public void remove() throws RuntimeException {
+				iteration.remove();
+			}
+
+			@Override
+			public void close() throws RuntimeException {
+			}
+		};
+	}
+
+	public CloseableIterationIterator(CloseableIteration<? extends E, ? extends RuntimeException> iteration) {
 		this.iteration = iteration;
 	}
 
@@ -32,7 +55,11 @@ public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 	public boolean hasNext() {
 		boolean hasMore = iteration.hasNext();
 		if (!hasMore) {
-			Iterators.closeSilently(this);
+			try {
+				close();
+			} catch (IOException ioe) {
+				// ignore
+			}
 		}
 		return hasMore;
 	}
@@ -49,6 +76,6 @@ public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 
 	@Override
 	public void close() throws IOException {
-		Iterations.closeCloseable(iteration);
+		iteration.close();
 	}
 }

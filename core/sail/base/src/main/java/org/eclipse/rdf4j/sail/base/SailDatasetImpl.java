@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.IteratorIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -311,11 +310,8 @@ class SailDatasetImpl implements SailDataset {
 		if (changes.hasApproved()) {
 			if (iter != null) {
 				// merge newly approved triples in the changeset with data from the backing source
-				return new DistinctIteration<>(new UnionIteration<>(
-						iter,
-						new IteratorIteration<Triple, SailException>(
-								changes.getApprovedTriples(subj, pred, obj).iterator())
-				));
+				return new DistinctIteration<>(new UnionIteration<>(iter,
+						new CloseableIteratorIteration<>(changes.getApprovedTriples(subj, pred, obj).iterator())));
 			}
 
 			// nothing relevant in the backing source, just return all matching approved triples from the changeset

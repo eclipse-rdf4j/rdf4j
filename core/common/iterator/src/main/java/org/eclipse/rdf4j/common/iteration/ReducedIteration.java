@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.common.iteration;
  *
  * @author Arjohn Kampman
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public class ReducedIteration<E, X extends Exception> extends FilterIteration<E, X> {
 
 	private E previousObject;

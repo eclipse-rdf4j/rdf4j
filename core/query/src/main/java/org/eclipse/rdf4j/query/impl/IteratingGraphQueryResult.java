@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  */
+@Deprecated(since = "4.1.0")
 public class IteratingGraphQueryResult extends IterationWrapper<Statement, QueryEvaluationException>
 		implements GraphQueryResult {
 

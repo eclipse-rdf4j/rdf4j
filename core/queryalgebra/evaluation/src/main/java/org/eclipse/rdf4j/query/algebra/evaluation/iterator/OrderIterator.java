@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author James Leigh
  * @author Arjohn Kampman
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public class OrderIterator extends DelayedIteration<BindingSet, QueryEvaluationException> {
 
 	private static class SerializedQueue<E extends Serializable> extends AbstractQueue<E> implements Closeable {

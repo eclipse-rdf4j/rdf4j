@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Arjohn Kampman
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public abstract class TimeLimitIteration<E, X extends Exception> extends IterationWrapper<E, X> {
 
 	private static final Timer timer = new Timer("TimeLimitIteration", true);

@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -275,12 +274,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return eq;
 	}
 
-	/**
-	 *
-	 * @param statementPattern
-	 * @param contextValue
-	 * @return the contexts that are valid for this statement pattern or null
-	 */
 	protected static Function<Value, Resource[]> extractContextsFromDatasets(final Var contextVar, boolean emptyGraph,
 			Set<IRI> graphs) {
 
@@ -357,7 +350,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		private final Function<Statement, MutableBindingSet> convertingFunction;
 
 		private ConvertStatmentToBindingSetIterator(
-				Iteration<? extends Statement, ? extends QueryEvaluationException> iter,
+				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
 			super(iter);
 			if (bindings.isEmpty()) {

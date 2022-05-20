@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
@@ -974,8 +975,26 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be added to the repository, for example because the
 	 *                             repository is not writable.
 	 */
+	@Deprecated(since = "4.1.0", forRemoval = true)
 	<E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
 			throws RepositoryException, E;
+
+	/**
+	 * Adds the supplied statements to this repository, optionally to one or more named contexts.
+	 *
+	 * @param statements The statements to add. The iteration will be closed.
+	 * @param contexts   The contexts to add the statements to. Note that this parameter is a vararg and as such is
+	 *                   optional. If no contexts are specified, each statement is added to any context specified in the
+	 *                   statement, or if the statement contains no context, it is added without context. If one or more
+	 *                   contexts are specified each statement is added to these contexts, ignoring any context
+	 *                   information in the statement itself. ignored.
+	 * @throws RepositoryException If the statements could not be added to the repository, for example because the
+	 *                             repository is not writable.
+	 */
+	default <E extends Exception> void add(CloseableIteration<? extends Statement, E> statements, Resource... contexts)
+			throws RepositoryException, E {
+		add(((Iteration<? extends Statement, E>) statements), contexts);
+	}
 
 	/**
 	 * Adds the supplied statements to this repository, optionally to one or more named contexts.
@@ -991,7 +1010,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	default void add(RepositoryResult<Statement> statements, Resource... contexts)
 			throws RepositoryException {
-		add((Iteration<Statement, RepositoryException>) statements, contexts);
+		add((CloseableIteration<Statement, RepositoryException>) statements, contexts);
 	}
 
 	/**
@@ -1045,8 +1064,26 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException If the statements could not be removed from the repository, for example because the
 	 *                             repository is not writable.
 	 */
+	@Deprecated(since = "4.1.0", forRemoval = true)
 	<E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
 			throws RepositoryException, E;
+
+	/**
+	 * Removes the supplied statements from a specific context in this repository, ignoring any context information
+	 * carried by the statements themselves.
+	 *
+	 * @param statements The statements to remove. The iteration will be closed.
+	 * @param contexts   The context(s) to remove the data from. Note that this parameter is a vararg and as such is
+	 *                   optional. If no contexts are supplied the method operates on the contexts associated with the
+	 *                   statement itself, and if no context is associated with the statement, on the entire repository.
+	 * @throws RepositoryException If the statements could not be removed from the repository, for example because the
+	 *                             repository is not writable.
+	 */
+	default <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statements,
+			Resource... contexts)
+			throws RepositoryException, E {
+		remove((Iteration<Statement, RepositoryException>) statements, contexts);
+	}
 
 	/**
 	 * Removes the supplied statements from a specific context in this repository, ignoring any context information
@@ -1062,7 +1099,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 */
 	default void remove(RepositoryResult<Statement> statements, Resource... contexts)
 			throws RepositoryException {
-		remove((Iteration<Statement, RepositoryException>) statements, contexts);
+		remove((CloseableIteration<Statement, RepositoryException>) statements, contexts);
 	}
 
 	/**
