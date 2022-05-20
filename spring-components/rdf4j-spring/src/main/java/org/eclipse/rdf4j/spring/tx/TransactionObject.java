@@ -22,7 +22,7 @@ import org.springframework.transaction.support.SmartTransactionObject;
  * @author ameingast@gmail.com
  * @author Florian Kleedorfer
  */
-public class TransactionObject implements SmartTransactionObject {
+public class TransactionObject {
 
 	private RepositoryConnection connection;
 
@@ -106,11 +106,6 @@ public class TransactionObject implements SmartTransactionObject {
 
 	public void setReadOnly(boolean readOnly) {
 		this.readOnly = readOnly;
-	}
-
-	@Override
-	public void flush() {
-		throw new UnsupportedOperationException("flush() is not supported");
 	}
 
 	@Override
