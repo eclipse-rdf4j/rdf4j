@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -77,7 +78,7 @@ public class Select implements PlanNode {
 
 		this.connection = connection;
 		this.mapper = mapper;
-		this.query = query;
+		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 
 		this.sorted = false;

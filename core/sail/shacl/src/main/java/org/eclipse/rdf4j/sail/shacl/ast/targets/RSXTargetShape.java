@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
@@ -75,7 +76,9 @@ public class RSXTargetShape extends Target {
 	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
 
-		StatementMatcher.Variable object = new StatementMatcher.Variable("temp1");
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
+
+		StatementMatcher.Variable object = stableRandomVariableProvider.next();
 
 		SparqlFragment sparqlFragment = this.targetShape.buildSparqlValidNodes_rsx_targetShape(null, object,
 				connectionsGroup.getRdfsSubClassOfReasoner(), null, stableRandomVariableProvider);
@@ -109,6 +112,7 @@ public class RSXTargetShape extends Target {
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph, PlanNode parent) {
 
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 		StatementMatcher.Variable variable = stableRandomVariableProvider.next();
 
 		String query = getTargetQueryFragment(null, variable, connectionsGroup.getRdfsSubClassOfReasoner(),
@@ -116,7 +120,7 @@ public class RSXTargetShape extends Target {
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query, variable,
-				validationTuple -> validationTuple.getActiveTarget()).getTrueNode(UnBufferedPlanNode.class);
+				ValidationTuple::getActiveTarget).getTrueNode(UnBufferedPlanNode.class);
 	}
 
 	@Override

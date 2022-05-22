@@ -64,30 +64,33 @@ public class LockTracking<T extends Lock> implements LockMonitoring<T> {
 
 	private long getActiveLocksSignature() {
 
-		return locks.keySet()
-				.stream()
-				.filter(Objects::nonNull)
-				.filter(SimpleLock::isActive)
-				.mapToLong(s -> s.state.acquiredId)
-				.sum();
+		synchronized (locks) {
+			return locks.keySet()
+					.stream()
+					.filter(Objects::nonNull)
+					.filter(SimpleLock::isActive)
+					.mapToLong(s -> s.state.acquiredId)
+					.sum();
+		}
 
 	}
 
 	private void logStalledLocks() {
 		Thread currentThread = Thread.currentThread();
-
-		locks.keySet().stream().filter(Objects::nonNull).filter(SimpleLock::isActive).forEach(simpleLock -> {
-			if (simpleLock.state.thread == currentThread) {
-				logger.warn("{} is possibly deadlocked waiting on \"{}\" with id {} acquired in the same thread",
-						currentThread.getName(), simpleLock.state.alias, simpleLock.state.acquiredId,
-						simpleLock.state.stack);
-			} else {
-				logger.info(
-						"Current thread ({}) is waiting on a possibly stalled lock \"{}\" with id {} acquired in {}",
-						currentThread.getName(), simpleLock.state.alias, simpleLock.state.acquiredId,
-						simpleLock.state.thread.getName(), simpleLock.state.stack);
-			}
-		});
+		synchronized (locks) {
+			locks.keySet().stream().filter(Objects::nonNull).filter(SimpleLock::isActive).forEach(simpleLock -> {
+				if (simpleLock.state.thread == currentThread) {
+					logger.warn("{} is possibly deadlocked waiting on \"{}\" with id {} acquired in the same thread",
+							currentThread.getName(), simpleLock.state.alias, simpleLock.state.acquiredId,
+							simpleLock.state.stack);
+				} else {
+					logger.info(
+							"Current thread ({}) is waiting on a possibly stalled lock \"{}\" with id {} acquired in {}",
+							currentThread.getName(), simpleLock.state.alias, simpleLock.state.acquiredId,
+							simpleLock.state.thread.getName(), simpleLock.state.stack);
+				}
+			});
+		}
 
 	}
 

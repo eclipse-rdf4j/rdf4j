@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -80,11 +81,12 @@ public class MinCountPrefilledVsEmptyBenchmark {
 		ShaclSail shaclRepo = Utils.getInitializedShaclSail("shacl.trig");
 		this.shaclRepo = new SailRepository(shaclRepo);
 
-		shaclRepo.disableValidation();
 		try (SailRepositoryConnection connection = this.shaclRepo.getConnection()) {
+			connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 			connection.add(allStatements2);
+			connection.commit();
 		}
-		shaclRepo.enableValidation();
+
 		System.gc();
 		Thread.sleep(100);
 	}
