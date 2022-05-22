@@ -171,7 +171,7 @@ public class StatementMatcher {
 		private static final String BASE = UUID.randomUUID().toString().replace("-", "") + "_";
 		private final String prefix;
 
-		private int counter = 0;
+		private int counter = -1;
 
 		public Variable next() {
 			counter++;
@@ -179,7 +179,10 @@ public class StatementMatcher {
 		}
 
 		public Variable current() {
-			return new Variable(prefix + BASE + counter);
+			if (counter < 0) {
+				throw new IllegalStateException("next() has not been called");
+			}
+			return new Variable(prefix + BASE + counter + "_");
 		}
 
 		public StableRandomVariableProvider() {
@@ -188,6 +191,61 @@ public class StatementMatcher {
 
 		public StableRandomVariableProvider(String prefix) {
 			this.prefix = prefix;
+		}
+
+		/**
+		 * Normalize the use of random variables in a SPARQL query so that the numbering of queries starts at 0 in
+		 * increments of one.
+		 *
+		 * @param inputQuery the query string that should be normalized
+		 * @return a normalized query string
+		 */
+		public static String normalize(String inputQuery) {
+			if (!inputQuery.contains(BASE)) {
+				return inputQuery;
+			}
+
+			assert !inputQuery.contains(
+					"_11_") : "We only handle variables up to 11 but detect that query uses a variable with a higher number";
+
+			int lowest = 10;
+			int highest = 0;
+			boolean incrementsOfOne = true;
+			int prev = -1;
+			for (int i = 0; i < 11; i++) {
+				if (inputQuery.contains(BASE + i + "_")) {
+					lowest = Math.min(lowest, i);
+					highest = Math.max(highest, i);
+					if (prev >= 0 && prev + 1 != i) {
+						incrementsOfOne = false;
+					}
+					prev = i;
+				}
+			}
+
+			if (lowest == 0 && incrementsOfOne) {
+				return inputQuery;
+			}
+
+			return normalizeRange(inputQuery, lowest, highest);
+		}
+
+		private static String normalizeRange(String inputQuery, int lowest, int highest) {
+			assert !inputQuery.contains(BASE + (highest + 1) + "_");
+			assert !inputQuery.contains(BASE + (lowest - 1) + "_");
+
+			String normalizedQuery = inputQuery;
+			for (int i = 0; i < highest + 1; i++) {
+				if (!normalizedQuery.contains(BASE + i + "_")) {
+					for (int j = Math.max(i + 1, lowest); j < highest + 1; j++) {
+						if (normalizedQuery.contains(BASE + j + "_")) {
+							normalizedQuery = normalizedQuery.replace(BASE + j + "_", BASE + i + "_");
+							break;
+						}
+					}
+				}
+			}
+			return normalizedQuery;
 		}
 	}
 

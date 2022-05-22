@@ -23,6 +23,7 @@ public class Main {
 				.include("AddRemoveBenchmarkEmpty.*")
 				.include("ClassBenchmarkEmpty.*")
 				.include("ComplexBenchmark.*")
+				.include("ComplexTargetBenchmark.*")
 				.include("DatatypeBenchmarkEmpty.*")
 				.include("DatatypeBenchmarkLinear.*")
 				.include("DatatypeBenchmarkPrefilled.*")
@@ -38,13 +39,15 @@ public class Main {
 				.include("NotUniqueLangBenchmarkEmpty.*")
 				.include("OrDatatypeBenchmark.*")
 				.include("QualifiedValueShapeBenchmarkEmpty.*")
+				.include("RdfsReasonerBenchmarkEmpty.*")
 				.include("ShaclLoadingBenchmark.*")
 				.include("TargetBenchmarkInitialData.*")
 				.include("TargetShapeBenchmark.*")
 				.include("UniqueLangBenchmarkEmpty.*")
+				.include("ValidationTupleBenchmark.*")
 				.include("ValueInBenchmarkEmpty.*")
-				.warmupIterations(5)
-				.measurementIterations(5)
+				.warmupIterations(3)
+				.measurementIterations(2)
 				.build();
 
 		new Runner(opt).run();

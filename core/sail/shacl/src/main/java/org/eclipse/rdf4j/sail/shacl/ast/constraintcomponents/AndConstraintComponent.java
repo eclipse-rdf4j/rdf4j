@@ -118,7 +118,8 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		PlanNode planNode = and.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, scope, stableRandomVariableProvider))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
+						new StatementMatcher.StableRandomVariableProvider()))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());

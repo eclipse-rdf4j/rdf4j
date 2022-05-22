@@ -236,7 +236,7 @@ public class PropertyShape extends Shape implements ConstraintComponent, Identif
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		PlanNode planNode = constraintComponents.stream()
 				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.propertyShape,
-						stableRandomVariableProvider))
+						new StatementMatcher.StableRandomVariableProvider()))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
