@@ -82,7 +82,8 @@ public class TargetChainRetriever implements PlanNode {
 				.reduce((a, b) -> a + " " + b)
 				.orElseThrow(IllegalStateException::new);
 
-		this.query = "select " + sparqlProjection + " where {\n" + query + "\n}";
+		this.query = "select " + sparqlProjection + " where {\n"
+				+ StatementMatcher.StableRandomVariableProvider.normalize(query) + "\n}";
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 
 		queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();

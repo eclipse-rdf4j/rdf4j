@@ -76,7 +76,9 @@ public class RSXTargetShape extends Target {
 	private PlanNode getAddedRemovedInner(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			ConstraintComponent.Scope scope) {
 
-		StatementMatcher.Variable object = new StatementMatcher.Variable("temp1");
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
+
+		StatementMatcher.Variable object = stableRandomVariableProvider.next();
 
 		SparqlFragment sparqlFragment = this.targetShape.buildSparqlValidNodes_rsx_targetShape(null, object,
 				connectionsGroup.getRdfsSubClassOfReasoner(), null, stableRandomVariableProvider);
@@ -106,6 +108,7 @@ public class RSXTargetShape extends Target {
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph, PlanNode parent) {
 
+		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 		StatementMatcher.Variable variable = stableRandomVariableProvider.next();
 
 		String query = getTargetQueryFragment(null, variable, connectionsGroup.getRdfsSubClassOfReasoner(),

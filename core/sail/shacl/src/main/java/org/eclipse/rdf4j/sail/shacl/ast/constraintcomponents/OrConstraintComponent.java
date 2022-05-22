@@ -147,7 +147,8 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 		}
 
 		PlanNode planNode = or.stream()
-				.map(or -> or.getAllTargetsPlan(connectionsGroup, dataGraph, scope, stableRandomVariableProvider))
+				.map(or -> or.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
+						new StatementMatcher.StableRandomVariableProvider()))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());

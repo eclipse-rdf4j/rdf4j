@@ -170,7 +170,8 @@ public class NotConstraintComponent extends AbstractConstraintComponent {
 
 		}
 
-		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, dataGraph, scope, stableRandomVariableProvider);
+		PlanNode notTargets = not.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
+				new StatementMatcher.StableRandomVariableProvider());
 
 		return Unique.getInstance(UnionNode.getInstanceDedupe(allTargets, notTargets), false);
 	}

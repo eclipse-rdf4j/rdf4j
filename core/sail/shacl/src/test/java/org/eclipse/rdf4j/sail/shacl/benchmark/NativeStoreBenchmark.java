@@ -196,9 +196,7 @@ public class NativeStoreBenchmark {
 	@Benchmark // this should always run out of memory, as proof that we need the native store
 	public void memoryStore() throws IOException {
 
-		NotifyingSail shaclSail = new MemoryStore();
-
-		SailRepository sailRepository = new SailRepository(shaclSail);
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		sailRepository.init();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {

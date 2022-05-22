@@ -57,7 +57,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
 
 		queryFragment = "SELECT ?" + queryVariable.getName() + " WHERE {\n" + queryFragment + "\n}";
-		this.queryString = queryFragment;
+		this.queryString = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);
 		try {
 			this.query = queryParserFactory.getParser().parseQuery(queryFragment, null, this.valueFactory);
 		} catch (MalformedQueryException e) {

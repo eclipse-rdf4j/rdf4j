@@ -106,23 +106,4 @@ public class UniqueLangBenchmarkEmpty {
 
 	}
 
-	@Benchmark
-	public void noShacl() {
-
-		SailRepository repository = new SailRepository(new TestNotifyingSail(new MemoryStore()));
-
-		repository.init();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin(IsolationLevels.SNAPSHOT);
-				connection.add(statements);
-				connection.commit();
-			}
-		}
-
-		repository.shutDown();
-
-	}
-
 }
