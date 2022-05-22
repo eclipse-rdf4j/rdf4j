@@ -171,10 +171,18 @@ public class StatementMatcher {
 		private static final String BASE = UUID.randomUUID().toString().replace("-", "") + "_";
 		private final String prefix;
 
+		// Best effort to store the highest value of all counters
+		private static volatile int max = 0;
+
 		private int counter = -1;
 
 		public Variable next() {
 			counter++;
+
+			// this isn't really threadsafe, but that is ok because the variable is just used as a guide
+			if (counter > max) {
+				max = counter;
+			}
 			return current();
 		}
 
@@ -205,14 +213,14 @@ public class StatementMatcher {
 				return inputQuery;
 			}
 
-			assert !inputQuery.contains(
-					"_11_") : "We only handle variables up to 11 but detect that query uses a variable with a higher number";
+			// We don't want to go too high for performance reasons, so capping it at 100.
+			int max = Math.min(100, StableRandomVariableProvider.max);
 
-			int lowest = 10;
+			int lowest = max;
 			int highest = 0;
 			boolean incrementsOfOne = true;
 			int prev = -1;
-			for (int i = 0; i < 11; i++) {
+			for (int i = 0; i <= max; i++) {
 				if (inputQuery.contains(BASE + i + "_")) {
 					lowest = Math.min(lowest, i);
 					highest = Math.max(highest, i);
@@ -231,13 +239,11 @@ public class StatementMatcher {
 		}
 
 		private static String normalizeRange(String inputQuery, int lowest, int highest) {
-			assert !inputQuery.contains(BASE + (highest + 1) + "_");
-			assert !inputQuery.contains(BASE + (lowest - 1) + "_");
 
 			String normalizedQuery = inputQuery;
-			for (int i = 0; i < highest + 1; i++) {
+			for (int i = 0; i <= highest; i++) {
 				if (!normalizedQuery.contains(BASE + i + "_")) {
-					for (int j = Math.max(i + 1, lowest); j < highest + 1; j++) {
+					for (int j = Math.max(i + 1, lowest); j <= highest; j++) {
 						if (normalizedQuery.contains(BASE + j + "_")) {
 							normalizedQuery = normalizedQuery.replace(BASE + j + "_", BASE + i + "_");
 							break;
@@ -245,6 +251,7 @@ public class StatementMatcher {
 					}
 				}
 			}
+
 			return normalizedQuery;
 		}
 	}
