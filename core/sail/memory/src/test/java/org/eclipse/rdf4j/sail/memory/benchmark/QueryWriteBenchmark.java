@@ -47,11 +47,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
 //@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryWriteBenchmark {
 
@@ -84,7 +84,6 @@ public class QueryWriteBenchmark {
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("QueryWriteBenchmark") // adapt to run other benchmark tests
-				// .addProfiler("stack", "lines=20;period=1;top=20")
 				.forks(1)
 				.build();
 
