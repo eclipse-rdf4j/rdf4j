@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
@@ -22,11 +23,11 @@ import org.openjdk.jmh.annotations.TearDown;
 @State(Scope.Benchmark)
 public class BaseConcurrentBenchmark {
 
-	ExecutorService executorService;
+	private ExecutorService executorService;
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+		executorService = Executors.newFixedThreadPool(8);
 	}
 
 	@TearDown(Level.Trial)
@@ -55,6 +56,10 @@ public class BaseConcurrentBenchmark {
 		latch.countDown();
 		latchDone.await();
 
+	}
+
+	Future<?> submit(Runnable runnable) {
+		return executorService.submit(runnable);
 	}
 
 	static InputStream getResourceAsStream(String filename) {
