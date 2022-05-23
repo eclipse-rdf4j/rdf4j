@@ -7,9 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.collection.factory.mapdb;
 
-import java.io.File;
 import java.io.IOError;
-import java.io.IOException;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.Collection;
@@ -36,7 +34,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	protected volatile long colectionId = 0;
 	protected final long iterationCacheSyncThreshold;
 	private final CollectionFactory delegate;
-	private File tempFile;
+//	private File tempFile;
 
 	private static final class RDF4jMapDBException extends RDF4JException {
 
@@ -63,13 +61,12 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			synchronized (this) {
 				if (this.db == null) {
 					try {
-						tempFile = File.createTempFile("temp-rdf4j-collection", "removeme");
-						this.db = DBMaker.newFileDB(tempFile)
+						this.db = DBMaker.newTempFileDB()
 								.deleteFilesAfterClose()
 								.closeOnJvmShutdown()
 								.commitFileSyncDisable()
 								.make();
-					} catch (IOException | IOError e) {
+					} catch (IOError e) {
 						throw new RDF4jMapDBException("could not initialize temp db", e);
 					}
 				}
@@ -156,11 +153,6 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public void close() throws RDF4JException {
 		if (db != null) {
-
-			if (tempFile instanceof File) {
-
-				System.err.println(tempFile.length() + " :  currentSize");
-			}
 			db.close();
 		}
 	}
@@ -311,9 +303,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		}
 
 		private Set<V> makeDiskBasedSet() {
-			return db.createHashSet(Long.toHexString(setName))
-					.serializer(serializer)
-					.make();
+			return db.createHashSet(Long.toHexString(setName)).serializer(serializer).make();
 		}
 
 		@Override
