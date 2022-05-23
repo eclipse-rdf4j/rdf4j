@@ -55,20 +55,20 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		return new LmdbValueList(rev);
 	}
 
-	@Override
-	public Set<BindingSet> createSetOfBindingSets() {
-		if (iterationCacheSyncThreshold > 0) {
-			init();
-			MemoryTillSizeXSet<BindingValues> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>());
-			// The idea of this converting set is that we serialize longs into the MapDB not actually falling back to
-			// the
-			// serialization to SimpleLiterals etc.
-			return new ConvertingSet(new CommitingSet<BindingValues>(set, iterationCacheSyncThreshold, db),
-					this::bindingValuesToBindingSet, this::bindingSetToBindingValues);
-		} else {
-			return new HashSet<>();
-		}
-	}
+//	@Override
+//	public Set<BindingSet> createSetOfBindingSets() {
+//		if (iterationCacheSyncThreshold > 0) {
+//			init();
+//			MemoryTillSizeXSet<BindingValues> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>());
+//			// The idea of this converting set is that we serialize longs into the MapDB not actually falling back to
+//			// the
+//			// serialization to SimpleLiterals etc.
+//			return new ConvertingSet(new CommitingSet<BindingValues>(set, iterationCacheSyncThreshold, db),
+//					this::bindingValuesToBindingSet, this::bindingSetToBindingValues);
+//		} else {
+//			return new HashSet<>();
+//		}
+//	}
 
 	private static class ConvertingSet extends AbstractSet<BindingSet> {
 		private final Set<BindingValues> wrapped;
@@ -268,32 +268,32 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 
 	}
 
-	@Override
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
-		int hash = hash(bindingSet, getValues);
-		List<Value> values = new ArrayList<>(getValues.size());
-//		List<Object> objects = new ArrayList<>(getValues.size());
-		for (int i = 0; i < getValues.size(); i++) {
-			values.add(getValues.get(i).apply(bindingSet));
-		}
-		boolean allLong = true;
-		long[] ids = new long[values.size()];
-		for (int i = 0; i < values.size(); i++) {
-			Value val = values.get(i);
-			Object obj = convertToLongIfPossible(val);
-			if (!(obj instanceof Long)) {
-				allLong = false;
-				break;
-			} else {
-				ids[i] = (Long) obj;
-			}
-		}
-		if (allLong) {
-			return new LmdbValueBindingSetKey(ids, hash);
-		} else {
-			return new DefaultBindingSetKey(values, hash);
-		}
-	}
+//	@Override
+//	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
+//		int hash = hash(bindingSet, getValues);
+//		List<Value> values = new ArrayList<>(getValues.size());
+////		List<Object> objects = new ArrayList<>(getValues.size());
+//		for (int i = 0; i < getValues.size(); i++) {
+//			values.add(getValues.get(i).apply(bindingSet));
+//		}
+//		boolean allLong = true;
+//		long[] ids = new long[values.size()];
+//		for (int i = 0; i < values.size(); i++) {
+//			Value val = values.get(i);
+//			Object obj = convertToLongIfPossible(val);
+//			if (!(obj instanceof Long)) {
+//				allLong = false;
+//				break;
+//			} else {
+//				ids[i] = (Long) obj;
+//			}
+//		}
+//		if (allLong) {
+//			return new LmdbValueBindingSetKey(ids, hash);
+//		} else {
+//			return new DefaultBindingSetKey(values, hash);
+//		}
+//	}
 
 	private static class LmdbValueBindingSetKey implements BindingSetKey, Serializable {
 
@@ -491,5 +491,10 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			return new BindingRealValues(names, values);
 		}
 
+	}
+
+	@Override
+	public void close() throws RDF4JException {
+		super.close();
 	}
 }
