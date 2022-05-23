@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.AbstractList;
@@ -15,6 +17,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
@@ -23,19 +27,27 @@ import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultBindingSetKey;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.mapdb.Serializer;
 
 /**
  * A CollectionFactory that tries to use LMDB core datastructures.
  */
 public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	private final ValueStoreRevision rev;
+	private final ValueStore valueFactory;
 
 	public LmdbCollectionFactory(ValueStore valueFactory, long iterationCacheSyncThreshold) {
 		super(iterationCacheSyncThreshold);
+		this.valueFactory = valueFactory;
 		this.rev = valueFactory.getRevision();
 	}
 
@@ -55,20 +67,172 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		return new LmdbValueList(rev);
 	}
 
-//	@Override
-//	public Set<BindingSet> createSetOfBindingSets() {
-//		if (iterationCacheSyncThreshold > 0) {
-//			init();
-//			MemoryTillSizeXSet<BindingValues> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>());
-//			// The idea of this converting set is that we serialize longs into the MapDB not actually falling back to
-//			// the
-//			// serialization to SimpleLiterals etc.
-//			return new ConvertingSet(new CommitingSet<BindingValues>(set, iterationCacheSyncThreshold, db),
-//					this::bindingValuesToBindingSet, this::bindingSetToBindingValues);
-//		} else {
-//			return new HashSet<>();
-//		}
-//	}
+	@Override
+	public Set<BindingSet> createSetOfBindingSets() {
+		if (iterationCacheSyncThreshold > 0) {
+			init();
+			MemoryTillSizeXSet<BindingValues> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>());
+			// The idea of this converting set is that we serialize longs into the MapDB not
+			// actually falling back to
+			// the
+			// serialization to SimpleLiterals etc.
+			return new ConvertingSet(
+					new CommitingSet<BindingValues>(set, iterationCacheSyncThreshold, db, new BindingSetSerializer()),
+					this::bindingValuesToBindingSet, this::bindingSetToBindingValues);
+		} else {
+			return new HashSet<>();
+		}
+	}
+
+	private class BindingSetSerializer implements Serializer<BindingValues> {
+		private String[] names;
+
+		@Override
+		public void serialize(DataOutput out, BindingValues values) throws IOException {
+
+			if (values instanceof BindingLongValues) {
+				out.writeBoolean(true);
+				serializeBindingLongValues(out, values);
+			} else {
+				out.writeBoolean(false);
+				serializeBindingValues(out, values);
+			}
+		}
+
+		private void serializeBindingLongValues(DataOutput out, BindingValues values) throws IOException {
+
+			BindingLongValues blv = (BindingLongValues) values;
+			out.writeInt(blv.ids.length);
+			for (long l : blv.ids) {
+				out.writeLong(l);
+			}
+			if (names == null) {
+				this.names = Arrays.copyOf(blv.names, blv.names.length);
+				for (int i = 0; i < names.length; i++) {
+					out.writeInt(i);
+				}
+			} else {
+				for (int i = 0; i < names.length; i++) {
+					out.writeInt(indexOf(blv.names[i]));
+				}
+			}
+		}
+
+		private void serializeBindingValues(DataOutput out, BindingValues values) throws IOException {
+
+			BindingRealValues blv = (BindingRealValues) values;
+			out.writeInt(blv.values.length);
+			for (Value v : blv.values) {
+				serializeValue(out, v);
+			}
+			if (names == null) {
+				this.names = Arrays.copyOf(blv.names, blv.names.length);
+				for (int i = 0; i < names.length; i++) {
+					out.writeInt(i);
+				}
+			} else {
+				for (int i = 0; i < names.length; i++) {
+					out.writeInt(indexOf(blv.names[i]));
+				}
+			}
+		}
+
+		private void serializeValue(DataOutput out, Value v) throws IOException {
+			if (v instanceof IRI) {
+				out.writeByte('i');
+				out.writeUTF(v.stringValue());
+			} else if (v instanceof Literal) {
+				out.writeByte('l');
+				Literal l = (Literal) v;
+				out.writeUTF(v.stringValue());
+				boolean hasLanguage = l.getLanguage().isPresent();
+				out.writeBoolean(hasLanguage);
+				if (hasLanguage) {
+					out.writeUTF(l.getLanguage().get());
+				} else {
+					out.writeUTF(l.getDatatype().stringValue());
+				}
+			} else if (v instanceof BNode) {
+				out.writeByte('b');
+				out.writeUTF(v.stringValue());
+			} else {
+				out.writeByte('t');
+				Triple t = (Triple) v;
+				serializeValue(out, t.getSubject());
+				serializeValue(out, t.getPredicate());
+				serializeValue(out, t.getObject());
+			}
+		}
+
+		private Value derializeValue(DataInput in) throws IOException {
+			byte t = in.readByte();
+			if (t == 'i') {
+				return valueFactory.createIRI(in.readUTF());
+			} else if (t == 'l') {
+				String label = in.readUTF();
+				boolean hasLanguage = in.readBoolean();
+
+				if (hasLanguage) {
+					return valueFactory.createLiteral(label, in.readUTF());
+				} else {
+					return valueFactory.createLiteral(label, valueFactory.createIRI(in.readUTF()));
+				}
+			} else if (t == 'b') {
+				return valueFactory.createBNode(in.readUTF());
+			} else {
+
+				Value subject = derializeValue(in);
+				Value predicate = derializeValue(in);
+				Value object = derializeValue(in);
+				return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+			}
+		}
+
+		private int indexOf(String name) {
+			for (int i = 0; i < names.length; i++) {
+				if (name.equals(names[i])) {
+					return i;
+				}
+			}
+			names = Arrays.copyOf(names, names.length + 1);
+			names[names.length - 1] = name;
+			return names.length - 1;
+		}
+
+		@Override
+		public BindingValues deserialize(DataInput in, int available) throws IOException {
+			boolean wasLongValues = in.readBoolean();
+			if (wasLongValues) {
+				int valueLength = in.readInt();
+				long[] values = new long[valueLength];
+				for (int i = 0; i < valueLength; i++) {
+					values[0] = in.readLong();
+				}
+				String[] savedNames = new String[valueLength];
+				for (int i = 0; i < valueLength; i++) {
+					savedNames[i] = names[in.readInt()];
+				}
+				return new BindingLongValues(savedNames, values);
+			} else {
+				int valueLength = in.readInt();
+				Value[] values = new Value[valueLength];
+				for (int i = 0; i < valueLength; i++) {
+					values[0] = derializeValue(in);
+				}
+				String[] savedNames = new String[valueLength];
+				for (int i = 0; i < valueLength; i++) {
+					savedNames[i] = names[in.readInt()];
+				}
+				return new BindingRealValues(savedNames, values);
+			}
+		}
+
+		@Override
+		public int fixedSize() {
+			return -1;
+		}
+
+	}
 
 	private static class ConvertingSet extends AbstractSet<BindingSet> {
 		private final Set<BindingValues> wrapped;
@@ -268,32 +432,31 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 
 	}
 
-//	@Override
-//	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
-//		int hash = hash(bindingSet, getValues);
-//		List<Value> values = new ArrayList<>(getValues.size());
-////		List<Object> objects = new ArrayList<>(getValues.size());
-//		for (int i = 0; i < getValues.size(); i++) {
-//			values.add(getValues.get(i).apply(bindingSet));
-//		}
-//		boolean allLong = true;
-//		long[] ids = new long[values.size()];
-//		for (int i = 0; i < values.size(); i++) {
-//			Value val = values.get(i);
-//			Object obj = convertToLongIfPossible(val);
-//			if (!(obj instanceof Long)) {
-//				allLong = false;
-//				break;
-//			} else {
-//				ids[i] = (Long) obj;
-//			}
-//		}
-//		if (allLong) {
-//			return new LmdbValueBindingSetKey(ids, hash);
-//		} else {
-//			return new DefaultBindingSetKey(values, hash);
-//		}
-//	}
+	@Override
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
+		int hash = hash(bindingSet, getValues);
+		List<Value> values = new ArrayList<>(getValues.size());
+		for (int i = 0; i < getValues.size(); i++) {
+			values.add(getValues.get(i).apply(bindingSet));
+		}
+		boolean allLong = true;
+		long[] ids = new long[values.size()];
+		for (int i = 0; i < values.size(); i++) {
+			Value val = values.get(i);
+			Object obj = convertToLongIfPossible(val);
+			if (!(obj instanceof Long)) {
+				allLong = false;
+				break;
+			} else {
+				ids[i] = (Long) obj;
+			}
+		}
+		if (allLong) {
+			return new LmdbValueBindingSetKey(ids, hash);
+		} else {
+			return new DefaultBindingSetKey(values, hash);
+		}
+	}
 
 	private static class LmdbValueBindingSetKey implements BindingSetKey, Serializable {
 

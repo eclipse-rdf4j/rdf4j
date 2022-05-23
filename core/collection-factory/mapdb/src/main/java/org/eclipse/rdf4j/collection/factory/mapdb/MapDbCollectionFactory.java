@@ -7,7 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.collection.factory.mapdb;
 
+import java.io.File;
 import java.io.IOError;
+import java.io.IOException;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.Collection;
@@ -27,18 +29,20 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
+import org.mapdb.Serializer;
 
 public class MapDbCollectionFactory implements CollectionFactory {
 	protected volatile DB db;
 	protected volatile long colectionId = 0;
 	protected final long iterationCacheSyncThreshold;
 	private final CollectionFactory delegate;
+	private File tempFile;
 
 	private static final class RDF4jMapDBException extends RDF4JException {
 
 		private static final long serialVersionUID = 1L;
 
-		public RDF4jMapDBException(String string, IOError e) {
+		public RDF4jMapDBException(String string, Throwable e) {
 			super(string, e);
 		}
 
@@ -59,12 +63,13 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			synchronized (this) {
 				if (this.db == null) {
 					try {
-						this.db = DBMaker.newTempFileDB()
+						tempFile = File.createTempFile("temp-rdf4j-collection", "removeme");
+						this.db = DBMaker.newFileDB(tempFile)
 								.deleteFilesAfterClose()
 								.closeOnJvmShutdown()
 								.commitFileSyncDisable()
 								.make();
-					} catch (IOError e) {
+					} catch (IOException | IOError e) {
 						throw new RDF4jMapDBException("could not initialize temp db", e);
 					}
 				}
@@ -151,6 +156,11 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public void close() throws RDF4JException {
 		if (db != null) {
+
+			if (tempFile instanceof File) {
+
+				System.err.println(tempFile.length() + " :  currentSize");
+			}
 			db.close();
 		}
 	}
@@ -176,12 +186,18 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		private final long iterationCacheSyncThreshold;
 		private final DB db;
 		private long iterationCount;
+		private final Serializer<T> serializer;
 
 		public CommitingSet(Set<T> wrapped, long iterationCacheSyncThreshold, DB db) {
+			this(wrapped, iterationCacheSyncThreshold, db, db.getDefaultSerializer());
+		}
+
+		public CommitingSet(Set<T> wrapped, long iterationCacheSyncThreshold, DB db, Serializer<T> serializer) {
 			super();
 			this.wrapped = wrapped;
 			this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 			this.db = db;
+			this.serializer = serializer;
 		}
 
 		@Override

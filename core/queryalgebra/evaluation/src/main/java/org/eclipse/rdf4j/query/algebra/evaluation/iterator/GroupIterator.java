@@ -524,7 +524,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private final Set<BindingSet> distinctValues;
 
 		public DistinctBindingSets() {
-			distinctValues = cf.createSet();
+			distinctValues = cf.createSetOfBindingSets();
 		}
 
 		@Override
@@ -536,10 +536,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private static abstract class Aggregate<T extends AggregateCollector, D> {
 
 		private final QueryValueEvaluationStep qes;
-
-		public Aggregate() {
-			qes = null;
-		}
 
 		public Aggregate(QueryValueEvaluationStep ves) {
 			qes = ves;
@@ -576,7 +572,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private static class WildCardCountAggregate extends Aggregate<CountCollector, BindingSet> {
 
 		public WildCardCountAggregate() {
-			super();
+			super(null);
 		}
 
 		@Override
