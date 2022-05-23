@@ -398,21 +398,14 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSink implements SailSink {
 
 		private final boolean explicit;
-		private final Txn txn;
 
 		public LmdbSailSink(boolean explicit) throws SailException {
 			this.explicit = explicit;
-			try {
-				this.txn = tripleStore.getTxnManager().createReadTxn();
-			} catch (IOException e) {
-				throw new SailException(e);
-			}
 		}
 
 		@Override
 		public void close() {
-			// close the associated txn
-			txn.close();
+			// do nothing
 		}
 
 		@Override
@@ -647,8 +640,7 @@ class LmdbSailStore implements SailStore {
 				throws IOException {
 			long removeCount = 0;
 			for (long contextId : contexts) {
-				Map<Long, Long> result = tripleStore.removeTriplesByContext(txn, subj, pred, obj, contextId,
-						explicit);
+				Map<Long, Long> result = tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit);
 
 				for (Entry<Long, Long> entry : result.entrySet()) {
 					Long entryContextId = entry.getKey();

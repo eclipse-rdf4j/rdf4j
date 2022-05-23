@@ -668,10 +668,9 @@ class TripleStore implements Closeable {
 	 * @return A mapping of each modified context to the number of statements removed in that context.
 	 * @throws IOException
 	 */
-	public Map<Long, Long> removeTriplesByContext(Txn txn, long subj, long pred, long obj, long context,
-			boolean explicit)
-			throws IOException {
-		RecordIterator records = getTriples(txn, subj, pred, obj, context, explicit);
+	public Map<Long, Long> removeTriplesByContext(long subj, long pred, long obj, long context,
+			boolean explicit) throws IOException {
+		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
 		return removeTriples(records, explicit);
 	}
 
