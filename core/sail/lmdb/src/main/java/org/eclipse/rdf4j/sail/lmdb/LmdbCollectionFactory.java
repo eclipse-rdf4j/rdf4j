@@ -46,11 +46,9 @@ import org.mapdb.Serializer;
  */
 public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	private final ValueStoreRevision rev;
-	private final ValueStore valueFactory;
 
 	public LmdbCollectionFactory(ValueStore valueFactory, long iterationCacheSyncThreshold) {
 		super(iterationCacheSyncThreshold);
-		this.valueFactory = valueFactory;
 		this.rev = valueFactory.getRevision();
 	}
 
@@ -74,7 +72,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	public Set<BindingSet> createSetOfBindingSets() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer();
+			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer(rev);
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>(),
 					bindingSetSerializer);
 			return new CommitingSet<BindingSet>(set, iterationCacheSyncThreshold, db);
@@ -86,18 +84,25 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	// The idea of this converting set is that we serialize longs into the MapDB not
 	// actually falling back to
 	// the serialization to SimpleLiterals etc. unless we must
-	private class BindingSetSerializer implements Serializer<BindingSet> {
+	private static class BindingSetSerializer implements Serializer<BindingSet>, Serializable {
+		private static final long serialVersionUID = 1L;
 		private final ObjectIntHashMap<String> namesToInt = new ObjectIntHashMap<>();
-		private String[] names;
+		private String[] names = new String[1];
+		private transient ValueStoreRevision rev;
+
+		public BindingSetSerializer(ValueStoreRevision rev) {
+			super();
+			this.rev = rev;
+		}
 
 		@Override
 		public void serialize(DataOutput out, BindingSet values) throws IOException {
 			out.writeInt(values.size());
 			for (Binding b : values) {
 				Value v = b.getValue();
-				Object obj = convertToLongIfPossible(v);
+				Object obj = convertToLongIfPossible(v, rev);
 				if (obj instanceof Long) {
-					out.writeBoolean(false);
+					out.writeBoolean(true);
 					out.writeLong((Long) obj);
 				} else {
 					out.writeBoolean(false);
@@ -129,17 +134,17 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		private Value deserializeValue(DataInput in) throws IOException {
 			byte t = in.readByte();
 			if (t == 'i') {
-				return valueFactory.createIRI(in.readUTF());
+				return rev.getValueStore().createIRI(in.readUTF());
 			} else if (t == 'l') {
 				return deserializeLiteral(in);
 			} else if (t == 'b') {
-				return valueFactory.createBNode(in.readUTF());
+				return rev.getValueStore().createBNode(in.readUTF());
 			} else {
 
 				Value subject = deserializeValue(in);
 				Value predicate = deserializeValue(in);
 				Value object = deserializeValue(in);
-				return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
+				return rev.getValueStore().createTriple((Resource) subject, (IRI) predicate, object);
 			}
 		}
 
@@ -173,21 +178,21 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			String label = in.readUTF();
 			int t = in.readByte();
 			if (t == 1) {
-				return valueFactory.createLiteral(label, in.readUTF());
+				return rev.getValueStore().createLiteral(label, in.readUTF());
 			} else if (t == 2) {
-				return valueFactory.createLiteral(label, CoreDatatype.GEO.values()[in.readByte()]);
+				return rev.getValueStore().createLiteral(label, CoreDatatype.GEO.values()[in.readByte()]);
 			} else if (t == 3) {
-				return valueFactory.createLiteral(label, CoreDatatype.RDF.values()[in.readByte()]);
+				return rev.getValueStore().createLiteral(label, CoreDatatype.RDF.values()[in.readByte()]);
 			} else if (t == 4) {
-				return valueFactory.createLiteral(label, CoreDatatype.XSD.values()[in.readByte()]);
+				return rev.getValueStore().createLiteral(label, CoreDatatype.XSD.values()[in.readByte()]);
 			} else {
-				return valueFactory.createLiteral(label, valueFactory.createIRI(in.readUTF()));
+				return rev.getValueStore().createLiteral(label, rev.getValueStore().createIRI(in.readUTF()));
 			}
 		}
 
 		private int indexOf(String name) {
-			int ifAbsentPut = namesToInt.getIfAbsentPut(name, namesToInt.size() + 1);
-			if (ifAbsentPut > names.length) {
+			int ifAbsentPut = namesToInt.getIfAbsentPut(name, namesToInt.size());
+			if (ifAbsentPut >= names.length) {
 				names = Arrays.copyOf(names, ifAbsentPut + 1);
 			}
 			names[ifAbsentPut] = name;
@@ -242,7 +247,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		return hash;
 	}
 
-	private Object convertToLongIfPossible(Value value) {
+	private static Object convertToLongIfPossible(Value value, ValueStoreRevision rev) {
 		if (value instanceof LmdbValue) {
 			LmdbValue lv = (LmdbValue) value;
 			if (lv.getValueStoreRevision().equals(rev)) {
@@ -290,7 +295,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		boolean allLong = true;
 		for (int i = 0; i < values.size(); i++) {
 			Value val = values.get(i);
-			Object obj = convertToLongIfPossible(val);
+			Object obj = convertToLongIfPossible(val, rev);
 			if (obj instanceof Long) {
 				ids[i] = (Long) obj;
 			} else {
