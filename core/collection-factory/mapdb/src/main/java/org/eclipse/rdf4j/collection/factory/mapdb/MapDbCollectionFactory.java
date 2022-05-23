@@ -186,18 +186,12 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		private final long iterationCacheSyncThreshold;
 		private final DB db;
 		private long iterationCount;
-		private final Serializer<T> serializer;
 
 		public CommitingSet(Set<T> wrapped, long iterationCacheSyncThreshold, DB db) {
-			this(wrapped, iterationCacheSyncThreshold, db, db.getDefaultSerializer());
-		}
-
-		public CommitingSet(Set<T> wrapped, long iterationCacheSyncThreshold, DB db, Serializer<T> serializer) {
 			super();
 			this.wrapped = wrapped;
 			this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 			this.db = db;
-			this.serializer = serializer;
 		}
 
 		@Override
@@ -279,20 +273,27 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	 *
 	 * @param <T> of the contents of the set.
 	 */
-	protected class MemoryTillSizeXSet<V> extends AbstractSet<V> {
+	public class MemoryTillSizeXSet<V> extends AbstractSet<V> {
 		private Set<V> wrapped;
 		private final long setName;
+		private Serializer<V> serializer;
 
+		@SuppressWarnings("unchecked")
 		public MemoryTillSizeXSet(long setName, Set<V> wrapped) {
+			this(setName, wrapped, db.getDefaultSerializer());
+		}
+
+		public MemoryTillSizeXSet(long setName, Set<V> wrapped, Serializer<V> serializer) {
 			super();
 			this.setName = setName;
 			this.wrapped = wrapped;
+			this.serializer = serializer;
 		}
 
 		@Override
 		public boolean add(V e) {
 			if (wrapped instanceof HashSet && wrapped.size() > iterationCacheSyncThreshold) {
-				Set<V> disk = db.getHashSet(Long.toHexString(setName));
+				Set<V> disk = makeDiskBasedSet();
 				disk.addAll(wrapped);
 				wrapped = disk;
 			}
@@ -302,11 +303,17 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		@Override
 		public boolean addAll(Collection<? extends V> arg0) {
 			if (wrapped instanceof HashSet && arg0.size() > iterationCacheSyncThreshold) {
-				Set<V> disk = db.getHashSet(Long.toHexString(setName));
+				Set<V> disk = makeDiskBasedSet();
 				disk.addAll(wrapped);
 				wrapped = disk;
 			}
 			return wrapped.addAll(arg0);
+		}
+
+		private Set<V> makeDiskBasedSet() {
+			return db.createHashSet(Long.toHexString(setName))
+					.serializer(serializer)
+					.make();
 		}
 
 		@Override

@@ -17,12 +17,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 
+import org.eclipse.collections.api.iterator.LongIterator;
+import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
+import org.eclipse.collections.impl.set.mutable.primitive.LongHashSet;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultBindingSetKey;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
@@ -33,6 +34,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -71,69 +74,36 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	public Set<BindingSet> createSetOfBindingSets() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			MemoryTillSizeXSet<BindingValues> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>());
-			// The idea of this converting set is that we serialize longs into the MapDB not
-			// actually falling back to
-			// the
-			// serialization to SimpleLiterals etc.
-			return new ConvertingSet(
-					new CommitingSet<BindingValues>(set, iterationCacheSyncThreshold, db, new BindingSetSerializer()),
-					this::bindingValuesToBindingSet, this::bindingSetToBindingValues);
+			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer();
+			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>(),
+					bindingSetSerializer);
+			return new CommitingSet<BindingSet>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return new HashSet<>();
 		}
 	}
 
-	private class BindingSetSerializer implements Serializer<BindingValues> {
+	// The idea of this converting set is that we serialize longs into the MapDB not
+	// actually falling back to
+	// the serialization to SimpleLiterals etc. unless we must
+	private class BindingSetSerializer implements Serializer<BindingSet> {
+		private final ObjectIntHashMap<String> namesToInt = new ObjectIntHashMap<>();
 		private String[] names;
 
 		@Override
-		public void serialize(DataOutput out, BindingValues values) throws IOException {
-
-			if (values instanceof BindingLongValues) {
-				out.writeBoolean(true);
-				serializeBindingLongValues(out, values);
-			} else {
-				out.writeBoolean(false);
-				serializeBindingValues(out, values);
-			}
-		}
-
-		private void serializeBindingLongValues(DataOutput out, BindingValues values) throws IOException {
-
-			BindingLongValues blv = (BindingLongValues) values;
-			out.writeInt(blv.ids.length);
-			for (long l : blv.ids) {
-				out.writeLong(l);
-			}
-			if (names == null) {
-				this.names = Arrays.copyOf(blv.names, blv.names.length);
-				for (int i = 0; i < names.length; i++) {
-					out.writeInt(i);
+		public void serialize(DataOutput out, BindingSet values) throws IOException {
+			out.writeInt(values.size());
+			for (Binding b : values) {
+				Value v = b.getValue();
+				Object obj = convertToLongIfPossible(v);
+				if (obj instanceof Long) {
+					out.writeBoolean(false);
+					out.writeLong((Long) obj);
+				} else {
+					out.writeBoolean(false);
+					serializeValue(out, v);
 				}
-			} else {
-				for (int i = 0; i < names.length; i++) {
-					out.writeInt(indexOf(blv.names[i]));
-				}
-			}
-		}
-
-		private void serializeBindingValues(DataOutput out, BindingValues values) throws IOException {
-
-			BindingRealValues blv = (BindingRealValues) values;
-			out.writeInt(blv.values.length);
-			for (Value v : blv.values) {
-				serializeValue(out, v);
-			}
-			if (names == null) {
-				this.names = Arrays.copyOf(blv.names, blv.names.length);
-				for (int i = 0; i < names.length; i++) {
-					out.writeInt(i);
-				}
-			} else {
-				for (int i = 0; i < names.length; i++) {
-					out.writeInt(indexOf(blv.names[i]));
-				}
+				out.writeInt(indexOf(b.getName()));
 			}
 		}
 
@@ -143,15 +113,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 				out.writeUTF(v.stringValue());
 			} else if (v instanceof Literal) {
 				out.writeByte('l');
-				Literal l = (Literal) v;
-				out.writeUTF(v.stringValue());
-				boolean hasLanguage = l.getLanguage().isPresent();
-				out.writeBoolean(hasLanguage);
-				if (hasLanguage) {
-					out.writeUTF(l.getLanguage().get());
-				} else {
-					out.writeUTF(l.getDatatype().stringValue());
-				}
+				serializeLiteral(out, v);
 			} else if (v instanceof BNode) {
 				out.writeByte('b');
 				out.writeUTF(v.stringValue());
@@ -164,67 +126,89 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			}
 		}
 
-		private Value derializeValue(DataInput in) throws IOException {
+		private Value deserializeValue(DataInput in) throws IOException {
 			byte t = in.readByte();
 			if (t == 'i') {
 				return valueFactory.createIRI(in.readUTF());
 			} else if (t == 'l') {
-				String label = in.readUTF();
-				boolean hasLanguage = in.readBoolean();
-
-				if (hasLanguage) {
-					return valueFactory.createLiteral(label, in.readUTF());
-				} else {
-					return valueFactory.createLiteral(label, valueFactory.createIRI(in.readUTF()));
-				}
+				return deserializeLiteral(in);
 			} else if (t == 'b') {
 				return valueFactory.createBNode(in.readUTF());
 			} else {
 
-				Value subject = derializeValue(in);
-				Value predicate = derializeValue(in);
-				Value object = derializeValue(in);
+				Value subject = deserializeValue(in);
+				Value predicate = deserializeValue(in);
+				Value object = deserializeValue(in);
 				return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);
 			}
 		}
 
-		private int indexOf(String name) {
-			for (int i = 0; i < names.length; i++) {
-				if (name.equals(names[i])) {
-					return i;
+		private void serializeLiteral(DataOutput out, Value v) throws IOException {
+			Literal l = (Literal) v;
+			out.writeUTF(v.stringValue());
+			boolean hasLanguage = l.getLanguage().isPresent();
+
+			if (hasLanguage) {
+				out.writeByte(1);
+				out.writeUTF(l.getLanguage().get());
+			} else {
+				CoreDatatype cdt = l.getCoreDatatype();
+				if (cdt.isGEODatatype()) {
+					out.writeByte(2);
+					out.writeByte(cdt.asGEODatatype().get().ordinal());
+				} else if (cdt.isRDFDatatype()) {
+					out.writeByte(3);
+					out.writeByte(cdt.asRDFDatatype().get().ordinal());
+				} else if (cdt.isXSDDatatype()) {
+					out.writeByte(4);
+					out.writeByte(cdt.asXSDDatatype().get().ordinal());
+				} else {
+					out.writeByte(5);
+					out.writeUTF(l.getDatatype().stringValue());
 				}
 			}
-			names = Arrays.copyOf(names, names.length + 1);
-			names[names.length - 1] = name;
-			return names.length - 1;
+		}
+
+		private Value deserializeLiteral(DataInput in) throws IOException {
+			String label = in.readUTF();
+			int t = in.readByte();
+			if (t == 1) {
+				return valueFactory.createLiteral(label, in.readUTF());
+			} else if (t == 2) {
+				return valueFactory.createLiteral(label, CoreDatatype.GEO.values()[in.readByte()]);
+			} else if (t == 3) {
+				return valueFactory.createLiteral(label, CoreDatatype.RDF.values()[in.readByte()]);
+			} else if (t == 4) {
+				return valueFactory.createLiteral(label, CoreDatatype.XSD.values()[in.readByte()]);
+			} else {
+				return valueFactory.createLiteral(label, valueFactory.createIRI(in.readUTF()));
+			}
+		}
+
+		private int indexOf(String name) {
+			int ifAbsentPut = namesToInt.getIfAbsentPut(name, namesToInt.size() + 1);
+			if (ifAbsentPut > names.length) {
+				names = Arrays.copyOf(names, ifAbsentPut + 1);
+			}
+			names[ifAbsentPut] = name;
+			return ifAbsentPut;
 		}
 
 		@Override
-		public BindingValues deserialize(DataInput in, int available) throws IOException {
-			boolean wasLongValues = in.readBoolean();
-			if (wasLongValues) {
-				int valueLength = in.readInt();
-				long[] values = new long[valueLength];
-				for (int i = 0; i < valueLength; i++) {
-					values[0] = in.readLong();
+		public BindingSet deserialize(DataInput in, int available) throws IOException {
+			int size = in.readInt();
+			QueryBindingSet qbs = new QueryBindingSet(size);
+			for (int i = 0; i < size; i++) {
+				boolean wasLong = in.readBoolean();
+				Value v;
+				if (wasLong) {
+					v = rev.getValueStore().getLazyValue(in.readLong());
+				} else {
+					v = deserializeValue(in);
 				}
-				String[] savedNames = new String[valueLength];
-				for (int i = 0; i < valueLength; i++) {
-					savedNames[i] = names[in.readInt()];
-				}
-				return new BindingLongValues(savedNames, values);
-			} else {
-				int valueLength = in.readInt();
-				Value[] values = new Value[valueLength];
-				for (int i = 0; i < valueLength; i++) {
-					values[0] = derializeValue(in);
-				}
-				String[] savedNames = new String[valueLength];
-				for (int i = 0; i < valueLength; i++) {
-					savedNames[i] = names[in.readInt()];
-				}
-				return new BindingRealValues(savedNames, values);
+				qbs.setBinding(names[in.readInt()], v);
 			}
+			return qbs;
 		}
 
 		@Override
@@ -234,155 +218,9 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 
 	}
 
-	private static class ConvertingSet extends AbstractSet<BindingSet> {
-		private final Set<BindingValues> wrapped;
-		private final Function<BindingValues, BindingSet> xToY;
-		private final Function<BindingSet, BindingValues> yToX;
-
-		public ConvertingSet(Set<BindingValues> wrapped, Function<BindingValues, BindingSet> xToY,
-				Function<BindingSet, BindingValues> yToX) {
-			super();
-			this.wrapped = wrapped;
-			this.xToY = xToY;
-			this.yToX = yToX;
-		}
-
-		@Override
-		public Iterator<BindingSet> iterator() {
-			Iterator<BindingValues> wrapIter = wrapped.iterator();
-			return new Iterator<BindingSet>() {
-
-				@Override
-				public boolean hasNext() {
-					return wrapIter.hasNext();
-				}
-
-				@Override
-				public BindingSet next() {
-					return xToY.apply(wrapIter.next());
-				}
-			};
-		}
-
-		@Override
-		public boolean add(BindingSet e) {
-
-			return wrapped.add(yToX.apply(e));
-		}
-
-		@Override
-		public boolean contains(Object o) {
-			if (o instanceof BindingValues) {
-				return wrapped.add(yToX.apply((BindingSet) o));
-			}
-			return false;
-		}
-
-		@Override
-		public int size() {
-
-			return wrapped.size();
-		}
-
-	}
-
-	private interface BindingValues extends Serializable {
-
-	}
-
-	private static class BindingLongValues implements BindingValues {
-
-		private static final long serialVersionUID = 1L;
-		String[] names;
-		long[] ids;
-
-		public BindingLongValues(String[] names, long[] ids) {
-			this.names = names;
-			this.ids = ids;
-		}
-
-		public BindingSet convertBack(ValueStoreRevision rev) {
-			QueryBindingSet queryBindingSet = new QueryBindingSet(ids.length);
-			for (int i = 0; i < ids.length; i++) {
-				try {
-					String name = names[i];
-					Value value = rev.getValueStore().getLazyValue(ids[i]);
-					queryBindingSet.addBinding(name, value);
-				} catch (IOException e) {
-					throw new LmdbValueStoreException(e);
-				}
-			}
-			return queryBindingSet;
-		}
-
-		@Override
-		public int hashCode() {
-			final int prime = 31;
-			int result = 1;
-			result = prime * result + Arrays.hashCode(ids);
-			result = prime * result + Arrays.hashCode(names);
-			return result;
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if (this == obj)
-				return true;
-			if (!(obj instanceof BindingLongValues))
-				return false;
-			BindingLongValues other = (BindingLongValues) obj;
-			return Arrays.equals(ids, other.ids) && Arrays.equals(names, other.names);
-		}
-	}
-
-	private static class BindingRealValues implements BindingValues {
-		private static final long serialVersionUID = 1L;
-
-		public BindingRealValues(String[] names, Value[] values) {
-			this.names = names;
-			this.values = values;
-		}
-
-		String[] names;
-		Value[] values;
-
-		@Override
-		public int hashCode() {
-			final int prime = 31;
-			int result = 1;
-			result = prime * result + Arrays.hashCode(names);
-			result = prime * result + Arrays.hashCode(values);
-			return result;
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if (this == obj)
-				return true;
-			if (!(obj instanceof BindingRealValues))
-				return false;
-			BindingRealValues other = (BindingRealValues) obj;
-			return Arrays.equals(names, other.names) && Arrays.equals(values, other.values);
-		}
-
-		public BindingSet convertBack() {
-			QueryBindingSet queryBindingSet = new QueryBindingSet(values.length);
-			for (int i = 0; i < values.length; i++) {
-
-				String name = names[i];
-				Value value = values[i];
-				queryBindingSet.addBinding(name, value);
-
-			}
-			return queryBindingSet;
-		}
-
-	}
-
 	private int hash(BindingSet bs, List<Function<BindingSet, Value>> getValues) {
-		int size = getValues.size();
-		int[] hashes = new int[size];
-		for (int i = 0; i < size; i++) {
+		int hash = 1;
+		for (int i = 0; i < getValues.size(); i++) {
 			Function<BindingSet, Value> getValue = getValues.get(i);
 			Value value = getValue.apply(bs);
 			if (value instanceof LmdbValue) {
@@ -390,18 +228,18 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 				if (lv.getValueStoreRevision().equals(rev)) {
 					long id = lv.getInternalID();
 					if (id == LmdbValue.UNKNOWN_ID) {
-						hashes[i] = value.hashCode();
+						hash = 31 * hash + value.hashCode();
 					} else {
-						hashes[i] = (int) id;
+						hash = 31 * hash + Long.hashCode(id);
 					}
 				} else {
-					hashes[i] = hashUnkown(value);
+					hash = 31 * hash + hashUnkown(value);
 				}
 			} else if (value != null) {
-				hashes[i] = hashUnkown(value);
+				hash = 31 * hash + hashUnkown(value);
 			}
 		}
-		return Arrays.hashCode(hashes);
+		return hash;
 	}
 
 	private Object convertToLongIfPossible(Value value) {
@@ -439,23 +277,27 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		for (int i = 0; i < getValues.size(); i++) {
 			values.add(getValues.get(i).apply(bindingSet));
 		}
-		boolean allLong = true;
 		long[] ids = new long[values.size()];
-		for (int i = 0; i < values.size(); i++) {
-			Value val = values.get(i);
-			Object obj = convertToLongIfPossible(val);
-			if (!(obj instanceof Long)) {
-				allLong = false;
-				break;
-			} else {
-				ids[i] = (Long) obj;
-			}
-		}
+		boolean allLong = tryToFillWithValueStoreLong(values, ids);
 		if (allLong) {
 			return new LmdbValueBindingSetKey(ids, hash);
 		} else {
 			return new DefaultBindingSetKey(values, hash);
 		}
+	}
+
+	private boolean tryToFillWithValueStoreLong(List<Value> values, long[] ids) {
+		boolean allLong = true;
+		for (int i = 0; i < values.size(); i++) {
+			Value val = values.get(i);
+			Object obj = convertToLongIfPossible(val);
+			if (obj instanceof Long) {
+				ids[i] = (Long) obj;
+			} else {
+				return false;
+			}
+		}
+		return allLong;
 	}
 
 	private static class LmdbValueBindingSetKey implements BindingSetKey, Serializable {
@@ -501,7 +343,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 
 	private static class LmdbValueSet extends AbstractSet<Value> {
 		private final ValueStoreRevision rev;
-		private final Set<Long> storeKnownValues = new HashSet<>();
+		private final LongHashSet storeKnownValues = new LongHashSet();
 		private final Set<Value> notKnownToStoreValues = new HashSet<>();
 
 		public LmdbValueSet(ValueStoreRevision rev) {
@@ -533,7 +375,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 
 		@Override
 		public Iterator<Value> iterator() {
-			Iterator<Long> knowns = storeKnownValues.iterator();
+			LongIterator knowns = storeKnownValues.longIterator();
 			Iterator<Value> notKnowns = notKnownToStoreValues.iterator();
 			return new Iterator<Value>() {
 
@@ -615,45 +457,6 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			}
 			return null;
 		}
-	}
-
-	private BindingSet bindingValuesToBindingSet(BindingValues bv) {
-		if (bv instanceof BindingLongValues) {
-			BindingLongValues blv = (BindingLongValues) bv;
-			return blv.convertBack(rev);
-		} else if (bv instanceof BindingRealValues) {
-			BindingRealValues bvr = (BindingRealValues) bv;
-			return bvr.convertBack();
-		} else {
-			return null;
-		}
-	}
-
-	private BindingValues bindingSetToBindingValues(BindingSet bs) {
-		String[] names = bs.getBindingNames().toArray(new String[0]);
-		Value[] values = new Value[names.length];
-		for (int i = 0; i < names.length; i++) {
-			String name = names[i];
-			values[i] = bs.getValue(name);
-		}
-		boolean allLong = true;
-		long[] ids = new long[values.length];
-		for (int i = 0; i < values.length; i++) {
-			Value val = values[i];
-			Object obj = convertToLongIfPossible(val);
-			if (!(obj instanceof Long)) {
-				allLong = false;
-				break;
-			} else {
-				ids[i] = (Long) obj;
-			}
-		}
-		if (allLong) {
-			return new BindingLongValues(names, ids);
-		} else {
-			return new BindingRealValues(names, values);
-		}
-
 	}
 
 	@Override
