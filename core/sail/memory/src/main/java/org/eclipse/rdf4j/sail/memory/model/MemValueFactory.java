@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.util.Values;
@@ -401,7 +402,7 @@ public class MemValueFactory extends AbstractValueFactory {
 
 	@Override
 	public IRI createIRI(String namespace, String localName) {
-		return iriRegistry.getOrAdd(Values.iri(namespace, localName), () -> {
+		return iriRegistry.getOrAdd(SimpleValueFactory.getInstance().createIRI(namespace, localName), () -> {
 
 			if (namespace.indexOf(':') == -1) {
 				throw new IllegalArgumentException("Not a valid (absolute) URI: " + namespace + localName);
