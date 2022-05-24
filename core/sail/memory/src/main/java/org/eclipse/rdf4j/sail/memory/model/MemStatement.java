@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.lang.reflect.Field;
 
 import org.eclipse.rdf4j.model.impl.GenericStatement;
@@ -39,13 +41,23 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 	/**
 	 * Identifies the snapshot in which this statement was introduced.
 	 */
-	private volatile int sinceSnapshot;
+	private final int sinceSnapshot;
 
 	/**
 	 * Identifies the snapshot in which this statement was revoked, defaults to {@link Integer#MAX_VALUE}.
 	 */
 	private volatile int tillSnapshot = Integer.MAX_VALUE;
+	private static final VarHandle TILL_SNAPSHOT;
 
+	static {
+		try {
+			TILL_SNAPSHOT = MethodHandles.lookup()
+					.in(MemStatement.class)
+					.findVarHandle(MemStatement.class, "tillSnapshot", int.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
+		}
+	}
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -66,15 +78,7 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 			int sinceSnapshot) {
 		super(subject, predicate, object, context);
 		this.explicit = explicit;
-		setSinceSnapshot(sinceSnapshot);
-	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
-
-	public void setSinceSnapshot(int snapshot) {
-		sinceSnapshot = snapshot;
+		this.sinceSnapshot = sinceSnapshot;
 	}
 
 	public int getSinceSnapshot() {
@@ -82,15 +86,15 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 	}
 
 	public void setTillSnapshot(int snapshot) {
-		tillSnapshot = snapshot;
+		TILL_SNAPSHOT.setRelease(this, snapshot);
 	}
 
 	public int getTillSnapshot() {
-		return tillSnapshot;
+		return (int) TILL_SNAPSHOT.getAcquire(this);
 	}
 
 	public boolean isInSnapshot(int snapshot) {
-		return snapshot >= sinceSnapshot && snapshot < tillSnapshot;
+		return snapshot >= sinceSnapshot && snapshot < ((int) TILL_SNAPSHOT.getAcquire(this));
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
@@ -117,27 +121,13 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 	 * Lets this statement add itself to the appropriate statement lists of its subject, predicate, object and context.
 	 * The transaction status will be set to new.
 	 */
-	public void addToComponentLists() {
+	public void addToComponentLists() throws InterruptedException {
 		getSubject().addSubjectStatement(this);
 		getPredicate().addPredicateStatement(this);
 		getObject().addObjectStatement(this);
 		MemResource context = getContext();
 		if (context != null) {
 			context.addContextStatement(this);
-		}
-	}
-
-	/**
-	 * Lets this statement remove itself from the appropriate statement lists of its subject, predicate, object and
-	 * context. The transaction status will be set to <var>null</var>.
-	 */
-	public void removeFromComponentLists() {
-		getSubject().removeSubjectStatement(this);
-		getPredicate().removePredicateStatement(this);
-		getObject().removeObjectStatement(this);
-		MemResource context = getContext();
-		if (context != null) {
-			context.removeContextStatement(this);
 		}
 	}
 

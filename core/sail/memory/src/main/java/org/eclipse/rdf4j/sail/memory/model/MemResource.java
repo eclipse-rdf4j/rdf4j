@@ -32,15 +32,15 @@ public abstract class MemResource implements MemValue, Resource {
 		return subjectStatements.size();
 	}
 
-	public void addSubjectStatement(MemStatement st) {
+	public void addSubjectStatement(MemStatement st) throws InterruptedException {
 		subjectStatements.add(st);
 	}
 
-	public void removeSubjectStatement(MemStatement st) {
+	public void removeSubjectStatement(MemStatement st) throws InterruptedException {
 		subjectStatements.remove(st);
 	}
 
-	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) {
+	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) throws InterruptedException {
 		subjectStatements.cleanSnapshots(currentSnapshot);
 	}
 
@@ -130,15 +130,15 @@ public abstract class MemResource implements MemValue, Resource {
 		return contextStatements.size();
 	}
 
-	public void addContextStatement(MemStatement st) {
+	public void addContextStatement(MemStatement st) throws InterruptedException {
 		contextStatements.add(st);
 	}
 
-	public void removeContextStatement(MemStatement st) {
+	public void removeContextStatement(MemStatement st) throws InterruptedException {
 		contextStatements.remove(st);
 	}
 
-	public void cleanSnapshotsFromContextStatements(int currentSnapshot) {
+	public void cleanSnapshotsFromContextStatements(int currentSnapshot) throws InterruptedException {
 		contextStatements.cleanSnapshots(currentSnapshot);
 	}
 }

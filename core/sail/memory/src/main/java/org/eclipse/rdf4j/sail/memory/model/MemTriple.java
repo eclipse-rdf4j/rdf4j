@@ -40,17 +40,13 @@ public class MemTriple extends MemResource implements Triple {
 
 	@Override
 	public String stringValue() {
-		StringBuilder sb = new StringBuilder(256);
-
-		sb.append("<<");
-		sb.append(getSubject());
-		sb.append(" ");
-		sb.append(getPredicate());
-		sb.append(" ");
-		sb.append(getObject());
-		sb.append(">>");
-
-		return sb.toString();
+		return "<<" +
+				getSubject() +
+				" " +
+				getPredicate() +
+				" " +
+				getObject() +
+				">>";
 	}
 
 	@Override
@@ -80,19 +76,18 @@ public class MemTriple extends MemResource implements Triple {
 	}
 
 	@Override
-	public void addObjectStatement(MemStatement st) {
-
+	public void addObjectStatement(MemStatement st) throws InterruptedException {
 		objectStatements.add(st);
 	}
 
 	@Override
-	public void removeObjectStatement(MemStatement st) {
+	public void removeObjectStatement(MemStatement st) throws InterruptedException {
 		objectStatements.remove(st);
 
 	}
 
 	@Override
-	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) {
+	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
 		objectStatements.cleanSnapshots(currentSnapshot);
 
 	}

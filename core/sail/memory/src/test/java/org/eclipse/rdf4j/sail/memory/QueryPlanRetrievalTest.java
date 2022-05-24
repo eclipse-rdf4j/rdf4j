@@ -13,6 +13,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
@@ -453,8 +454,7 @@ public class QueryPlanRetrievalTest {
 					"   ├──Join (JoinIterator) (resultSizeActual=1)\n" +
 					"   │  ╠══StatementPattern (costEstimate=1, resultSizeEstimate=4, resultSizeActual=3)\n" +
 					"   │  ║     Var (name=a)\n" +
-					"   │  ║     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)"
-					+ "\n"
+					"   │  ║     Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"   │  ║     Var (name=d)\n" +
 					"   │  ╚══Filter (resultSizeActual=1)\n" +
@@ -466,15 +466,12 @@ public class QueryPlanRetrievalTest {
 					"   │        ║  ├──Compare (!=)\n" +
 					"   │        ║  │     Var (name=c)\n" +
 					"   │        ║  │     ValueConstant (value=\"<\")\n" +
-					"   │        ║  └──StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)"
-					+ "\n" +
+					"   │        ║  └──StatementPattern (costEstimate=2, resultSizeEstimate=4, resultSizeActual=4)\n" +
 					"   │        ║        Var (name=a)\n" +
-					"   │        ║        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)"
-					+ "\n"
+					"   │        ║        Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
 					"   │        ║        Var (name=c)\n" +
-					"   │        ╚══LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=3)"
-					+ "\n"
+					"   │        ╚══LeftJoin (new scope) (BadlyDesignedLeftJoinIterator) (costEstimate=5, resultSizeEstimate=12, resultSizeActual=3)\n"
 					+
 					"   │           ├──SingletonSet (resultSizeActual=3)\n" +
 					"   │           └──StatementPattern (resultSizeEstimate=12, resultSizeActual=36)\n" +
