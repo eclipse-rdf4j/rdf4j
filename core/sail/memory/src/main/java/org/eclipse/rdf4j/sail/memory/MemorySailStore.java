@@ -68,6 +68,20 @@ class MemorySailStore implements SailStore {
 	private final static Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
 	private static final Runtime RUNTIME = Runtime.getRuntime();
 
+	// Maximum that can be allocated.
+	private static final long MAX_MEMORY = RUNTIME.maxMemory();
+
+	// Small heaps (small values for MAX_MEMORY) would trigger the cleanup priority too often. This is the threshold for
+	// running the code that checks for low memory and priorities cleanup.
+	private static final int CLEANUP_MAX_MEMORY_THRESHOLD = 256 * 1024 * 1024;
+
+	// A constant for the absolute lowest amount of free memory before we prioritise cleanup.
+	private static final int CLEANUP_MINIMUM_FREE_MEMORY = 64 * 1024 * 1024;
+
+	// A ratio of how much free memory there is before we prioritise cleanup. For a 1 GB heap a ratio of 1/8 means that
+	// we prioritise cleanup if there is less than 128 MB of free memory.
+	private static final double CLEANUP_MINIMUM_FREE_MEMORY_RATIO = 1.0 / 8;
+
 	public static final EmptyIteration<MemStatement, SailException> EMPTY_ITERATION = new EmptyIteration<>();
 	public static final EmptyIteration<MemTriple, SailException> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 	public static final MemResource[] EMPTY_CONTEXT = {};
@@ -466,18 +480,23 @@ class MemorySailStore implements SailStore {
 						// stale statement
 						statements.remove(i);
 
-						if (!prioritiseCleaning && RUNTIME.maxMemory() >= 256 * 1024 * 1024
-								&& getFreeToAllocateMemory() < 64 * 1024 * 1024) {
-							logger.info(
-									"Low memory! Prioritising cleaning of removed statements from the MemoryStore.");
-							prioritiseCleaning = true;
+						if (!prioritiseCleaning && MAX_MEMORY >= CLEANUP_MAX_MEMORY_THRESHOLD) {
+							long freeToAllocateMemory = getFreeToAllocateMemory();
+
+							if (memoryIsLow(freeToAllocateMemory)) {
+								logger.debug(
+										"Low free memory ({} MB)! Prioritising cleaning of removed statements from the MemoryStore.",
+										freeToAllocateMemory / 1024 / 1024);
+								prioritiseCleaning = true;
+							}
 						}
 
 					}
 				}
 
-				if (i % 1000 == 0) {
-					if (getFreeToAllocateMemory() < 64 * 1024 * 1024) {
+				if (i % 100_000 == 0) {
+					if (getFreeToAllocateMemory() < CLEANUP_MINIMUM_FREE_MEMORY / 2) {
+						prioritiseCleaning = true;
 						processedSubjects = new HashSet<>();
 						processedPredicates = new HashSet<>();
 						processedObjects = new HashSet<>();
@@ -512,10 +531,12 @@ class MemorySailStore implements SailStore {
 		}
 	}
 
-	private long getFreeToAllocateMemory() {
-		// maximum heap size the JVM can allocate
-		long maxMemory = RUNTIME.maxMemory();
+	private static boolean memoryIsLow(long freeToAllocateMemory) {
+		return freeToAllocateMemory < CLEANUP_MINIMUM_FREE_MEMORY
+				|| (freeToAllocateMemory + 0.0) / MAX_MEMORY < CLEANUP_MINIMUM_FREE_MEMORY_RATIO;
+	}
 
+	private long getFreeToAllocateMemory() {
 		// total currently allocated JVM memory
 		long totalMemory = RUNTIME.totalMemory();
 
@@ -526,8 +547,7 @@ class MemorySailStore implements SailStore {
 		long used = totalMemory - freeMemory;
 
 		// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
-		long freeToAllocateMemory = maxMemory - used;
-		return freeToAllocateMemory;
+		return MAX_MEMORY - used;
 	}
 
 	protected void scheduleSnapshotCleanup() {
@@ -543,8 +563,11 @@ class MemorySailStore implements SailStore {
 				if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
 					Runnable runnable = () -> {
 						try {
-							// sleep for 10 seconds because we don't need to start snapshot cleanup immediately
-							Thread.sleep(10 * 1000);
+							// sleep for up to 5 seconds unless we are low on memory
+							for (int i = 0; i < 100 * 5 && !memoryIsLow(getFreeToAllocateMemory()); i++) {
+								Thread.sleep(10);
+							}
+
 							cleanSnapshots();
 						} catch (InterruptedException e) {
 							Thread.currentThread().interrupt();
