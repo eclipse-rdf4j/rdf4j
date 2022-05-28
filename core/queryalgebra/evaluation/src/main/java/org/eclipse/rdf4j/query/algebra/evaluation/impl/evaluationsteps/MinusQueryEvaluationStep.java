@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
+import java.util.function.Function;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -15,15 +17,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SPARQLMinusIteration;
 
 public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep leftQes;
-	private final QueryEvaluationStep rightQes;
+	private final Function<BindingSet, DelayedEvaluationIteration> rightQes;
 
 	public MinusQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes) {
-		this.leftQes = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(leftQes, bs);
-		this.rightQes = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(rightQes, bs);
+		this.leftQes = leftQes;
+		this.rightQes = bs -> new DelayedEvaluationIteration(rightQes, bs);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-		return new SPARQLMinusIteration<>(leftQes.evaluate(bindings), rightQes.evaluate(bindings));
+		return new SPARQLMinusIteration<>(leftQes.evaluate(bindings), rightQes.apply(bindings));
 	}
 }

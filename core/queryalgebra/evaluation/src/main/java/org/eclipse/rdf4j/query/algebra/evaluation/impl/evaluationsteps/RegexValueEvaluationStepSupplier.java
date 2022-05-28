@@ -41,8 +41,7 @@ public class RegexValueEvaluationStepSupplier {
 		}
 
 		@Override
-		public Value evaluate(BindingSet bindings)
-				throws ValueExprEvaluationException, QueryEvaluationException {
+		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
 			Value arg = strategy.evaluate(node.getArg(), bindings);
 			Value parg = strategy.evaluate(node.getPatternArg(), bindings);
 			Value farg = null;
@@ -97,20 +96,14 @@ public class RegexValueEvaluationStepSupplier {
 			int f = extractRegexFlags(farg);
 			Pattern pattern = Pattern.compile(ptn, f);
 
-			return new QueryValueEvaluationStep() {
-
-				@Override
-				public Value evaluate(BindingSet bindings)
-						throws ValueExprEvaluationException, QueryEvaluationException {
-					Value arg = argStep.evaluate(bindings);
-					if (QueryEvaluationUtility.isStringLiteral(arg)) {
-						String text = ((Literal) arg).getLabel();
-						boolean result = pattern.matcher(text).find();
-						BooleanLiteral valueOf = BooleanLiteral.valueOf(result);
-						return valueOf;
-					}
-					throw new ValueExprEvaluationException();
+			return bindings -> {
+				Value arg = argStep.evaluate(bindings);
+				if (QueryEvaluationUtility.isStringLiteral(arg)) {
+					String text = ((Literal) arg).getLabel();
+					boolean result = pattern.matcher(text).find();
+					return BooleanLiteral.valueOf(result);
 				}
+				throw new ValueExprEvaluationException();
 			};
 		}
 		throw new ValueExprEvaluationException();

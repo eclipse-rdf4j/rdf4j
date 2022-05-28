@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
@@ -39,6 +40,10 @@ import org.eclipse.rdf4j.sail.SailException;
  * @author James Leigh
  */
 class SailDatasetImpl implements SailDataset {
+
+	private static final EmptyIteration<Triple, SailException> TRIPLE_EMPTY_ITERATION = new EmptyIteration<>();
+	private static final EmptyIteration<Namespace, SailException> NAMESPACES_EMPTY_ITERATION = new EmptyIteration<>();
+	private static final EmptyIteration<Statement, SailException> STATEMENT_EMPTY_ITERATION = new EmptyIteration<>();
 
 	/**
 	 * {@link SailDataset} of the backing {@link SailSource}.
@@ -91,7 +96,7 @@ class SailDatasetImpl implements SailDataset {
 	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
 		final CloseableIteration<? extends Namespace, SailException> namespaces;
 		if (changes.isNamespaceCleared()) {
-			namespaces = new EmptyIteration<>();
+			namespaces = NAMESPACES_EMPTY_ITERATION;
 		} else {
 			namespaces = derivedFrom.getNamespaces();
 		}
@@ -259,10 +264,10 @@ class SailDatasetImpl implements SailDataset {
 		CloseableIteration<? extends Statement, SailException> iter;
 		if (changes.isStatementCleared()
 				|| contexts == null && deprecatedContexts != null && deprecatedContexts.contains(null)
-				|| contexts.length > 0 && deprecatedContexts != null
+				|| contexts != null && contexts.length > 0 && deprecatedContexts != null
 						&& deprecatedContexts.containsAll(Arrays.asList(contexts))) {
 			iter = null;
-		} else if (contexts.length > 0 && deprecatedContexts != null) {
+		} else if (contexts != null && contexts.length > 0 && deprecatedContexts != null) {
 			List<Resource> remaining = new ArrayList<>(Arrays.asList(contexts));
 			remaining.removeAll(deprecatedContexts);
 			iter = derivedFrom.getStatements(subj, pred, obj, remaining.toArray(new Resource[0]));
@@ -286,7 +291,7 @@ class SailDatasetImpl implements SailDataset {
 		} else if (iter != null) {
 			return iter;
 		} else {
-			return new EmptyIteration<>();
+			return STATEMENT_EMPTY_ITERATION;
 		}
 	}
 
@@ -309,20 +314,21 @@ class SailDatasetImpl implements SailDataset {
 
 		if (changes.hasApproved()) {
 			if (iter != null) {
+				CloseableIteratorIteration<? extends Triple, SailException> tripleExceptionCloseableIteratorIteration = new CloseableIteratorIteration<>(
+						changes.getApprovedTriples(subj, pred, obj).iterator());
+
 				// merge newly approved triples in the changeset with data from the backing source
-				return new DistinctIteration<>(new UnionIteration<>(iter,
-						new CloseableIteratorIteration<>(changes.getApprovedTriples(subj, pred, obj).iterator())));
+				return new DistinctIteration<>(
+						DualUnionIteration.getWildcardInstance(iter, tripleExceptionCloseableIteratorIteration));
 			}
 
 			// nothing relevant in the backing source, just return all matching approved triples from the changeset
-			Iterator<Triple> i = changes.getApprovedTriples(subj, pred, obj).iterator();
-			return new CloseableIteratorIteration<>(i);
-		}
-
-		if (iter != null) {
+			return new CloseableIteratorIteration<>(changes.getApprovedTriples(subj, pred, obj).iterator());
+		} else if (iter != null) {
 			return iter;
+		} else {
+			return TRIPLE_EMPTY_ITERATION;
 		}
-		return new EmptyIteration<>();
 	}
 
 	private CloseableIteration<? extends Statement, SailException> difference(

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -54,12 +55,19 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
-		CloseableIteration<? extends Namespace, SailException>[] result;
-		result = new CloseableIteration[datasets.length];
-		for (int i = 0; i < datasets.length; i++) {
-			result[i] = datasets[i].getNamespaces();
+
+		if (datasets.length == 1) {
+			return datasets[0].getNamespaces();
+		} else if (datasets.length == 2) {
+			return union(datasets[0].getNamespaces(), datasets[1].getNamespaces());
+		} else {
+			CloseableIteration<? extends Namespace, SailException>[] result = new CloseableIteration[datasets.length];
+			for (int i = 0; i < datasets.length; i++) {
+				result[i] = datasets[i].getNamespaces();
+			}
+			return union(result);
 		}
-		return union(result);
+
 	}
 
 	@Override
@@ -75,39 +83,65 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
-		CloseableIteration<? extends Resource, SailException>[] result;
-		result = new CloseableIteration[datasets.length];
-		for (int i = 0; i < datasets.length; i++) {
-			result[i] = datasets[i].getContextIDs();
+
+		if (datasets.length == 1) {
+			return datasets[0].getContextIDs();
+		} else if (datasets.length == 2) {
+			return union(datasets[0].getContextIDs(), datasets[1].getContextIDs());
+		} else {
+			CloseableIteration<? extends Resource, SailException>[] result = new CloseableIteration[datasets.length];
+			for (int i = 0; i < datasets.length; i++) {
+				result[i] = datasets[i].getContextIDs();
+			}
+			return union(result);
 		}
-		return union(result);
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
-		CloseableIteration<? extends Statement, SailException>[] result;
-		result = new CloseableIteration[datasets.length];
-		for (int i = 0; i < datasets.length; i++) {
-			result[i] = datasets[i].getStatements(subj, pred, obj, contexts);
+		if (datasets.length == 1) {
+			return datasets[0].getStatements(subj, pred, obj, contexts);
+		} else if (datasets.length == 2) {
+			return union(datasets[0].getStatements(subj, pred, obj, contexts),
+					datasets[1].getStatements(subj, pred, obj, contexts));
+		} else {
+			CloseableIteration<? extends Statement, SailException>[] result = new CloseableIteration[datasets.length];
+			for (int i = 0; i < datasets.length; i++) {
+				result[i] = datasets[i].getStatements(subj, pred, obj, contexts);
+			}
+			return union(result);
 		}
-		return union(result);
+
 	}
 
 	@Override
 	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
-		CloseableIteration<? extends Triple, SailException>[] result;
-		result = new CloseableIteration[datasets.length];
-		for (int i = 0; i < datasets.length; i++) {
-			result[i] = datasets[i].getTriples(subj, pred, obj);
+
+		if (datasets.length == 1) {
+			return datasets[0].getTriples(subj, pred, obj);
+		} else if (datasets.length == 2) {
+			return union(datasets[0].getTriples(subj, pred, obj), datasets[1].getTriples(subj, pred, obj));
+		} else {
+			CloseableIteration<? extends Triple, SailException>[] result = new CloseableIteration[datasets.length];
+			for (int i = 0; i < datasets.length; i++) {
+				result[i] = datasets[i].getTriples(subj, pred, obj);
+			}
+			return union(result);
 		}
-		return union(result);
+
 	}
 
 	private <T> CloseableIteration<? extends T, SailException> union(
 			CloseableIteration<? extends T, SailException>[] items) {
 		return new UnionIteration<>(items);
+	}
+
+	private <T> CloseableIteration<? extends T, SailException> union(
+			CloseableIteration<? extends T, SailException> iteration1,
+			CloseableIteration<? extends T, SailException> iteration2) {
+		return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
 	}
 
 }

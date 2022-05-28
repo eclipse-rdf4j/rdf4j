@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.memory.model;
 import java.lang.ref.SoftReference;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * A MemoryStore-specific implementation of URI that stores separated namespace and local name information to enable
@@ -108,23 +109,37 @@ public class MemIRI extends MemResource implements IRI {
 	}
 
 	@Override
-	public boolean equals(Object other) {
-		if (this == other) {
+	public boolean equals(Object o) {
+		if (this == o) {
 			return true;
 		}
 
-		if (other instanceof MemIRI) {
-			MemIRI o = (MemIRI) other;
-			if (o.creator == creator) {
+		if (o == null) {
+			return false;
+		}
+
+		if (o.getClass() == MemIRI.class) {
+			MemIRI oMemIRI = (MemIRI) o;
+			if (oMemIRI.creator == creator) {
 				// two different MemIRI from the same MemoryStore can not be equal.
 				return false;
 			}
-			return namespace.equals(o.getNamespace()) && localName.equals(o.getLocalName());
-		} else if (other instanceof IRI) {
-			String otherStr = ((IRI) other).stringValue();
+			return namespace.length() == oMemIRI.namespace.length() &&
+					localName.length() == oMemIRI.localName.length() &&
+					namespace.equals(oMemIRI.namespace) &&
+					localName.equals(oMemIRI.localName);
 
-			return namespace.length() + localName.length() == otherStr.length() && otherStr.endsWith(localName)
-					&& otherStr.startsWith(namespace);
+		}
+
+		if (o instanceof Value) {
+			Value oValue = (Value) o;
+			if (oValue.isIRI()) {
+				String oStr = oValue.stringValue();
+
+				return namespace.length() + localName.length() == oStr.length() &&
+						oStr.endsWith(localName) &&
+						oStr.startsWith(namespace);
+			}
 		}
 
 		return false;
