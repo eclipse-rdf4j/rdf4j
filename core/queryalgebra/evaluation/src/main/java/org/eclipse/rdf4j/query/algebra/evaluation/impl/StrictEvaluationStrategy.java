@@ -2190,4 +2190,9 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			};
 		}
 	}
+
+	@Override
+	public boolean isTrackResultSize() {
+		return trackResultSize;
+	}
 }

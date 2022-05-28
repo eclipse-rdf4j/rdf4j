@@ -42,6 +42,11 @@ public class StatementSource extends AbstractQueryModelNode {
 	}
 
 	@Override
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+		// no-op
+	}
+
+	@Override
 	public String getSignature() {
 		StringBuilder sb = new StringBuilder(64);
 

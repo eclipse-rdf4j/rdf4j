@@ -97,8 +97,6 @@ public class If extends AbstractQueryModelNode implements ValueExpr {
 			setResult((ValueExpr) replacement);
 		} else if (alternative == current) {
 			setAlternative((ValueExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

@@ -40,7 +40,6 @@ public class Add extends AbstractQueryModelNode implements UpdateExpr {
 		if (destinationGraph != null) {
 			destinationGraph.visit(visitor);
 		}
-		super.visitChildren(visitor);
 	}
 
 	@Override
@@ -49,8 +48,6 @@ public class Add extends AbstractQueryModelNode implements UpdateExpr {
 			setSourceGraph((ValueConstant) replacement);
 		} else if (destinationGraph == current) {
 			setDestinationGraph((ValueConstant) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

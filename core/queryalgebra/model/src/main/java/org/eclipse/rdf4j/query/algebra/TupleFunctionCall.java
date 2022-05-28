@@ -115,17 +115,13 @@ public class TupleFunctionCall extends QueryModelNodeBase implements TupleExpr {
 			var.visit(visitor);
 		}
 
-		super.visitChildren(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-		if (replaceNodeInList(args, current, replacement)) {
-			return;
-		} else if (replaceNodeInList(resultVars, current, replacement)) {
-			return;
-		} else {
-			super.replaceChildNode(current, replacement);
+		boolean match = replaceNodeInList(args, current, replacement);
+		if (!match) {
+			replaceNodeInList(resultVars, current, replacement);
 		}
 	}
 

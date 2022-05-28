@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  *
  * @author Jerven Bolleman
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class ProjectionRemovalOptimizer implements QueryOptimizer {
 
 	@Override

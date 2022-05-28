@@ -13,6 +13,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 
@@ -28,6 +29,9 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	ArrayDeque<GenericPlanNode> planNodes = new ArrayDeque<>();
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
+		if (topTupleExpr instanceof QueryRoot) {
+			topTupleExpr = ((QueryRoot) topTupleExpr).getArg();
+		}
 		this.topTupleExpr = topTupleExpr;
 	}
 

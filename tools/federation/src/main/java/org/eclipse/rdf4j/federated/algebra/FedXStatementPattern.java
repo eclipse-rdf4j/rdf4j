@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.federated.algebra;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -45,8 +46,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 	protected long upperLimit = -1; // if set to a positive number, this upper limit is applied to any subquery
 
 	public FedXStatementPattern(StatementPattern node, QueryInfo queryInfo) {
-		super(node.getSubjectVar(), node.getPredicateVar(), node.getObjectVar(), node.getContextVar());
-		setScope(node.getScope());
+		super(node.getScope(), node.getSubjectVar(), node.getPredicateVar(), node.getObjectVar(), node.getContextVar());
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
 		initFreeVars();
@@ -212,7 +212,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 	private List<StatementSource> sort(List<StatementSource> stmtSources) {
 		List<StatementSource> res = new ArrayList<>(stmtSources);
-		Collections.sort(res, (StatementSource o1, StatementSource o2) -> o1.id.compareTo(o2.id));
+		res.sort(Comparator.comparing((StatementSource o) -> o.id));
 		return res;
 	}
 
@@ -235,6 +235,11 @@ public abstract class FedXStatementPattern extends StatementPattern
 		@Override
 		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 			visitor.meetOther(this);
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			// no-op
 		}
 	}
 }
