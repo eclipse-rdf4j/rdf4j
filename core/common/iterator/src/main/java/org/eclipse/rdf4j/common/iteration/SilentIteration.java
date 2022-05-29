@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Jeen Broekstra
  */
-@Deprecated(since = "4.1.0", forRemoval = true)
+@Deprecated(since = "4.1.0")
 public class SilentIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 
 	private static final Logger logger = LoggerFactory.getLogger(SilentIteration.class);
