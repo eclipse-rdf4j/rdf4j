@@ -35,15 +35,12 @@ public class Create extends AbstractQueryModelNode implements UpdateExpr {
 		if (graph != null) {
 			graph.visit(visitor);
 		}
-		super.visitChildren(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (graph == current) {
 			setGraph((ValueConstant) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

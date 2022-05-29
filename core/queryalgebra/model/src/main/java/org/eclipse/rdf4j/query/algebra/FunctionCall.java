@@ -99,16 +99,11 @@ public class FunctionCall extends AbstractQueryModelNode implements ValueExpr {
 		for (ValueExpr arg : args) {
 			arg.visit(visitor);
 		}
-
-		super.visitChildren(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-		if (replaceNodeInList(args, current, replacement)) {
-			return;
-		}
-		super.replaceChildNode(current, replacement);
+		replaceNodeInList(args, current, replacement);
 	}
 
 	@Override

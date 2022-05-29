@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -29,7 +28,7 @@ public class Group extends UnaryTupleOperator {
 	 * Variables *
 	 *-----------*/
 
-	private Set<String> groupBindings = new LinkedHashSet<>();
+	private Set<String> groupBindings = Set.of();
 
 	private List<GroupElem> groupElements = new ArrayList<>();
 
@@ -59,20 +58,36 @@ public class Group extends UnaryTupleOperator {
 	 *---------*/
 
 	public Set<String> getGroupBindingNames() {
-		return Collections.unmodifiableSet(groupBindings);
+		return groupBindings;
 	}
 
 	public void addGroupBindingName(String bindingName) {
+		if (groupBindings.isEmpty()) {
+			groupBindings = Set.of(bindingName);
+			return;
+		} else if (groupBindings.size() == 1) {
+			groupBindings = new HashSet<>(groupBindings);
+		}
 		groupBindings.add(bindingName);
 	}
 
+	public void setGroupBindingNames(List<String> bindingNames) {
+		if (bindingNames.isEmpty()) {
+			groupBindings = Set.of();
+		} else if (bindingNames.size() == 1) {
+			groupBindings = Set.of(bindingNames.get(0));
+		} else {
+			groupBindings = new LinkedHashSet<>(bindingNames);
+		}
+	}
+
 	public void setGroupBindingNames(Iterable<String> bindingNames) {
-		groupBindings.clear();
+		groupBindings = new LinkedHashSet<>();
 		Iterators.addAll(bindingNames.iterator(), groupBindings);
 	}
 
 	public List<GroupElem> getGroupElements() {
-		return Collections.unmodifiableList(groupElements);
+		return groupElements;
 	}
 
 	public void addGroupElement(GroupElem groupElem) {
@@ -96,21 +111,15 @@ public class Group extends UnaryTupleOperator {
 
 	@Override
 	public Set<String> getBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<>();
-
-		bindingNames.addAll(getGroupBindingNames());
+		Set<String> bindingNames = new LinkedHashSet<>(getGroupBindingNames());
 		bindingNames.addAll(getAggregateBindingNames());
-
 		return bindingNames;
 	}
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new LinkedHashSet<>();
-
-		bindingNames.addAll(getGroupBindingNames());
+		Set<String> bindingNames = new LinkedHashSet<>(getGroupBindingNames());
 		bindingNames.retainAll(getArg().getAssuredBindingNames());
-
 		return bindingNames;
 	}
 

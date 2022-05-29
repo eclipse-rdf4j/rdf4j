@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Jeen Broekstra
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class ParentReferenceCleaner implements QueryOptimizer {
 
 	private static final Logger logger = LoggerFactory.getLogger(ParentReferenceCleaner.class);

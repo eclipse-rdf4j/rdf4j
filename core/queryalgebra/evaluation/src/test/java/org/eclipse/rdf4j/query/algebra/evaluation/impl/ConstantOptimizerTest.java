@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelVisitorBase;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -134,7 +136,7 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 
 	private TupleExpr optimize(TupleExpr expr, BindingSet bs, EvaluationStrategy strategy) {
 		QueryRoot optRoot = new QueryRoot(expr);
-		new BindingAssigner().optimize(optRoot, null, bs);
+		new BindingAssignerOptimizer().optimize(optRoot, null, bs);
 		new ConstantOptimizer(strategy).optimize(optRoot, null, bs);
 		return optRoot;
 	}

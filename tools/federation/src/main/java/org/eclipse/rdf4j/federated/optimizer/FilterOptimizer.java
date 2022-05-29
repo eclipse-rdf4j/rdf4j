@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,9 +46,13 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  *
  */
-public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
+public class FilterOptimizer extends AbstractSimpleQueryModelVisitor<OptimizationException> implements FedXOptimizer {
 
 	private static final Logger log = LoggerFactory.getLogger(FilterOptimizer.class);
+
+	public FilterOptimizer() {
+		super(true);
+	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr) {
@@ -177,9 +181,13 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 		return true;
 	}
 
-	protected static class VarFinder extends AbstractQueryModelVisitor<OptimizationException> {
+	protected static class VarFinder extends AbstractSimpleQueryModelVisitor<OptimizationException> {
 
 		protected HashSet<String> vars;
+
+		protected VarFinder() {
+			super(true);
+		}
 
 		public HashSet<String> findVars(ValueExpr expr) {
 			vars = new HashSet<>();
@@ -196,11 +204,15 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 		}
 	}
 
-	protected static class FilterBindingFinder extends AbstractQueryModelVisitor<OptimizationException> {
+	protected static class FilterBindingFinder extends AbstractSimpleQueryModelVisitor<OptimizationException> {
 
 		protected Set<String> vars;
 
 		protected boolean isFilterOnAssignedBinding;
+
+		protected FilterBindingFinder() {
+			super(true);
+		}
 
 		public boolean isFilterOnAssignedBinding(TupleExpr expr, Set<String> filterArgs) {
 			this.vars = filterArgs;
@@ -231,13 +243,17 @@ public class FilterOptimizer extends AbstractQueryModelVisitor<OptimizationExcep
 		}
 	}
 
-	protected static class FilterExprInsertVisitor extends AbstractQueryModelVisitor<OptimizationException> {
+	protected static class FilterExprInsertVisitor extends AbstractSimpleQueryModelVisitor<OptimizationException> {
 
 		protected FilterExpr filterExpr = null; // the current filter Expr
 		protected int added = 0;
 		// determines whether the filter is static i.e. should not be pushed down as it would change
 		// the query semantically
 		protected boolean isStatic = false;
+
+		protected FilterExprInsertVisitor() {
+			super(true);
+		}
 
 		public void initialize(FilterExpr filterExpr) {
 			this.added = 0;

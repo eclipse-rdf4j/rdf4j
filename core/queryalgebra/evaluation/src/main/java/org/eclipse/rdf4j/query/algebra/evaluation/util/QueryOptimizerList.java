@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
  *
  * @author Arjohn Kampman
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class QueryOptimizerList implements QueryOptimizer {
 
 	protected List<QueryOptimizer> optimizers;

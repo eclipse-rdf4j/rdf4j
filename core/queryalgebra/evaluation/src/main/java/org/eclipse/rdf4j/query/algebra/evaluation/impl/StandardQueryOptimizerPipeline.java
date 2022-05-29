@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
  *
  * @see EvaluationStrategyFactory#setOptimizerPipeline(QueryOptimizerPipeline)
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	private final EvaluationStatistics evaluationStatistics;

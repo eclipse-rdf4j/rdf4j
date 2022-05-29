@@ -70,6 +70,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
  * @author Arjohn Kampman
  * @author Jerven Bolleman
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class FilterOptimizer implements QueryOptimizer {
 
 	@Override

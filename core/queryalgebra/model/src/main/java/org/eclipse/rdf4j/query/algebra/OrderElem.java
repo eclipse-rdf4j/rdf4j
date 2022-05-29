@@ -77,8 +77,6 @@ public class OrderElem extends AbstractQueryModelNode {
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (expr == current) {
 			setExpr((ValueExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

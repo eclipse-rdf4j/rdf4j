@@ -9,9 +9,12 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 /**
  */
@@ -21,7 +24,8 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 	 * Variables *
 	 *-----------*/
 
-	private List<ProjectionElem> elements = new ArrayList<>();
+	private ProjectionElem[] elements = {};
+	private List<ProjectionElem> elementsList = Collections.emptyList();
 
 	/*--------------*
 	 * Constructors *
@@ -43,35 +47,52 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 	 *---------*/
 
 	public List<ProjectionElem> getElements() {
-		return elements;
+		return elementsList;
 	}
 
 	public void setElements(List<ProjectionElem> elements) {
-		this.elements = elements;
+		this.elementsList = Collections.unmodifiableList(elements);
+		this.elements = this.elementsList.toArray(new ProjectionElem[0]);
+
 	}
 
 	public void addElements(ProjectionElem... elements) {
-		for (ProjectionElem pe : elements) {
-			addElement(pe);
-		}
+		addElements(List.of(elements));
 	}
 
 	public void addElements(Iterable<ProjectionElem> elements) {
-		for (ProjectionElem pe : elements) {
-			addElement(pe);
+		addElements(StreamSupport.stream(elements.spliterator(), false)
+				.collect(Collectors.toList()));
+	}
+
+	public void addElements(List<ProjectionElem> elements) {
+		if (elementsList.isEmpty()) {
+			setElements(elements);
+		} else {
+			ArrayList<ProjectionElem> currentElementsList = new ArrayList<>(elementsList);
+			for (ProjectionElem projectionElem : elements) {
+				projectionElem.setParentNode(this);
+			}
+			currentElementsList.addAll(elements);
+			setElements(currentElementsList);
 		}
+
 	}
 
 	public void addElement(ProjectionElem pe) {
 		assert pe != null : "pe must not be null";
-		elements.add(pe);
+
+		ArrayList<ProjectionElem> currentElementsList = new ArrayList<>(elementsList);
+		currentElementsList.add(pe);
+		setElements(currentElementsList);
+
 		pe.setParentNode(this);
 	}
 
 	public Set<String> getTargetNames() {
-		Set<String> targetNames = new LinkedHashSet<>(elements.size());
+		Set<String> targetNames = new LinkedHashSet<>(elementsList.size());
 
-		for (ProjectionElem pe : elements) {
+		for (ProjectionElem pe : elementsList) {
 			targetNames.add(pe.getTargetName());
 		}
 
@@ -79,9 +100,9 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 	}
 
 	public Set<String> getTargetNamesFor(Collection<String> sourceNames) {
-		Set<String> targetNames = new LinkedHashSet<>(elements.size());
+		Set<String> targetNames = new LinkedHashSet<>(elementsList.size());
 
-		for (ProjectionElem pe : elements) {
+		for (ProjectionElem pe : elementsList) {
 			if (sourceNames.contains(pe.getSourceName())) {
 				targetNames.add(pe.getTargetName());
 			}
@@ -97,44 +118,47 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
-		for (ProjectionElem pe : elements) {
-			pe.visit(visitor);
+		for (int i = 0; i < elements.length; i++) {
+			elements[i].visit(visitor);
 		}
-
-		super.visitChildren(visitor);
 	}
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-		if (replaceNodeInList(elements, current, replacement)) {
-			return;
+		ArrayList<ProjectionElem> currentElementsList = new ArrayList<>(elementsList);
+		if (replaceNodeInList(currentElementsList, current, replacement)) {
+			setElements(currentElementsList);
 		}
-		super.replaceChildNode(current, replacement);
 	}
 
 	@Override
 	public boolean equals(Object other) {
 		if (other instanceof ProjectionElemList) {
 			ProjectionElemList o = (ProjectionElemList) other;
-			return elements.equals(o.getElements());
+			return elementsList.equals(o.getElements());
 		}
 		return false;
 	}
 
 	@Override
 	public int hashCode() {
-		return elements.hashCode();
+		return elementsList.hashCode();
 	}
 
 	@Override
 	public ProjectionElemList clone() {
 		ProjectionElemList clone = (ProjectionElemList) super.clone();
 
-		clone.elements = new ArrayList<>(getElements().size());
-		for (ProjectionElem pe : getElements()) {
-			clone.addElement(pe.clone());
+		clone.elements = new ProjectionElem[elements.length];
+
+		for (int i = 0; i < elements.length; i++) {
+			clone.elements[i] = elements[i].clone();
+			clone.elements[i].setParentNode(clone);
 		}
+
+		clone.elementsList = List.of(clone.elements);
 
 		return clone;
 	}
+
 }
