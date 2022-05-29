@@ -8,9 +8,7 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
-import java.util.NoSuchElementException;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 /**
  * An {@link Iteration} that can be closed to free resources that it is holding. CloseableIterations automatically free
@@ -28,10 +26,14 @@ import java.util.stream.StreamSupport;
  * }
  * </pre>
  *
- * @implNote In the future this interface will stop extending {@link Iteration} and instead declare the same interface
- *           methods directly. The interface will also stop requiring implementations to automatically close when
- *           exhausted, instead making this an optional feature and requiring the user to always call close.
+ * @deprecated In the future this interface will stop extending {@link Iteration} and instead declare the same interface
+ *             methods directly. The interface will also stop requiring implementations to automatically close when
+ *             exhausted, instead making this an optional feature and requiring the user to always call close. This
+ *             interface may also be removed.
+ *
+ *
  */
+@Deprecated(since = "4.1.0")
 public interface CloseableIteration<E, X extends Exception> extends Iteration<E, X>, AutoCloseable {
 
 	/**
@@ -40,17 +42,7 @@ public interface CloseableIteration<E, X extends Exception> extends Iteration<E,
 	 * @return stream
 	 */
 	default Stream<E> stream() {
-		return StreamSupport
-				.stream(new CloseableIterationSpliterator<>(this), false)
-				.onClose(() -> {
-					try {
-						close();
-					} catch (RuntimeException e) {
-						throw e;
-					} catch (Exception e) {
-						throw new RuntimeException(e);
-					}
-				});
+		return Iterations.stream(this);
 	}
 
 	/**

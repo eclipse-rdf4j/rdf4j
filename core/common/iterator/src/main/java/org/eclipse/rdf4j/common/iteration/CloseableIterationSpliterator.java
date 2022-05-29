@@ -16,7 +16,7 @@ import java.util.function.Consumer;
 /**
  * A {@link Spliterator} implementation that wraps a {@link CloseableIteration}.
  */
-public class CloseableIterationSpliterator<T, E extends Exception> extends Spliterators.AbstractSpliterator<T> {
+class CloseableIterationSpliterator<T, E extends Exception> extends Spliterators.AbstractSpliterator<T> {
 
 	private final CloseableIteration<T, E> iteration;
 
