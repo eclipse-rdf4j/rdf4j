@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.repository.Repository;
@@ -62,14 +63,16 @@ import org.junit.runners.Suite.SuiteClasses;
  * </pre>
  * 
  * @author Jeen Broekstra
- * @implNote currently implemented as an abstract JUnit-4 suite - mostly because test suite support in JUnit 5 still
- *           appears to be broken.
+ * @implNote currently implemented as an abstract JUnit-4 suite. This suite is marked Experimental as we may want to
+ *           make further improvements to its setup (including migrating to JUnit 5 when its suite support matures) in
+ *           future minor releases.
  */
 @RunWith(Suite.class)
 @SuiteClasses({ AggregateTest.class, ArbitraryLengthPathTest.class, BasicTest.class, BindTest.class,
 		BuiltinFunctionTest.class, ConstructTest.class, DefaultGraphTest.class, DescribeTest.class, GroupByTest.class,
 		InTest.class, OptionalTest.class, PropertyPathTest.class, SubselectTest.class, UnionTest.class,
 		ValuesTest.class })
+@Experimental
 public abstract class RepositorySPARQLComplianceTestSuite {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
