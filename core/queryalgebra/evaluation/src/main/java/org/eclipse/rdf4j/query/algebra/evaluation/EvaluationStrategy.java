@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
 
@@ -169,11 +171,13 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		// Do nothing;
 	}
 
+	@Deprecated(forRemoval = true)
 	default <T> Set<T> makeSet() {
-		return getCollectionFactory().createSet();
+		return new HashSet<>();
 	}
 
+	@Deprecated(forRemoval = true)
 	default <T> Queue<T> makeQueue() {
-		return getCollectionFactory().createQueue();
+		return new ArrayDeque<T>();
 	}
 }

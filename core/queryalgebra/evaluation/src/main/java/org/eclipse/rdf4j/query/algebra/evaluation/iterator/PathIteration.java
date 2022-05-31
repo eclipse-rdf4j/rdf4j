@@ -10,6 +10,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.Queue;
 import java.util.Set;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.api.ValuePair;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -62,6 +64,8 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private ValuePair currentVp;
 
+	private final CollectionFactory collectionFactory;
+
 	private static final String JOINVAR_PREFIX = "intermediate_join_";
 
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
@@ -80,11 +84,11 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
+		this.collectionFactory = strategy.getCollectionFactory();
 
-		this.reportedValues = strategy.makeSet();
-		this.unreportedValues = strategy.makeSet();
-		this.valueQueue = strategy.makeQueue();
-
+		this.reportedValues = this.collectionFactory.createValuePairSet();
+		this.unreportedValues = this.collectionFactory.createValuePairSet();
+		this.valueQueue = this.collectionFactory.createValuePairQueue();
 		createIteration();
 	}
 
@@ -134,7 +138,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 				if (!isCyclicPath(v1, v2)) {
 
-					ValuePair vp = new ValuePair(v1, v2);
+					ValuePair vp = collectionFactory.createValuePair(v1, v2);
 					if (reportedValues.contains(vp)) {
 						// new arbitrary-length path semantics: filter out
 						// duplicates
@@ -203,7 +207,11 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			super.handleClose();
+			try {
+				collectionFactory.close();
+			} finally {
+				super.handleClose();
+			}
 		} finally {
 			Iterations.closeCloseable(currentIter);
 		}
@@ -245,7 +253,7 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			return false;
 		}
 
-		return reportedValues.contains(new ValuePair(v1, v2));
+		return reportedValues.contains(collectionFactory.createValuePair(v1, v2));
 
 	}
 
@@ -325,70 +333,6 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			return false;
 		} else {
 			return bindings.hasBinding(var.getName()) && bindings.getValue(var.getName()) == null;
-		}
-	}
-
-	protected static class ValuePair {
-
-		private final Value startValue;
-
-		private final Value endValue;
-
-		public ValuePair(Value startValue, Value endValue) {
-			this.startValue = startValue;
-			this.endValue = endValue;
-		}
-
-		/**
-		 * @return Returns the startValue.
-		 */
-		public Value getStartValue() {
-			return startValue;
-		}
-
-		/**
-		 * @return Returns the endValue.
-		 */
-		public Value getEndValue() {
-			return endValue;
-		}
-
-		@Override
-		public int hashCode() {
-			final int prime = 31;
-			int result = 1;
-			result = prime * result + ((endValue == null) ? 0 : endValue.hashCode());
-			result = prime * result + ((startValue == null) ? 0 : startValue.hashCode());
-			return result;
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if (this == obj) {
-				return true;
-			}
-			if (obj == null) {
-				return false;
-			}
-			if (!(obj instanceof ValuePair)) {
-				return false;
-			}
-			ValuePair other = (ValuePair) obj;
-			if (endValue == null) {
-				if (other.endValue != null) {
-					return false;
-				}
-			} else if (!endValue.equals(other.endValue)) {
-				return false;
-			}
-			if (startValue == null) {
-				if (other.startValue != null) {
-					return false;
-				}
-			} else if (!startValue.equals(other.startValue)) {
-				return false;
-			}
-			return true;
 		}
 	}
 

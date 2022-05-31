@@ -20,6 +20,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.api.ValuePair;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -28,21 +29,6 @@ import org.eclipse.rdf4j.query.BindingSet;
  * A DefaultColelctionFactory that provides lists/sets/maps using standard common java in memory types
  */
 public class DefaultCollectionFactory implements CollectionFactory {
-
-	@Override
-	public <T> List<T> createList() {
-		return new ArrayList<T>();
-	}
-
-	@Override
-	public List<Value> createValueList() {
-		return new ArrayList<>();
-	}
-
-	@Override
-	public <T> Set<T> createSet() {
-		return new HashSet<T>();
-	}
 
 	@Override
 	public Set<Value> createValueSet() {
@@ -55,23 +41,8 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public <K, V> Map<K, V> createMap() {
-		return new HashMap<K, V>();
-	}
-
-	@Override
 	public <V> Map<Value, V> createValueKeyedMap() {
 		return new HashMap<Value, V>();
-	}
-
-	@Override
-	public <T> Queue<T> createQueue() {
-		return new ArrayDeque<T>();
-	}
-
-	@Override
-	public Queue<Value> createValueQueue() {
-		return new ArrayDeque<Value>();
 	}
 
 	@Override
@@ -101,11 +72,26 @@ public class DefaultCollectionFactory implements CollectionFactory {
 			for (Function<BindingSet, Value> getValue : getValues) {
 				Value value = getValue.apply(bs);
 				if (value != null) {
-					nextHash ^= value.hashCode();
+					nextHash = 31 * nextHash + value.hashCode();
 				}
 			}
 			return nextHash;
 		};
 		return hashFunction;
+	}
+
+	@Override
+	public ValuePair createValuePair(Value start, Value end) {
+		return new DefaultValuePair(start, end);
+	}
+
+	@Override
+	public Set<ValuePair> createValuePairSet() {
+		return new HashSet<ValuePair>();
+	}
+
+	@Override
+	public Queue<ValuePair> createValuePairQueue() {
+		return new ArrayDeque<ValuePair>();
 	}
 }

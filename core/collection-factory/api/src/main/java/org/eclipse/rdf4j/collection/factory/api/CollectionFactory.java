@@ -7,10 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.collection.factory.api;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -29,27 +25,12 @@ import org.eclipse.rdf4j.query.BindingSet;
  * Factories like this should not be cached but created a new everytime as the closing is important if they are disk
  * based.
  */
+@InternalUseOnly
+@Experimental
 public interface CollectionFactory extends AutoCloseable {
 
 	@Override
 	void close() throws RDF4JException;
-
-	/**
-	 * @param <T> of the list
-	 * @return a list that may be optimised and/or disk based
-	 */
-	public <T> List<T> createList();
-
-	/**
-	 * @return a list that may be optimised and/or disk based for Values only
-	 */
-	public List<Value> createValueList();
-
-	/**
-	 * @param <T> of the set
-	 * @return a set that may be optimised and/or disk based
-	 */
-	public <T> Set<T> createSet();
 
 	/**
 	 * @return a set that may be optimised and/or disk based
@@ -62,28 +43,10 @@ public interface CollectionFactory extends AutoCloseable {
 	public Set<Value> createValueSet();
 
 	/**
-	 * @param <K> key type
-	 * @param <V> value type
-	 * @return a map
-	 */
-	public <K, V> Map<K, V> createMap();
-
-	/**
 	 * @param <V> value type
 	 * @return a map
 	 */
 	public <V> Map<Value, V> createValueKeyedMap();
-
-	/**
-	 * @param <T> of the contents of the queue
-	 * @return a new queue
-	 */
-	public <T> Queue<T> createQueue();
-
-	/**
-	 * @return a new queue
-	 */
-	public Queue<Value> createValueQueue();
 
 	@InternalUseOnly
 	public <E> Map<BindingSetKey, E> createGroupByMap();
@@ -93,25 +56,13 @@ public interface CollectionFactory extends AutoCloseable {
 
 	@InternalUseOnly
 	@Experimental
-	private byte[] valueIntoByteArray(Value value) {
-		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
-			oos.writeObject(value);
-		} catch (IOException e) {
-			throw new IllegalStateException(e);
-		}
-		return baos.toByteArray();
-	}
+	public ValuePair createValuePair(Value start, Value end);
 
 	@InternalUseOnly
 	@Experimental
-	private void valueIntoObjectOutputStream(Value value, ObjectOutputStream oos) throws IOException {
-		oos.writeObject(value);
-	}
+	public Set<ValuePair> createValuePairSet();
 
 	@InternalUseOnly
 	@Experimental
-	private Value valueFromObjectInputStream(ObjectInputStream ois) throws ClassNotFoundException, IOException {
-		return (Value) ois.readObject();
-	}
+	public Queue<ValuePair> createValuePairQueue();
 }

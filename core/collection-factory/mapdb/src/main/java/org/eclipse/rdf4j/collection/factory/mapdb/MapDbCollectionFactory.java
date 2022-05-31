@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.collection.factory.mapdb;
 
 import java.io.IOError;
 import java.util.AbstractMap;
+import java.util.AbstractQueue;
 import java.util.AbstractSet;
 import java.util.Collection;
 import java.util.HashSet;
@@ -21,7 +22,9 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.api.ValuePair;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultValuePair;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -75,16 +78,6 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public <T> List<T> createList() {
-		return delegate.createList();
-	}
-
-	@Override
-	public List<Value> createValueList() {
-		return delegate.createValueList();
-	}
-
-	@Override
 	public Set<BindingSet> createSetOfBindingSets() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
@@ -93,17 +86,6 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createSetOfBindingSets();
-		}
-	}
-
-	@Override
-	public <T> Set<T> createSet() {
-		if (iterationCacheSyncThreshold > 0) {
-			init();
-			MemoryTillSizeXSet<T> set = new MemoryTillSizeXSet<T>(colectionId++, delegate.createSet());
-			return new CommitingSet<T>(set, iterationCacheSyncThreshold, db);
-		} else {
-			return delegate.createSet();
 		}
 	}
 
@@ -119,17 +101,6 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public <K, V> Map<K, V> createMap() {
-		if (iterationCacheSyncThreshold > 0) {
-			init();
-			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
-					iterationCacheSyncThreshold, db);
-		} else {
-			return delegate.createMap();
-		}
-	}
-
-	@Override
 	public <V> Map<Value, V> createValueKeyedMap() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
@@ -141,18 +112,8 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public <T> Queue<T> createQueue() {
-		return delegate.createQueue();
-	}
-
-	@Override
-	public Queue<Value> createValueQueue() {
-		return delegate.createValueQueue();
-	}
-
-	@Override
 	public void close() throws RDF4JException {
-		if (db != null) {
+		if (db != null && !db.isClosed()) {
 			db.close();
 		}
 	}
@@ -269,6 +230,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 		private Set<V> wrapped;
 		private final long setName;
 		private Serializer<V> serializer;
+		private boolean disk;
 
 		@SuppressWarnings("unchecked")
 		public MemoryTillSizeXSet(long setName, Set<V> wrapped) {
@@ -284,20 +246,22 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 		@Override
 		public boolean add(V e) {
-			if (wrapped instanceof HashSet && wrapped.size() > iterationCacheSyncThreshold) {
-				Set<V> disk = makeDiskBasedSet();
-				disk.addAll(wrapped);
-				wrapped = disk;
+			if (wrapped instanceof HashSet && wrapped.size() > iterationCacheSyncThreshold && !disk) {
+				Set<V> toReplace = makeDiskBasedSet();
+				toReplace.addAll(wrapped);
+				wrapped = toReplace;
+				disk = true;
 			}
 			return wrapped.add(e);
 		}
 
 		@Override
 		public boolean addAll(Collection<? extends V> arg0) {
-			if (wrapped instanceof HashSet && arg0.size() > iterationCacheSyncThreshold) {
-				Set<V> disk = makeDiskBasedSet();
-				disk.addAll(wrapped);
-				wrapped = disk;
+			if (wrapped instanceof HashSet && arg0.size() > iterationCacheSyncThreshold && !disk) {
+				Set<V> toReplace = makeDiskBasedSet();
+				toReplace.addAll(wrapped);
+				wrapped = toReplace;
+				disk = true;
 			}
 			return wrapped.addAll(arg0);
 		}
@@ -358,4 +322,81 @@ public class MapDbCollectionFactory implements CollectionFactory {
 
 	}
 
+	@Override
+	public ValuePair createValuePair(Value start, Value end) {
+		return new DefaultValuePair(start, end);
+	}
+
+	@Override
+	public Set<ValuePair> createValuePairSet() {
+		if (iterationCacheSyncThreshold > 0) {
+			init();
+			Set<ValuePair> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValuePairSet());
+			return new CommitingSet<ValuePair>(set, iterationCacheSyncThreshold, db);
+		} else {
+			return delegate.createValuePairSet();
+		}
+	}
+
+	@Override
+	public Queue<ValuePair> createValuePairQueue() {
+		if (iterationCacheSyncThreshold > 0) {
+			init();
+			return new MemoryTillSizeXQueue(colectionId++, delegate.createValuePairQueue());
+		} else {
+			return delegate.createValuePairQueue();
+		}
+	}
+
+	public class MemoryTillSizeXQueue extends AbstractQueue<ValuePair> {
+		private Queue<ValuePair> wrapped;
+		private final long setName;
+		private boolean disk = false;
+		private Serializer<ValuePair> serializer;
+
+		@SuppressWarnings("unchecked")
+		public MemoryTillSizeXQueue(long setName, Queue<ValuePair> wrapped) {
+			this(setName, wrapped, db.getDefaultSerializer());
+		}
+
+		public MemoryTillSizeXQueue(long setName, Queue<ValuePair> wrapped, Serializer<ValuePair> serializer) {
+			super();
+			this.setName = setName;
+			this.wrapped = wrapped;
+			this.serializer = serializer;
+		}
+
+		@Override
+		public boolean offer(ValuePair e) {
+			boolean offer = wrapped.offer(e);
+			if (offer && wrapped.size() > iterationCacheSyncThreshold && !disk) {
+				disk = true;
+				Queue<ValuePair> toReplace = db.createQueue(Long.toHexString(setName), serializer, false);
+				toReplace.addAll(wrapped);
+				wrapped = toReplace;
+			}
+			return offer;
+		}
+
+		@Override
+		public ValuePair poll() {
+			return wrapped.poll();
+		}
+
+		@Override
+		public ValuePair peek() {
+			return wrapped.peek();
+		}
+
+		@Override
+		public Iterator<ValuePair> iterator() {
+			return wrapped.iterator();
+		}
+
+		@Override
+		public int size() {
+			return wrapped.size();
+		}
+
+	}
 }

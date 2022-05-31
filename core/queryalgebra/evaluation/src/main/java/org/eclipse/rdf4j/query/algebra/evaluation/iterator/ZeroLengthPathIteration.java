@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Literal;
@@ -68,6 +69,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private final BiConsumer<Value, MutableBindingSet> setContext;
 
+	private final CollectionFactory collectionFactory;
+
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
 			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
 		this.evaluationStrategy = evaluationStrategyImpl;
@@ -93,6 +96,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 		} else {
 			setContext = null;
 		}
+		collectionFactory = evaluationStrategy.getCollectionFactory();
 
 	}
 
@@ -100,7 +104,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		if (subj == null && obj == null) {
 			if (this.reportedValues == null) {
-				reportedValues = evaluationStrategy.makeSet();
+				reportedValues = collectionFactory.createValueSet();
 			}
 			if (this.iter == null) {
 				// join with a sequence so we iterate over every entry twice
@@ -167,5 +171,14 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 		Var var = new Var(varName);
 		var.setAnonymous(true);
 		return var;
+	}
+
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		try {
+			collectionFactory.close();
+		} finally {
+			super.handleClose();
+		}
 	}
 }

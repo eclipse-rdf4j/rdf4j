@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
@@ -17,8 +18,8 @@ import java.util.function.Consumer;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
@@ -467,7 +468,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			throws QueryEvaluationException {
 		QueryEvaluationStep leftArg = precompile(node.getLeftArg(), context);
 		QueryEvaluationStep rightArg = precompile(node.getRightArg(), context);
-		return new IntersectionQueryEvaluationStep(leftArg, rightArg, this::makeSet);
+		return new IntersectionQueryEvaluationStep(this::getCollectionFactory, leftArg, rightArg);
 	}
 
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -612,8 +613,25 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 				final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
-				return new DistinctIteration<BindingSet, QueryEvaluationException>(evaluate,
-						StrictEvaluationStrategy.this::makeSet);
+				CollectionFactory cf = StrictEvaluationStrategy.this.getCollectionFactory();
+				return new FilterIteration<BindingSet, QueryEvaluationException>(evaluate) {
+					private final Set<BindingSet> set = cf.createSetOfBindingSets();
+
+					@Override
+					protected void handleClose() throws QueryEvaluationException {
+						try {
+							cf.close();
+						} finally {
+							super.handleClose();
+						}
+					}
+
+					@Override
+					protected boolean accept(BindingSet object) throws QueryEvaluationException {
+						return set.add(object);
+					}
+				};
+
 			}
 		};
 

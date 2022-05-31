@@ -11,13 +11,14 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.AbstractList;
 import java.util.AbstractSet;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Queue;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -25,7 +26,9 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
 import org.eclipse.collections.impl.set.mutable.primitive.LongHashSet;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
+import org.eclipse.rdf4j.collection.factory.api.ValuePair;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultBindingSetKey;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultValuePair;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.BNode;
@@ -64,11 +67,6 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	}
 
 	@Override
-	public List<Value> createValueList() {
-		return new LmdbValueList(rev);
-	}
-
-	@Override
 	public Set<BindingSet> createSetOfBindingSets() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
@@ -78,6 +76,19 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			return new CommitingSet<BindingSet>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return new HashSet<>();
+		}
+	}
+
+	@Override
+	public Set<ValuePair> createValuePairSet() {
+		if (iterationCacheSyncThreshold > 0) {
+			init();
+			ValuePairSetSerializer bindingSetSerializer = new ValuePairSetSerializer(rev);
+			MemoryTillSizeXSet<ValuePair> set = new MemoryTillSizeXSet<>(colectionId++, new LmdbValuePairSet(rev),
+					bindingSetSerializer);
+			return new CommitingSet<ValuePair>(set, iterationCacheSyncThreshold, db);
+		} else {
+			return new LmdbValuePairSet(rev);
 		}
 	}
 
@@ -99,94 +110,8 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		public void serialize(DataOutput out, BindingSet values) throws IOException {
 			out.writeInt(values.size());
 			for (Binding b : values) {
-				Value v = b.getValue();
-				Object obj = convertToLongIfPossible(v, rev);
-				if (obj instanceof Long) {
-					out.writeBoolean(true);
-					out.writeLong((Long) obj);
-				} else {
-					out.writeBoolean(false);
-					serializeValue(out, v);
-				}
+				serializeValueOrLong(out, b.getValue(), rev);
 				out.writeInt(indexOf(b.getName()));
-			}
-		}
-
-		private void serializeValue(DataOutput out, Value v) throws IOException {
-			if (v instanceof IRI) {
-				out.writeByte('i');
-				out.writeUTF(v.stringValue());
-			} else if (v instanceof Literal) {
-				out.writeByte('l');
-				serializeLiteral(out, v);
-			} else if (v instanceof BNode) {
-				out.writeByte('b');
-				out.writeUTF(v.stringValue());
-			} else {
-				out.writeByte('t');
-				Triple t = (Triple) v;
-				serializeValue(out, t.getSubject());
-				serializeValue(out, t.getPredicate());
-				serializeValue(out, t.getObject());
-			}
-		}
-
-		private Value deserializeValue(DataInput in) throws IOException {
-			byte t = in.readByte();
-			if (t == 'i') {
-				return rev.getValueStore().createIRI(in.readUTF());
-			} else if (t == 'l') {
-				return deserializeLiteral(in);
-			} else if (t == 'b') {
-				return rev.getValueStore().createBNode(in.readUTF());
-			} else {
-
-				Value subject = deserializeValue(in);
-				Value predicate = deserializeValue(in);
-				Value object = deserializeValue(in);
-				return rev.getValueStore().createTriple((Resource) subject, (IRI) predicate, object);
-			}
-		}
-
-		private void serializeLiteral(DataOutput out, Value v) throws IOException {
-			Literal l = (Literal) v;
-			out.writeUTF(v.stringValue());
-			boolean hasLanguage = l.getLanguage().isPresent();
-
-			if (hasLanguage) {
-				out.writeByte(1);
-				out.writeUTF(l.getLanguage().get());
-			} else {
-				CoreDatatype cdt = l.getCoreDatatype();
-				if (cdt.isGEODatatype()) {
-					out.writeByte(2);
-					out.writeByte(cdt.asGEODatatype().get().ordinal());
-				} else if (cdt.isRDFDatatype()) {
-					out.writeByte(3);
-					out.writeByte(cdt.asRDFDatatype().get().ordinal());
-				} else if (cdt.isXSDDatatype()) {
-					out.writeByte(4);
-					out.writeByte(cdt.asXSDDatatype().get().ordinal());
-				} else {
-					out.writeByte(5);
-					out.writeUTF(l.getDatatype().stringValue());
-				}
-			}
-		}
-
-		private Value deserializeLiteral(DataInput in) throws IOException {
-			String label = in.readUTF();
-			int t = in.readByte();
-			if (t == 1) {
-				return rev.getValueStore().createLiteral(label, in.readUTF());
-			} else if (t == 2) {
-				return rev.getValueStore().createLiteral(label, CoreDatatype.GEO.values()[in.readByte()]);
-			} else if (t == 3) {
-				return rev.getValueStore().createLiteral(label, CoreDatatype.RDF.values()[in.readByte()]);
-			} else if (t == 4) {
-				return rev.getValueStore().createLiteral(label, CoreDatatype.XSD.values()[in.readByte()]);
-			} else {
-				return rev.getValueStore().createLiteral(label, rev.getValueStore().createIRI(in.readUTF()));
 			}
 		}
 
@@ -204,13 +129,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			int size = in.readInt();
 			QueryBindingSet qbs = new QueryBindingSet(size);
 			for (int i = 0; i < size; i++) {
-				boolean wasLong = in.readBoolean();
-				Value v;
-				if (wasLong) {
-					v = rev.getValueStore().getLazyValue(in.readLong());
-				} else {
-					v = deserializeValue(in);
-				}
+				Value v = deserializeValueOrLong(in, rev);
 				qbs.setBinding(names[in.readInt()], v);
 			}
 			return qbs;
@@ -221,6 +140,137 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			return -1;
 		}
 
+	}
+
+	private static Value deserializeValueOrLong(DataInput in, ValueStoreRevision rev) throws IOException {
+		boolean wasLong = in.readBoolean();
+		if (wasLong) {
+			return rev.getValueStore().getLazyValue(in.readLong());
+		} else {
+			return deserializeValue(in, rev.getValueStore());
+		}
+	}
+
+	private static void serializeValueOrLong(DataOutput out, Value v, ValueStoreRevision rev) throws IOException {
+		Object obj = convertToLongIfPossible(v, rev);
+		if (obj instanceof Long) {
+			out.writeBoolean(true);
+			out.writeLong((Long) obj);
+		} else {
+			out.writeBoolean(false);
+			serializeValue(out, v);
+		}
+	}
+
+	// The idea of this converting set is that we serialize longs into the MapDB not
+	// actually falling back to
+	// the serialization to SimpleLiterals etc. unless we must
+	private static class ValuePairSetSerializer implements Serializer<ValuePair>, Serializable {
+		private static final long serialVersionUID = 1L;
+		private transient ValueStoreRevision rev;
+
+		public ValuePairSetSerializer(ValueStoreRevision rev) {
+			super();
+			this.rev = rev;
+		}
+
+		@Override
+		public void serialize(DataOutput out, ValuePair vp) throws IOException {
+			serializeValueOrLong(out, vp.getStartValue(), rev);
+			serializeValueOrLong(out, vp.getEndValue(), rev);
+		}
+
+		@Override
+		public ValuePair deserialize(DataInput in, int available) throws IOException {
+
+			Value start = deserializeValueOrLong(in, rev);
+			Value end = deserializeValueOrLong(in, rev);
+			return new DefaultValuePair(start, end);
+		}
+
+		@Override
+		public int fixedSize() {
+			return -1;
+		}
+
+	}
+
+	private static void serializeValue(DataOutput out, Value v) throws IOException {
+		if (v instanceof IRI) {
+			out.writeByte('i');
+			out.writeUTF(v.stringValue());
+		} else if (v instanceof Literal) {
+			out.writeByte('l');
+			serializeLiteral(out, v);
+		} else if (v instanceof BNode) {
+			out.writeByte('b');
+			out.writeUTF(v.stringValue());
+		} else {
+			out.writeByte('t');
+			Triple t = (Triple) v;
+			serializeValue(out, t.getSubject());
+			serializeValue(out, t.getPredicate());
+			serializeValue(out, t.getObject());
+		}
+	}
+
+	private static Value deserializeValue(DataInput in, ValueStore vs) throws IOException {
+		byte t = in.readByte();
+		if (t == 'i') {
+			return vs.createIRI(in.readUTF());
+		} else if (t == 'l') {
+			return deserializeLiteral(in, vs);
+		} else if (t == 'b') {
+			return vs.createBNode(in.readUTF());
+		} else {
+
+			Value subject = deserializeValue(in, vs);
+			Value predicate = deserializeValue(in, vs);
+			Value object = deserializeValue(in, vs);
+			return vs.createTriple((Resource) subject, (IRI) predicate, object);
+		}
+	}
+
+	private static void serializeLiteral(DataOutput out, Value v) throws IOException {
+		Literal l = (Literal) v;
+		out.writeUTF(v.stringValue());
+		boolean hasLanguage = l.getLanguage().isPresent();
+
+		if (hasLanguage) {
+			out.writeByte(1);
+			out.writeUTF(l.getLanguage().get());
+		} else {
+			CoreDatatype cdt = l.getCoreDatatype();
+			if (cdt.isGEODatatype()) {
+				out.writeByte(2);
+				out.writeByte(cdt.asGEODatatype().get().ordinal());
+			} else if (cdt.isRDFDatatype()) {
+				out.writeByte(3);
+				out.writeByte(cdt.asRDFDatatype().get().ordinal());
+			} else if (cdt.isXSDDatatype()) {
+				out.writeByte(4);
+				out.writeByte(cdt.asXSDDatatype().get().ordinal());
+			} else {
+				out.writeByte(5);
+				out.writeUTF(l.getDatatype().stringValue());
+			}
+		}
+	}
+
+	private static Value deserializeLiteral(DataInput in, ValueStore vs) throws IOException {
+		String label = in.readUTF();
+		int t = in.readByte();
+		if (t == 1) {
+			return vs.createLiteral(label, in.readUTF());
+		} else if (t == 2) {
+			return vs.createLiteral(label, CoreDatatype.GEO.values()[in.readByte()]);
+		} else if (t == 3) {
+			return vs.createLiteral(label, CoreDatatype.RDF.values()[in.readByte()]);
+		} else if (t == 4) {
+			return vs.createLiteral(label, CoreDatatype.XSD.values()[in.readByte()]);
+		} else {
+			return vs.createLiteral(label, vs.createIRI(in.readUTF()));
+		}
 	}
 
 	private int hash(BindingSet bs, List<Function<BindingSet, Value>> getValues) {
@@ -379,6 +429,30 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		}
 
 		@Override
+		public boolean contains(Object o) {
+			if (o instanceof LmdbValue) {
+				LmdbValue lv = (LmdbValue) o;
+				if (lv.getValueStoreRevision() == rev) {
+					return storeKnownValues.add(lv.getInternalID());
+				}
+			} else if (o instanceof Value) {
+				Value v = (Value) o;
+				long id;
+				try {
+					id = rev.getValueStore().getId(v, false);
+				} catch (IOException e) {
+					throw new LmdbValueStoreException(e);
+				}
+				if (id == LmdbValue.UNKNOWN_ID) {
+					return notKnownToStoreValues.add(v);
+				} else {
+					return storeKnownValues.add(id);
+				}
+			}
+			return false;
+		}
+
+		@Override
 		public Iterator<Value> iterator() {
 			LongIterator knowns = storeKnownValues.longIterator();
 			Iterator<Value> notKnowns = notKnownToStoreValues.iterator();
@@ -412,60 +486,116 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		}
 	}
 
-	private static class LmdbValueList extends AbstractList<Value> {
-		private final ValueStoreRevision rev;
-		private final List<Object> values = new ArrayList<>();
+	@Override
+	public Queue<ValuePair> createValuePairQueue() {
+		if (iterationCacheSyncThreshold > 0) {
+			init();
+			return new MemoryTillSizeXQueue(colectionId++, new ArrayDeque<ValuePair>(),
+					new ValuePairSetSerializer(rev));
+		} else {
+			return new ArrayDeque<ValuePair>();
+		}
+	}
 
-		public LmdbValueList(ValueStoreRevision rev) {
+	private static class LmdbValuePairSet extends AbstractSet<ValuePair> {
+		private final ValueStoreRevision rev;
+		private final LongHashSet storeKnownValues = new LongHashSet();
+		private final Set<ValuePair> notKnownToStoreValues = new HashSet<>();
+
+		public LmdbValuePairSet(ValueStoreRevision rev) {
 			super();
 			this.rev = rev;
 		}
 
 		@Override
-		public boolean add(Value v) {
-			if (v instanceof LmdbValue) {
-				LmdbValue lv = (LmdbValue) v;
-				if (lv.getValueStoreRevision() == rev) {
-					return values.add(lv.getInternalID());
+		public boolean add(ValuePair v) {
+			long start = idOf(v.getStartValue());
+			long end = idOf(v.getEndValue());
+			if (twoValuesCouldFitInOneLong(start, end)) {
+				long vp = start << 32 | (end & 0x0000ffff);
+				return storeKnownValues.add(vp);
+			} else {
+				return notKnownToStoreValues.add(v);
+			}
+		}
+
+		private boolean twoValuesCouldFitInOneLong(long start, long end) {
+			return start != LmdbValue.UNKNOWN_ID && end != LmdbValue.UNKNOWN_ID && start < Integer.MAX_VALUE
+					&& end < Integer.MAX_VALUE;
+		}
+
+		@Override
+		public boolean contains(Object o) {
+			if (o instanceof ValuePair) {
+				ValuePair v = (ValuePair) o;
+				long start = idOf(v.getStartValue());
+				long end = idOf(v.getEndValue());
+				if (twoValuesCouldFitInOneLong(start, end)) {
+					long vp = start << 32 | (end & 0x0000ffff);
+					return storeKnownValues.contains(vp);
+				} else {
+					return notKnownToStoreValues.contains(v);
 				}
 			}
+			return false;
+		}
 
-			long id;
-			try {
-				id = rev.getValueStore().getId(v, false);
-			} catch (IOException e) {
-				throw new LmdbValueStoreException(e);
+		private long idOf(Value o) {
+			if (o instanceof LmdbValue) {
+				LmdbValue lv = (LmdbValue) o;
+				if (lv.getValueStoreRevision() == rev) {
+					return lv.getInternalID();
+				}
+			} else if (o instanceof Value) {
+				Value v = (Value) o;
+				long id;
+				try {
+					id = rev.getValueStore().getId(v, false);
+				} catch (IOException e) {
+					throw new LmdbValueStoreException(e);
+				}
+				return id;
 			}
-			if (id == LmdbValue.UNKNOWN_ID) {
-				return values.add(v);
-			} else {
-				return values.add(id);
-			}
+			return LmdbValue.UNKNOWN_ID;
+		}
+
+		@Override
+		public Iterator<ValuePair> iterator() {
+			LongIterator knowns = storeKnownValues.longIterator();
+			Iterator<ValuePair> notKnowns = notKnownToStoreValues.iterator();
+			return new Iterator<ValuePair>() {
+
+				@Override
+				public boolean hasNext() {
+
+					return knowns.hasNext() || notKnowns.hasNext();
+				}
+
+				@Override
+				public ValuePair next() {
+					if (knowns.hasNext()) {
+						try {
+							long vp = knowns.next();
+							long start = vp >>> 32;
+							long end = (long) ((int) vp);
+
+							Value vs = rev.getValueStore().getLazyValue(start);
+							Value ve = rev.getValueStore().getLazyValue(end);
+							return new DefaultValuePair(vs, ve);
+						} catch (IOException e) {
+							throw new LmdbValueStoreException(e);
+						}
+					} else {
+						return notKnowns.next();
+					}
+				}
+
+			};
 		}
 
 		@Override
 		public int size() {
-			return values.size();
+			return notKnownToStoreValues.size() + storeKnownValues.size();
 		}
-
-		@Override
-		public Value get(int arg0) {
-			Object o = values.get(arg0);
-			if (o instanceof Value) {
-				return (Value) o;
-			} else if (o instanceof Value) {
-				try {
-					return rev.getValueStore().getLazyValue((Long) o);
-				} catch (IOException e) {
-					throw new LmdbValueStoreException(e);
-				}
-			}
-			return null;
-		}
-	}
-
-	@Override
-	public void close() throws RDF4JException {
-		super.close();
 	}
 }
