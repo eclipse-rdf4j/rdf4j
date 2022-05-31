@@ -13,7 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.iterator.Iterators;
+import com.google.common.collect.Iterables;
 
 /**
  * A tuple operator that groups tuples that have a specific set of equivalent variable bindings, and that can apply
@@ -83,7 +83,7 @@ public class Group extends UnaryTupleOperator {
 
 	public void setGroupBindingNames(Iterable<String> bindingNames) {
 		groupBindings = new LinkedHashSet<>();
-		Iterators.addAll(bindingNames.iterator(), groupBindings);
+		Iterables.addAll(groupBindings, bindingNames);
 	}
 
 	public List<GroupElem> getGroupElements() {
@@ -96,7 +96,7 @@ public class Group extends UnaryTupleOperator {
 
 	public void setGroupElements(Iterable<GroupElem> elements) {
 		this.groupElements.clear();
-		Iterators.addAll(elements.iterator(), this.groupElements);
+		Iterables.addAll(groupElements, elements);
 	}
 
 	public Set<String> getAggregateBindingNames() {

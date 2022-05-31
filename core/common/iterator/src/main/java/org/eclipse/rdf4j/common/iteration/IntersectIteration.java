@@ -19,6 +19,7 @@ import java.util.function.Supplier;
  * Note that duplicates can also be filtered by wrapping this Iteration in a {@link DistinctIteration}, but that has a
  * bit more overhead as it adds a second hash table lookup.
  */
+@Deprecated(since = "4.1.0")
 public class IntersectIteration<E, X extends Exception> extends FilterIteration<E, X> {
 
 	/*-----------*

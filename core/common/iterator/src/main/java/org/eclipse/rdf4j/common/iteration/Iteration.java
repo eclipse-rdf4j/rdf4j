@@ -22,7 +22,10 @@ import java.util.stream.Stream;
  * @see java.util.Iterator
  * @author jeen
  * @author Herko ter Horst
+ * @deprecated For performance and simplification the Iteration interface is deprecated and will be removed in 5.0.0.
+ *             Use CloseableIteration instead, even if your iteration doesn't require AutoCloseable.
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public interface Iteration<E, X extends Exception> {
 
 	/**

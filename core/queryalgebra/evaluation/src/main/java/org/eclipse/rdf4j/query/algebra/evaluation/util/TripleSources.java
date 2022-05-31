@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
  */
 // TODO this duplicates a lot of functionality already found in classes like Models and RDFCollections.
 // Closer integration and/or rewriting of these utilities may be required.
+@Deprecated(since = "4.1.0", forRemoval = true)
 public class TripleSources {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();

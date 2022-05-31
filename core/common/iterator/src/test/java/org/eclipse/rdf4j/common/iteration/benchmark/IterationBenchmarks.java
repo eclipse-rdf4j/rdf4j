@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -154,7 +155,7 @@ public class IterationBenchmarks {
 	}
 
 	@Benchmark
-	public int getFirst() throws Exception {
+	public int getFirst() {
 		Stream<String> stream = Iterations.stream(getIterator(strings));
 
 		return stream
@@ -164,24 +165,29 @@ public class IterationBenchmarks {
 				.orElse(0);
 	}
 
-	private Iteration<String, Exception> getIterator(List<String> list) throws Exception {
-		return new Iteration<String, Exception>() {
+	private CloseableIteration<String, Exception> getIterator(List<String> list) {
+		return new CloseableIteration<>() {
 
 			final Iterator<String> iterator = list.iterator();
 
 			@Override
-			public boolean hasNext() throws Exception {
+			public boolean hasNext() {
 				return iterator.hasNext();
 			}
 
 			@Override
-			public String next() throws Exception {
+			public String next() {
 				return iterator.next();
 			}
 
 			@Override
-			public void remove() throws Exception {
+			public void remove() {
 
+			}
+
+			@Override
+			public void close() {
+				// no-op
 			}
 		};
 	}

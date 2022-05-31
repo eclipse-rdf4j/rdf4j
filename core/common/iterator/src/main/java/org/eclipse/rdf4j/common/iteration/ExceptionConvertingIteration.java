@@ -15,6 +15,7 @@ import java.util.Objects;
  * A CloseableIteration that converts an arbitrary iteration to an iteration with exceptions of type <var>X</var>.
  * Subclasses need to override {@link #convert(Exception)} to do the conversion.
  */
+@Deprecated(since = "4.1.0")
 public abstract class ExceptionConvertingIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
 	/*-----------*

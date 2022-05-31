@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * @see SparqlFederationEvalStrategy
  * @since 3.0
  */
+@Deprecated(since = "4.1.0")
 public class BoundJoinVALUESConversionIteration
 		extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 

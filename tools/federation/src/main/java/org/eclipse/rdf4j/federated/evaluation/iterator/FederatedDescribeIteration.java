@@ -36,12 +36,14 @@ import com.google.common.collect.Lists;
  * @author Andreas Schwarte
  *
  */
+@Deprecated(since = "4.1.0")
 public class FederatedDescribeIteration extends DescribeIteration {
 
 	private final QueryInfo queryInfo;
 
 	private final List<StatementSource> allSources;
 
+	@Deprecated(since = "4.1.0", forRemoval = true)
 	public FederatedDescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter,
 			FederationEvalStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings,
 			QueryInfo queryInfo) {
@@ -72,7 +74,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 		// Note: for DESCRIBE we currently do not perform any extra source selection,
 		// i.e. we assume all members to be relevant for describing the resource
 		StatementSourcePattern stmtSourcePattern = new StatementSourcePattern(pattern, queryInfo);
-		allSources.forEach(source -> stmtSourcePattern.addStatementSource(source));
+		allSources.forEach(stmtSourcePattern::addStatementSource);
 
 		CloseableIteration<BindingSet, QueryEvaluationException> res = stmtSourcePattern.evaluate(parentBindings);
 

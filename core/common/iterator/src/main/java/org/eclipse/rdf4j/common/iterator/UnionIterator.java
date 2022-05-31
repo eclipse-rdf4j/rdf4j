@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.common.iterator;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -56,7 +57,13 @@ public class UnionIterator<E> extends LookAheadIterator<E> {
 		}
 
 		// Current Iterator exhausted, continue with the next one
-		Iterators.closeSilently(currentIter);
+		if (currentIter instanceof Closeable) {
+			try {
+				((Closeable) currentIter).close();
+			} catch (IOException ioe) {
+				// ignore
+			}
+		}
 
 		if (argIter.hasNext()) {
 			currentIter = argIter.next().iterator();
@@ -75,7 +82,9 @@ public class UnionIterator<E> extends LookAheadIterator<E> {
 			// getNextElement() again
 			super.handleClose();
 		} finally {
-			Iterators.close(currentIter);
+			if (currentIter instanceof Closeable) {
+				((Closeable) currentIter).close();
+			}
 		}
 	}
 }
