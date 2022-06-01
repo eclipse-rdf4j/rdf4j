@@ -100,7 +100,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 //		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 		this.context = context;
 		this.arguments = strategy.precompile(group.getArg(), context);
-		this.cf = this.strategy.getCollectionFactory();
+		this.cf = strategy.getCollectionFactory();
 	}
 
 	/*---------*
@@ -155,27 +155,49 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
 		Collection<Entry> entries = buildEntries(aggregates);
-		Set<BindingSet> bindingSets = cf.createSetOfBindingSets();
-		for (Entry entry : entries) {
-			MutableBindingSet sol = makeNewBindingSet.get();
+		if (!entries.isEmpty()) {
+			Set<BindingSet> bindingSets = cf.createSetOfBindingSets();
+			BiConsumer<BindingSet, MutableBindingSet> overWriteFromPrototype = makeOverwriteFromPrototype(getValues,
+					setBindings);
 
-			BindingSet prototype = entry.getPrototype();
-			if (prototype != null) {
-				for (int i = 0; i < getValues.size(); i++) {
-					Function<BindingSet, Value> getBinding = getValues.get(i);
-					Value value = getBinding.apply(prototype);
-					if (value != null) {
-						// Potentially overwrites bindings from super
-						setBindings.get(i).accept(value, sol);
-					}
+			for (Entry entry : entries) {
+				MutableBindingSet sol = makeNewBindingSet.get();
+
+				BindingSet prototype = entry.getPrototype();
+				if (overWriteFromPrototype != null && prototype != null) {
+					overWriteFromPrototype.accept(prototype, sol);
 				}
+
+				bindSolution.accept(entry, sol);
+				bindingSets.add(sol);
 			}
-
-			bindSolution.accept(entry, sol);
-			bindingSets.add(sol);
+			return bindingSets.iterator();
+		} else {
+			return Collections.emptyIterator();
 		}
+	}
 
-		return bindingSets.iterator();
+	private BiConsumer<BindingSet, MutableBindingSet> makeOverwriteFromPrototype(
+			List<Function<BindingSet, Value>> getValues,
+			List<BiConsumer<Value, MutableBindingSet>> setBindings) {
+		BiConsumer<BindingSet, MutableBindingSet> overwriteFromPrototype = null;
+		for (int i = 0; i < getValues.size(); i++) {
+			Function<BindingSet, Value> getBinding = getValues.get(i);
+			BiConsumer<Value, MutableBindingSet> setBinding = setBindings.get(i);
+			BiConsumer<BindingSet, MutableBindingSet> overwriteI = (prototype, sol) -> {
+				Value value = getBinding.apply(prototype);
+				if (value != null) {
+					// Potentially overwrites bindings from super
+					setBinding.accept(value, sol);
+				}
+			};
+			if (overwriteFromPrototype == null) {
+				overwriteFromPrototype = overwriteI;
+			} else {
+				overwriteFromPrototype = overwriteFromPrototype.andThen(overwriteI);
+			}
+		}
+		return overwriteFromPrototype;
 	}
 
 	private BiConsumer<Entry, MutableBindingSet> makeBindSolution(
