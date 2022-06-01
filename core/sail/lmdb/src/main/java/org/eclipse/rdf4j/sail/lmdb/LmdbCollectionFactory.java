@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
@@ -40,7 +41,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.mapdb.Serializer;
 
@@ -67,10 +68,10 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets() {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier) {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer(rev);
+			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer(rev, supplier);
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>(),
 					bindingSetSerializer);
 			return new CommitingSet<BindingSet>(set, iterationCacheSyncThreshold, db);
@@ -100,10 +101,12 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		private final ObjectIntHashMap<String> namesToInt = new ObjectIntHashMap<>();
 		private String[] names = new String[1];
 		private transient ValueStoreRevision rev;
+		private transient Supplier<MutableBindingSet> supplier;
 
-		public BindingSetSerializer(ValueStoreRevision rev) {
+		public BindingSetSerializer(ValueStoreRevision rev, Supplier<MutableBindingSet> supplier) {
 			super();
 			this.rev = rev;
+			this.supplier = supplier;
 		}
 
 		@Override
@@ -127,7 +130,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		@Override
 		public BindingSet deserialize(DataInput in, int available) throws IOException {
 			int size = in.readInt();
-			QueryBindingSet qbs = new QueryBindingSet(size);
+			MutableBindingSet qbs = supplier.get();
 			for (int i = 0; i < size; i++) {
 				Value v = deserializeValueOrLong(in, rev);
 				qbs.setBinding(names[in.readInt()], v);

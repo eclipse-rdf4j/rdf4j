@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.collection.factory.api.ValuePair;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 
 /**
  * A DefaultColelctionFactory that provides lists/sets/maps using standard common java in memory types
@@ -36,7 +38,7 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets() {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier) {
 		return new HashSet<>();
 	}
 

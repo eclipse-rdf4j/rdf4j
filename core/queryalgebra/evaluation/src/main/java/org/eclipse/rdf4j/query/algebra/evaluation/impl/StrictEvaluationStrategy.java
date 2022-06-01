@@ -468,7 +468,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 			throws QueryEvaluationException {
 		QueryEvaluationStep leftArg = precompile(node.getLeftArg(), context);
 		QueryEvaluationStep rightArg = precompile(node.getRightArg(), context);
-		return new IntersectionQueryEvaluationStep(this::getCollectionFactory, leftArg, rightArg);
+		return new IntersectionQueryEvaluationStep(this::getCollectionFactory, leftArg, rightArg, context);
 	}
 
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -615,7 +615,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
 				CollectionFactory cf = StrictEvaluationStrategy.this.getCollectionFactory();
 				return new FilterIteration<BindingSet, QueryEvaluationException>(evaluate) {
-					private final Set<BindingSet> set = cf.createSetOfBindingSets();
+					private final Set<BindingSet> set = cf.createSetOfBindingSets(context::createBindingSet);
 
 					@Override
 					protected void handleClose() throws QueryEvaluationException {

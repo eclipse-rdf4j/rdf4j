@@ -12,12 +12,14 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 
 /**
  * A Factory that may generate optimised and/or disk based collections
@@ -35,7 +37,7 @@ public interface CollectionFactory extends AutoCloseable {
 	/**
 	 * @return a set that may be optimised and/or disk based
 	 */
-	public Set<BindingSet> createSetOfBindingSets();
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier);
 
 	/**
 	 * @return a set that may be optimised and/or disk based for Values

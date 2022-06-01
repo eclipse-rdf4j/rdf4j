@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.common.iteration.IntersectIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
  * A step that prepares the arguments of an Intersection operator before execution.
@@ -26,27 +27,29 @@ public class IntersectionQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep leftArgDelayed;
 	private final QueryEvaluationStep rightArgDelayed;
 	private final Supplier<CollectionFactory> collectionFactorySupplier;
+	private final QueryEvaluationContext context;
 
 	@Deprecated
 	public IntersectionQueryEvaluationStep(QueryEvaluationStep leftArg, QueryEvaluationStep rightArg,
 			Supplier<Set<BindingSet>> setMaker) {
-		this.collectionFactorySupplier = DefaultCollectionFactory::new;
-		leftArgDelayed = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(leftArg, bs);
-		rightArgDelayed = bs -> new QueryEvaluationStep.DelayedEvaluationIteration(rightArg, bs);
+		this(DefaultCollectionFactory::new, bs -> new QueryEvaluationStep.DelayedEvaluationIteration(leftArg, bs),
+				bs -> new QueryEvaluationStep.DelayedEvaluationIteration(rightArg, bs),
+				new QueryEvaluationContext.Minimal(null));
 	}
 
 	public IntersectionQueryEvaluationStep(Supplier<CollectionFactory> collectionFactorySupplier,
-			QueryEvaluationStep leftArgDelayed, QueryEvaluationStep rightArgDelayed) {
+			QueryEvaluationStep leftArgDelayed, QueryEvaluationStep rightArgDelayed, QueryEvaluationContext context) {
 		this.leftArgDelayed = leftArgDelayed;
 		this.rightArgDelayed = rightArgDelayed;
 		this.collectionFactorySupplier = collectionFactorySupplier;
+		this.context = context;
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
 		CollectionFactory cf = collectionFactorySupplier.get();
 		return new IntersectIteration<>(leftArgDelayed.evaluate(bs), rightArgDelayed.evaluate(bs),
-				cf::createSetOfBindingSets) {
+				() -> cf.createSetOfBindingSets(context::createBindingSet)) {
 
 			@Override
 			protected void handleClose() throws QueryEvaluationException {

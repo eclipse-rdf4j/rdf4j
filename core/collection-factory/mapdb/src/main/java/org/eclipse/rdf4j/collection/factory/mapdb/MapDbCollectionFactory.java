@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.collection.factory.impl.DefaultValuePair;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.mapdb.Serializer;
@@ -78,14 +80,14 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets() {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier) {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,
-					delegate.createSetOfBindingSets());
+					delegate.createSetOfBindingSets(supplier));
 			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
 		} else {
-			return delegate.createSetOfBindingSets();
+			return delegate.createSetOfBindingSets(supplier);
 		}
 	}
 
