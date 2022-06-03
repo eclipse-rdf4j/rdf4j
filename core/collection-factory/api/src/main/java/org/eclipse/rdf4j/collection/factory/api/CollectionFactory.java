@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -37,7 +39,7 @@ public interface CollectionFactory extends AutoCloseable {
 	/**
 	 * @return a set that may be optimised and/or disk based
 	 */
-	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier);
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier, Function<String, BiConsumer<Value, MutableBindingSet>> valueSetters);
 
 	/**
 	 * @return a set that may be optimised and/or disk based for Values

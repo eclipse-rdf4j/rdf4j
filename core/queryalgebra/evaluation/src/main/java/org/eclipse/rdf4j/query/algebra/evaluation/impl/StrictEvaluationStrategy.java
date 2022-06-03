@@ -615,7 +615,7 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 				final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
 				CollectionFactory cf = StrictEvaluationStrategy.this.getCollectionFactory();
 				return new FilterIteration<BindingSet, QueryEvaluationException>(evaluate) {
-					private final Set<BindingSet> set = cf.createSetOfBindingSets(context::createBindingSet);
+					private final Set<BindingSet> set = cf.createSetOfBindingSets(context::createBindingSet, s->context.setBinding(s));
 
 					@Override
 					protected void handleClose() throws QueryEvaluationException {

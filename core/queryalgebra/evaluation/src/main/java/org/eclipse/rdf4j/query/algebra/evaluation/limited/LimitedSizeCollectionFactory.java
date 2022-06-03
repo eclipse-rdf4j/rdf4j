@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -35,8 +36,9 @@ public class LimitedSizeCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier) {
-		return new LimitedSizeSet<>(delegate.createSetOfBindingSets(supplier), used, maxSize);
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier,
+			Function<String, BiConsumer<Value, MutableBindingSet>> valueSetters) {
+		return new LimitedSizeSet<>(delegate.createSetOfBindingSets(supplier, valueSetters), used, maxSize);
 	}
 
 	@Override

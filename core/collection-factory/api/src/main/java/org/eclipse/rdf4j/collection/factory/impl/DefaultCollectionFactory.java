@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -38,7 +39,8 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier) {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier,
+			Function<String, BiConsumer<Value, MutableBindingSet>> valueSetters) {
 		return new HashSet<>();
 	}
 

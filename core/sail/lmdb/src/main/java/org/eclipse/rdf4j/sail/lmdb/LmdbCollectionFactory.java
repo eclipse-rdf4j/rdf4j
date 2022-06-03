@@ -20,6 +20,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -68,10 +70,10 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier) {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier, Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer(rev, supplier);
+			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer(rev, supplier, valueSetter);
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>(),
 					bindingSetSerializer);
 			return new CommitingSet<BindingSet>(set, iterationCacheSyncThreshold, db);
@@ -99,14 +101,17 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	private static class BindingSetSerializer implements Serializer<BindingSet>, Serializable {
 		private static final long serialVersionUID = 1L;
 		private final ObjectIntHashMap<String> namesToInt = new ObjectIntHashMap<>();
-		private String[] names = new String[1];
+		@SuppressWarnings("unchecked")
+		private transient BiConsumer<Value, MutableBindingSet>[] names = new BiConsumer[1];
 		private transient ValueStoreRevision rev;
 		private transient Supplier<MutableBindingSet> supplier;
+		private transient Function<String, BiConsumer<Value, MutableBindingSet>> setter;
 
-		public BindingSetSerializer(ValueStoreRevision rev, Supplier<MutableBindingSet> supplier) {
+		public BindingSetSerializer(ValueStoreRevision rev, Supplier<MutableBindingSet> supplier, Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
 			super();
 			this.rev = rev;
 			this.supplier = supplier;
+			this.setter = valueSetter;
 		}
 
 		@Override
@@ -123,7 +128,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			if (ifAbsentPut >= names.length) {
 				names = Arrays.copyOf(names, ifAbsentPut + 1);
 			}
-			names[ifAbsentPut] = name;
+			names[ifAbsentPut] = setter.apply(name);
 			return ifAbsentPut;
 		}
 
@@ -133,7 +138,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			MutableBindingSet qbs = supplier.get();
 			for (int i = 0; i < size; i++) {
 				Value v = deserializeValueOrLong(in, rev);
-				qbs.setBinding(names[in.readInt()], v);
+				names[in.readInt()].accept(v, qbs);
 			}
 			return qbs;
 		}

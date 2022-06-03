@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -80,14 +82,14 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier) {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier, Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,
-					delegate.createSetOfBindingSets(supplier));
+					delegate.createSetOfBindingSets(supplier, valueSetter));
 			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
 		} else {
-			return delegate.createSetOfBindingSets(supplier);
+			return delegate.createSetOfBindingSets(supplier, valueSetter);
 		}
 	}
 
