@@ -39,7 +39,8 @@ public interface CollectionFactory extends AutoCloseable {
 	/**
 	 * @return a set that may be optimised and/or disk based
 	 */
-	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier, Function<String, BiConsumer<Value, MutableBindingSet>> valueSetters);
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier,
+			Function<String, BiConsumer<Value, MutableBindingSet>> valueSetters);
 
 	/**
 	 * @return a set that may be optimised and/or disk based for Values

@@ -70,7 +70,8 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier, Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier,
+			Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
 			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer(rev, supplier, valueSetter);
@@ -107,7 +108,8 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		private transient Supplier<MutableBindingSet> supplier;
 		private transient Function<String, BiConsumer<Value, MutableBindingSet>> setter;
 
-		public BindingSetSerializer(ValueStoreRevision rev, Supplier<MutableBindingSet> supplier, Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
+		public BindingSetSerializer(ValueStoreRevision rev, Supplier<MutableBindingSet> supplier,
+				Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
 			super();
 			this.rev = rev;
 			this.supplier = supplier;

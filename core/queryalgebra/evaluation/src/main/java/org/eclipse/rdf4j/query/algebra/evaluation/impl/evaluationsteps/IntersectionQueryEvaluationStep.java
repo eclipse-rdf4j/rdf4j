@@ -49,7 +49,7 @@ public class IntersectionQueryEvaluationStep implements QueryEvaluationStep {
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
 		CollectionFactory cf = collectionFactorySupplier.get();
 		return new IntersectIteration<>(leftArgDelayed.evaluate(bs), rightArgDelayed.evaluate(bs),
-				() -> cf.createSetOfBindingSets(context::createBindingSet, s ->context.setBinding(s))) {
+				() -> cf.createSetOfBindingSets(context::createBindingSet, s -> context.setBinding(s))) {
 
 			@Override
 			protected void handleClose() throws QueryEvaluationException {

@@ -82,7 +82,8 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier, Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
+	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier,
+			Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,

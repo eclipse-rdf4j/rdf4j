@@ -156,7 +156,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
 		Collection<Entry> entries = buildEntries(aggregates);
 		if (!entries.isEmpty()) {
-			Set<BindingSet> bindingSets = cf.createSetOfBindingSets(context::createBindingSet, s -> context.setBinding(s));
+			Set<BindingSet> bindingSets = cf.createSetOfBindingSets(context::createBindingSet,
+					s -> context.setBinding(s));
 			BiConsumer<BindingSet, MutableBindingSet> overWriteFromPrototype = makeOverwriteFromPrototype(getValues,
 					setBindings);
 

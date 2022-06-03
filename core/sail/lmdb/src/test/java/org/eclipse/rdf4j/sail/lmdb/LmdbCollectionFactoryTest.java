@@ -71,7 +71,8 @@ public class LmdbCollectionFactoryTest {
 	@Test
 	public void testSetOfBindingSet() {
 		try (CollectionFactory collectionFactory = sail.getCollectionFactory()) {
-			Set<BindingSet> vs = collectionFactory.createSetOfBindingSets(QueryBindingSet::new, (s) -> ((v, bs) -> bs.setBinding(s, v)));
+			Set<BindingSet> vs = collectionFactory.createSetOfBindingSets(QueryBindingSet::new,
+					(s) -> ((v, bs) -> bs.setBinding(s, v)));
 			Set<BindingSet> ebs = new HashSet<>();
 			int expectedSize = NUMBER_TO_TEST;
 			for (int i = 0; i < expectedSize; i++) {
@@ -98,7 +99,8 @@ public class LmdbCollectionFactoryTest {
 	@Test
 	public void testSetOfBindingSetMix() {
 		try (CollectionFactory collectionFactory = sail.getCollectionFactory()) {
-			Set<BindingSet> vs = collectionFactory.createSetOfBindingSets(QueryBindingSet::new, (s) -> ((v, bs) -> bs.setBinding(s, v)));
+			Set<BindingSet> vs = collectionFactory.createSetOfBindingSets(QueryBindingSet::new,
+					(s) -> ((v, bs) -> bs.setBinding(s, v)));
 			Set<BindingSet> ebs = new HashSet<>();
 			int expectedSize = NUMBER_TO_TEST;
 			for (int i = 0; i < expectedSize; i++) {
@@ -130,7 +132,8 @@ public class LmdbCollectionFactoryTest {
 	@Test
 	public void testSetOfBindingSetNot() throws IOException {
 		try (CollectionFactory collectionFactory = sail.getCollectionFactory()) {
-			Set<BindingSet> vs = collectionFactory.createSetOfBindingSets(QueryBindingSet::new, (s) -> ((v, bs) -> bs.setBinding(s, v)));
+			Set<BindingSet> vs = collectionFactory.createSetOfBindingSets(QueryBindingSet::new,
+					(s) -> ((v, bs) -> bs.setBinding(s, v)));
 			Set<BindingSet> ebs = new HashSet<>();
 			int expectedSize = NUMBER_TO_TEST;
 			ValueStore valueFactory = (ValueStore) sail.getValueFactory();
