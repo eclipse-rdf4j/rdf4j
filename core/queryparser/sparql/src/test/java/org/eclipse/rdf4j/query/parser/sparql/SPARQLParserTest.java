@@ -52,17 +52,11 @@ public class SPARQLParserTest {
 
 	private SPARQLParser parser;
 
-	/**
-	 * @throws java.lang.Exception
-	 */
 	@BeforeEach
 	public void setUp() throws Exception {
 		parser = new SPARQLParser();
 	}
 
-	/**
-	 * @throws java.lang.Exception
-	 */
 	@AfterEach
 	public void tearDown() throws Exception {
 		parser = null;
@@ -456,6 +450,40 @@ public class SPARQLParserTest {
 				+ "WHERE {\n"
 				+ "	?s ?p ?o \n"
 				+ "} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_variableEffectivelyAggregationResult() {
+		String query = "SELECT (COUNT (*) AS ?count) (?count / ?count AS ?result) (?result AS ?temp) (?temp / 2 AS ?temp2) {\n"
+				+
+				"    ?s a ?o .\n" +
+				"}";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_renameVariable() {
+		String query = "SELECT ?o (?o  AS ?o2) (?o2  AS ?o3) (?o3/2  AS ?o4){\n" +
+				"    ?o ?p ?o .\n" +
+				"} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_renameVariableWithAggregation() {
+		String query = "SELECT ?o (?o  AS ?o2) (COUNT (*) AS ?count) (?o2/?count  AS ?newCount){\n" +
+				"    ?o ?p ?o .\n" +
+				"} GROUP BY ?o";
 
 		// should parse without error
 		parser.parseQuery(query, null);
