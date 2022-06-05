@@ -10,7 +10,7 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 import java.io.IOException;
 import java.io.Reader;
 
-public class UnicodeEscapeStream extends JavaCharStream implements CharStream {
+public class UnicodeEscapeStream extends JavaCharStream {
 
 	public UnicodeEscapeStream(Reader dstream, int tabSize) {
 		super(dstream);

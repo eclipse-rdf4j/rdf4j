@@ -297,6 +297,28 @@ public class SPARQLParserTest {
 	}
 
 	@Test
+	public void testAdditionalWhitespace_Not_In() throws Exception {
+		String query = "SELECT * WHERE { ?s ?p ?o. FILTER(?o NOT  IN (1, 2, 3)) }";
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+
+		// parsing should not throw exception
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+
+	}
+
+	@Test
+	public void testAdditionalWhitespace_Not_Exists() throws Exception {
+		String query = "SELECT * WHERE { ?s ?p ?o. FILTER NOT  EXISTS { ?s ?p ?o } }";
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+
+		// parsing should not throw exception
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+
+	}
+
+	@Test
 	public void testWildCardPathFixedEnd() {
 
 		String query = "PREFIX : <http://example.org/>\n ASK {:IBM ((:|!:)|(^:|!^:))* :Jane.} ";
