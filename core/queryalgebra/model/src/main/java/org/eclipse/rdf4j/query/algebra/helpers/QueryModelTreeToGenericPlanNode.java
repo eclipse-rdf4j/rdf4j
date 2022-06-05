@@ -29,8 +29,9 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	ArrayDeque<GenericPlanNode> planNodes = new ArrayDeque<>();
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
-		if (topTupleExpr instanceof QueryRoot)
+		if (topTupleExpr instanceof QueryRoot) {
 			topTupleExpr = ((QueryRoot) topTupleExpr).getArg();
+		}
 		this.topTupleExpr = topTupleExpr;
 	}
 

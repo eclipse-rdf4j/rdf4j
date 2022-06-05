@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
  *
  * @author James Leigh
  */
+@Deprecated(since = "4.1.0")
 public class BackgroundTupleResult extends
 		CloseableIterationWrapper<CloseableIteration<? extends BindingSet, QueryEvaluationException>, BindingSet, QueryEvaluationException>
 		implements TupleQueryResult, Runnable, TupleQueryResultHandler {

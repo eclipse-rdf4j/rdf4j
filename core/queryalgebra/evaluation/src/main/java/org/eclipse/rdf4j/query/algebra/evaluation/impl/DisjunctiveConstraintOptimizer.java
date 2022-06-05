@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
  * @author Arjohn Kampman
  * @author James Leigh
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 
 	@Override

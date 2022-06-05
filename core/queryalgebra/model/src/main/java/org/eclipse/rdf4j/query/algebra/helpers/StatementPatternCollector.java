@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
  * A QueryModelVisitor that collects StatementPattern's from a query model. StatementPatterns thet are part of
  * filters/constraints are not included in the result.
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class StatementPatternCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 	public StatementPatternCollector() {

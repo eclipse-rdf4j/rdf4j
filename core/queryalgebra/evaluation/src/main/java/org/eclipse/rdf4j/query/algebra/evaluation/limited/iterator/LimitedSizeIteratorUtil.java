@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 /**
  * @author Jerven Bolleman, SIB Swiss Institute of Bioinformatics
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public class LimitedSizeIteratorUtil {
 
 	/**

@@ -168,7 +168,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * other API or SPARQL operations: <strong>only</strong> the behavior of the {@link #clear(Resource...)} API
 	 * operation is modified to respond with a success message when removing a non-existent named graph.
 	 *
-	 * @param silent the value to set this to.
+	 * @param flag the value to set this to.
 	 * @see https://www.w3.org/TR/sparql11-update/#clear
 	 * @deprecated since 3.6.0 - use {@link #setSilentClear(boolean)} instead.
 	 */

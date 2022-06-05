@@ -144,6 +144,9 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		// no-op for backwards compatibility
 	}
 
+	/**
+	 * Enable or disable results size tracking for the query plan.
+	 */
 	@Experimental
 	default boolean isTrackResultSize() {
 		return false;
@@ -171,4 +174,5 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	default <T> Queue<T> makeQueue() {
 		return new ArrayDeque<>();
 	}
+
 }

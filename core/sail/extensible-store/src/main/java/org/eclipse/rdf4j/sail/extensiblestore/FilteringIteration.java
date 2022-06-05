@@ -23,8 +23,7 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 @Experimental
 public class FilteringIteration<E extends ExtensibleStatement, X extends Exception> extends LookAheadIteration<E, X> {
 
-	final CloseableIteration<E, X> wrappedIteration;
-
+	private final CloseableIteration<E, X> wrappedIteration;
 	private final Resource subject;
 	private final IRI predicate;
 	private final Value object;
@@ -77,6 +76,7 @@ public class FilteringIteration<E extends ExtensibleStatement, X extends Excepti
 		if (wrappedIteration != null) {
 			wrappedIteration.close();
 		}
+
 	}
 
 	private static boolean containsContext(Resource[] haystack, Resource needle) {

@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Andreas Schwarte
  * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.ServiceJoinConversionIteration}
  */
-@Deprecated
+@Deprecated(since = "2.3", forRemoval = true)
 public class ServiceJoinConversionIteration
 		extends org.eclipse.rdf4j.repository.sparql.federation.ServiceJoinConversionIteration {
 

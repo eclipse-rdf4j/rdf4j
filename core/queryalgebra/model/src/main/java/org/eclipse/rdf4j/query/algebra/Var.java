@@ -13,12 +13,11 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * A variable that can contain a Value.
+ *
+ * @implNote In the future this class may stop extending AbstractQueryModelNode in favor of directly implementing
+ *           ValueExpr and QueryModelNode.
  */
 public class Var implements ValueExpr, QueryModelNode {
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
 
 	private String name;
 
@@ -30,32 +29,35 @@ public class Var implements ValueExpr, QueryModelNode {
 
 	private QueryModelNode parent;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	private int cachedHashCode = 0;
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	public Var() {
 	}
 
-	public Var(String name) {
+	public Var(String name, Value value, boolean anonymous, boolean constant) {
 		this.name = name;
+		this.value = value;
+		this.anonymous = anonymous;
+		this.constant = constant;
+
+	}
+
+	public Var(String name) {
+		this(name, null, false, false);
 	}
 
 	public Var(String name, boolean anonymous) {
-		this.name = name;
-		this.anonymous = anonymous;
+		this(name, null, anonymous, false);
 	}
 
 	public Var(String name, Value value) {
-		this(name);
-		setValue(value);
+		this(name, value, false, false);
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	public void setAnonymous(boolean anonymous) {
+		this.cachedHashCode = 0;
 		this.anonymous = anonymous;
 	}
 
@@ -67,11 +69,15 @@ public class Var implements ValueExpr, QueryModelNode {
 		return name;
 	}
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	public void setName(String name) {
+		this.cachedHashCode = 0;
 		this.name = name;
 	}
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	public void setValue(Value value) {
+		this.cachedHashCode = 0;
 		this.value = value;
 	}
 
@@ -90,7 +96,7 @@ public class Var implements ValueExpr, QueryModelNode {
 
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
-
+		// no-op
 	}
 
 	@Override
@@ -138,29 +144,6 @@ public class Var implements ValueExpr, QueryModelNode {
 		return sb.toString();
 	}
 
-//	@Override
-//	public boolean equals(Object other) {
-//		if (this == other)
-//			return true;
-//		if (other instanceof Var) {
-//			Var o = (Var) other;
-//			return name.equals(o.getName()) && Objects.equals(value, o.getValue()) && anonymous == o.isAnonymous();
-//		}
-//		return false;
-//	}
-
-//	@Override
-//	public int hashCode() {
-//		int result = name.hashCode();
-//		if (value != null) {
-//			result ^= value.hashCode();
-//		}
-//		if (anonymous) {
-//			result = ~result;
-//		}
-//		return result;
-//	}
-
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
@@ -173,30 +156,21 @@ public class Var implements ValueExpr, QueryModelNode {
 		return anonymous == var.anonymous && Objects.equals(name, var.name) && Objects.equals(value, var.value);
 	}
 
-//
-	int hashCode = 0;
-
-//
 	@Override
 	public int hashCode() {
-		if (hashCode == 0) {
+		if (cachedHashCode == 0) {
 			int result = 1;
 			result = 31 * result + (name == null ? 0 : name.hashCode());
 			result = 31 * result + (value == null ? 0 : value.hashCode());
 			result = 31 * result + Boolean.hashCode(anonymous);
-			hashCode = result;
+			cachedHashCode = result;
 		}
-		return hashCode;
+		return cachedHashCode;
 	}
 
 	@Override
 	public Var clone() {
-		try {
-			return (Var) super.clone();
-		} catch (CloneNotSupportedException e) {
-			throw new IllegalStateException();
-		}
-
+		return new Var(name, value, anonymous, constant);
 	}
 
 	/**
@@ -209,6 +183,7 @@ public class Var implements ValueExpr, QueryModelNode {
 	/**
 	 * @param constant The constant to set.
 	 */
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	public void setConstant(boolean constant) {
 		this.constant = constant;
 	}

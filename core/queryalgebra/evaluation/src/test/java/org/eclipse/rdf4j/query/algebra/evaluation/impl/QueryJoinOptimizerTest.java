@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -100,7 +101,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(qb.toString(), null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer();
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 		TupleExpr leaf = findLeaf(optRoot);
@@ -115,7 +116,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer();
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
@@ -171,7 +172,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer();
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
 		QueryRoot optRoot = new QueryRoot(q.getTupleExpr());
 		opt.optimize(optRoot, null, null);
 
@@ -191,7 +192,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	@Override
 	public QueryJoinOptimizer getOptimizer() {
-		return new QueryJoinOptimizer();
+		return new QueryJoinOptimizer(new EvaluationStatistics());
 	}
 
 	private TupleExpr findLeaf(TupleExpr expr) {

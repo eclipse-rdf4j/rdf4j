@@ -1,3 +1,10 @@
+/*******************************************************************************
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ ******************************************************************************/
 
 package org.eclipse.rdf4j.common.iteration;
 
@@ -7,25 +14,20 @@ import java.util.Spliterators;
 import java.util.function.Consumer;
 
 /**
- * A {@link Spliterator} implementation that wraps a {@link CloseableIteration}. It handles occurrence of checked
- * exceptions by wrapping them in RuntimeExceptions, and in addition ensures that the wrapped Iteration is closed when
- * exhausted.
- *
- * @author Håvard Ottestad
+ * A {@link Spliterator} implementation that wraps a {@link CloseableIteration}.
  */
-public class CloseableIterationSpliterator<T, K extends CloseableIteration<T, ? extends Exception>>
-		extends Spliterators.AbstractSpliterator<T> {
+class CloseableIterationSpliterator<T, E extends Exception> extends Spliterators.AbstractSpliterator<T> {
 
-	private final K iteration;
+	private final CloseableIteration<T, E> iteration;
 
 	/**
 	 * Creates a {@link Spliterator} implementation that wraps the supplied {@link CloseableIteration}. It handles
-	 * occurrence of checked exceptions by wrapping them in RuntimeExceptions, and in addition ensures that the wrapped
-	 * Iteration is closed when exhausted.
+	 * occurrence of checked exceptions by wrapping them in RuntimeException, and in addition ensures that the wrapped
+	 * iteration is closed when exhausted.
 	 *
 	 * @param iteration the iteration to wrap
 	 */
-	public CloseableIterationSpliterator(K iteration) {
+	public CloseableIterationSpliterator(CloseableIteration<T, E> iteration) {
 		super(Long.MAX_VALUE, Spliterator.IMMUTABLE | Spliterator.NONNULL);
 		this.iteration = iteration;
 	}
@@ -34,36 +36,35 @@ public class CloseableIterationSpliterator<T, K extends CloseableIteration<T, ? 
 	public boolean tryAdvance(Consumer<? super T> action) {
 		Objects.requireNonNull(action, "action may not be null");
 
-		// we start by assuming that we need to close the iteration, in case an error occurs
-		// this could be handled in the catch part, but then we would need to catch throwable...which is not recommended
-		boolean needsToBeClosed = true;
 		try {
 			if (iteration.hasNext()) {
 				action.accept(iteration.next());
-				// since the iteration might have more elements we don't need to close it
-				needsToBeClosed = false;
 				return true;
+			} else {
+				// iteration is empty, so we can close it
+				iteration.close();
+				return false;
 			}
-			return false;
-		} catch (Exception e) {
+		} catch (Throwable e) {
+			try {
+				iteration.close();
+			} catch (Exception ex) {
+				throw new RuntimeException(ex);
+			}
+			if (e instanceof Error) {
+				throw (Error) e;
+			}
 			if (e instanceof RuntimeException) {
 				throw (RuntimeException) e;
 			}
 			throw new RuntimeException(e);
-		} finally {
-			if (needsToBeClosed) {
-				try {
-					iteration.close();
-				} catch (Exception ignored) {
-				}
-			}
 		}
 	}
 
 	@Override
 	public void forEachRemaining(Consumer<? super T> action) {
 		Objects.requireNonNull(action, "action may not be null");
-		try {
+		try (iteration) {
 			while (iteration.hasNext()) {
 				action.accept(iteration.next());
 			}
@@ -72,11 +73,6 @@ public class CloseableIterationSpliterator<T, K extends CloseableIteration<T, ? 
 				throw (RuntimeException) e;
 			}
 			throw new RuntimeException(e);
-		} finally {
-			try {
-				iteration.close();
-			} catch (Exception ignored) {
-			}
 		}
 	}
 }

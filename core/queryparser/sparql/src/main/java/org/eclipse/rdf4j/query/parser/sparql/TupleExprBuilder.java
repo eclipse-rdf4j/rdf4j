@@ -97,8 +97,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAbs;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAnd;
@@ -311,6 +311,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * @return an anonymous Var with a unique, randomly generated, variable name
 	 */
 	protected Var createAnonVar() {
+		// dashes ('-') in the generated UUID are replaced with underscores so
+		// the
+		// varname
+		// remains compatible with the SPARQL grammar. See SES-2310.
 		return new Var("_anon_" + uniqueIdPrefix + uniqueIdSuffix++, true);
 	}
 

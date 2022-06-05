@@ -124,11 +124,6 @@ public class TestNativeStoreMemoryOverflow {
 		}
 
 		@Override
-		public void close() throws RuntimeException {
-
-		}
-
-		@Override
 		public boolean hasNext() throws RuntimeException {
 			return i < size;
 		}
@@ -141,6 +136,11 @@ public class TestNativeStoreMemoryOverflow {
 		@Override
 		public void remove() throws RuntimeException {
 			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void close() throws RuntimeException {
+			// no-op
 		}
 	}
 }

@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.junit.Assert.assertEquals;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.Test;
@@ -29,7 +30,7 @@ public class QueryCostEstimatesTest {
 
 		SPARQLParser parser = new SPARQLParser();
 		ParsedQuery q = parser.parseQuery(query, null);
-		QueryJoinOptimizer opt = new QueryJoinOptimizer();
+		QueryJoinOptimizer opt = new QueryJoinOptimizer(new EvaluationStatistics());
 		opt.optimize(q.getTupleExpr(), null, null);
 
 		assertEquals("QueryRoot" + LINE_SEP +

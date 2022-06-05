@@ -154,7 +154,7 @@ public class IterationBenchmarks {
 	}
 
 	@Benchmark
-	public int getFirst() throws Exception {
+	public int getFirst() {
 		Stream<String> stream = Iterations.stream(getIterator(strings));
 
 		return stream
@@ -170,11 +170,6 @@ public class IterationBenchmarks {
 			private final Iterator<String> iterator = list.iterator();
 
 			@Override
-			public void close() {
-
-			}
-
-			@Override
 			public boolean hasNext() {
 				return iterator.hasNext();
 			}
@@ -187,6 +182,11 @@ public class IterationBenchmarks {
 			@Override
 			public void remove() {
 
+			}
+
+			@Override
+			public void close() {
+				// no-op
 			}
 		};
 	}

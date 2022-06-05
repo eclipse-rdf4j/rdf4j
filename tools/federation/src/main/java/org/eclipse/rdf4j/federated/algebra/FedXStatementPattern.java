@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.federated.algebra;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -211,7 +212,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 
 	private List<StatementSource> sort(List<StatementSource> stmtSources) {
 		List<StatementSource> res = new ArrayList<>(stmtSources);
-		Collections.sort(res, (StatementSource o1, StatementSource o2) -> o1.id.compareTo(o2.id));
+		res.sort(Comparator.comparing((StatementSource o) -> o.id));
 		return res;
 	}
 

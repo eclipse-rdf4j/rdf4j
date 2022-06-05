@@ -17,6 +17,7 @@ import java.util.List;
  * An CloseableIteration that returns the bag union of the results of a number of CloseableIterations. 'Bag union' means
  * that the UnionIteration does not filter duplicate objects.
  */
+@Deprecated(since = "4.1.0")
 public abstract class UnionIteration<E, X extends Exception> extends LookAheadIteration<E, X> {
 
 	private UnionIteration() {

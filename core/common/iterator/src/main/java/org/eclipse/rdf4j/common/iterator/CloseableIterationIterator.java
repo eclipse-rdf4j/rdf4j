@@ -14,8 +14,7 @@ import java.util.Iterator;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 
 /**
- * Wraps an Iteration as an Iterator. If the Iteration is a CloseableIteration then this.close() will close it and it
- * will also be automatically closed when this Iterator is exhausted.
+ * Wraps a {@link CloseableIteration} as an {@link Iterator}.
  *
  * @author Mark
  */
@@ -31,7 +30,11 @@ public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 	public boolean hasNext() {
 		boolean hasMore = iteration.hasNext();
 		if (!hasMore) {
-			Iterators.closeSilently(this);
+			try {
+				close();
+			} catch (IOException ioe) {
+				// ignore
+			}
 		}
 		return hasMore;
 	}

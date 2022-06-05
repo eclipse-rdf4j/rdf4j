@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.AbstractSet;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;

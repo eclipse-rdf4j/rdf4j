@@ -11,8 +11,6 @@ package org.eclipse.rdf4j.common.iterator;
 import java.util.Arrays;
 import java.util.Iterator;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-
 /**
  * @author MJAHale
  */
@@ -58,7 +56,6 @@ public class UnionIterator<E> extends LookAheadIterator<E> {
 
 		if (argIter.hasNext()) {
 			currentIter = argIter.next().iterator();
-			assert !(currentIter instanceof CloseableIteration);
 		} else {
 			// All elements have been returned
 			return null;

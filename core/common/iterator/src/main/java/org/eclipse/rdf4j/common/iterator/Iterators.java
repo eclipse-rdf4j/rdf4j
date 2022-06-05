@@ -19,7 +19,10 @@ import java.util.List;
 /**
  * This class consists exclusively of static methods that operate on or return iterators. It is the Iterator-equivalent
  * of {@link Collections}.
+ *
+ * @deprecated use Commons Collections or Guava instead.
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public class Iterators {
 
 	/**

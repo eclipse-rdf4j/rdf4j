@@ -35,6 +35,7 @@ import com.google.common.collect.Lists;
  * @author Andreas Schwarte
  *
  */
+@Deprecated(since = "4.1.0")
 public class FederatedDescribeIteration extends DescribeIteration {
 
 	private final QueryInfo queryInfo;

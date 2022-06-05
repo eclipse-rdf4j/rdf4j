@@ -143,5 +143,6 @@ public class TestLmdbStoreMemoryOverflow {
 		public void remove() throws RuntimeException {
 			throw new UnsupportedOperationException();
 		}
+
 	}
 }

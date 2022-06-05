@@ -13,6 +13,9 @@ import java.util.stream.Stream;
 
 /**
  * An iterator that does not contain any elements.
+ *
+ * @implNote In the future this class will stop extending AbstractCloseableIteration and instead implement
+ *           CloseableIteration directly.
  */
 public final class EmptyIteration<E, X extends Exception> implements CloseableIteration<E, X> {
 

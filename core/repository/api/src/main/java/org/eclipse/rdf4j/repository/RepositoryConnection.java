@@ -963,9 +963,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	/**
 	 * Adds the supplied statements to this repository, optionally to one or more named contexts.
 	 *
-	 * @param statements The statements to add. In case the iteration is a
-	 *                   {@link org.eclipse.rdf4j.common.iteration.CloseableIteration}, it will be closed before this
-	 *                   method returns.
+	 * @param statements The statements to add. The iteration will be closed.
 	 * @param contexts   The contexts to add the statements to. Note that this parameter is a vararg and as such is
 	 *                   optional. If no contexts are specified, each statement is added to any context specified in the
 	 *                   statement, or if the statement contains no context, it is added without context. If one or more
@@ -1036,9 +1034,7 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * Removes the supplied statements from a specific context in this repository, ignoring any context information
 	 * carried by the statements themselves.
 	 *
-	 * @param statements The statements to remove. In case the iteration is a
-	 *                   {@link org.eclipse.rdf4j.common.iteration.CloseableIteration}, it will be closed before this
-	 *                   method returns.
+	 * @param statements The statements to remove. The iteration will be closed.
 	 * @param contexts   The context(s) to remove the data from. Note that this parameter is a vararg and as such is
 	 *                   optional. If no contexts are supplied the method operates on the contexts associated with the
 	 *                   statement itself, and if no context is associated with the statement, on the entire repository.

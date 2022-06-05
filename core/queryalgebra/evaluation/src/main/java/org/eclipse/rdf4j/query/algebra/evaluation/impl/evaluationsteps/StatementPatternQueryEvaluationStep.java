@@ -16,6 +16,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.PredicateFilterIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -326,9 +327,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return eq;
 	}
 
-	/**
-	 * @return the contexts that are valid for this statement pattern or null
-	 */
 	protected static Function<Value, Resource[]> extractContextsFromDatasets(final Var contextVar, boolean emptyGraph,
 			Set<IRI> graphs) {
 
