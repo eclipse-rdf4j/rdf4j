@@ -441,7 +441,6 @@ public class SPARQLParserTest {
 
 		// should parse without error
 		parser.parseQuery(query, null);
-
 	}
 
 	@Test
@@ -453,7 +452,6 @@ public class SPARQLParserTest {
 
 		// should parse without error
 		parser.parseQuery(query, null);
-
 	}
 
 	@Test
@@ -465,7 +463,16 @@ public class SPARQLParserTest {
 
 		// should parse without error
 		parser.parseQuery(query, null);
+	}
 
+	@Test
+	public void testGroupByProjectionHandling_effectivelyConstant() {
+		String query = "SELECT  (2  AS ?constant1) (?constant1  AS ?constant2) (?constant2/2  AS ?constant3){\n" +
+				"    ?o ?p ?o .\n" +
+				"} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
 	}
 
 	@Test
@@ -476,7 +483,6 @@ public class SPARQLParserTest {
 
 		// should parse without error
 		parser.parseQuery(query, null);
-
 	}
 
 	@Test
@@ -487,6 +493,38 @@ public class SPARQLParserTest {
 
 		// should parse without error
 		parser.parseQuery(query, null);
-
 	}
+
+//	@Test
+//	public void testGroupByProjectionHandling_recursion1() {
+//		String query = "SELECT (?a  AS ?b) (?b/2  AS ?c)   (?c/2  AS ?d)  (?d  AS ?a){\n" +
+//			"    ?o ?p ?o .\n" +
+//			"} GROUP BY ?o";
+//
+//		// should parse without error
+//		parser.parseQuery(query, null);
+//
+//	}
+//
+//	@Test
+//	public void testGroupByProjectionHandling_recursion2() {
+//		String query = "SELECT (?a  AS ?b) (?b/2  AS ?c)   (?c/2  AS ?a)  {\n" +
+//			"    ?o ?p ?o .\n" +
+//			"} GROUP BY ?o";
+//
+//		// should parse without error
+//		parser.parseQuery(query, null);
+//
+//	}
+//
+//	@Test
+//	public void testGroupByProjectionHandling_recursion3() {
+//		String query = "SELECT (?a  AS ?b) (?b  AS ?c)   (?c/2  AS ?a)  {\n" +
+//			"    ?o ?p ?o .\n" +
+//			"} GROUP BY ?o";
+//
+//		// should parse without error
+//		parser.parseQuery(query, null);
+//
+//	}
 }
