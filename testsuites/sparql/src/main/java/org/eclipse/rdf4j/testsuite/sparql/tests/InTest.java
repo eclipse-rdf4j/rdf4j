@@ -7,11 +7,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+
+import java.util.List;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -19,8 +22,10 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation.Level;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.Test;
 
@@ -84,6 +89,44 @@ public class InTest extends AbstractComplianceTest {
 			assertTrue(y instanceof Literal);
 			assertEquals(literal("1", XSD.INTEGER), y);
 		}
+	}
+
+	@Test
+	public void testNotInComparison() throws Exception {
+
+//		String data = "prefix ex: <http://example.com/> \n"
+//				+ "prefix xsd:        <http://www.w3.org/2001/XMLSchema#> \n"
+//				+ "ex:wrong1 ex:prop \"value1-en\"@de.\n"
+//				+ "ex:wrong2 ex:prop \"value1-de\"@en.\n"
+//				+ "ex:wrong3 ex:prop \"value1 NOT\".\n"
+//				+ "ex:wrong4 ex:prop \"111\"^^xsd:integer.\n";
+//
+//		conn.add(new StringReader(data), RDFFormat.TURTLE);
+
+		String query = "prefix ex:      <http://example.com/> \n"
+				+ "prefix xsd:        <http://www.w3.org/2001/XMLSchema#> \n"
+				+ "\n"
+				+ "SELECT * WHERE {\n"
+				+ "  # Sample correct data for testing\n"
+				+ "  VALUES (?sub ?obj) {\n"
+				+ "  	(ex:wrong1 \"value1-en\"@de) # 1 error\n"
+				+ "  	(ex:wrong2 \"value1-de\"@en)  # 1 error\n"
+				+ "  	(ex:wrong3 \"value NOT\")  # 1 error\n"
+				+ "  	(ex:wrong4 \"111\"^^xsd:integer)  # 1 error\n"
+				+ "  }\n"
+//				+ "  ?sub ex:prop ?obj .\n"
+				+ "  FILTER( ?obj NOT IN ( \n"
+				+ "        \"1\"^^xsd:integer ,\n"
+				+ "        \"value1-de\"@de ,\n"
+				+ "        \"value1-en\"@en , 		\n"
+				+ "        \"value\"^^xsd:string ))\n"
+				+ " }\n";
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		System.out.println(tq.explain(Level.Executed).toString());
+		List<BindingSet> result = QueryResults.asList(tq.evaluate());
+
+		result.forEach(System.out::println);
+		assertThat(result).hasSize(4);
 	}
 
 }
