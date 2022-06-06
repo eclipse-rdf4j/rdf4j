@@ -34,7 +34,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry
 
 /**
  * An {@link EvaluationStrategy} that has support for {@link TupleFunction}s.
+ * 
+ * @deprecated since 4.1.0. Use {@link StandardEvaluationStrategy} instead.
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
