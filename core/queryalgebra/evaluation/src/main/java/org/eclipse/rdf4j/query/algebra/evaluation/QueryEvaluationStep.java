@@ -45,6 +45,9 @@ public interface QueryEvaluationStep {
 		}
 	}
 
+	EmptyIteration<BindingSet, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
+	QueryEvaluationStep EMPTY = bindings -> EMPTY_ITERATION;
+
 	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings);
 
 	/**

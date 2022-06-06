@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Order;
-import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -41,35 +40,32 @@ public class OrderComparator implements Comparator<BindingSet> {
 
 	private final Comparator<BindingSet> bindingContentsComparator;
 
-	public OrderComparator(EvaluationStrategy strategy, Order order, ValueComparator vcmp,
+	public OrderComparator(EvaluationStrategy strategy, Order order, ValueComparator cmp,
 			QueryEvaluationContext context) {
-		this.cmp = vcmp;
-		Comparator<BindingSet> allComparator = null;
-		for (OrderElem element : order.getElements()) {
-			final QueryValueEvaluationStep prepared = strategy.precompile(element.getExpr(), context);
-			final boolean ascending = element.isAscending();
-			Comparator<BindingSet> comparator = (o1, o2) -> {
-				Value v1 = prepared.evaluate(o1);
-				Value v2 = prepared.evaluate(o2);
-
-				int compare = cmp.compare(v1, v2);
-				return ascending ? compare : -compare;
-			};
-			allComparator = andThen(allComparator, comparator);
-		}
-		if (allComparator == null) {
-			this.bindingContentsComparator = (o1, o2) -> 0;
-		} else {
-			this.bindingContentsComparator = allComparator;
-		}
+		this.cmp = cmp;
+		this.bindingContentsComparator = precompileComparator(strategy, order, context);
 	}
 
-	private Comparator<BindingSet> andThen(Comparator<BindingSet> allComparator, Comparator<BindingSet> comparator) {
-		if (allComparator == null) {
-			return comparator;
-		} else {
-			return allComparator.thenComparing(comparator);
-		}
+	private Comparator<BindingSet> precompileComparator(EvaluationStrategy strategy, Order order,
+			QueryEvaluationContext context) {
+
+		return order.getElements()
+				.stream()
+				.map(element -> {
+					QueryValueEvaluationStep prepared = strategy.precompile(element.getExpr(), context);
+					boolean ascending = element.isAscending();
+
+					return (Comparator<BindingSet>) (o1, o2) -> {
+						Value v1 = prepared.evaluate(o1);
+						Value v2 = prepared.evaluate(o2);
+
+						int compare = cmp.compare(v1, v2);
+						return ascending ? compare : -compare;
+					};
+				})
+				.reduce(Comparator::thenComparing)
+				.orElse((o1, o2) -> 0);
+
 	}
 
 	@Override
@@ -91,9 +87,7 @@ public class OrderComparator implements Comparator<BindingSet> {
 				if (o1 == null) {
 					return o2 == null ? 0 : 1;
 				}
-				if (o2 == null) {
-					return o1 == null ? 0 : -1;
-				}
+				return -1;
 			}
 
 			if (o2.size() != o1.size()) {

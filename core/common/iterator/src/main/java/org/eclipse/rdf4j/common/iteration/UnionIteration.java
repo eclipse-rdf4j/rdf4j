@@ -38,6 +38,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 *
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
+	@SafeVarargs
 	public UnionIteration(Iteration<? extends E, X>... args) {
 		this(Arrays.asList(args));
 	}
