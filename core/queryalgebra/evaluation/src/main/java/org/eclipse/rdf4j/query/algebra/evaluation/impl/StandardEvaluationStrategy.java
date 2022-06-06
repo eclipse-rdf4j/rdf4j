@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -192,6 +193,8 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
 
+	private QueryEvaluationMode queryEvaluationMode;
+
 	static CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunction func,
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
 			throws QueryEvaluationException {
@@ -272,6 +275,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 		this.pipeline = new StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
+		this.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
 	}
 
 	@Deprecated(forRemoval = true, since = "4.0.0")
@@ -344,6 +348,10 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 		} else if (expr instanceof TripleRef) {
 			ret = evaluate((TripleRef) expr, bindings);
 		} else if (expr instanceof TupleFunctionCall) {
+			if (getQueryEvaluationMode().compareTo(QueryEvaluationMode.STANDARD) < 0) {
+				throw new QueryEvaluationException(
+						"Tuple function call not supported in query evaluation mode " + getQueryEvaluationMode());
+			}
 			return evaluate((TupleFunctionCall) expr, bindings);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
@@ -1816,12 +1824,12 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
-		boolean strict = true; // FIXME set to use new enum;
+		boolean strict = QueryEvaluationMode.MINIMAL_COMPLIANT == getQueryEvaluationMode();
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), strict));
 	}
 
 	protected QueryValueEvaluationStep prepare(Compare node, QueryEvaluationContext context) {
-		boolean strict = true; // FIXME set to use new enum
+		boolean strict = QueryEvaluationMode.MINIMAL_COMPLIANT == getQueryEvaluationMode();
 		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
 				.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), strict)), context);
 	}
@@ -1853,7 +1861,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 	}
 
 	protected QueryValueEvaluationStep prepare(MathExpr node, QueryEvaluationContext context) {
-		boolean strict = true; // FIXME use new enum
+		boolean strict = QueryEvaluationMode.MINIMAL_COMPLIANT == getQueryEvaluationMode();
 		return supplyBinaryValueEvaluation(node,
 				(leftVal, rightVal) -> mathOperationApplier(node, leftVal, rightVal, strict),
 				context);
@@ -2263,5 +2271,19 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 				}
 			};
 		}
+	}
+
+	/**
+	 * @return the queryEvaluationMode
+	 */
+	public QueryEvaluationMode getQueryEvaluationMode() {
+		return queryEvaluationMode;
+	}
+
+	/**
+	 * @param queryEvaluationMode the queryEvaluationMode to set
+	 */
+	public void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode) {
+		this.queryEvaluationMode = Objects.requireNonNull(queryEvaluationMode);
 	}
 }

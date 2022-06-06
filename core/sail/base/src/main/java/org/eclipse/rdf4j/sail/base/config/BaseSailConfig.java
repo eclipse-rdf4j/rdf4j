@@ -10,12 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base.config;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.EVALUATION_STRATEGY_FACTORY;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.NAMESPACE;
 
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -25,6 +26,8 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 	private String evalStratFactoryClassName;
+
+	private QueryEvaluationMode defaultQueryEvaluationMode;
 
 	protected BaseSailConfig(String type) {
 		super(type);
@@ -60,7 +63,12 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		if (evalStratFactoryClassName != null) {
 			graph.setNamespace("sb", NAMESPACE);
 			graph.add(implNode, EVALUATION_STRATEGY_FACTORY,
-					SimpleValueFactory.getInstance().createLiteral(evalStratFactoryClassName));
+					literal(evalStratFactoryClassName));
+		}
+		if (getDefaultQueryEvaluationMode() != null) {
+			graph.setNamespace("sb", NAMESPACE);
+			graph.add(implNode, BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE,
+					literal(getDefaultQueryEvaluationMode().getValue()));
 		}
 
 		return implNode;
@@ -71,6 +79,8 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		super.parse(graph, implNode);
 
 		try {
+			Models.objectLiteral(graph.getStatements(implNode, BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE, null))
+					.ifPresent(qem -> setDefaultQueryEvaluationMode(QueryEvaluationMode.valueOf(qem.stringValue())));
 
 			Models.objectLiteral(graph.getStatements(implNode, EVALUATION_STRATEGY_FACTORY, null))
 					.ifPresent(factoryClassName -> {
@@ -79,5 +89,19 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
+	}
+
+	/**
+	 * @return the defaultQueryEvaluationMode
+	 */
+	public QueryEvaluationMode getDefaultQueryEvaluationMode() {
+		return defaultQueryEvaluationMode;
+	}
+
+	/**
+	 * @param defaultQueryEvaluationMode the defaultQueryEvaluationMode to set
+	 */
+	public void setDefaultQueryEvaluationMode(QueryEvaluationMode defaultQueryEvaluationMode) {
+		this.defaultQueryEvaluationMode = defaultQueryEvaluationMode;
 	}
 }

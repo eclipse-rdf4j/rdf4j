@@ -74,6 +74,10 @@ public class NativeStoreFactory implements SailFactory {
 				nativeStore.setIterationCacheSyncThreshold(nativeConfig.getIterationCacheSyncThreshold());
 			}
 
+			if (nativeConfig.getDefaultQueryEvaluationMode() != null) {
+				nativeStore.setDefaultQueryEvaluationMode(nativeConfig.getDefaultQueryEvaluationMode());
+			}
+
 			EvaluationStrategyFactory evalStratFactory = nativeConfig.getEvaluationStrategyFactory();
 			if (evalStratFactory != null) {
 				nativeStore.setEvaluationStrategyFactory(evalStratFactory);

@@ -5,9 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
-package org.eclipse.rdf4j.query.algebra.evaluation;
-
-import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+package org.eclipse.rdf4j.common.transaction;
 
 /**
  * @author Jeen Broekstra
@@ -16,10 +14,11 @@ public enum QueryEvaluationMode implements TransactionSetting {
 	/**
 	 * Strict minimally-compliant mode with respect to SPARQL 1.1 recommendation.
 	 */
-	MINIMAL_COMPLIANT_11,
+	MINIMAL_COMPLIANT,
 
 	/**
-	 * Standard mode extends minimal compliance with various practical operator behavioral extensions.
+	 * Standard mode extends minimal compliance with various practical operator behavioral extensions, in a way that is
+	 * still compliant with the SPARQL 1.1 Recommendation.
 	 */
 	STANDARD
 
