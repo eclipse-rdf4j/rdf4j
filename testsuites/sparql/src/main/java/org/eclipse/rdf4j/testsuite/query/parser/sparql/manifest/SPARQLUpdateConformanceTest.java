@@ -75,13 +75,13 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 	protected Repository expectedResultRepo;
 
-	private IRI inputDefaultGraph;
+	private final IRI inputDefaultGraph;
 
-	private Map<String, IRI> inputNamedGraphs;
+	private final Map<String, IRI> inputNamedGraphs;
 
-	private IRI resultDefaultGraph;
+	private final IRI resultDefaultGraph;
 
-	private Map<String, IRI> resultNamedGraphs;
+	private final Map<String, IRI> resultNamedGraphs;
 
 	protected final Dataset dataset;
 
@@ -126,7 +126,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	protected void setUp() throws Exception {
 		dataRep = createRepository();
 
-		try (RepositoryConnection conn = dataRep.getConnection();) {
+		try (RepositoryConnection conn = dataRep.getConnection()) {
 			conn.clear();
 
 			if (inputDefaultGraph != null) {
@@ -146,7 +146,7 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 
 		expectedResultRepo = createRepository();
 
-		try (RepositoryConnection conn = expectedResultRepo.getConnection();) {
+		try (RepositoryConnection conn = expectedResultRepo.getConnection()) {
 			conn.clear();
 
 			if (resultDefaultGraph != null) {
@@ -253,11 +253,8 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 	}
 
 	private String readUpdateString() throws IOException {
-		InputStream stream = new URL(requestFileURL).openStream();
-		try {
+		try (InputStream stream = new URL(requestFileURL).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 
@@ -387,13 +384,10 @@ public abstract class SPARQLUpdateConformanceTest extends TestCase {
 		TupleQuery manifestNameQuery = con.prepareTupleQuery(
 				"SELECT ?ManifestName WHERE { ?ManifestURL rdfs:label ?ManifestName .}");
 		manifestNameQuery.setBinding("ManifestURL", manifestRep.getValueFactory().createIRI(manifestFileURL));
-		TupleQueryResult manifestNames = manifestNameQuery.evaluate();
-		try {
+		try (TupleQueryResult manifestNames = manifestNameQuery.evaluate()) {
 			if (manifestNames.hasNext()) {
 				return manifestNames.next().getValue("ManifestName").stringValue();
 			}
-		} finally {
-			manifestNames.close();
 		}
 
 		// Derive name from manifest URL

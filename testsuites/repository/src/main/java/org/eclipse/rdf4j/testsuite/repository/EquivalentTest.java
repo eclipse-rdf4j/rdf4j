@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -45,39 +46,44 @@ public abstract class EquivalentTest {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
-	private static ValueFactory vf = SimpleValueFactory.getInstance();
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+	}
 
-	private static Literal xyz_simple = vf.createLiteral("xyz");
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	private static Literal xyz_en = vf.createLiteral("xyz", "en");
+	private static final Literal xyz_simple = vf.createLiteral("xyz");
 
-	private static Literal xyz_EN = vf.createLiteral("xyz", "EN");
+	private static final Literal xyz_en = vf.createLiteral("xyz", "en");
 
-	private static Literal xyz_string = vf.createLiteral("xyz", CoreDatatype.XSD.STRING);
+	private static final Literal xyz_EN = vf.createLiteral("xyz", "EN");
 
-	private static Literal xyz_integer = vf.createLiteral("xyz", XSD.INTEGER);
+	private static final Literal xyz_string = vf.createLiteral("xyz", CoreDatatype.XSD.STRING);
 
-	private static Literal xyz_unknown = vf.createLiteral("xyz", vf.createIRI("http://example/unknown"));
+	private static final Literal xyz_integer = vf.createLiteral("xyz", XSD.INTEGER);
 
-	private static IRI xyz_uri = vf.createIRI("http://example/xyz");
+	private static final Literal xyz_unknown = vf.createLiteral("xyz", vf.createIRI("http://example/unknown"));
 
-	private static Literal abc_simple = vf.createLiteral("abc");
+	private static final IRI xyz_uri = vf.createIRI("http://example/xyz");
 
-	private static Literal abc_en = vf.createLiteral("abc", "en");
+	private static final Literal abc_simple = vf.createLiteral("abc");
 
-	private static Literal abc_EN = vf.createLiteral("abc", "EN");
+	private static final Literal abc_en = vf.createLiteral("abc", "en");
 
-	private static Literal abc_string = vf.createLiteral("abc", XSD.STRING);
+	private static final Literal abc_EN = vf.createLiteral("abc", "EN");
 
-	private static Literal abc_integer = vf.createLiteral("abc", CoreDatatype.XSD.INTEGER);
+	private static final Literal abc_string = vf.createLiteral("abc", XSD.STRING);
 
-	private static Literal abc_unknown = vf.createLiteral("abc", vf.createIRI("http://example/unknown"));
+	private static final Literal abc_integer = vf.createLiteral("abc", CoreDatatype.XSD.INTEGER);
 
-	private static IRI abc_uri = vf.createIRI("http://example/abc");
+	private static final Literal abc_unknown = vf.createLiteral("abc", vf.createIRI("http://example/unknown"));
 
-	private static IRI t1 = vf.createIRI("http://example/t1");
+	private static final IRI abc_uri = vf.createIRI("http://example/abc");
 
-	private static IRI t2 = vf.createIRI("http://example/t2");
+	private static final IRI t1 = vf.createIRI("http://example/t1");
+
+	private static final IRI t2 = vf.createIRI("http://example/t2");
 
 	private static final String IND = "?";
 
@@ -88,7 +94,7 @@ public abstract class EquivalentTest {
 	private static final String PREFIX = "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n"
 			+ "PREFIX rdf:<http://www.w3.org/1999/02/22-rdf-syntax-ns#>" + "PREFIX ex:<http://example/>";
 
-	private static String matrix = "\"xyz\"	\"xyz\"	eq\n" + "\"xyz\"	\"xyz\"@en	neq\n"
+	private static final String matrix = "\"xyz\"	\"xyz\"	eq\n" + "\"xyz\"	\"xyz\"@en	neq\n"
 			+ "\"xyz\"	\"xyz\"@EN	neq\n" + "\"xyz\"	\"xyz\"^^xsd:string	eq\n"
 			+ "\"xyz\"	\"xyz\"^^xsd:integer	ind\n" + "\"xyz\"	\"xyz\"^^ex:unknown	ind\n"
 			+ "\"xyz\"	_:xyz	neq\n" + "\"xyz\"	:xyz	neq\n" + "\"xyz\"@en	\"xyz\"	neq\n"
@@ -169,11 +175,11 @@ public abstract class EquivalentTest {
 		return params;
 	}
 
-	private Value term1;
+	private final Value term1;
 
-	private Value term2;
+	private final Value term2;
 
-	private String operator;
+	private final String operator;
 
 	private Repository repository;
 

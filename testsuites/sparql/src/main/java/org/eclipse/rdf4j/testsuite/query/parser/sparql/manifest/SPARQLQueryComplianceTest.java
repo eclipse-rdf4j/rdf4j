@@ -161,7 +161,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 	protected abstract Repository newRepository() throws Exception;
 
-	private final Repository createRepository() throws Exception {
+	private Repository createRepository() throws Exception {
 		Repository repo = newRepository();
 		try (RepositoryConnection con = repo.getConnection()) {
 			con.clear();
@@ -170,18 +170,17 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		return repo;
 	}
 
-	private final String readQueryString() throws IOException {
+	private String readQueryString() throws IOException {
 		try (InputStream stream = new URL(queryFileURL).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
 		}
 	}
 
-	private final TupleQueryResult readExpectedTupleQueryResult() throws Exception {
+	private TupleQueryResult readExpectedTupleQueryResult() throws Exception {
 		Optional<QueryResultFormat> tqrFormat = QueryResultIO.getParserFormatForFileName(resultFileURL);
 
 		if (tqrFormat.isPresent()) {
-			InputStream in = new URL(resultFileURL).openStream();
-			try {
+			try (InputStream in = new URL(resultFileURL).openStream()) {
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat.get());
 				parser.setValueFactory(getDataRepository().getValueFactory());
 
@@ -190,8 +189,6 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 				parser.parseQueryResult(in);
 				return qrBuilder.getQueryResult();
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult();
@@ -199,16 +196,13 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		}
 	}
 
-	private final boolean readExpectedBooleanQueryResult() throws Exception {
+	private boolean readExpectedBooleanQueryResult() throws Exception {
 		Optional<QueryResultFormat> bqrFormat = BooleanQueryResultParserRegistry.getInstance()
 				.getFileFormatForFileName(resultFileURL);
 
 		if (bqrFormat.isPresent()) {
-			InputStream in = new URL(resultFileURL).openStream();
-			try {
+			try (InputStream in = new URL(resultFileURL).openStream()) {
 				return QueryResultIO.parseBoolean(in, bqrFormat.get());
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult();
@@ -216,7 +210,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		}
 	}
 
-	private final Set<Statement> readExpectedGraphQueryResult() throws Exception {
+	private Set<Statement> readExpectedGraphQueryResult() throws Exception {
 		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFileURL)
 				.orElseThrow(Rio.unsupportedFormat(resultFileURL));
 
@@ -227,17 +221,14 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		Set<Statement> result = new LinkedHashSet<>();
 		parser.setRDFHandler(new StatementCollector(result));
 
-		InputStream in = new URL(resultFileURL).openStream();
-		try {
+		try (InputStream in = new URL(resultFileURL).openStream()) {
 			parser.parse(in, resultFileURL);
-		} finally {
-			in.close();
 		}
 
 		return result;
 	}
 
-	private final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
+	private void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
 			throws Exception {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results

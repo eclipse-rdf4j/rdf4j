@@ -27,7 +27,7 @@ import org.w3c.dom.NodeList;
  */
 public class NavigationXmlParser {
 
-	private XPath xpath = XPathFactory.newInstance().newXPath();
+	private final XPath xpath = XPathFactory.newInstance().newXPath();
 
 	public NavigationModel parse(URL navigationXml) {
 		NavigationModel result = new NavigationModel();

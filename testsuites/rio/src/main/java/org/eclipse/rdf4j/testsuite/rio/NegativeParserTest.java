@@ -25,11 +25,11 @@ public class NegativeParserTest extends TestCase {
 	/*-----------*
 	 * Variables *
 	 *-----------*/
-	private String inputURL;
+	private final String inputURL;
 
-	private String baseURL;
+	private final String baseURL;
 
-	private RDFParser targetParser;
+	private final RDFParser targetParser;
 
 	protected IRI testUri;
 

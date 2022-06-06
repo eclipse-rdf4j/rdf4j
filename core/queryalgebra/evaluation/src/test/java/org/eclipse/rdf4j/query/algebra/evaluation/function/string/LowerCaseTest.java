@@ -25,7 +25,7 @@ public class LowerCaseTest {
 
 	private LowerCase lcaseFunc;
 
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	/**
 	 * @throws java.lang.Exception

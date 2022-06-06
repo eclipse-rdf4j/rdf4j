@@ -46,7 +46,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	public enum REPOSITORY_TYPE {
 		SPARQLREPOSITORY,
 		REMOTEREPOSITORY,
-		NATIVE;
+		NATIVE
 	}
 
 	protected static final int MAX_ENDPOINTS = 4;
@@ -89,6 +89,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		if (server != null) {
 			server.shutdown();
 		}
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	@BeforeEach

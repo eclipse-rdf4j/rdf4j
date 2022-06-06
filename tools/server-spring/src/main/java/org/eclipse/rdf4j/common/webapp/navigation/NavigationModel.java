@@ -190,7 +190,7 @@ public class NavigationModel extends Group {
 	 * @return the view, or null if no view matching the specified name could be found
 	 */
 	public View findView(String viewName) {
-		View result = null;
+		View result;
 
 		int prefixLength = getPathPrefix().length();
 		viewName = viewName.substring(prefixLength);

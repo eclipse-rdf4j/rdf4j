@@ -21,7 +21,7 @@ public class WeakObjectRegistryTest {
 	@Timeout(5)
 	public void testGC() throws InterruptedException {
 
-		WeakObjectRegistry<IRI> objects = new WeakObjectRegistry<>();
+		WeakObjectRegistry<IRI, IRI> objects = new WeakObjectRegistry<>();
 
 		IRI iri = Values.iri("http://example.com/1");
 

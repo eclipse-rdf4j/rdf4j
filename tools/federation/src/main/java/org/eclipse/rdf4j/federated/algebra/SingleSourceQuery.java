@@ -63,7 +63,6 @@ public class SingleSourceQuery extends AbstractQueryModelNode implements TupleEx
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
 		parsedQuery.visit(visitor);
-		super.visitChildren(visitor);
 	}
 
 	@Override

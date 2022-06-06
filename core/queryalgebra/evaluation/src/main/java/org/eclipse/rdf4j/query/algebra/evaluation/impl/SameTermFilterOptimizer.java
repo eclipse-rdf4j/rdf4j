@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * @author Arjohn Kampman
  * @author James Leigh
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class SameTermFilterOptimizer implements QueryOptimizer {
 
 	/**
@@ -191,7 +192,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 	protected static class BindingSetAssignmentCollector extends AbstractQueryModelVisitor<RuntimeException> {
 
-		private List<BindingSetAssignment> assignments = new ArrayList<>();
+		private final List<BindingSetAssignment> assignments = new ArrayList<>();
 
 		@Override
 		public void meet(BindingSetAssignment bsa) {

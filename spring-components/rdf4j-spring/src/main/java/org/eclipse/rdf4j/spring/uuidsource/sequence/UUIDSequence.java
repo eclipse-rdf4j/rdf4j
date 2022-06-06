@@ -37,8 +37,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class UUIDSequence implements UUIDSource {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private @Autowired RDF4JTemplate rdf4JTemplate;
-	private int prefetchCount;
-	private Map<RepositoryConnection, Queue<IRI>> prefetchedUUIDs = Collections.synchronizedMap(new WeakHashMap<>());
+	private final int prefetchCount;
+	private final Map<RepositoryConnection, Queue<IRI>> prefetchedUUIDs = Collections
+			.synchronizedMap(new WeakHashMap<>());
 
 	public UUIDSequence(UUIDSequenceProperties properties) {
 		this.prefetchCount = properties.getPrefetchCount();

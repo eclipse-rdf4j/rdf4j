@@ -120,7 +120,7 @@ public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser
 					"Internal error: Did not specify whether to parse as either boolean and/or tuple");
 		}
 
-		JsonParser jp = null;
+		JsonParser jp;
 
 		boolean result = false;
 		try {

@@ -79,8 +79,7 @@ public class BindSelect implements PlanNode {
 		this.scope = scope;
 		this.vars = vars;
 		this.bulkSize = bulkSize;
-		source = PlanNodeHelper.handleSorting(this, source);
-		this.source = source;
+		this.source = PlanNodeHelper.handleSorting(this, source);
 
 		if (query.trim().equals("")) {
 			throw new IllegalStateException();

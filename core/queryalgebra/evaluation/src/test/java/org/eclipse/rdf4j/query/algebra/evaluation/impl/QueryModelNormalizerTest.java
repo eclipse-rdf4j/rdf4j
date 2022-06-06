@@ -14,12 +14,13 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 public class QueryModelNormalizerTest extends QueryOptimizerTest {
 
-	private QueryModelNormalizer subject;
+	private QueryModelNormalizerOptimizer subject;
 
 	@BeforeEach
 	public void setup() throws Exception {
@@ -71,8 +72,8 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 	}
 
 	@Override
-	public QueryModelNormalizer getOptimizer() {
-		return new QueryModelNormalizer();
+	public QueryModelNormalizerOptimizer getOptimizer() {
+		return new QueryModelNormalizerOptimizer();
 	}
 
 }

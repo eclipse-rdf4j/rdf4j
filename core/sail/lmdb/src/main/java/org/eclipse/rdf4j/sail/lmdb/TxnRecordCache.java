@@ -54,7 +54,8 @@ final class TxnRecordCache {
 
 	private final Path dbDir;
 	private final long env;
-	private int dbiExplicit, dbiInferred;
+	private final int dbiExplicit;
+	private final int dbiInferred;
 	private long writeTxn;
 	private long mapSize = 1048576; // 1 MiB
 	private long pageSize;
@@ -172,9 +173,9 @@ final class TxnRecordCache {
 		private final MDBVal keyData = MDBVal.malloc();
 		private final MDBVal valueData = MDBVal.malloc();
 		private long txn;
-		private long cursor;
-		private int dbi;
-		private long[] quad = new long[4];
+		private final long cursor;
+		private final int dbi;
+		private final long[] quad = new long[4];
 
 		protected RecordCacheIterator(int dbi) throws IOException {
 			this.dbi = dbi;

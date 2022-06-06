@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoin
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep right;
@@ -41,13 +41,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			Set<String> joinAttributeNames = new HashSet<>(leftBindingNames);
 			joinAttributeNames.retainAll(rightBindingNames);
 			String[] joinAttributes = joinAttributeNames.toArray(new String[0]);
-			return new QueryEvaluationStep() {
-
-				@Override
-				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-					return new HashJoinIteration(left, right, bs, true, joinAttributes, context);
-				}
-			};
+			return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
 		}
 
 		// Check whether optional join is "well designed" as defined in section
@@ -61,18 +55,60 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else {
 			condition = null;
 		}
-		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector);
+		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
 	}
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
-			QueryEvaluationStep left, LeftJoin leftJoin, VarNameCollector optionalVarCollector) {
+			QueryEvaluationStep left, LeftJoin leftJoin,
+			org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector optionalVarCollector) {
 		this.right = right;
 		this.condition = condition;
 		this.left = left;
 		this.leftJoin = leftJoin;
 		// This is used to determine if the left join is well designed.
-		this.optionalVars = optionalVarCollector.getVarNames();
-		this.optionalVars.removeAll(leftJoin.getLeftArg().getBindingNames());
+
+		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
+		Set<String> optionalVars = optionalVarCollector.getVarNames();
+
+		boolean optionalVarsContainLeftBindingName = false;
+		for (String leftBindingName : leftBindingNames) {
+			if (!optionalVarsContainLeftBindingName && optionalVars.contains(leftBindingName)) {
+				optionalVars = new HashSet<>(optionalVars);
+				optionalVarsContainLeftBindingName = true;
+			}
+			if (optionalVarsContainLeftBindingName) {
+				optionalVars.remove(leftBindingName);
+			}
+		}
+
+		this.optionalVars = optionalVars;
+
+	}
+
+	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
+			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars) {
+		this.right = right;
+		this.condition = condition;
+		this.left = left;
+		this.leftJoin = leftJoin;
+		// This is used to determine if the left join is well designed.
+
+		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
+
+		boolean optionalVarsContainLeftBindingName = false;
+		for (String leftBindingName : leftBindingNames) {
+			if (!optionalVarsContainLeftBindingName && optionalVars.contains(leftBindingName)) {
+				optionalVars = new HashSet<>(optionalVars);
+				optionalVarsContainLeftBindingName = true;
+			}
+			if (optionalVarsContainLeftBindingName) {
+				optionalVars.remove(leftBindingName);
+			}
+		}
+
+		this.optionalVars = optionalVars;
+
 	}
 
 	@Override

@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser;
@@ -637,7 +637,7 @@ public class SailUpdateExecutor {
 
 		Resource subject = null;
 		IRI predicate = null;
-		Value object = null;
+		Value object;
 		Resource context = null;
 
 		Value patternValue;
@@ -737,7 +737,7 @@ public class SailUpdateExecutor {
 	}
 
 	private Value getValueForVar(Var var, BindingSet bindings) throws SailException {
-		Value value = null;
+		Value value;
 		if (var.hasValue()) {
 			value = var.getValue();
 		} else {

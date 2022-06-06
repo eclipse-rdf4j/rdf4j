@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
+@Deprecated(since = "4.1.0")
 public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException> {
 
 	/*-----------*
@@ -72,7 +73,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		if (includeAllParentBindings) {
 			this.maker = () -> context.createBindingSet(parentBindings);
 		} else {
-			this.maker = () -> context.createBindingSet();
+			this.maker = context::createBindingSet;
 		}
 		this.projector = consumer;
 	}
@@ -85,7 +86,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			return consumer.andThen(next);
 	}
 
-	private final boolean determineOuterProjection(QueryModelNode ancestor) {
+	private boolean determineOuterProjection(QueryModelNode ancestor) {
 		while (ancestor.getParentNode() != null) {
 			ancestor = ancestor.getParentNode();
 			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {

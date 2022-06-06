@@ -32,7 +32,7 @@ public class SolrSearchQuery implements SearchQuery {
 
 	private final SolrQuery query;
 
-	private SolrIndex index;
+	private final SolrIndex index;
 
 	public SolrSearchQuery(SolrQuery q, SolrIndex index) {
 		this.query = q;

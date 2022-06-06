@@ -227,7 +227,7 @@ public class SPARQLParser implements QueryParser {
 		BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
 
 		StringBuilder buf = new StringBuilder();
-		String line = null;
+		String line;
 
 		int emptyLineCount = 0;
 		while ((line = in.readLine()) != null) {

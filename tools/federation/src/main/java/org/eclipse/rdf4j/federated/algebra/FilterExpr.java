@@ -43,7 +43,6 @@ public class FilterExpr extends AbstractQueryModelNode implements FilterValueExp
 	@Override
 	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor)
 			throws X {
-		super.visitChildren(visitor);
 		expr.visit(visitor);
 	}
 

@@ -26,7 +26,7 @@ public class OperationStatsBean implements OperationStatsMXBean, OperationExecut
 
 	private Map<String, AggregatedOperationStats> stats = new HashMap<>();
 
-	private ExecutorService executorService = Executors.newSingleThreadExecutor();
+	private final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
 	@Override
 	public List<AggregatedOperationStats> getAggregatedOperationStats() {

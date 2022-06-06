@@ -40,7 +40,7 @@ import org.junit.Test;
  */
 public class JSONLDHierarchicalWriterTest {
 
-	private static SimpleValueFactory vf = SimpleValueFactory.getInstance();
+	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 	private Model model;
 	private WriterConfig writerConfig;
 
@@ -353,7 +353,6 @@ public class JSONLDHierarchicalWriterTest {
 		public void write(int b) throws IOException {
 			if (Arrays.binarySearch(toIgnore, b) < 0) {
 				while (Arrays.binarySearch(toIgnore, charInFile = is.read()) >= 0) {
-					;
 				}
 				assertEquals("Files are equal", charInFile, b);
 			}

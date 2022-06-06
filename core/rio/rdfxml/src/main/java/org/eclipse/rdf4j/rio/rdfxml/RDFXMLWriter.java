@@ -42,7 +42,7 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 /**
  * An implementation of the RDFWriter interface that writes RDF documents in XML-serialized RDF format.
  */
-public class RDFXMLWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
+public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 
 	protected final ParsedIRI baseIRI;
 	protected final Writer writer;

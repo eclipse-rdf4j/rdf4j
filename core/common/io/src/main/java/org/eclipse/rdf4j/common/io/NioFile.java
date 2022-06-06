@@ -10,12 +10,15 @@ package org.eclipse.rdf4j.common.io;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.EnumSet;
+import java.util.Set;
 
 /**
  * File wrapper that protects against concurrent file closing events due to e.g. {@link Thread#interrupt() thread
@@ -27,11 +30,15 @@ import java.nio.channels.WritableByteChannel;
  */
 public final class NioFile implements Closeable {
 
+	public static final EnumSet<StandardOpenOption> R = EnumSet.of(StandardOpenOption.READ);
+	public static final EnumSet<StandardOpenOption> RW = EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE,
+			StandardOpenOption.CREATE);
+	public static final EnumSet<StandardOpenOption> RWS = EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE,
+			StandardOpenOption.CREATE, StandardOpenOption.SYNC);
+	public static final EnumSet<StandardOpenOption> RWD = EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE,
+			StandardOpenOption.CREATE, StandardOpenOption.DSYNC);
 	private final File file;
-
-	private final String mode;
-
-	private volatile RandomAccessFile raf;
+	private final Set<StandardOpenOption> openOptions;
 
 	private volatile FileChannel fc;
 
@@ -55,18 +62,34 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	public NioFile(File file, String mode) throws IOException {
-		this.file = file;
-		this.mode = mode;
+		this(file, toOpenOptions(mode));
+	}
 
-		if (!file.exists()) {
-			boolean created = file.createNewFile();
-			if (!created) {
-				throw new IOException("Failed to create file: " + file);
-			}
+	public NioFile(File file, Set<StandardOpenOption> openOptions) throws IOException {
+		this.openOptions = openOptions;
+		explictlyClosed = false;
+		this.file = file;
+		open();
+	}
+
+	public NioFile(Path path, Set<StandardOpenOption> openOptions) throws IOException {
+		this(path.toFile(), openOptions);
+	}
+
+	private static Set<StandardOpenOption> toOpenOptions(String mode) {
+		switch (mode) {
+		case "r":
+			return R;
+		case "rw":
+			return RW;
+		case "rws":
+			return RWS;
+		case "rwd":
+			return RWD;
+		default:
+			throw new IllegalArgumentException();
 		}
 
-		explictlyClosed = false;
-		open();
 	}
 
 	/**
@@ -75,8 +98,7 @@ public final class NioFile implements Closeable {
 	 * @throws IOException
 	 */
 	private void open() throws IOException {
-		raf = new RandomAccessFile(file, mode);
-		fc = raf.getChannel();
+		fc = FileChannel.open(file.toPath(), openOptions);
 	}
 
 	/**
@@ -99,7 +121,7 @@ public final class NioFile implements Closeable {
 	@Override
 	public synchronized void close() throws IOException {
 		explictlyClosed = true;
-		raf.close();
+		fc.close();
 	}
 
 	/**

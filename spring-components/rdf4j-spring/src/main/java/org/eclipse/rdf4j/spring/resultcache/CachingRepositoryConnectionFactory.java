@@ -26,10 +26,10 @@ public class CachingRepositoryConnectionFactory extends DelegatingRepositoryConn
 		this.globalTupleQueryResultCache = new LRUResultCache<>(properties);
 	}
 
-	private LRUResultCache<ReusableTupleQueryResult> globalTupleQueryResultCache;
-	private LRUResultCache<ReusableGraphQueryResult> globalGraphQueryResultCache;
+	private final LRUResultCache<ReusableTupleQueryResult> globalTupleQueryResultCache;
+	private final LRUResultCache<ReusableGraphQueryResult> globalGraphQueryResultCache;
 
-	private ResultCacheProperties properties;
+	private final ResultCacheProperties properties;
 
 	@Override
 	public RepositoryConnection getConnection() {

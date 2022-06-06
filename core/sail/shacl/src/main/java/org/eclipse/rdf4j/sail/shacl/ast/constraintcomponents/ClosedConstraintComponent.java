@@ -29,8 +29,7 @@ public class ClosedConstraintComponent extends AbstractConstraintComponent {
 	private final List<Path> paths;
 	private final List<IRI> ignoredProperties;
 
-	public ClosedConstraintComponent(ShapeSource shapeSource, List<Resource> property,
-			Resource ignoredProperties) {
+	public ClosedConstraintComponent(ShapeSource shapeSource, List<Resource> property, Resource ignoredProperties) {
 
 		paths = property.stream().flatMap(r -> {
 			return shapeSource.getObjects(r, ShapeSource.Predicates.PATH)

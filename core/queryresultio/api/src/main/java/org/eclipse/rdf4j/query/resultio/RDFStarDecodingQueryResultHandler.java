@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
  * @author Pavel Mihaylov
  */
 class RDFStarDecodingQueryResultHandler implements TupleQueryResultHandler, BooleanQueryResultHandler {
-	private QueryResultHandler delegate;
+	private final QueryResultHandler delegate;
 
 	RDFStarDecodingQueryResultHandler(QueryResultHandler delegate) {
 		this.delegate = delegate;

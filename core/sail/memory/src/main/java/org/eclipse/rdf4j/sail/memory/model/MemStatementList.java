@@ -129,8 +129,9 @@ public class MemStatementList {
 
 		// remove all deprecated statements from the end of the list
 		for (; i >= 0; i--) {
-			if (Thread.currentThread().isInterrupted())
+			if (Thread.currentThread().isInterrupted()) {
 				return;
+			}
 			if (statements[i].getTillSnapshot() <= currentSnapshot) {
 				--size;
 				statements[i] = null;
@@ -142,8 +143,9 @@ public class MemStatementList {
 
 		// remove all deprecated statements that are not at the end of the list
 		for (; i >= 0; i--) {
-			if (Thread.currentThread().isInterrupted())
+			if (Thread.currentThread().isInterrupted()) {
 				return;
+			}
 
 			if (statements[i].getTillSnapshot() <= currentSnapshot) {
 				// replace statement with last statement in the list
@@ -161,5 +163,48 @@ public class MemStatementList {
 		}
 		statements = newArray;
 
+	}
+
+	/**
+	 * Iterates through this list and returns the statement that exactly matches the provided arguments. The subject,
+	 * predicate and object should not be null. If the context is null it will match statements with null as their
+	 * context.
+	 *
+	 * @param subject
+	 * @param predicate
+	 * @param object
+	 * @param context
+	 * @param snapshot
+	 * @return
+	 */
+	public MemStatement getExact(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
+			int snapshot) {
+
+		// these variables are volatile, so we store them locally to avoid having to do a lot of volatile reads
+		MemStatement[] statements = this.statements;
+		int size = this.size;
+
+		for (int i = 0; i < size; i++) {
+			MemStatement memStatement = statements[i];
+			if (memStatement == null) {
+				break;
+			}
+
+			// match predicate first, because the invoking method usually ends up with the subject list
+			if (memStatement.exactMatch(subject, predicate, object, context) && memStatement.isInSnapshot(snapshot)) {
+				return memStatement;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * An internal method to retrieve the inner array that stores the statements. Useful to reduce the number of
+	 * volatile reads.
+	 *
+	 * @return the underlying array og MemStatements
+	 */
+	MemStatement[] getStatements() {
+		return statements;
 	}
 }

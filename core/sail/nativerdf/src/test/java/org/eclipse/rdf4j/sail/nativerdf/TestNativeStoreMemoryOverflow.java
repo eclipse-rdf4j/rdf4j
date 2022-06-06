@@ -11,6 +11,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -50,7 +51,7 @@ public class TestNativeStoreMemoryOverflow {
 
 	private RepositoryConnection testCon2;
 
-	private IsolationLevel level;
+	private final IsolationLevel level;
 
 	public TestNativeStoreMemoryOverflow(IsolationLevel level) {
 		this.level = level;
@@ -104,7 +105,7 @@ public class TestNativeStoreMemoryOverflow {
 		testCon.close();
 	}
 
-	private static final class DynamicIteration implements Iteration<Statement, RuntimeException> {
+	private static final class DynamicIteration implements CloseableIteration<Statement, RuntimeException> {
 
 		private final int size;
 
@@ -136,6 +137,11 @@ public class TestNativeStoreMemoryOverflow {
 		@Override
 		public void remove() throws RuntimeException {
 			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void close() throws RuntimeException {
+			// no-op
 		}
 	}
 }

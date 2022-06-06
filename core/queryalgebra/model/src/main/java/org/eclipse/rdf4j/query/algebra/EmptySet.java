@@ -31,6 +31,11 @@ public class EmptySet extends AbstractQueryModelNode implements TupleExpr {
 	}
 
 	@Override
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+		// no-op
+	}
+
+	@Override
 	public boolean equals(Object other) {
 		return other instanceof EmptySet;
 	}

@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -35,8 +34,8 @@ import org.openjdk.jmh.annotations.Warmup;
  * @author Håvard Mikkelsen Ottestad
  */
 
-@Measurement(iterations = 10)
-@Warmup(iterations = 20)
+@Measurement(iterations = 3)
+@Warmup(iterations = 3)
 @Fork(1)
 @State(Scope.Thread)
 public class ReasoningBenchmark {
@@ -67,39 +66,6 @@ public class ReasoningBenchmark {
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void noReasoningMultipleTransactions() throws IOException {
 		SailRepository sail = new SailRepository(new MemoryStore());
-
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-
-			connection.begin();
-			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-			connection.commit();
-
-			addAllDataMultipleTransactions(connection);
-
-		}
-	}
-
-	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
-	public void forwardChainingRDFSInferencer() throws IOException {
-		SailRepository sail = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
-
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-			connection.begin();
-
-			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-			addAllDataSingleTransaction(connection);
-
-			connection.commit();
-		}
-	}
-
-	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
-	public void forwardChainingRDFSInferencerMultipleTransactions() throws IOException {
-		SailRepository sail = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
 
 		try (SailRepositoryConnection connection = sail.getConnection()) {
 

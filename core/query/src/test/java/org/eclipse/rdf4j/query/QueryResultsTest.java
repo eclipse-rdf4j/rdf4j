@@ -48,11 +48,11 @@ public class QueryResultsTest {
 	/** a stub GraphQueryResult, containing a number of duplicate statements */
 	private GraphQueryResult gqr;
 
-	private static ValueFactory VF = SimpleValueFactory.getInstance();
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
-	private List<String> twoBindingNames = Arrays.asList("a", "b");
+	private final List<String> twoBindingNames = Arrays.asList("a", "b");
 
-	private List<String> threeBindingNames = Arrays.asList("a", "b", "c");
+	private final List<String> threeBindingNames = Arrays.asList("a", "b", "c");
 
 	private IRI foo;
 
@@ -66,15 +66,15 @@ public class QueryResultsTest {
 
 	private Literal lit2;
 
-	private IRI a = VF.createIRI("urn:a");
+	private final IRI a = VF.createIRI("urn:a");
 
-	private IRI b = VF.createIRI("urn:b");
+	private final IRI b = VF.createIRI("urn:b");
 
-	private IRI c = VF.createIRI("urn:c");
+	private final IRI c = VF.createIRI("urn:c");
 
-	private IRI p = VF.createIRI("urn:p");
+	private final IRI p = VF.createIRI("urn:p");
 
-	private IRI q = VF.createIRI("urn:q");
+	private final IRI q = VF.createIRI("urn:q");
 
 	@BeforeEach
 	public void setUp() {
@@ -222,7 +222,7 @@ public class QueryResultsTest {
 	private class StubGraphQueryResult extends AbstractCloseableIteration<Statement, QueryEvaluationException>
 			implements GraphQueryResult {
 
-		private List<Statement> statements = new ArrayList<>();
+		private final List<Statement> statements = new ArrayList<>();
 
 		public StubGraphQueryResult() {
 			statements.add(VF.createStatement(a, p, b));

@@ -23,7 +23,7 @@ import org.junit.Test;
 
 public class NDJSONLDParserTest {
 
-	private ValueFactory vf = SimpleValueFactory.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Test
 	public void testNDJSONLDWriter() throws IOException {

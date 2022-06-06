@@ -12,7 +12,7 @@ import java.util.Set;
 /**
  * An abstract superclass for unary tuple operators which, by definition, has one argument.
  */
-public abstract class UnaryTupleOperator extends AbstractQueryModelNode implements TupleExpr, GraphPatternGroupable {
+public abstract class UnaryTupleOperator extends AbstractQueryModelNode implements TupleExpr {
 
 	/*-----------*
 	 * Variables *
@@ -83,8 +83,6 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (arg == current) {
 			setArg((TupleExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 
@@ -106,7 +104,8 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	@Override
 	public UnaryTupleOperator clone() {
 		UnaryTupleOperator clone = (UnaryTupleOperator) super.clone();
-		clone.setArg(getArg().clone());
+		clone.arg = getArg().clone();
+		clone.arg.setParentNode(clone);
 		return clone;
 	}
 

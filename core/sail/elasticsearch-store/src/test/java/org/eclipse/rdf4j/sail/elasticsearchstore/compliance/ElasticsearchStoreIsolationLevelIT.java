@@ -28,7 +28,7 @@ import org.junit.BeforeClass;
  */
 public class ElasticsearchStoreIsolationLevelIT extends SailIsolationLevelTest {
 
-	private static File installLocation = Files.newTemporaryFolder();
+	private static final File installLocation = Files.newTemporaryFolder();
 	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider clientPool;
 
@@ -40,7 +40,8 @@ public class ElasticsearchStoreIsolationLevelIT extends SailIsolationLevelTest {
 	}
 
 	@AfterClass
-	public static void afterClass() throws Exception {
+	public static void afterClass2() throws Exception {
+		SailIsolationLevelTest.afterClass();
 		clientPool.close();
 		TestHelpers.stopElasticsearch(runner);
 	}

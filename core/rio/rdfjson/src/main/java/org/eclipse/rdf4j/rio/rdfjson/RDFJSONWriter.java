@@ -48,7 +48,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
  *
  * @author Peter Ansell p_ansell@yahoo.com
  */
-public class RDFJSONWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
+public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 
 	private final Writer writer;
 

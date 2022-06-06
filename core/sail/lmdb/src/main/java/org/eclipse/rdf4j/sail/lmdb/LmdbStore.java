@@ -60,7 +60,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	/**
 	 * Specifies which triple indexes this lmdb store must use.
 	 */
-	private LmdbStoreConfig config;
+	private final LmdbStoreConfig config;
 
 	private SailStore store;
 

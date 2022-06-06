@@ -48,6 +48,7 @@ public class HTTPRepositoryOptimisticIsolationTest extends OptimisticIsolationTe
 	public static void tearDown() throws Exception {
 		setRepositoryFactory(null);
 		server.stop();
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 }

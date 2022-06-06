@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.federated.endpoint.EndpointType;
 public class RepositoryInformation {
 
 	protected Properties props = new Properties();
-	private EndpointType type = EndpointType.Other; // the endpoint type, default Other
+	private EndpointType type;
 	private EndpointConfiguration endpointConfiguration; // optional configuration settings for the endpoint
 
 	private boolean writable;

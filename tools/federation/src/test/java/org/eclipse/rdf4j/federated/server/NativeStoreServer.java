@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 
 public class NativeStoreServer implements Server {
 
-	private List<Repository> repositories = new ArrayList<>();
+	private final List<Repository> repositories = new ArrayList<>();
 
 	private final File dataDir;
 

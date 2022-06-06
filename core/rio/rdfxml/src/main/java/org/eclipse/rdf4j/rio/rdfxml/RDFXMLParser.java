@@ -103,7 +103,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	/**
 	 * A filter filtering calls to SAX methods specifically for this parser.
 	 */
-	private SAXFilter saxFilter;
+	private final SAXFilter saxFilter;
 
 	/**
 	 * The base URI of the document. This variable is set when <var>parse(inputStream, baseURI)</var> is called and will
@@ -121,13 +121,13 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	/**
 	 * A stack of node- and property elements.
 	 */
-	private Stack<Object> elementStack = new Stack<>();
+	private final Stack<Object> elementStack = new Stack<>();
 
 	/**
 	 * A set containing URIs that have been generated as a result of rdf:ID attributes. These URIs should be unique
 	 * within a single document.
 	 */
-	private Set<IRI> usedIDs = new HashSet<>();
+	private final Set<IRI> usedIDs = new HashSet<>();
 
 	/*--------------*
 	 * Constructors *
@@ -442,7 +442,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 		if (!localName.equals("Description") || !namespaceURI.equals(RDF.NAMESPACE)) {
 			// element name is uri's type
-			IRI className = null;
+			IRI className;
 			if ("".equals(namespaceURI)) {
 				// No namespace, use base URI
 				className = buildResourceFromLocalName(localName);
@@ -501,7 +501,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 			}
 		}
 
-		Resource result = null;
+		Resource result;
 
 		if (id != null) {
 			result = buildURIFromID(id.getValue());
@@ -540,7 +540,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 		}
 
 		// Get the URI of the property
-		IRI propURI = null;
+		IRI propURI;
 		if (namespaceURI.isEmpty()) {
 			// no namespace URI
 			reportError("unqualified property element <" + qName + "> not allowed",
@@ -719,7 +719,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 			}
 		}
 
-		Resource result = null;
+		Resource result;
 
 		if (resource != null) {
 			result = resolveURI(resource.getValue());
@@ -1026,9 +1026,9 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 
 	static class NodeElement {
 
-		private Resource resource;
+		private final Resource resource;
 
-		private boolean isVolatile = false;;
+		private boolean isVolatile = false;
 
 		private int liCounter = 1;
 
@@ -1056,7 +1056,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	static class PropertyElement {
 
 		/** The property URI. */
-		private IRI uri;
+		private final IRI uri;
 
 		/** An optional reification identifier. */
 		private IRI reificationURI;

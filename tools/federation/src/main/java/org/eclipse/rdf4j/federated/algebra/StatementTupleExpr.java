@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @see ExclusiveStatement
  * @see ExclusiveGroup
  */
-public interface StatementTupleExpr extends FedXTupleExpr, QueryRef {
+public interface StatementTupleExpr extends FedXTupleExpr {
 
 	/**
 	 * @return the id of this expr

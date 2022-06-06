@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.sparqlbuilder.core.query;
  * @see <a href="https://www.w3.org/TR/sparql11-update/#copy"> SPARQL COPY query</a>
  */
 public class CopyQuery extends DestinationSourceManagementQuery<CopyQuery> {
-	private static String COPY = "COPY";
+	private static final String COPY = "COPY";
 
 	CopyQuery() {
 	}

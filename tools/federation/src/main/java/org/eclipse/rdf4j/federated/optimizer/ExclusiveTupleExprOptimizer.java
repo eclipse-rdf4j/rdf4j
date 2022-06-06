@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.federated.exception.OptimizationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * A specialized optimizer which identifies and marks {@link ExclusiveTupleExpr}.
@@ -22,8 +22,12 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * @author Andreas Schwarte
  *
  */
-public class ExclusiveTupleExprOptimizer extends AbstractQueryModelVisitor<OptimizationException>
+public class ExclusiveTupleExprOptimizer extends AbstractSimpleQueryModelVisitor<OptimizationException>
 		implements FedXOptimizer {
+
+	public ExclusiveTupleExprOptimizer() {
+		super(true);
+	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr) {

@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.query.BindingSet;
  * @author Pavel Mihaylov
  */
 class ValueMappingBindingSet extends AbstractBindingSet {
-	private BindingSet delegate;
-	private Function<Value, Value> mapper;
+	private final BindingSet delegate;
+	private final Function<Value, Value> mapper;
 
 	ValueMappingBindingSet(BindingSet delegate, Function<Value, Value> mapper) {
 		this.delegate = delegate;
@@ -32,8 +32,8 @@ class ValueMappingBindingSet extends AbstractBindingSet {
 
 	@Override
 	public Iterator<Binding> iterator() {
-		return new Iterator<Binding>() {
-			Iterator<Binding> idelegate = delegate.iterator();
+		return new Iterator<>() {
+			final Iterator<Binding> idelegate = delegate.iterator();
 
 			@Override
 			public boolean hasNext() {

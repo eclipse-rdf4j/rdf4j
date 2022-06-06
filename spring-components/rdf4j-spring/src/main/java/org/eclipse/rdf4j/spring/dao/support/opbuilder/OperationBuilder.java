@@ -24,9 +24,9 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
  * @author Florian Kleedorfer
  */
 public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<T, SUB>> {
-	private T operation;
-	private BindingsBuilder bindingsBuilder = new BindingsBuilder();
-	private RDF4JTemplate rdf4JTemplate;
+	private final T operation;
+	private final BindingsBuilder bindingsBuilder = new BindingsBuilder();
+	private final RDF4JTemplate rdf4JTemplate;
 
 	public OperationBuilder(T operation, RDF4JTemplate template) {
 		Objects.requireNonNull(operation);

@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
  *
  * @author James Leigh
  */
+@Deprecated(since = "4.1.0")
 public class BackgroundTupleResult extends IteratingTupleQueryResult implements Runnable, TupleQueryResultHandler {
 
 	private final TupleQueryResultParser parser;
@@ -47,7 +48,7 @@ public class BackgroundTupleResult extends IteratingTupleQueryResult implements 
 	}
 
 	public BackgroundTupleResult(QueueCursor<BindingSet> queue, TupleQueryResultParser parser, InputStream in) {
-		super(Collections.<String>emptyList(), queue);
+		super(Collections.emptyList(), queue);
 		this.queue = queue;
 		this.parser = parser;
 		this.in = in;

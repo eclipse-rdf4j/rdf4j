@@ -84,10 +84,13 @@ public class W3cComplianceTest {
 
 		sailRepository.shutDown();
 
-		statements.filter(null, RDF.REST, null).subjects().stream().forEach(s -> {
-			int size = statements.filter(s, RDF.REST, null).objects().size();
-			assertEquals(s + " has more than one rdf:rest", size, 1);
-		});
+		statements
+				.filter(null, RDF.REST, null)
+				.subjects()
+				.forEach(s -> {
+					int size = statements.filter(s, RDF.REST, null).objects().size();
+					assertEquals(s + " has more than one rdf:rest", size, 1);
+				});
 
 //		System.out.println(AbstractShaclTest.modelToString(statements));
 
@@ -200,8 +203,6 @@ public class W3cComplianceTest {
 				System.out.println("\n######### Report ######### \n");
 				Rio.write(statements1, System.out, RDFFormat.TRIG);
 				System.out.println("\n##################### \n");
-			} else {
-				actualConforms = true;
 			}
 
 		} finally {
@@ -223,7 +224,7 @@ public class W3cComplianceTest {
 							.map(o -> (Literal) o)
 							.map(Literal::booleanValue)
 							.findFirst()
-							.get();
+							.orElseThrow();
 				}
 			}
 		}

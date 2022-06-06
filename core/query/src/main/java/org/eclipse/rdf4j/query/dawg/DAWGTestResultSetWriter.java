@@ -57,7 +57,7 @@ public class DAWGTestResultSetWriter implements TupleQueryResultHandler {
 
 	private BNode resultSetNode;
 
-	private Map<BNode, BNode> bnodeMap = new HashMap<>();
+	private final Map<BNode, BNode> bnodeMap = new HashMap<>();
 
 	/*--------------*
 	 * Constructors *

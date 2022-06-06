@@ -9,16 +9,21 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
@@ -99,13 +104,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 	/**
 	 * Used to indicate a removed statement from all contexts.
 	 */
-	private final BNode wildContext = SimpleValueFactory.getInstance().createBNode();
+	private static final BNode wildContext = SimpleValueFactory.getInstance().createBNode();
 
 	private IsolationLevel transactionIsolationLevel;
 
-	private boolean pendingAdds;
-
-	private boolean pendingRemovals;
+	// used to decide if we need to call flush()
+	private volatile boolean statementsAdded;
+	private volatile boolean statementsRemoved;
 
 	/*--------------*
 	 * Constructors *
@@ -439,8 +444,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (pendingRemovals()) {
 			flushPendingUpdates();
 		}
-		pendingAdds = true;
 		addStatement(null, subj, pred, obj, contexts);
+		statementsAdded = true;
 	}
 
 	@Override
@@ -448,8 +453,8 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (pendingAdds()) {
 			flushPendingUpdates();
 		}
-		pendingRemovals = true;
 		removeStatement(null, subj, pred, obj, contexts);
+		statementsRemoved = true;
 	}
 
 	@Override
@@ -491,6 +496,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				startUpdate(op);
 			}
 		}
+		statementsAdded = true;
 	}
 
 	/**
@@ -518,6 +524,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 				startUpdate(op);
 			}
 		}
+		statementsRemoved = true;
 	}
 
 	@Override
@@ -579,6 +586,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			try {
 				verifyIsActive();
 				clearInternal(contexts);
+				statementsRemoved = true;
 			} finally {
 				updateLock.unlock();
 			}
@@ -677,11 +685,19 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public boolean pendingRemovals() {
-		return pendingRemovals;
+		return statementsRemoved;
 	}
 
 	protected boolean pendingAdds() {
-		return pendingAdds;
+		return statementsAdded;
+	}
+
+	protected void setStatementsAdded() {
+		statementsAdded = true;
+	}
+
+	protected void setStatementsRemoved() {
+		statementsRemoved = true;
 	}
 
 	/**
@@ -713,6 +729,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * of active iterations.
 	 */
 	protected <T, E extends Exception> CloseableIteration<T, E> registerIteration(CloseableIteration<T, E> iter) {
+		if (iter instanceof EmptyIteration) {
+			return iter;
+		}
+
 		SailBaseIteration<T, E> result = new SailBaseIteration<>(iter, this);
 		Throwable stackTrace = debugEnabled ? new Throwable() : null;
 		synchronized (activeIterations) {
@@ -818,12 +838,18 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 *
 	 * @throws SailException
 	 */
-	synchronized private void flushPendingUpdates() throws SailException {
-		if (!isActiveOperation()
-				|| isActive() && !getTransactionIsolation().isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {
-			flush();
-			pendingAdds = false;
-			pendingRemovals = false;
+	private void flushPendingUpdates() throws SailException {
+
+		if ((statementsAdded || statementsRemoved) && isActive()) {
+			if (isActive()) {
+				synchronized (this) {
+					if ((statementsAdded || statementsRemoved) && isActive()) {
+						flush();
+						statementsAdded = false;
+						statementsRemoved = false;
+					}
+				}
+			}
 		}
 	}
 
@@ -832,7 +858,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 *
 	 * @author James Leigh
 	 */
-	private class WildStatement implements Statement {
+	private static class WildStatement implements Statement {
 
 		private static final long serialVersionUID = 3363010521961228565L;
 

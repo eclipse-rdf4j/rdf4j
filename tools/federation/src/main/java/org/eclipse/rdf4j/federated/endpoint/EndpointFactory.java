@@ -351,18 +351,18 @@ public class EndpointFactory {
 
 		@Override
 		public void endRDF() throws RDFHandlerException {
-			; // no-op
+			// no-op
 		}
 
 		@Override
 		public void handleComment(String comment) throws RDFHandlerException {
-			; // no-op
+			// no-op
 		}
 
 		@Override
 		public void handleNamespace(String prefix, String uri)
 				throws RDFHandlerException {
-			; // no-op
+			// no-op
 		}
 
 		@Override
@@ -372,7 +372,7 @@ public class EndpointFactory {
 
 		@Override
 		public void startRDF() throws RDFHandlerException {
-			; // no-op
+			// no-op
 		}
 	}
 }

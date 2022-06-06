@@ -16,7 +16,7 @@ import com.google.common.base.Objects;
  *
  * @author Jeen Broekstra
  */
-public class MemTriple implements Triple, MemResource {
+public class MemTriple extends MemResource implements Triple {
 
 	private static final long serialVersionUID = -9085188980084028689L;
 
@@ -25,11 +25,6 @@ public class MemTriple implements Triple, MemResource {
 	private final MemResource subject;
 	private final MemIRI predicate;
 	private final MemValue object;
-
-	/**
-	 * The list of statements for which this MemTriple is the subject.
-	 */
-	transient private final MemStatementList subjectStatements = new MemStatementList();
 
 	/**
 	 * The list of statements for which this MemTriple is the object.
@@ -103,35 +98,6 @@ public class MemTriple implements Triple, MemResource {
 	}
 
 	@Override
-	public MemStatementList getSubjectStatementList() {
-
-		return subjectStatements;
-	}
-
-	@Override
-	public int getSubjectStatementCount() {
-		return getSubjectStatementList().size();
-	}
-
-	@Override
-	public void addSubjectStatement(MemStatement st) {
-
-		subjectStatements.add(st);
-	}
-
-	@Override
-	public void removeSubjectStatement(MemStatement st) {
-		subjectStatements.remove(st);
-
-	}
-
-	@Override
-	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) {
-		subjectStatements.cleanSnapshots(currentSnapshot);
-
-	}
-
-	@Override
 	public MemStatementList getContextStatementList() {
 		return EMPTY_LIST;
 	}
@@ -191,4 +157,23 @@ public class MemTriple implements Triple, MemResource {
 		return false;
 	}
 
+	@Override
+	public boolean hasPredicateStatements() {
+		return false;
+	}
+
+	@Override
+	public boolean hasObjectStatements() {
+		return !objectStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasContextStatements() {
+		return false;
+	}
+
+	public boolean matchesSPO(MemResource subject, MemIRI predicate, MemValue object) {
+		return (object == null || object == this.object) && (subject == null || subject == this.subject) &&
+				(predicate == null || predicate == this.predicate);
+	}
 }

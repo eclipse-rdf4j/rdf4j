@@ -71,8 +71,8 @@ public enum SparqlFunction implements SparqlOperator {
 	UUID("UUID"),
 	YEAR("YEAR");
 
-	private String function;
-	private boolean pad;
+	private final String function;
+	private final boolean pad;
 
 	SparqlFunction(String function) {
 		this(function, false);

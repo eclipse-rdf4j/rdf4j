@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 
 /**
  *

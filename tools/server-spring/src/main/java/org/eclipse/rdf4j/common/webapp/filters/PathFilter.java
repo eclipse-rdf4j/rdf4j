@@ -57,7 +57,7 @@ public class PathFilter implements Filter {
 
 	private static class CharResponseWrapper extends HttpServletResponseWrapper {
 
-		private CharArrayWriter output;
+		private final CharArrayWriter output;
 
 		@Override
 		public String toString() {

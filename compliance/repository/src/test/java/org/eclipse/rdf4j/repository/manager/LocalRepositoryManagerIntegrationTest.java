@@ -167,9 +167,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 		assertThat(subject.isSafeToRemove(TEST_REPO)).isFalse();
 		subject.removeRepository(PROXY_ID);
 		assertThat(subject.hasRepositoryConfig(PROXY_ID)).isFalse();
-		;
 		assertThat(subject.isSafeToRemove(TEST_REPO)).isTrue();
-		;
 	}
 
 	/**

@@ -359,9 +359,9 @@ public class ArrangedWriter extends AbstractRDFWriter {
 
 	private class SubjectInContext {
 
-		private Resource subject;
+		private final Resource subject;
 
-		private Resource context;
+		private final Resource context;
 
 		private SubjectInContext(Statement st) {
 			this(st.getSubject(), st.getContext());

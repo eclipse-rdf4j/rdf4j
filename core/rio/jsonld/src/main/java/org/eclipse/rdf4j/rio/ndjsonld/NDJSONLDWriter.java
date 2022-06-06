@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.rio.helpers.BufferedGroupingRDFHandler;
 import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
 import org.eclipse.rdf4j.rio.jsonld.JSONLDWriter;
 
-public class NDJSONLDWriter extends AbstractRDFWriter implements RDFWriter {
+public class NDJSONLDWriter extends AbstractRDFWriter {
 
 	private final BufferedGroupingRDFHandler bufferedGroupingRDFHandler;
 

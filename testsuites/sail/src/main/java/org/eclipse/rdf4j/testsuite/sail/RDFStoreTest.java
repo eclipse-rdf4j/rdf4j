@@ -18,8 +18,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -45,6 +43,7 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -62,6 +61,11 @@ public abstract class RDFStoreTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	/**
@@ -315,23 +319,20 @@ public abstract class RDFStoreTest {
 		testValueRoundTrip(subj, pred, obj);
 	}
 
-	private void testValueRoundTrip(Resource subj, IRI pred, Value obj) throws Exception {
+	private void testValueRoundTrip(Resource subj, IRI pred, Value obj) {
 		con.begin();
 		con.addStatement(subj, pred, obj);
 		con.commit();
 
-		CloseableIteration<? extends Statement, SailException> stIter = con.getStatements(null, null, null, false);
-
-		try {
+		try (CloseableIteration<? extends Statement, SailException> stIter = con.getStatements(null, null, null,
+				false)) {
 			Assert.assertTrue(stIter.hasNext());
 
 			Statement st = stIter.next();
 			Assert.assertEquals(subj, st.getSubject());
 			Assert.assertEquals(pred, st.getPredicate());
 			Assert.assertEquals(obj, st.getObject());
-			Assert.assertTrue(!stIter.hasNext());
-		} finally {
-			stIter.close();
+			Assert.assertFalse(stIter.hasNext());
 		}
 
 		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
@@ -354,7 +355,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testCreateURI1() throws Exception {
+	public void testCreateURI1() {
 		IRI picasso1 = vf.createIRI(EXAMPLE_NS, PICASSO);
 		IRI picasso2 = vf.createIRI(EXAMPLE_NS + PICASSO);
 		con.begin();
@@ -366,7 +367,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testCreateURI2() throws Exception {
+	public void testCreateURI2() {
 		IRI picasso1 = vf.createIRI(EXAMPLE_NS + PICASSO);
 		IRI picasso2 = vf.createIRI(EXAMPLE_NS, PICASSO);
 		con.begin();
@@ -378,7 +379,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testInvalidDateTime() throws Exception {
+	public void testInvalidDateTime() {
 		// SES-711
 		Literal date1 = vf.createLiteral("2004-12-20", XSD.DATETIME);
 		Literal date2 = vf.createLiteral("2004-12-20", CoreDatatype.XSD.DATETIME);
@@ -386,7 +387,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testSize() throws Exception {
+	public void testSize() {
 		Assert.assertEquals("Size of empty repository should be 0", 0, con.size());
 
 		// Add some data to the repository
@@ -459,7 +460,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testAddWhileQuerying() throws Exception {
+	public void testAddWhileQuerying() {
 		// Add some data to the repository
 		con.begin();
 		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
@@ -611,7 +612,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testQueryBindings() throws Exception {
+	public void testQueryBindings() {
 		// Add some data to the repository
 		con.begin();
 		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
@@ -665,7 +666,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testStatementEquals() throws Exception {
+	public void testStatementEquals() {
 		Statement st = vf.createStatement(picasso, RDF.TYPE, painter);
 		Assert.assertEquals(st, vf.createStatement(picasso, RDF.TYPE, painter));
 		Assert.assertNotEquals(st, vf.createStatement(picasso, RDF.TYPE, painter, context1));
@@ -690,25 +691,22 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testGetNamespaces() throws Exception {
+	public void testGetNamespaces() {
 		con.begin();
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.commit();
 
-		CloseableIteration<? extends Namespace, SailException> namespaces = con.getNamespaces();
-		try {
+		try (CloseableIteration<? extends Namespace, SailException> namespaces = con.getNamespaces()) {
 			Assert.assertTrue(namespaces.hasNext());
 			Namespace rdf = namespaces.next();
 			Assert.assertEquals("rdf", rdf.getPrefix());
 			Assert.assertEquals(RDF.NAMESPACE, rdf.getName());
-			Assert.assertTrue(!namespaces.hasNext());
-		} finally {
-			namespaces.close();
+			Assert.assertFalse(namespaces.hasNext());
 		}
 	}
 
 	@Test
-	public void testGetNamespace() throws Exception {
+	public void testGetNamespace() {
 		con.begin();
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.commit();
@@ -716,7 +714,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testClearNamespaces() throws Exception {
+	public void testClearNamespaces() {
 		con.begin();
 		con.setNamespace("rdf", RDF.NAMESPACE);
 		con.setNamespace("rdfs", RDFS.NAMESPACE);
@@ -735,7 +733,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testNullNamespaceDisallowed() throws Exception {
+	public void testNullNamespaceDisallowed() {
 		try {
 			con.setNamespace("foo", null);
 			Assert.fail("Expected NullPointerException");
@@ -745,7 +743,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testNullPrefixDisallowed() throws Exception {
+	public void testNullPrefixDisallowed() {
 		try {
 			con.setNamespace(null, "foo");
 			Assert.fail("Expected NullPointerException");
@@ -767,7 +765,7 @@ public abstract class RDFStoreTest {
 	}
 
 	@Test
-	public void testGetContextIDs() throws Exception {
+	public void testGetContextIDs() {
 		Assert.assertEquals(0, countElements(con.getContextIDs()));
 
 		// load data
@@ -813,8 +811,7 @@ public abstract class RDFStoreTest {
 
 	@Test
 	public void testDualConnections() throws Exception {
-		SailConnection con2 = sail.getConnection();
-		try {
+		try (SailConnection con2 = sail.getConnection()) {
 			Assert.assertEquals(0, countAllElements());
 			con.begin();
 			con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
@@ -844,13 +841,11 @@ public abstract class RDFStoreTest {
 			Thread.yield();
 			con2.commit();
 			thread.join();
-		} finally {
-			con2.close();
 		}
 	}
 
 	@Test
-	public void testBNodeReuse() throws Exception {
+	public void testBNodeReuse() {
 		con.begin();
 		con.addStatement(RDF.VALUE, RDF.VALUE, RDF.VALUE);
 		Assert.assertEquals(1, con.size());
@@ -936,42 +931,38 @@ public abstract class RDFStoreTest {
 		con.commit();
 	}
 
-	private <T> T first(Iteration<T, ?> iter) throws Exception {
-		try {
+	private <T, X extends Exception> T first(CloseableIteration<T, X> iter) throws X {
+		try (iter) {
 			if (iter.hasNext()) {
 				return iter.next();
 			}
-		} finally {
-			Iterations.closeCloseable(iter);
 		}
 
 		return null;
 	}
 
-	protected int countContext1Elements() throws Exception, SailException {
+	protected int countContext1Elements() {
 		return countElements(con.getStatements(null, null, null, false, context1));
 	}
 
-	protected int countAllElements() throws Exception, SailException {
+	protected int countAllElements() {
 		return countElements(con.getStatements(null, null, null, false));
 	}
 
-	private int countElements(Iteration<?, ?> iter) throws Exception {
+	private <T, X extends Exception> int countElements(CloseableIteration<T, X> iter) throws X {
 		int count = 0;
 
-		try {
+		try (iter) {
 			while (iter.hasNext()) {
 				iter.next();
 				count++;
 			}
-		} finally {
-			Iterations.closeCloseable(iter);
 		}
 
 		return count;
 	}
 
-	protected int countQueryResults(String query) throws Exception {
+	protected int countQueryResults(String query) {
 		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"PREFIX ex: <" + EXAMPLE_NS + "> \n" + query, null);
 

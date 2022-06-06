@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.spring.dao.support;
 
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRI;
 import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRIOptional;
 
@@ -43,16 +44,21 @@ public class RelationMapBuilder {
 	private static final Variable _relValue = SparqlBuilder.var("rel_value");
 	private static final IRI NOTHING = SimpleValueFactory.getInstance()
 			.createIRI("urn:java:relationDaoSupport:Nothing");
-	private RdfPredicate predicate;
+	private final RdfPredicate predicate;
 	private GraphPattern[] constraints = new GraphPattern[0];
-	private RDF4JTemplate rdf4JTemplate;
+	private final RDF4JTemplate rdf4JTemplate;
 	private boolean isRelationOptional = false;
 	private boolean isSubjectKeyed = true;
-	private BindingsBuilder bindingsBuilder = new BindingsBuilder();
+	private final BindingsBuilder bindingsBuilder = new BindingsBuilder();
 
 	public RelationMapBuilder(RDF4JTemplate rdf4JTemplate, RdfPredicate predicate) {
 		this.rdf4JTemplate = rdf4JTemplate;
 		this.predicate = predicate;
+	}
+
+	public RelationMapBuilder(RDF4JTemplate rdf4JTemplate, IRI predicate) {
+		this.rdf4JTemplate = rdf4JTemplate;
+		this.predicate = iri(predicate);
 	}
 
 	/**

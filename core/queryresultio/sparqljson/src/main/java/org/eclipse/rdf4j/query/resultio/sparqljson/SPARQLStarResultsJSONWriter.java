@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
  *           the extension. This subclass functions as an anchor point for the custom
  *           {@link TupleQueryResultFormat#JSON_STAR} content type.
  */
-public class SPARQLStarResultsJSONWriter extends SPARQLResultsJSONWriter implements TupleQueryResultWriter {
+public class SPARQLStarResultsJSONWriter extends SPARQLResultsJSONWriter {
 	public SPARQLStarResultsJSONWriter(OutputStream out) {
 		super(out);
 	}

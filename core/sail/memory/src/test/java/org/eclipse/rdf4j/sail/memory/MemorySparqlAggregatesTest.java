@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.memory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.testsuite.repository.SparqlAggregatesTest;
+import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
 public class MemorySparqlAggregatesTest extends SparqlAggregatesTest {
@@ -17,6 +18,11 @@ public class MemorySparqlAggregatesTest extends SparqlAggregatesTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	@Override

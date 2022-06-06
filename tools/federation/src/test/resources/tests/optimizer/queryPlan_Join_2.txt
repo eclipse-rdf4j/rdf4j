@@ -6,10 +6,10 @@ QueryRoot
          ExclusiveStatement
             Var (name=_const_c0e515a0_uri, value=http://example.org/a, anonymous)
             Var (name=_const_23b7c3b6_uri, value=http://xmlns.com/foaf/0.1/name, anonymous)
-            Var (name=_const_1f2db8_lit_e2eec718_0, value="Alan", anonymous)
+            Var (name=_const_1f2db8_lit_e2eec718, value="Alan", anonymous)
             StatementSource (id=endpoint1, type=REMOTE)
          ExclusiveStatement
             Var (name=_const_c0e515a0_uri, value=http://example.org/a, anonymous)
             Var (name=_const_ea9562d5_uri, value=http://xmlns.com/foaf/0.1/interest, anonymous)
-            Var (name=_const_5e79d277_lit_e2eec718_0, value="SPARQL 1.1 Basic Federated Query", anonymous)
+            Var (name=_const_5e79d277_lit_e2eec718, value="SPARQL 1.1 Basic Federated Query", anonymous)
             StatementSource (id=endpoint2, type=REMOTE)

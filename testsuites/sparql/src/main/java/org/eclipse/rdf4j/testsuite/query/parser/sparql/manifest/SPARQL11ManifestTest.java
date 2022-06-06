@@ -201,9 +201,7 @@ public class SPARQL11ManifestTest {
 			baseURI = url.toExternalForm();
 		}
 
-		InputStream in = url.openStream();
-
-		try {
+		try (InputStream in = url.openStream()) {
 			Objects.requireNonNull(contexts,
 					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 			final ValueFactory vf = con.getRepository().getValueFactory();
@@ -225,8 +223,6 @@ public class SPARQL11ManifestTest {
 			} catch (RuntimeException e) {
 				con.rollback();
 			}
-		} finally {
-			in.close();
 		}
 	}
 }

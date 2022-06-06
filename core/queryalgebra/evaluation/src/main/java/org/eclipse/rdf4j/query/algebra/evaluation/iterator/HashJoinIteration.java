@@ -279,7 +279,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet, QueryEvalu
 			}
 		}
 
-		Collection<BindingSet> smallestResult = null;
+		Collection<BindingSet> smallestResult;
 
 		if (leftJoin || leftIter.hasNext()) { // leftArg is the greater relation
 			smallestResult = rightArgResults;

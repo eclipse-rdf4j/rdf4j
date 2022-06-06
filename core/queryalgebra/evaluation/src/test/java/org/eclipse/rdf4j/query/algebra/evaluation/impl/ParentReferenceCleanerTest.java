@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -55,7 +56,7 @@ public class ParentReferenceCleanerTest {
 
 		private final ArrayDeque<QueryModelNode> ancestors = new ArrayDeque<>();
 
-		private List<QueryModelNode> inconsistentNodes = new ArrayList<>();
+		private final List<QueryModelNode> inconsistentNodes = new ArrayList<>();
 
 		@Override
 		protected void meetNode(QueryModelNode node) throws RuntimeException {

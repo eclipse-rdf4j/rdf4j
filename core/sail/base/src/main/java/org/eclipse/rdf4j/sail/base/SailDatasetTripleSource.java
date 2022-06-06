@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * Implementation of the TripleSource interface using {@link SailDataset}
  */
-class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
+class SailDatasetTripleSource implements RDFStarTripleSource {
 
 	private final ValueFactory vf;
 
@@ -71,7 +71,7 @@ class SailDatasetTripleSource implements TripleSource, RDFStarTripleSource {
 
 	static class TriplesIteration extends ExceptionConvertingIteration<Triple, QueryEvaluationException> {
 
-		public TriplesIteration(Iteration<? extends Triple, ? extends Exception> iter) {
+		public TriplesIteration(CloseableIteration<? extends Triple, ? extends Exception> iter) {
 			super(iter);
 		}
 

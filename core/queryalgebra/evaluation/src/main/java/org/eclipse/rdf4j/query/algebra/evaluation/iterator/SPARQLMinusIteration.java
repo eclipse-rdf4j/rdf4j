@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.QueryResults;
  * @see <a href="http://www.w3.org/TR/sparql11-query/#sparqlAlgebra">SPARQL Algebra Documentation</a>
  * @author Jeen
  */
+@Deprecated(since = "4.1.0")
 public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<BindingSet, X> {
 
 	/*-----------*
@@ -76,38 +77,40 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 
 	// implements LookAheadIteration.getNextElement()
 	@Override
-	protected boolean accept(BindingSet object) throws X {
+	protected boolean accept(BindingSet bindingSet) throws X {
 		if (!initialized) {
 			// Build set of elements-to-exclude from right argument
 			excludeSet = makeSet(getRightArg());
 			initialized = true;
 		}
 
-		boolean compatible = false;
-
 		for (BindingSet excluded : excludeSet) {
+			Set<String> bindingNames = bindingSet.getBindingNames();
+			boolean hasSharedBindings = false;
 
-			// build set of shared variable names
-			Set<String> sharedBindingNames = makeSet(excluded.getBindingNames());
-			sharedBindingNames.retainAll(object.getBindingNames());
+			for (String bindingName : excluded.getBindingNames()) {
+				if (bindingNames.contains(bindingName)) {
+					hasSharedBindings = true;
+					break;
+				}
+			}
 
 			// two bindingsets that share no variables are compatible by
 			// definition, however, the formal
 			// definition of SPARQL MINUS indicates that such disjoint sets should
 			// be filtered out.
 			// See http://www.w3.org/TR/sparql11-query/#sparqlAlgebra
-			if (!sharedBindingNames.isEmpty()) {
-				if (QueryResults.bindingSetsCompatible(excluded, object)) {
+			if (hasSharedBindings) {
+				if (QueryResults.bindingSetsCompatible(excluded, bindingSet)) {
 					// at least one compatible bindingset has been found in the
 					// exclude set, therefore the object is compatible, therefore it
 					// should not be accepted.
-					compatible = true;
-					break;
+					return false;
 				}
 			}
 		}
 
-		return !compatible;
+		return true;
 	}
 
 	protected Set<BindingSet> makeSet() throws X {
@@ -118,7 +121,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 		return new HashSet<>(set);
 	}
 
-	protected Set<BindingSet> makeSet(Iteration<BindingSet, X> rightArg2) throws X {
+	protected Set<BindingSet> makeSet(Iteration<BindingSet, X> rightArg) throws X {
 		return Iterations.asSet(rightArg);
 	}
 

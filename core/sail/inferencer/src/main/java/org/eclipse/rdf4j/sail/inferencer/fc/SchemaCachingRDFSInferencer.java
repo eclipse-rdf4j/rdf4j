@@ -16,10 +16,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -34,6 +36,8 @@ import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * <p>
@@ -54,6 +58,9 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
  */
 public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
+	private static final Logger logger = LoggerFactory.getLogger(SchemaCachingRDFSInferencer.class);
+	private static final Resource[] DEFAULT_CONTEXT = { null };
+
 	// An optional predifinedSchema that the user has provided
 	Repository predefinedSchema;
 
@@ -67,26 +74,26 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	volatile protected boolean useInferredToCreateSchema;
 
 	// Schema cache
-	private final Collection<Resource> properties = new HashSet<>();
+	private Collection<Resource> properties = new HashSet<>();
 
-	private final Collection<Resource> types = new HashSet<>();
+	private Collection<Resource> types = new HashSet<>();
 
-	private final Collection<Statement> subClassOfStatements = new HashSet<>();
+	private Collection<Statement> subClassOfStatements = new HashSet<>();
 
-	private final Collection<Statement> subPropertyOfStatements = new HashSet<>();
+	private Collection<Statement> subPropertyOfStatements = new HashSet<>();
 
-	private final Collection<Statement> rangeStatements = new HashSet<>();
+	private Collection<Statement> rangeStatements = new HashSet<>();
 
-	private final Collection<Statement> domainStatements = new HashSet<>();
+	private Collection<Statement> domainStatements = new HashSet<>();
 
 	// Forward chained schema cache as lookup tables
-	private final Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
+	private Map<Resource, Set<Resource>> calculatedTypes = new HashMap<>();
 
-	private final Map<Resource, Set<Resource>> calculatedProperties = new HashMap<>();
+	private Map<Resource, Set<Resource>> calculatedProperties = new HashMap<>();
 
-	private final Map<Resource, Set<Resource>> calculatedRange = new HashMap<>();
+	private Map<Resource, Set<Resource>> calculatedRange = new HashMap<>();
 
-	private final Map<Resource, Set<Resource>> calculatedDomain = new HashMap<>();
+	private Map<Resource, Set<Resource>> calculatedDomain = new HashMap<>();
 
 	// The inferencer has been instantiated from another inferencer and shares it's schema with that one
 	private boolean sharedSchema;
@@ -94,6 +101,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	// Inferred statements can either be added to the default context
 	// or to the context that the original inserted statement has
 	private boolean addInferredStatementsToDefaultContext = false;
+	private volatile boolean unmodifiable;
 
 	/**
 	 * Instantiate a new SchemaCachingRDFSInferencer
@@ -162,6 +170,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	void clearInferenceTables() {
+		logger.debug("Clear inference tables");
 		acquireExclusiveWriteLock();
 		properties.clear();
 		types.clear();
@@ -220,6 +229,7 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			List<Statement> tboxStatments = new ArrayList<>();
 
 			if (predefinedSchema != null) {
+				logger.debug("Initializing with a predefined schema.");
 
 				try (RepositoryConnection schemaConnection = predefinedSchema.getConnection()) {
 					schemaConnection.begin();
@@ -285,113 +295,197 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			boolean useAllRdfsRules) {
 
 		sailToInstantiateFrom.getConnection().close();
+		sailToInstantiateFrom.makeUnmodifiable();
 
 		SchemaCachingRDFSInferencer ret = new SchemaCachingRDFSInferencer(store,
 				sailToInstantiateFrom.predefinedSchema, useAllRdfsRules);
 
 		ret.sharedSchema = true;
 
-		sailToInstantiateFrom.calculatedTypes.forEach((key, value) -> {
-			value.forEach(v -> {
-				if (!ret.calculatedTypes.containsKey(key)) {
-					ret.calculatedTypes.put(key, new HashSet<>());
-				}
+		sailToInstantiateFrom.calculatedTypes.forEach((key, value) -> value.forEach(v -> {
+			if (!ret.calculatedTypes.containsKey(key)) {
+				ret.calculatedTypes.put(key, new HashSet<>(Set.of(v)));
+			} else {
 				ret.calculatedTypes.get(key).add(v);
-			});
-		});
+			}
+		}));
 
-		sailToInstantiateFrom.calculatedProperties.forEach((key, value) -> {
-			value.forEach(v -> {
-				if (!ret.calculatedProperties.containsKey(key)) {
-					ret.calculatedProperties.put(key, new HashSet<>());
-				}
+		sailToInstantiateFrom.calculatedProperties.forEach((key, value) -> value.forEach(v -> {
+			if (!ret.calculatedProperties.containsKey(key)) {
+				ret.calculatedProperties.put(key, new HashSet<>(Set.of(v)));
+			} else {
 				ret.calculatedProperties.get(key).add(v);
-			});
-		});
+			}
+		}));
 
-		sailToInstantiateFrom.calculatedRange.forEach((key, value) -> {
-			value.forEach(v -> {
-				if (!ret.calculatedRange.containsKey(key)) {
-					ret.calculatedRange.put(key, new HashSet<>());
-				}
+		sailToInstantiateFrom.calculatedRange.forEach((key, value) -> value.forEach(v -> {
+			if (!ret.calculatedRange.containsKey(key)) {
+				ret.calculatedRange.put(key, new HashSet<>(Set.of(v)));
+			} else {
 				ret.calculatedRange.get(key).add(v);
-			});
-		});
+			}
+		}));
 
-		sailToInstantiateFrom.calculatedDomain.forEach((key, value) -> {
-			value.forEach(v -> {
-				if (!ret.calculatedDomain.containsKey(key)) {
-					ret.calculatedDomain.put(key, new HashSet<>());
-				}
+		sailToInstantiateFrom.calculatedDomain.forEach((key, value) -> value.forEach(v -> {
+			if (!ret.calculatedDomain.containsKey(key)) {
+				ret.calculatedDomain.put(key, new HashSet<>(Set.of(v)));
+			} else {
 				ret.calculatedDomain.get(key).add(v);
-			});
-		});
+			}
+		}));
 
 		return ret;
 
 	}
 
-	long getSchemaSize() {
-		return subClassOfStatements.size() + subPropertyOfStatements.size() + rangeStatements.size()
-				+ domainStatements.size() + properties.size() + types.size();
+	private void makeUnmodifiable() {
+
+		if (unmodifiable) {
+			return;
+		}
+
+		synchronized (this) {
+			if (!unmodifiable) {
+
+				unmodifiable = true;
+
+				if (properties.isEmpty()) {
+					properties = Collections.emptySet();
+				} else {
+					properties = Set.copyOf(properties);
+				}
+
+				if (types.isEmpty()) {
+					types = Collections.emptySet();
+				} else {
+					types = Set.copyOf(types);
+				}
+
+				if (subClassOfStatements.isEmpty()) {
+					subClassOfStatements = Collections.emptySet();
+				} else {
+					subClassOfStatements = Set.copyOf(subClassOfStatements);
+				}
+
+				if (subPropertyOfStatements.isEmpty()) {
+					subPropertyOfStatements = Collections.emptySet();
+				} else {
+					subPropertyOfStatements = Set.copyOf(subPropertyOfStatements);
+				}
+
+				if (rangeStatements.isEmpty()) {
+					rangeStatements = Collections.emptySet();
+				} else {
+					rangeStatements = Set.copyOf(rangeStatements);
+				}
+
+				if (domainStatements.isEmpty()) {
+					domainStatements = Collections.emptySet();
+				} else {
+					domainStatements = Set.copyOf(domainStatements);
+				}
+
+				calculatedTypes.replaceAll((k, v) -> Set.copyOf(v));
+				calculatedProperties.replaceAll((k, v) -> Set.copyOf(v));
+				calculatedRange.replaceAll((k, v) -> Set.copyOf(v));
+				calculatedDomain.replaceAll((k, v) -> Set.copyOf(v));
+
+				if (calculatedTypes.isEmpty()) {
+					calculatedTypes = Collections.emptyMap();
+				} else {
+					calculatedTypes = Map.copyOf(calculatedTypes);
+				}
+
+				if (calculatedProperties.isEmpty()) {
+					calculatedProperties = Collections.emptyMap();
+				} else {
+					calculatedProperties = Map.copyOf(calculatedProperties);
+				}
+
+				if (calculatedRange.isEmpty()) {
+					calculatedRange = Collections.emptyMap();
+				} else {
+					calculatedRange = Map.copyOf(calculatedRange);
+				}
+
+				if (calculatedDomain.isEmpty()) {
+					calculatedDomain = Collections.emptyMap();
+				} else {
+					calculatedDomain = Map.copyOf(calculatedDomain);
+				}
+
+			}
+		}
+
 	}
 
 	void calculateInferenceMaps(SchemaCachingRDFSInferencerConnection conn, boolean addInferred) {
+		logger.debug("Calculate inference maps.");
 		calculateSubClassOf(subClassOfStatements);
 		properties.forEach(predicate -> {
 			if (addInferred) {
-				conn.addInferredStatementInternal(predicate, RDF.TYPE, RDF.PROPERTY);
+				conn.addInferredStatementInternal(predicate, RDF.TYPE, RDF.PROPERTY, DEFAULT_CONTEXT);
 			}
-			calculatedProperties.put(predicate, new HashSet<>());
+			calculatedProperties.put(predicate, ConcurrentHashMap.newKeySet());
 		});
 		calculateSubPropertyOf(subPropertyOfStatements);
 
-		calculateRangeDomain(rangeStatements, calculatedRange);
-		calculateRangeDomain(domainStatements, calculatedDomain);
+		calculateDomainAndRange(rangeStatements, calculatedRange);
+		calculateDomainAndRange(domainStatements, calculatedDomain);
 
 		if (addInferred) {
+			logger.debug("Add inferred rdfs:subClassOf statements");
+
 			calculatedTypes.forEach((subClass, superClasses) -> {
-				conn.addInferredStatementInternal(subClass, RDFS.SUBCLASSOF, subClass);
-
 				superClasses.forEach(superClass -> {
-					conn.addInferredStatementInternal(subClass, RDFS.SUBCLASSOF, superClass);
-					conn.addInferredStatementInternal(superClass, RDFS.SUBCLASSOF, superClass);
-
+					conn.addInferredStatementInternal(subClass, RDFS.SUBCLASSOF, superClass, DEFAULT_CONTEXT);
 				});
 			});
 		}
 		if (addInferred) {
+			logger.debug("Add inferred rdfs:subPropertyOf statements");
+
 			calculatedProperties.forEach((sub, sups) -> {
-				conn.addInferredStatementInternal(sub, RDFS.SUBPROPERTYOF, sub);
-
 				sups.forEach(sup -> {
-					conn.addInferredStatementInternal(sub, RDFS.SUBPROPERTYOF, sup);
-					conn.addInferredStatementInternal(sup, RDFS.SUBPROPERTYOF, sup);
-
+					conn.addInferredStatementInternal(sub, RDFS.SUBPROPERTYOF, sup, DEFAULT_CONTEXT);
 				});
 			});
 		}
 	}
 
 	void addSubClassOfStatement(Statement st) {
+		if (!st.getObject().isResource()) {
+			throw new SailException("Object of rdfs:subClassOf should be a resource! " + st);
+		}
 		subClassOfStatements.add(st);
 		types.add(st.getSubject());
 		types.add((Resource) st.getObject());
 	}
 
 	void addSubPropertyOfStatement(Statement st) {
+		if (!st.getObject().isResource()) {
+			throw new SailException("Object of rdfs:subPropertyOf should be a resource! " + st);
+		}
+
 		subPropertyOfStatements.add(st);
 		properties.add(st.getSubject());
 		properties.add((Resource) st.getObject());
 	}
 
 	void addRangeStatement(Statement st) {
+		if (!st.getObject().isResource()) {
+			throw new SailException("Object of rdfs:range should be a resource! " + st);
+		}
 		rangeStatements.add(st);
 		properties.add(st.getSubject());
 		types.add((Resource) st.getObject());
+
 	}
 
 	void addDomainStatement(Statement st) {
+		if (!st.getObject().isResource()) {
+			throw new SailException("Object of rdfs:domain should be a resource! " + st);
+		}
 		domainStatements.add(st);
 		properties.add(st.getSubject());
 		types.add((Resource) st.getObject());
@@ -414,46 +508,60 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	Set<Resource> resolveTypes(Resource value) {
-		Set<Resource> iris = calculatedTypes.get(value);
-
-		return iris != null ? iris : Collections.emptySet();
+		return calculatedTypes.getOrDefault(value, Collections.emptySet());
 	}
 
 	Set<Resource> resolveProperties(Resource predicate) {
-		Set<Resource> iris = calculatedProperties.get(predicate);
-
-		return iris != null ? iris : Collections.emptySet();
+		return calculatedProperties.getOrDefault(predicate, Collections.emptySet());
 	}
 
 	Set<Resource> resolveRangeTypes(IRI predicate) {
-		Set<Resource> iris = calculatedRange.get(predicate);
-
-		return iris != null ? iris : Collections.emptySet();
+		return calculatedRange.getOrDefault(predicate, Collections.emptySet());
 	}
 
 	Set<Resource> resolveDomainTypes(IRI predicate) {
-		Set<Resource> iris = calculatedDomain.get(predicate);
-
-		return iris != null ? iris : Collections.emptySet();
+		return calculatedDomain.getOrDefault(predicate, Collections.emptySet());
 	}
 
 	private void calculateSubClassOf(Collection<Statement> subClassOfStatements) {
+		logger.debug("Calculate rdfs:subClassOf inference map.");
+
+		StopWatch stopWatch = null;
+		if (logger.isDebugEnabled()) {
+			stopWatch = StopWatch.createStarted();
+		}
+
+		logger.debug("Fill initial maps");
 		types.forEach(type -> {
 			if (!calculatedTypes.containsKey(type)) {
-				calculatedTypes.put(type, new HashSet<>());
+				Set<Resource> values = ConcurrentHashMap.newKeySet();
+				values.add(RDFS.RESOURCE);
+				values.add(type);
+				calculatedTypes.put(type, values);
+			} else {
+				calculatedTypes.get(type).add(type);
 			}
-
-			calculatedTypes.get(type).add(type);
 
 		});
 
 		subClassOfStatements.forEach(s -> {
-			Resource subClass = s.getSubject();
-			if (!calculatedTypes.containsKey(subClass)) {
-				calculatedTypes.put(subClass, new HashSet<>());
+			if (!s.getObject().isResource()) {
+				throw new SailException("Object of rdfs:subClassOf should be a resource! " + s);
 			}
+			Resource subClass = s.getSubject();
+			Resource superClass = (Resource) s.getObject();
 
-			calculatedTypes.get(subClass).add((Resource) s.getObject());
+			if (!calculatedTypes.containsKey(subClass)) {
+
+				Set<Resource> values = ConcurrentHashMap.newKeySet();
+				values.add(RDFS.RESOURCE);
+				values.add(subClass);
+				values.add(superClass);
+				calculatedTypes.put(subClass, values);
+
+			} else {
+				calculatedTypes.get(subClass).add(superClass);
+			}
 
 		});
 
@@ -462,97 +570,181 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		// newSize is the size of the current application of the function
 		// Fixed point is reached when they are the same.
 		// Eg. Two consecutive applications return the same number of subclasses
+		logger.debug("Run until fixed point");
 		long prevSize = 0;
-		final long[] newSize = { -1 };
-		while (prevSize != newSize[0]) {
+		long newSize = -1;
+		while (prevSize != newSize) {
 
-			prevSize = newSize[0];
+			prevSize = newSize;
 
-			newSize[0] = 0;
+			newSize = getStream(calculatedTypes)
+					.map(Map.Entry::getValue)
+					.mapToInt(value -> {
 
-			calculatedTypes.forEach((key, value) -> {
-				List<Resource> temp = new ArrayList<>();
-				value.forEach(superClass -> temp.addAll(resolveTypes(superClass)));
+						List<Set<Resource>> forwardChainedSets = new ArrayList<>(value.size());
 
-				value.addAll(temp);
-				newSize[0] += value.size();
-			});
+						for (Resource resource : value) {
+							if (resource != RDFS.RESOURCE) {
+								forwardChainedSets.add(resolveTypes(resource));
+							}
+						}
 
+						addAll(value, forwardChainedSets);
+
+						return value.size();
+					})
+					.sum();
+
+			logger.debug("Fixed point iteration new size {}", newSize);
+		}
+		if (logger.isDebugEnabled()) {
+			assert stopWatch != null;
+			stopWatch.stop();
+			logger.debug("Took: " + stopWatch);
 		}
 	}
 
+	private Stream<Map.Entry<Resource, Set<Resource>>> getStream(
+			Map<Resource, Set<Resource>> map) {
+
+		Set<Map.Entry<Resource, Set<Resource>>> entries = map.entrySet();
+
+		if (entries.size() > 100) {
+			return entries.parallelStream().peek(ent -> {
+				assert ent.getValue() instanceof ConcurrentHashMap.KeySetView;
+			});
+		} else {
+			return entries.stream();
+		}
+
+	}
+
 	private void calculateSubPropertyOf(Collection<Statement> subPropertyOfStatemenets) {
+		logger.debug("Calculate rdfs:subPropertyOf inference map.");
+
+		StopWatch stopWatch = null;
+		if (logger.isDebugEnabled()) {
+			stopWatch = StopWatch.createStarted();
+		}
 
 		subPropertyOfStatemenets.forEach(s -> {
-			Resource subClass = s.getSubject();
-			Resource superClass = (Resource) s.getObject();
-			if (!calculatedProperties.containsKey(subClass)) {
-				calculatedProperties.put(subClass, new HashSet<>());
+
+			if (!s.getObject().isResource()) {
+				throw new SailException("Object of rdfs:subPropertyOf should be a resource! " + s);
 			}
 
-			if (!calculatedProperties.containsKey(superClass)) {
-				calculatedProperties.put(superClass, new HashSet<>());
+			Resource subProperty = s.getSubject();
+			Resource superProperty = (Resource) s.getObject();
+
+			if (!calculatedProperties.containsKey(subProperty)) {
+				calculatedProperties.put(subProperty, ConcurrentHashMap.newKeySet());
 			}
 
-			calculatedProperties.get(subClass).add((Resource) s.getObject());
+			if (!calculatedProperties.containsKey(superProperty)) {
+				calculatedProperties.put(superProperty, ConcurrentHashMap.newKeySet());
+			}
+
+			calculatedProperties.get(subProperty).add(superProperty);
 
 		});
+
+		calculatedProperties.forEach((k, v) -> v.add(k));
 
 		// Fixed point approach to finding all sub-properties.
 		// prevSize is the size of the previous application of the function
 		// newSize is the size of the current application of the function
 		// Fixed point is reached when they are the same.
+		logger.debug("Run until fixed point");
+
 		long prevSize = 0;
-		final long[] newSize = { -1 };
-		while (prevSize != newSize[0]) {
+		long newSize = -1;
+		while (prevSize != newSize) {
 
-			prevSize = newSize[0];
+			prevSize = newSize;
 
-			newSize[0] = 0;
+			newSize = getStream(calculatedProperties)
+					.map(Map.Entry::getValue)
+					.mapToInt(value -> {
 
-			calculatedProperties.forEach((key, value) -> {
-				List<Resource> temp = new ArrayList<>();
-				value.forEach(superProperty -> temp.addAll(resolveProperties(superProperty)));
+						List<Set<Resource>> forwardChainedSets = new ArrayList<>(value.size());
 
-				value.addAll(temp);
-				newSize[0] += value.size();
-			});
+						for (Resource resource : value) {
+							forwardChainedSets.add(resolveProperties(resource));
+						}
 
+						addAll(value, forwardChainedSets);
+
+						return value.size();
+					})
+					.sum();
+
+			logger.debug("Fixed point iteration new size {}", newSize);
+		}
+
+		if (logger.isDebugEnabled()) {
+			assert stopWatch != null;
+			stopWatch.stop();
+			logger.debug("Took: " + stopWatch);
 		}
 	}
 
-	private void calculateRangeDomain(Collection<Statement> rangeOrDomainStatements,
+	private void addAll(Set<Resource> res, List<Set<Resource>> from) {
+		if (from.size() == 1) {
+			var forwardChained = from.get(0);
+			if (forwardChained.size() != res.size()) {
+				res.addAll(forwardChained);
+			}
+		} else {
+			for (var forwardChainedSet : from) {
+				res.addAll(forwardChainedSet);
+			}
+		}
+	}
+
+	private void calculateDomainAndRange(Collection<Statement> rangeOrDomainStatements,
 			Map<Resource, Set<Resource>> calculatedRangeOrDomain) {
 
+		StopWatch stopWatch = null;
+		if (logger.isDebugEnabled()) {
+			stopWatch = StopWatch.createStarted();
+		}
+
+		logger.debug("Calculate rdfs:domain and rdfs:range inference map.");
+
 		rangeOrDomainStatements.forEach(s -> {
+			if (!s.getObject().isResource()) {
+				throw new SailException("Object of rdfs:range or rdfs:domain should be a resource! " + s);
+			}
+
 			Resource predicate = s.getSubject();
+			Resource object = (Resource) s.getObject();
+
 			if (!calculatedProperties.containsKey(predicate)) {
-				calculatedProperties.put(predicate, new HashSet<>());
+				calculatedProperties.put(predicate, ConcurrentHashMap.newKeySet());
 			}
 
 			if (!calculatedRangeOrDomain.containsKey(predicate)) {
-				calculatedRangeOrDomain.put(predicate, new HashSet<>());
+				calculatedRangeOrDomain.put(predicate, ConcurrentHashMap.newKeySet());
 			}
 
-			calculatedRangeOrDomain.get(predicate).add((Resource) s.getObject());
+			calculatedRangeOrDomain.get(predicate).add(object);
 
-			if (!calculatedTypes.containsKey(s.getObject())) {
-				calculatedTypes.put((Resource) s.getObject(), new HashSet<>());
+			if (!calculatedTypes.containsKey(object)) {
+				calculatedTypes.put(object, ConcurrentHashMap.newKeySet());
 			}
 
 		});
 
 		calculatedProperties.keySet()
 				.stream()
-				.filter(
-						key -> !calculatedRangeOrDomain.containsKey(key))
-				.forEach(
-						key -> calculatedRangeOrDomain.put(key, new HashSet<>()));
+				.filter(key -> !calculatedRangeOrDomain.containsKey(key))
+				.forEach(key -> calculatedRangeOrDomain.put(key, ConcurrentHashMap.newKeySet()));
 
 		// Fixed point approach to finding all ranges or domains.
 		// prevSize is the size of the previous application of the function
 		// newSize is the size of the current application of the function
 		// Fixed point is reached when they are the same.
+		logger.debug("Run until fixed point");
 		long prevSize = 0;
 		final long[] newSize = { -1 };
 		while (prevSize != newSize[0]) {
@@ -580,7 +772,13 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 
 				newSize[0] += value.size();
 			});
+			logger.debug("Fixed point iteration new size {}", newSize[0]);
+		}
 
+		if (logger.isDebugEnabled()) {
+			assert stopWatch != null;
+			stopWatch.stop();
+			logger.debug("Took: " + stopWatch);
 		}
 	}
 
@@ -593,18 +791,6 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 			List<IsolationLevel> supported = this.getSupportedIsolationLevels();
 			return IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.READ_COMMITTED, supported);
 		}
-	}
-
-	@Override
-	public List<IsolationLevel> getSupportedIsolationLevels() {
-		List<IsolationLevel> supported = super.getSupportedIsolationLevels();
-		List<IsolationLevel> levels = new ArrayList<>(supported.size());
-		for (IsolationLevel level : supported) {
-			if (level.isCompatibleWith(IsolationLevels.READ_COMMITTED)) {
-				levels.add(level);
-			}
-		}
-		return levels;
 	}
 
 	/**

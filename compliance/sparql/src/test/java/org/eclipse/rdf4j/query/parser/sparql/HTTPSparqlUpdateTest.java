@@ -31,7 +31,7 @@ public class HTTPSparqlUpdateTest extends SPARQLUpdateTest {
 
 	private static SPARQLEmbeddedServer server;
 
-	private static String repositoryId = "test-sparql";
+	private static final String repositoryId = "test-sparql";
 
 	@BeforeClass
 	public static void startServer() throws Exception {

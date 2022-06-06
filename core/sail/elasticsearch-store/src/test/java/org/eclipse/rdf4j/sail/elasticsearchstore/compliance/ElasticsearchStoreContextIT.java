@@ -27,7 +27,7 @@ import org.junit.BeforeClass;
  */
 public class ElasticsearchStoreContextIT extends RDFNotifyingStoreTest {
 
-	private static File installLocation = Files.newTemporaryFolder();
+	private static final File installLocation = Files.newTemporaryFolder();
 	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider clientPool;
 

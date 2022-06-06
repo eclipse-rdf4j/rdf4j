@@ -49,7 +49,7 @@ class SerializableParsedTupleQuery extends AbstractSerializableParsedQuery {
 	 * @return list of projected variable names
 	 */
 	public List<String> getProjectionResultVars() {
-		List<String> res = new ArrayList<String>(
+		List<String> res = new ArrayList<>(
 				projection.getProjectionElemList().getElements().size());
 
 		for (ProjectionElem elem : projection.getProjectionElemList().getElements()) {

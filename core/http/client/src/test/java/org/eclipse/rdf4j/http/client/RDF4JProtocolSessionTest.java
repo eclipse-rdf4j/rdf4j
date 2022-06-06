@@ -44,11 +44,11 @@ import org.mockito.ArgumentCaptor;
  */
 public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 
-	private String testHeader = "X-testing-header";
-	private String testValue = "foobar";
+	private final String testHeader = "X-testing-header";
+	private final String testValue = "foobar";
 
-	private String serverURL = "http://localhost:" + wireMockServer.port() + "/rdf4j-server";
-	private String repositoryID = "test";
+	private final String serverURL = "http://localhost:" + wireMockServer.port() + "/rdf4j-server";
+	private final String repositoryID = "test";
 
 	RDF4JProtocolSession getRDF4JSession() {
 		return (RDF4JProtocolSession) sparqlSession;

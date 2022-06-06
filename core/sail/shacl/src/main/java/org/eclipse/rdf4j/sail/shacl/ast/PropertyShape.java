@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class PropertyShape extends Shape implements ConstraintComponent, Identifiable {
+public class PropertyShape extends Shape {
 	private static final Logger logger = LoggerFactory.getLogger(PropertyShape.class);
 
 	List<String> name;

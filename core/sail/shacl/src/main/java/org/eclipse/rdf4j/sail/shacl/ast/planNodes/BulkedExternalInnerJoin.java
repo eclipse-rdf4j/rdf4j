@@ -51,8 +51,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper) {
 
-		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
-		this.leftNode = leftNode;
+		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode);
 
 		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
 

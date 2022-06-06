@@ -151,7 +151,7 @@ public class SnapshotSailStoreTest {
 				return SimpleValueFactory.getInstance();
 			}
 		};
-	};
+	}
 
 	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory) {
 		BackingSailSource dummySource = new BackingSailSource() {
@@ -215,6 +215,6 @@ public class SnapshotSailStoreTest {
 			@Override
 			public void close() throws SailException {
 			}
-		}, () -> new LinkedHashModel());
+		}, LinkedHashModel::new);
 	}
 }

@@ -209,7 +209,7 @@ public class QueryResponder {
 
 		protected boolean accepts(Query q) {
 			return typeChecker.test(q);
-		};
+		}
 
 		protected FileFormat bestFormat(String acceptHeader) {
 			if (acceptHeader == null || acceptHeader.isEmpty()) {

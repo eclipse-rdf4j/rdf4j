@@ -53,6 +53,7 @@ import org.slf4j.LoggerFactory;
  * @author James Leigh
  * @author Arjohn Kampman
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class ConstantOptimizer implements QueryOptimizer {
 
 	protected static final Logger logger = LoggerFactory.getLogger(ConstantOptimizer.class);

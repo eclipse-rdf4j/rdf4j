@@ -83,12 +83,12 @@ class ReadCommittedWrapper implements DataStructureInterface {
 		} else {
 			synchronized (dataStructure) {
 
-				return new LookAheadIteration<ExtensibleStatement, SailException>() {
+				return new LookAheadIteration<>() {
 
-					Set<ExtensibleStatement> internalAddedLocal = new HashSet<>(internalAdded.values());
-					Set<ExtensibleStatement> internalRemovedLocal = new HashSet<>(internalRemoved.values());
+					final Set<ExtensibleStatement> internalAddedLocal = new HashSet<>(internalAdded.values());
+					final Set<ExtensibleStatement> internalRemovedLocal = new HashSet<>(internalRemoved.values());
 
-					Iterator<ExtensibleStatement> left = internalAddedLocal.stream()
+					final Iterator<ExtensibleStatement> left = internalAddedLocal.stream()
 							.filter(statement -> {
 
 								if (subject != null && !statement.getSubject().equals(subject)) {
@@ -113,7 +113,7 @@ class ReadCommittedWrapper implements DataStructureInterface {
 							})
 							.iterator();
 
-					CloseableIteration<? extends ExtensibleStatement, SailException> right = dataStructure
+					final CloseableIteration<? extends ExtensibleStatement, SailException> right = dataStructure
 							.getStatements(
 									subject, predicate, object, inferred, context);
 

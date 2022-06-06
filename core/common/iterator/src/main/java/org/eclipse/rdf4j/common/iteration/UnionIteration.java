@@ -18,6 +18,7 @@ import java.util.List;
  * An Iteration that returns the bag union of the results of a number of Iterations. 'Bag union' means that the
  * UnionIteration does not filter duplicate objects.
  */
+@Deprecated(since = "4.1.0")
 public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E, X> {
 
 	/*-----------*
@@ -37,6 +38,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 *
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
+	@SafeVarargs
 	public UnionIteration(Iteration<? extends E, X>... args) {
 		this(Arrays.asList(args));
 	}

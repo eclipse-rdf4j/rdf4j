@@ -744,7 +744,7 @@ public class Rio {
 		String outputFile = args[1];
 
 		try (FileOutputStream outStream = new FileOutputStream(outputFile);
-				FileInputStream inStream = new FileInputStream(inputFile);) {
+				FileInputStream inStream = new FileInputStream(inputFile)) {
 			createParser(getParserFormatForFileName(inputFile).orElse(RDFFormat.RDFXML))
 					.setRDFHandler(
 							createWriter(getWriterFormatForFileName(outputFile).orElse(RDFFormat.RDFXML), outStream))

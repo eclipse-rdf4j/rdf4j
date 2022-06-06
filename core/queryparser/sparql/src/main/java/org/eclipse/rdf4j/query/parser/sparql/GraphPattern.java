@@ -49,13 +49,13 @@ public class GraphPattern {
 	/**
 	 * The required tuple expressions in this graph pattern.
 	 */
-	private List<TupleExpr> requiredTEs = new ArrayList<>();
+	private final List<TupleExpr> requiredTEs = new ArrayList<>();
 
 	/**
 	 * The optional tuple expressions in this graph pattern, as a list of Key-Value pairs with the tuple expression as
 	 * the key and a list of constraints applicable to the tuple expression as the value.
 	 */
-	private List<Map.Entry<TupleExpr, List<ValueExpr>>> optionalTEs = new ArrayList<>();
+	private final List<Map.Entry<TupleExpr, List<ValueExpr>>> optionalTEs = new ArrayList<>();
 
 	/**
 	 * The boolean constraints in this graph pattern.

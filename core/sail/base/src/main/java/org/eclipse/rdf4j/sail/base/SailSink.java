@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -32,7 +33,7 @@ public interface SailSink extends SailClosable {
 
 	/**
 	 * Once this method returns successfully, changes that were made to this {@link SailSink} will be visible to
-	 * subsequent {@link SailSource#dataset(org.eclipse.rdf4j.IsolationLevel)}.
+	 * subsequent {@link SailSource#dataset(IsolationLevel)}.
 	 *
 	 * @throws SailException
 	 */

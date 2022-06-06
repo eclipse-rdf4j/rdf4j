@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 public class From implements QueryElement {
 	private static final String FROM = "FROM";
 	private static final String NAMED = "NAMED";
-	private Iri iri;
-	private boolean isNamed;
+	private final Iri iri;
+	private final boolean isNamed;
 
 	From(Iri iri) {
 		this(iri, false);

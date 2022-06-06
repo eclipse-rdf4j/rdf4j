@@ -64,7 +64,7 @@ public class TriXParserTest {
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, true);
 
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix");) {
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix")) {
 			parser.parse(in, "");
 		} catch (RDFParseException e) {
 			assertEquals(
@@ -83,7 +83,7 @@ public class TriXParserTest {
 	@Test
 	public void testIgnoreExternalDTD_default() throws Exception {
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-dtd.trix");) {
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-dtd.trix")) {
 			parser.parse(in, "");
 		} catch (FileNotFoundException e) {
 			fail("parser tried to read external DTD");
@@ -116,7 +116,7 @@ public class TriXParserTest {
 	@Test
 	public void testIgnoreExternalGeneralEntity() throws Exception {
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix");) {
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-entity.trix")) {
 			parser.parse(in, "");
 		} catch (FileNotFoundException e) {
 			fail("parser tried to read external file from external general entity");
@@ -140,7 +140,7 @@ public class TriXParserTest {
 		parser.getParserConfig().set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
 
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-param-entity.trix");) {
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/trix-xxe-external-param-entity.trix")) {
 			parser.parse(in, "");
 		} catch (FileNotFoundException e) {
 			fail("parser tried to read external file from external parameter entity");
@@ -153,7 +153,7 @@ public class TriXParserTest {
 	@Test
 	public void testFatalErrorPrologContent() throws Exception {
 		try (final InputStream in = this.getClass()
-				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/not-a-trix-file.trix");) {
+				.getResourceAsStream("/org/eclipse/rdf4j/rio/trix/not-a-trix-file.trix")) {
 			parser.parse(in, "");
 		} catch (RDFParseException e) {
 			assertEquals("Content is not allowed in prolog. [line 1, column 1]", e.getMessage());

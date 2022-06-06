@@ -52,14 +52,13 @@ public class SizeController extends AbstractController {
 			ValueFactory vf = repository.getValueFactory();
 			Resource[] contexts = ProtocolUtil.parseContextParam(request, Protocol.CONTEXT_PARAM_NAME, vf);
 
-			long size = -1;
-
 			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
-				size = repositoryCon.size(contexts);
+				long size = repositoryCon.size(contexts);
+				model.put(SimpleResponseView.CONTENT_KEY, String.valueOf(size));
 			} catch (RepositoryException e) {
 				throw new ServerHTTPException("Repository error: " + e.getMessage(), e);
 			}
-			model.put(SimpleResponseView.CONTENT_KEY, String.valueOf(size));
+
 		}
 
 		return new ModelAndView(SimpleResponseView.getInstance(), model);

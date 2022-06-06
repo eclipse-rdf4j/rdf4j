@@ -29,15 +29,15 @@ public class PositiveParserTest extends TestCase {
 	 * Variables *
 	 *-----------*/
 
-	private String inputURL;
+	private final String inputURL;
 
 	private String outputURL;
 
-	private String baseURL;
+	private final String baseURL;
 
-	private RDFParser targetParser;
+	private final RDFParser targetParser;
 
-	private RDFParser ntriplesParser;
+	private final RDFParser ntriplesParser;
 
 	protected IRI testUri;
 

@@ -22,11 +22,9 @@ public class EqualsJoinValue implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public EqualsJoinValue(PlanNode left, PlanNode right, boolean useAsFilter) {
-		left = PlanNodeHelper.handleSorting(this, left);
-		right = PlanNodeHelper.handleSorting(this, right);
+		this.left = PlanNodeHelper.handleSorting(this, left);
+		this.right = PlanNodeHelper.handleSorting(this, right);
 
-		this.left = left;
-		this.right = right;
 		this.useAsFilter = useAsFilter;
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 
@@ -103,8 +101,11 @@ public class EqualsJoinValue implements PlanNode {
 
 			@Override
 			public void localClose() throws SailException {
-				leftIterator.close();
-				rightIterator.close();
+				try {
+					leftIterator.close();
+				} finally {
+					rightIterator.close();
+				}
 			}
 
 			@Override

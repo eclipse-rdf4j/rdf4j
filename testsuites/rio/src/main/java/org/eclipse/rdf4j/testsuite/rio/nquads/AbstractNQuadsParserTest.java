@@ -39,13 +39,13 @@ public abstract class AbstractNQuadsParserTest {
 	/**
 	 * Base directory for W3C N-Triples tests
 	 */
-	private static String TEST_W3C_FILE_BASE_PATH = "/testcases/nquads/";
+	private static final String TEST_W3C_FILE_BASE_PATH = "/testcases/nquads/";
 
-	private static String TEST_W3C_MANIFEST_URL = TEST_W3C_FILE_BASE_PATH + "manifest.ttl";
+	private static final String TEST_W3C_MANIFEST_URL = TEST_W3C_FILE_BASE_PATH + "manifest.ttl";
 
-	private static String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/N-QuadsTests/manifest.ttl#";
+	private static final String TEST_W3C_MANIFEST_URI_BASE = "http://www.w3.org/2013/N-QuadsTests/manifest.ttl#";
 
-	private static String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/N-QuadsTests/";
+	private static final String TEST_W3C_TEST_URI_BASE = "http://www.w3.org/2013/N-QuadsTests/";
 
 	/*---------*
 	 * Methods *

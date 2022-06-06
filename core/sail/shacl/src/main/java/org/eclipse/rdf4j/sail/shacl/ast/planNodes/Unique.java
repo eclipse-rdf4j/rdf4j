@@ -32,25 +32,25 @@ public class Unique implements PlanNode {
 	private final boolean compress;
 	private StackTraceElement[] stackTrace;
 
-	PlanNode parent;
+	private final PlanNode parent;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	private Unique(PlanNode parent, boolean compress) {
 //		this.stackTrace = Thread.currentThread().getStackTrace();
-		parent = PlanNodeHelper.handleSorting(this, parent);
+		PlanNode tempParent = PlanNodeHelper.handleSorting(this, parent);
 
-		if (parent instanceof Unique) {
-			Unique parentUnique = ((Unique) parent);
+		if (tempParent instanceof Unique) {
+			Unique parentUnique = ((Unique) tempParent);
 
-			parent = parentUnique.parent;
+			tempParent = parentUnique.parent;
 
 			if (!compress) {
 				compress = parentUnique.compress;
 			}
 		}
 
-		this.parent = parent;
+		this.parent = tempParent;
 		this.compress = compress;
 	}
 
@@ -164,8 +164,8 @@ public class Unique implements PlanNode {
 
 			@Override
 			public void localClose() throws SailException {
-				targetAndValueDedupeSet = null;
 				parentIterator.close();
+				targetAndValueDedupeSet = null;
 				next = null;
 				previous = null;
 			}
@@ -312,8 +312,7 @@ public class Unique implements PlanNode {
 			ArrayList<ValidationTuple> validationTuples = new ArrayList<>();
 			ValidationTuple temp = iterator.next();
 			if (temp.getScope() == ConstraintComponent.Scope.propertyShape && temp.hasValue()) {
-				while (iterator.hasNext()
-						&& temp.sameTargetAs(iterator.peek())
+				while (iterator.hasNext() && temp.sameTargetAs(iterator.peek())
 						&& iterator.peek().getScope() == ConstraintComponent.Scope.propertyShape
 						&& iterator.peek().hasValue()) {
 					validationTuples.add(iterator.next());

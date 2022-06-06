@@ -73,8 +73,6 @@ public class Bound extends AbstractQueryModelNode implements ValueExpr {
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (arg == current) {
 			setArg((Var) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

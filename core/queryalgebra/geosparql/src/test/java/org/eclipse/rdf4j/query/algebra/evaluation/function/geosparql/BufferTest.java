@@ -30,9 +30,9 @@ public class BufferTest {
 
 	private final ValueFactory f = SimpleValueFactory.getInstance();
 
-	private Literal point = f.createLiteral("POINT(23.708496093749996 37.95719224376526)", GEO.WKT_LITERAL);
+	private final Literal point = f.createLiteral("POINT(23.708496093749996 37.95719224376526)", GEO.WKT_LITERAL);
 
-	private IRI unit = f.createIRI("http://www.opengis.net/def/uom/OGC/1.0/metre");
+	private final IRI unit = f.createIRI("http://www.opengis.net/def/uom/OGC/1.0/metre");
 
 	@Test
 	public void testEvaluateWithIntRadius() {

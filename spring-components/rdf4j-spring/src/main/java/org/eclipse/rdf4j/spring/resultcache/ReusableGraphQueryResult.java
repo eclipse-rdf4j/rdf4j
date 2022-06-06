@@ -53,10 +53,10 @@ import org.eclipse.rdf4j.spring.support.query.DelegatingIterator;
  */
 public class ReusableGraphQueryResult implements GraphQueryResult, ThrowableRecorder {
 	private GraphQueryResult originalResult;
-	private List<Statement> statements;
-	private AtomicBoolean recording = new AtomicBoolean(true);
-	private AtomicBoolean exceptionDuringRecording = new AtomicBoolean(false);
-	private BindingSet queryBindings;
+	private final List<Statement> statements;
+	private final AtomicBoolean recording = new AtomicBoolean(true);
+	private final AtomicBoolean exceptionDuringRecording = new AtomicBoolean(false);
+	private final BindingSet queryBindings;
 	private Map<String, String> namespaces;
 
 	public ReusableGraphQueryResult(GraphQueryResult result, BindingSet queryBindings) {

@@ -19,6 +19,7 @@ import java.util.function.Consumer;
  *
  * @author Jeen Broekstra
  */
+@Deprecated(since = "4.1.0")
 public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T> {
 
 	private final Iteration<T, ? extends Exception> iteration;

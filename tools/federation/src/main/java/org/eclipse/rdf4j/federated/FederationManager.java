@@ -70,7 +70,7 @@ public class FederationManager {
 	public enum FederationType {
 		LOCAL,
 		REMOTE,
-		HYBRID;
+		HYBRID
 	}
 
 	/* Instance variables */

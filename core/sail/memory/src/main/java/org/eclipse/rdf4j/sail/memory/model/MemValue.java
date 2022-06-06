@@ -74,4 +74,12 @@ public interface MemValue extends Value {
 	 * @param currentSnapshot The current snapshot version.
 	 */
 	void cleanSnapshotsFromObjectStatements(int currentSnapshot);
+
+	boolean hasSubjectStatements();
+
+	boolean hasPredicateStatements();
+
+	boolean hasObjectStatements();
+
+	boolean hasContextStatements();
 }

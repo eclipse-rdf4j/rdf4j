@@ -27,7 +27,9 @@ public class Regex extends BinaryValueOperator {
 
 	public Regex(ValueExpr expr, ValueExpr pattern, ValueExpr flags) {
 		super(expr, pattern);
-		setFlagsArg(flags);
+		if (flags != null) {
+			setFlagsArg(flags);
+		}
 	}
 
 	/*---------*
@@ -50,12 +52,13 @@ public class Regex extends BinaryValueOperator {
 		super.setRightArg(rightArg);
 	}
 
-	public void setFlagsArg(ValueExpr flags) {
-		this.flagsArg = flags;
-	}
-
 	public ValueExpr getFlagsArg() {
 		return flagsArg;
+	}
+
+	public void setFlagsArg(ValueExpr flags) {
+		this.flagsArg = flags;
+		flags.setParentNode(this);
 	}
 
 	@Override
@@ -78,6 +81,14 @@ public class Regex extends BinaryValueOperator {
 			return nullEquals(flagsArg, o.getFlagsArg());
 		}
 		return false;
+	}
+
+	@Override
+	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		if (current == flagsArg) {
+			setFlagsArg((ValueExpr) replacement);
+		}
+		super.replaceChildNode(current, replacement);
 	}
 
 	@Override

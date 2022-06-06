@@ -78,14 +78,14 @@ public class SummaryServlet extends TransformationServlet {
 	@SuppressWarnings("unchecked")
 	private List<Future<String>> getRepositoryStatistics(final RepositoryConnection con) throws InterruptedException {
 		List<Future<String>> futures;
-		futures = executorService.invokeAll(Arrays.asList(new Callable<String>() {
+		futures = executorService.invokeAll(Arrays.asList(new Callable<>() {
 
 			@Override
 			public String call() throws RepositoryException {
 				return Long.toString(con.size());
 			}
 
-		}, new Callable<String>() {
+		}, new Callable<>() {
 
 			@Override
 			public String call() throws RepositoryException {

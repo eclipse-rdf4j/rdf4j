@@ -48,70 +48,70 @@ public class ValueEqualityBenchmark {
 	}
 
 	// private ValueFactory factory=SimpleValueFactory.getInstance();
-	private ValueFactory factory = new BenchmarkValueFactory();
+	private final ValueFactory factory = new BenchmarkValueFactory();
 
-	private BNode bnodeX = factory.createBNode();
-	private BNode bnodeY = factory.createBNode();
+	private final BNode bnodeX = factory.createBNode();
+	private final BNode bnodeY = factory.createBNode();
 
-	private BNode bnodeIdX = factory.createBNode(string("id"));
-	private BNode bnodeIdY = factory.createBNode(string("id"));
+	private final BNode bnodeIdX = factory.createBNode(string("id"));
+	private final BNode bnodeIdY = factory.createBNode(string("id"));
 
-	private IRI iriUnaryX = factory.createIRI(string("http://example.com/name"));
-	private IRI iriUnaryY = factory.createIRI(string("http://example.com/name"));
+	private final IRI iriUnaryX = factory.createIRI(string("http://example.com/name"));
+	private final IRI iriUnaryY = factory.createIRI(string("http://example.com/name"));
 
-	private IRI iriBinaryX = factory.createIRI(string("http://example.com/"), string("name"));
-	private IRI iriBinaryY = factory.createIRI(string("http://example.com/"), string("name"));
+	private final IRI iriBinaryX = factory.createIRI(string("http://example.com/"), string("name"));
+	private final IRI iriBinaryY = factory.createIRI(string("http://example.com/"), string("name"));
 
-	private Literal plainX = factory.createLiteral(string("text"));
-	private Literal plainY = factory.createLiteral(string("text"));
+	private final Literal plainX = factory.createLiteral(string("text"));
+	private final Literal plainY = factory.createLiteral(string("text"));
 
-	private Literal typedX = factory.createLiteral(string("text"), iriUnaryX);
-	private Literal typedY = factory.createLiteral(string("text"), iriUnaryY);
+	private final Literal typedX = factory.createLiteral(string("text"), iriUnaryX);
+	private final Literal typedY = factory.createLiteral(string("text"), iriUnaryY);
 
-	private Literal taggedX = factory.createLiteral(string("text"), string("en"));
-	private Literal taggedY = factory.createLiteral(string("text"), string("en"));
+	private final Literal taggedX = factory.createLiteral(string("text"), string("en"));
+	private final Literal taggedY = factory.createLiteral(string("text"), string("en"));
 
-	private Literal booleanX = factory.createLiteral(true);
-	private Literal booleanY = factory.createLiteral(false);
+	private final Literal booleanX = factory.createLiteral(true);
+	private final Literal booleanY = factory.createLiteral(false);
 
-	private Literal byteX = factory.createLiteral((byte) 100);
-	private Literal byteY = factory.createLiteral((byte) 123);
+	private final Literal byteX = factory.createLiteral((byte) 100);
+	private final Literal byteY = factory.createLiteral((byte) 123);
 
-	private Literal shortX = factory.createLiteral((short) 100);
-	private Literal shortY = factory.createLiteral((short) 123);
+	private final Literal shortX = factory.createLiteral((short) 100);
+	private final Literal shortY = factory.createLiteral((short) 123);
 
-	private Literal intX = factory.createLiteral(100);
-	private Literal intY = factory.createLiteral(123);
+	private final Literal intX = factory.createLiteral(100);
+	private final Literal intY = factory.createLiteral(123);
 
-	private Literal longX = factory.createLiteral(100L);
-	private Literal longY = factory.createLiteral(123L);
+	private final Literal longX = factory.createLiteral(100L);
+	private final Literal longY = factory.createLiteral(123L);
 
-	private Literal floatX = factory.createLiteral(100.0F);
-	private Literal floatY = factory.createLiteral(123.0F);
+	private final Literal floatX = factory.createLiteral(100.0F);
+	private final Literal floatY = factory.createLiteral(123.0F);
 
-	private Literal doubleX = factory.createLiteral(100.0D);
-	private Literal doubleY = factory.createLiteral(123.0D);
+	private final Literal doubleX = factory.createLiteral(100.0D);
+	private final Literal doubleY = factory.createLiteral(123.0D);
 
-	private Literal integerX = factory.createLiteral(new BigInteger("100"));
-	private Literal integerY = factory.createLiteral(new BigInteger("100"));
+	private final Literal integerX = factory.createLiteral(new BigInteger("100"));
+	private final Literal integerY = factory.createLiteral(new BigInteger("100"));
 
-	private Literal decimalX = factory.createLiteral(new BigDecimal("100"));
-	private Literal decimalY = factory.createLiteral(new BigDecimal("100"));
+	private final Literal decimalX = factory.createLiteral(new BigDecimal("100"));
+	private final Literal decimalY = factory.createLiteral(new BigDecimal("100"));
 
-	private Literal calendarX = factory.createLiteral(calendar("2020-10-22T15:53:12.345Z"));
-	private Literal calendarY = factory.createLiteral(calendar("2020-10-22T15:53:12.345Z"));
+	private final Literal calendarX = factory.createLiteral(calendar("2020-10-22T15:53:12.345Z"));
+	private final Literal calendarY = factory.createLiteral(calendar("2020-10-22T15:53:12.345Z"));
 
-	private Literal dateX = factory.createLiteral(new Date(1_000_000L));
-	private Literal dateY = factory.createLiteral(new Date(1_000_000L));
+	private final Literal dateX = factory.createLiteral(new Date(1_000_000L));
+	private final Literal dateY = factory.createLiteral(new Date(1_000_000L));
 
-	private Triple tripleX = factory.createTriple(iriUnaryX, iriUnaryX, iriUnaryX);
-	private Triple tripleY = factory.createTriple(iriUnaryY, iriUnaryY, iriUnaryY);
+	private final Triple tripleX = factory.createTriple(iriUnaryX, iriUnaryX, iriUnaryX);
+	private final Triple tripleY = factory.createTriple(iriUnaryY, iriUnaryY, iriUnaryY);
 
-	private Statement statementX = factory.createStatement(iriUnaryX, iriUnaryX, iriUnaryX);
-	private Statement statementY = factory.createStatement(iriUnaryY, iriUnaryY, iriUnaryY);
+	private final Statement statementX = factory.createStatement(iriUnaryX, iriUnaryX, iriUnaryX);
+	private final Statement statementY = factory.createStatement(iriUnaryY, iriUnaryY, iriUnaryY);
 
-	private Statement statementContextX = factory.createStatement(iriUnaryX, iriUnaryX, iriUnaryX, iriUnaryX);
-	private Statement statementContextY = factory.createStatement(iriUnaryY, iriUnaryY, iriUnaryY, iriUnaryY);
+	private final Statement statementContextX = factory.createStatement(iriUnaryX, iriUnaryX, iriUnaryX, iriUnaryX);
+	private final Statement statementContextY = factory.createStatement(iriUnaryY, iriUnaryY, iriUnaryY, iriUnaryY);
 
 	private final Object[] values = {
 

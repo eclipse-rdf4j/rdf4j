@@ -85,8 +85,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 				}
 
 				runQuery(left, right, connection, parsedQuery, dataset, dataGraph, skipBasedOnPreviousConnection,
-						previousStateConnection,
-						mapper);
+						previousStateConnection, mapper);
 
 			}
 

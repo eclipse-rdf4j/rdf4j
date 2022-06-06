@@ -61,7 +61,7 @@ public class ReificationRdfStarQueryEvaluationStep implements QueryEvaluationSte
 		};
 		// for each reification node, fetch and check the subject, predicate and object values against
 		// the expected values from TripleRef pattern and supplied bindings collection
-		return new LookAheadIteration<BindingSet, QueryEvaluationException>() {
+		return new LookAheadIteration<>() {
 			@Override
 			protected void handleClose()
 					throws QueryEvaluationException {
@@ -101,13 +101,14 @@ public class ReificationRdfStarQueryEvaluationStep implements QueryEvaluationSte
 				return null;
 			}
 
-//
+			//
 			private boolean matchValue(Resource theNode, Value value, Var var, MutableBindingSet result,
 					IRI predicate) {
-				try (CloseableIteration<? extends Statement, QueryEvaluationException> valueiter = tripleSource
+				try (CloseableIteration<? extends Statement, QueryEvaluationException> valueIter = tripleSource
 						.getStatements(theNode, predicate, null)) {
-					while (valueiter.hasNext()) {
-						Statement valueStatement = valueiter.next();
+
+					while (valueIter.hasNext()) {
+						Statement valueStatement = valueIter.next();
 						if (theNode.equals(valueStatement.getSubject())) {
 							if (value == null || value.equals(valueStatement.getObject())) {
 								if (value == null) {

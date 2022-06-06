@@ -35,7 +35,7 @@ public class ConsoleQueryResultWriter extends AbstractQueryResultWriter {
 	private int columnWidth;
 	private String separatorLine = "";
 	private String header = "";
-	private TupleQueryResultFormat queryResultFormat = new TupleQueryResultFormat("Console query result format",
+	private final TupleQueryResultFormat queryResultFormat = new TupleQueryResultFormat("Console query result format",
 			"application/x-dummy", "dummy", true);
 
 	/**

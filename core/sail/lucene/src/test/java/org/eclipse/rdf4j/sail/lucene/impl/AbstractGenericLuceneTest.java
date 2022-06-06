@@ -34,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -127,7 +128,7 @@ public abstract class AbstractGenericLuceneTest {
 		// setup a LuceneSail
 		MemoryStore memoryStore = new MemoryStore();
 		// enable lock tracking
-		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(true);
+		Properties.setLockTrackingEnabled(true);
 		sail = new LuceneSail();
 		configure(sail);
 		sail.setBaseSail(memoryStore);
@@ -161,6 +162,7 @@ public abstract class AbstractGenericLuceneTest {
 				repository.shutDown();
 			}
 		}
+		Properties.setLockTrackingEnabled(false);
 	}
 
 	@Test
@@ -352,7 +354,7 @@ public abstract class AbstractGenericLuceneTest {
 		try (TupleQueryResult result = query.evaluate()) {
 
 			// check the results
-			BindingSet bindings = null;
+			BindingSet bindings;
 
 			// the first result is subject 1 and has a score
 			int results = 0;
@@ -414,7 +416,7 @@ public abstract class AbstractGenericLuceneTest {
 		try (TupleQueryResult result = query.evaluate()) {
 
 			// check the results
-			BindingSet bindings = null;
+			BindingSet bindings;
 
 			// the first result is subject 1 and has a score
 			int results = 0;
@@ -486,7 +488,7 @@ public abstract class AbstractGenericLuceneTest {
 		try (TupleQueryResult result = query.evaluate()) {
 
 			// check the results
-			BindingSet bindings = null;
+			BindingSet bindings;
 
 			// the first result is subject 1 and has a score
 			int results = 0;
@@ -698,7 +700,7 @@ public abstract class AbstractGenericLuceneTest {
 		// check the results
 		try (TupleQueryResult result = query.evaluate()) {
 			// check the results
-			BindingSet bindings = null;
+			BindingSet bindings;
 
 			// the first result is subject 1 and has a score
 			int results = 0;
@@ -777,7 +779,7 @@ public abstract class AbstractGenericLuceneTest {
 		for (int i = 0; i < numThreads; i++) {
 			new Thread(new Runnable() {
 
-				private long iterationCount = 10 + Math.round(random.nextDouble() * 100);
+				private final long iterationCount = 10 + Math.round(random.nextDouble() * 100);
 
 				@Override
 				public void run() {

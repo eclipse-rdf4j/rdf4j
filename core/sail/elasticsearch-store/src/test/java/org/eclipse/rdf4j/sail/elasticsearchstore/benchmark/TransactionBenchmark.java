@@ -48,7 +48,7 @@ import org.openjdk.jmh.annotations.Warmup;
 @Measurement(iterations = 10)
 public class TransactionBenchmark {
 
-	private static File installLocation = Files.newTemporaryFolder();
+	private static final File installLocation = Files.newTemporaryFolder();
 	private static ElasticsearchClusterRunner runner;
 
 	private SailRepository repository;

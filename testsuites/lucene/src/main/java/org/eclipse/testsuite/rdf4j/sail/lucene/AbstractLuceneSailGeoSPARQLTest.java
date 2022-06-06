@@ -123,6 +123,8 @@ public abstract class AbstractLuceneSailGeoSPARQLTest {
 		if (repository != null) {
 			repository.shutDown();
 		}
+		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);
+
 	}
 
 	@Test

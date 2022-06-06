@@ -7,57 +7,55 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
+@Deprecated(since = "4.1.0")
 public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationException> {
 
-	/*-----------*
-	 * Constants *
-	 *-----------*/
-
-	private final Filter filter;
-
-	private final EvaluationStrategy strategy;
-
-	/**
-	 * The set of binding names that are "in scope" for the filter. The filter must not include bindings that are (only)
-	 * included because of the depth-first evaluation strategy in the evaluation of the constraint.
-	 */
-	private final Set<String> scopeBindingNames;
-
 	private final QueryValueEvaluationStep condition;
+	private final EvaluationStrategy strategy;
 
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
 
 	public FilterIterator(Filter filter, CloseableIteration<BindingSet, QueryEvaluationException> iter,
-			QueryValueEvaluationStep ves, EvaluationStrategy strategy) throws QueryEvaluationException {
+			QueryValueEvaluationStep condition, EvaluationStrategy strategy) throws QueryEvaluationException {
 		super(iter);
-		this.filter = filter;
+		this.condition = condition;
 		this.strategy = strategy;
-		this.condition = ves;
-		this.scopeBindingNames = filter.getBindingNames();
 
 	}
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+	@Override
+	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
+		try {
+			return strategy.isTrue(condition, bindings);
+		} catch (ValueExprEvaluationException e) {
+			// failed to evaluate condition
+			return false;
+		}
+	}
 
-	private boolean isPartOfSubQuery(QueryModelNode node) {
+	public static boolean isPartOfSubQuery(QueryModelNode node) {
 		if (node instanceof SubQueryValueOperator) {
 			return true;
 		}
@@ -70,23 +68,64 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		}
 	}
 
-	@Override
-	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
-		try {
-			// Limit the bindings to the ones that are in scope for this filter
-			QueryBindingSet scopeBindings = new QueryBindingSet(bindings);
+	/**
+	 * This is used to make sure that no variable is seen by the filter that are not in scope. Historically important in
+	 * subquery cases.
+	 *
+	 */
+	public static final class RetainedVariableFilteredQueryEvaluationContext implements QueryEvaluationContext {
+		private final Filter node;
+		private final QueryEvaluationContext context;
 
-			// FIXME J1 scopeBindingNames should include bindings from superquery if the filter
-			// is part of a subquery. This is a workaround: we should fix the settings of scopeBindingNames,
-			// rather than skipping the limiting of bindings.
-			if (!isPartOfSubQuery(filter)) {
-				scopeBindings.retainAll(scopeBindingNames);
+		public RetainedVariableFilteredQueryEvaluationContext(Filter node, QueryEvaluationContext contextToFilter) {
+			this.node = node;
+			this.context = contextToFilter;
+		}
+
+		@Override
+		public Literal getNow() {
+			return context.getNow();
+		}
+
+		@Override
+		public Dataset getDataset() {
+			return context.getDataset();
+		}
+
+		@Override
+		public Predicate<BindingSet> hasBinding(String variableName) {
+			if (isVariableInScope(variableName)) {
+				return context.hasBinding(variableName);
+			} else {
+				return (bs) -> false;
 			}
+		}
 
-			return strategy.isTrue(condition, scopeBindings);
-		} catch (ValueExprEvaluationException e) {
-			// failed to evaluate condition
-			return false;
+		boolean isVariableInScope(String variableName) {
+			return node.getBindingNames().contains(variableName);
+		}
+
+		@Override
+		public java.util.function.Function<BindingSet, Binding> getBinding(String variableName) {
+			if (isVariableInScope(variableName)) {
+				return context.getBinding(variableName);
+			} else {
+				return (bs) -> null;
+			}
+		}
+
+		@Override
+		public java.util.function.Function<BindingSet, Value> getValue(String variableName) {
+			if (isVariableInScope(variableName)) {
+				return context.getValue(variableName);
+			} else {
+				return (bs) -> null;
+			}
+		}
+
+		@Override
+		public BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {
+			return context.setBinding(variableName);
 		}
 	}
 

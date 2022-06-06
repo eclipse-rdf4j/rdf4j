@@ -60,10 +60,10 @@ import org.springframework.core.io.ResourceLoader;
  */
 public class RDF4JTemplate {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-	private RepositoryConnectionFactory repositoryConnectionFactory;
-	private OperationInstantiator operationInstantiator;
-	private ResourceLoader resourceLoader;
-	private UUIDSource uuidSource;
+	private final RepositoryConnectionFactory repositoryConnectionFactory;
+	private final OperationInstantiator operationInstantiator;
+	private final ResourceLoader resourceLoader;
+	private final UUIDSource uuidSource;
 
 	public RDF4JTemplate(
 			@Autowired RepositoryConnectionFactory repositoryConnectionFactory,

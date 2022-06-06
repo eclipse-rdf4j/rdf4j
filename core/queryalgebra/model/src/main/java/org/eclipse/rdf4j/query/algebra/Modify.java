@@ -44,7 +44,6 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 		if (whereExpr != null) {
 			whereExpr.visit(visitor);
 		}
-		super.visitChildren(visitor);
 	}
 
 	@Override
@@ -53,8 +52,6 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 			setDeleteExpr((TupleExpr) replacement);
 		} else if (insertExpr == current) {
 			setInsertExpr((TupleExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

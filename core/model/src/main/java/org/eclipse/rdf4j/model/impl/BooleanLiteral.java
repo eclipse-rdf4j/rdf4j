@@ -32,7 +32,7 @@ public class BooleanLiteral extends SimpleLiteral {
 	 * Variables *
 	 *-----------*/
 
-	private boolean value;
+	private final boolean value;
 
 	/*--------------*
 	 * Constructors *

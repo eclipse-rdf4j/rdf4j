@@ -98,7 +98,7 @@ import org.springframework.web.servlet.mvc.AbstractController;
  */
 public class TransactionController extends AbstractController implements DisposableBean {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public TransactionController() throws ApplicationContextException {
 		setSupportedMethods(new String[] { METHOD_POST, "PUT", "DELETE" });
@@ -241,7 +241,7 @@ public class TransactionController extends AbstractController implements Disposa
 				false);
 
 		try {
-			RDFFormat format = null;
+			RDFFormat format;
 			switch (action) {
 			case ADD:
 				format = Rio.getParserFormatForMIMEType(request.getContentType())
@@ -294,7 +294,7 @@ public class TransactionController extends AbstractController implements Disposa
 			ValueFactory vf = repository.getValueFactory();
 			Resource[] contexts = ProtocolUtil.parseContextParam(request, Protocol.CONTEXT_PARAM_NAME, vf);
 
-			long size = -1;
+			long size;
 
 			try {
 				size = transaction.getSize(contexts);
@@ -347,7 +347,7 @@ public class TransactionController extends AbstractController implements Disposa
 	 */
 	private ModelAndView processQuery(Transaction txn, HttpServletRequest request, HttpServletResponse response)
 			throws IOException, HTTPException {
-		String queryStr = null;
+		String queryStr;
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_QUERY_MIME_TYPE)) {
 			Charset charset = getCharset(request);
@@ -526,7 +526,7 @@ public class TransactionController extends AbstractController implements Disposa
 
 	private ModelAndView getSparqlUpdateResult(Transaction transaction, HttpServletRequest request,
 			HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
-		String sparqlUpdateString = null;
+		String sparqlUpdateString;
 		final String contentType = request.getContentType();
 		if (contentType != null && contentType.contains(Protocol.SPARQL_UPDATE_MIME_TYPE)) {
 			try {

@@ -28,10 +28,10 @@ import org.slf4j.LoggerFactory;
  */
 public class LRUResultCache<T> implements ResultCache<Integer, T> {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-	private Map<Integer, Entry<T>> cache;
-	private AtomicBoolean dirty = new AtomicBoolean(false);
-	private Map<Thread, Boolean> bypassInThread = Collections.synchronizedMap(new WeakHashMap<>());
-	private Duration entryLifetime;
+	private final Map<Integer, Entry<T>> cache;
+	private final AtomicBoolean dirty = new AtomicBoolean(false);
+	private final Map<Thread, Boolean> bypassInThread = Collections.synchronizedMap(new WeakHashMap<>());
+	private final Duration entryLifetime;
 
 	public LRUResultCache(ResultCacheProperties properties) {
 		this.entryLifetime = properties.getEntryLifetime();

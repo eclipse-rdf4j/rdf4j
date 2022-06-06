@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11ManifestTest;
 import org.eclipse.rdf4j.testsuite.sparql.RepositorySPARQLComplianceTestSuite;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -85,6 +86,11 @@ public abstract class ComplexSPARQLQueryTest {
 	@BeforeClass
 	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	protected final Logger logger = LoggerFactory.getLogger(this.getClass());

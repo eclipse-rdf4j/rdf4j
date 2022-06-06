@@ -27,7 +27,7 @@ public abstract class AbstractBindingSet implements BindingSet {
 			return true;
 		}
 
-		if (other == null || !(other instanceof BindingSet)) {
+		if (!(other instanceof BindingSet)) {
 			return false;
 		}
 
@@ -35,6 +35,13 @@ public abstract class AbstractBindingSet implements BindingSet {
 
 		if (this.size() != that.size()) {
 			return false;
+		}
+
+		if (this.size() == 1) {
+			Binding binding = iterator().next();
+			Binding thatBinding = that.iterator().next();
+
+			return binding.getName().equals(thatBinding.getName()) && binding.getValue().equals(thatBinding.getValue());
 		}
 
 		// Compare other's bindings to own

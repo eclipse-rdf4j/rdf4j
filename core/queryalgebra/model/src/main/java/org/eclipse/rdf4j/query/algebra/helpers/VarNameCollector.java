@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 /**
  * A QueryModelVisitor that collects the names of (non-constant) variables that are used in a query model.
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class VarNameCollector extends AbstractQueryModelVisitor<RuntimeException> {
 
 	public static Set<String> process(QueryModelNode node) {
@@ -24,7 +25,7 @@ public class VarNameCollector extends AbstractQueryModelVisitor<RuntimeException
 		return collector.getVarNames();
 	}
 
-	private Set<String> varNames = new LinkedHashSet<>();
+	private final Set<String> varNames = new LinkedHashSet<>();
 
 	public Set<String> getVarNames() {
 		return varNames;

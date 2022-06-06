@@ -38,7 +38,7 @@ public class QueryParserUtil {
 	 */
 	public static ParsedOperation parseOperation(QueryLanguage ql, String operation, String baseURI)
 			throws MalformedQueryException {
-		ParsedOperation parsedOperation = null;
+		ParsedOperation parsedOperation;
 		QueryParser parser = createParser(ql);
 
 		if (QueryLanguage.SPARQL.equals(ql)) {

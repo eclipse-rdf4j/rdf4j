@@ -177,8 +177,8 @@ public class JSONLDHierarchicalProcessor {
 	}
 
 	private static class TreeNode {
-		private TreeNode parent;
-		private Map<String, Object> node;
+		private final TreeNode parent;
+		private final Map<String, Object> node;
 
 		public TreeNode(Map<String, Object> node) {
 			this.node = node;

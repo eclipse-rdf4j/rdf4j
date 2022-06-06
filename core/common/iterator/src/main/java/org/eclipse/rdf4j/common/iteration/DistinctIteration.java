@@ -15,6 +15,7 @@ import java.util.function.Supplier;
 /**
  * An Iteration that filters any duplicate elements from an underlying iterator.
  */
+@Deprecated(since = "4.1.0")
 public class DistinctIteration<E, X extends Exception> extends FilterIteration<E, X> {
 
 	/*-----------*

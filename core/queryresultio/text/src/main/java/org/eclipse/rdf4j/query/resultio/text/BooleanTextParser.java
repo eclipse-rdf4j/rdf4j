@@ -52,7 +52,7 @@ public class BooleanTextParser extends AbstractQueryResultParser implements Bool
 		String value = IOUtil.readString(reader, 16);
 		value = value.trim();
 
-		boolean result = false;
+		boolean result;
 
 		if (value.equalsIgnoreCase("true")) {
 			result = true;

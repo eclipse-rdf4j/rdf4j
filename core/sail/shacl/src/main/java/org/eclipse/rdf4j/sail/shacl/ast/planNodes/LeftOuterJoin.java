@@ -25,11 +25,9 @@ public class LeftOuterJoin implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public LeftOuterJoin(PlanNode left, PlanNode right) {
-		left = PlanNodeHelper.handleSorting(this, left);
-		right = PlanNodeHelper.handleSorting(this, right);
+		this.left = PlanNodeHelper.handleSorting(this, left);
+		this.right = PlanNodeHelper.handleSorting(this, right);
 
-		this.left = left;
-		this.right = right;
 	}
 
 	@Override
@@ -111,8 +109,11 @@ public class LeftOuterJoin implements PlanNode {
 
 			@Override
 			public void localClose() throws SailException {
-				leftIterator.close();
-				rightIterator.close();
+				try {
+					leftIterator.close();
+				} finally {
+					rightIterator.close();
+				}
 			}
 
 			@Override

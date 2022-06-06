@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -47,15 +48,20 @@ public class SerializableTest {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+	}
+
 	private Repository repo;
 
 	private RepositoryConnection a;
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.SERIALIZABLE;
+	private final IsolationLevel level = IsolationLevels.SERIALIZABLE;
 
-	private String NS = "http://rdf.example.org/";
+	private final String NS = "http://rdf.example.org/";
 
 	private ValueFactory lf;
 
@@ -697,7 +703,7 @@ public class SerializableTest {
 	}
 
 	private List<Value> eval(String var, RepositoryConnection con, String qry) throws Exception {
-		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate();) {
+		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate()) {
 			List<Value> list = new ArrayList<>();
 			while (result.hasNext()) {
 				list.add(result.next().getValue(var));

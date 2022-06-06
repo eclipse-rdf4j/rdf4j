@@ -13,7 +13,10 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * An extension of {@link SimpleStatement} that adds a context field.
+ *
+ * @deprecated Use {@link GenericStatement instead}
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public class ContextStatement extends SimpleStatement {
 
 	/*-----------*

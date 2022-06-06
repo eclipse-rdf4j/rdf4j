@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.queryrender.RenderUtils;
 class PropertyPathSerializer extends AbstractQueryModelVisitor<RuntimeException> {
 
 	private StringBuilder builder;
-	private Stack<VarInfo> currentSubjectVarStack = new Stack<>();
+	private final Stack<VarInfo> currentSubjectVarStack = new Stack<>();
 	private AbstractSerializableParsedQuery currentQueryProfile;
 
 	public String serialize(ArbitraryLengthPath path, AbstractSerializableParsedQuery currentQueryProfile) {

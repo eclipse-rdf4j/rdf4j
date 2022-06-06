@@ -30,27 +30,27 @@ public class NTriplesUtil {
 	/*
 	 * The following correspond to the N-Triples grammar (https://www.w3.org/TR/n-triples/#n-triples-grammar).
 	 */
-	private static String PN_CHARS_BASE = "[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF"
+	private static final String PN_CHARS_BASE = "[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF"
 			+ "\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD"
 			+ "\uD800\uDC00-\uDB7F\uDFFF]"; // <- \u10000-\uEFFFF expressed with surrogate pairs
-	private static String PN_CHARS_U = "(?:" + PN_CHARS_BASE + "|_)";
-	private static String PN_CHARS = "(?:" + PN_CHARS_U + "|[0-9\u0300-\u036F\u203F-\u2040\u00B7-])";
-	private static String BNODE_ID = "(?:" + PN_CHARS_U + "|[0-9])(?:(?:" + PN_CHARS + "|\\.)*" + PN_CHARS + ")?";
-	private static String BNODE = "_:" + BNODE_ID;
+	private static final String PN_CHARS_U = "(?:" + PN_CHARS_BASE + "|_)";
+	private static final String PN_CHARS = "(?:" + PN_CHARS_U + "|[0-9\u0300-\u036F\u203F-\u2040\u00B7-])";
+	private static final String BNODE_ID = "(?:" + PN_CHARS_U + "|[0-9])(?:(?:" + PN_CHARS + "|\\.)*" + PN_CHARS + ")?";
+	private static final String BNODE = "_:" + BNODE_ID;
 
-	private static String HEX = "[0-9A-Fa-f]";
-	private static String UCHAR = "(?:\\\\u" + HEX + "{4}|\\\\U" + HEX + "{8})";
-	private static String IRI = "<(?:[^\u0000-\u0020<>\"{}|^`\\\\]|" + UCHAR + ")*>";
+	private static final String HEX = "[0-9A-Fa-f]";
+	private static final String UCHAR = "(?:\\\\u" + HEX + "{4}|\\\\U" + HEX + "{8})";
+	private static final String IRI = "<(?:[^\u0000-\u0020<>\"{}|^`\\\\]|" + UCHAR + ")*>";
 
-	private static String ECHAR = "\\\\[tbnrf\"'\\\\]";
-	private static String STRING_LITERAL_QUOTE = "\"(?:[^\"\\\\\n\r]|" + ECHAR + "|" + UCHAR + ")*+\"";
-	private static String LANGTAG = "@[a-zA-Z]+(?:-[a-zA-Z0-9]+)*";
-	private static String LITERAL = STRING_LITERAL_QUOTE + "(?:\\^\\^" + IRI + "|" + LANGTAG + ")?";
+	private static final String ECHAR = "\\\\[tbnrf\"'\\\\]";
+	private static final String STRING_LITERAL_QUOTE = "\"(?:[^\"\\\\\n\r]|" + ECHAR + "|" + UCHAR + ")*+\"";
+	private static final String LANGTAG = "@[a-zA-Z]+(?:-[a-zA-Z0-9]+)*";
+	private static final String LITERAL = STRING_LITERAL_QUOTE + "(?:\\^\\^" + IRI + "|" + LANGTAG + ")?";
 
-	private static Pattern BNODE_ID_PATTERN = Pattern.compile(BNODE_ID);
-	private static Pattern BNODE_PATTERN = Pattern.compile(BNODE);
-	private static Pattern IRI_PATTERN = Pattern.compile(IRI);
-	private static Pattern LITERAL_PATTERN = Pattern.compile(LITERAL);
+	private static final Pattern BNODE_ID_PATTERN = Pattern.compile(BNODE_ID);
+	private static final Pattern BNODE_PATTERN = Pattern.compile(BNODE);
+	private static final Pattern IRI_PATTERN = Pattern.compile(IRI);
+	private static final Pattern LITERAL_PATTERN = Pattern.compile(LITERAL);
 
 	static class TripleMatch {
 		Triple triple;

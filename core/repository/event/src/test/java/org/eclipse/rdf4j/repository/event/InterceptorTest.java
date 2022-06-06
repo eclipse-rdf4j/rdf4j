@@ -90,7 +90,7 @@ public class InterceptorTest {
 		}
 	}
 
-	static class UpdateStub extends AbstractUpdate implements Update {
+	static class UpdateStub extends AbstractUpdate {
 
 		@Override
 		public void execute() throws UpdateExecutionException {

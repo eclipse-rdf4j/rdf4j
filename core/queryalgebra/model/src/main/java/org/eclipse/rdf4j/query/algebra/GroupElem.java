@@ -70,8 +70,6 @@ public class GroupElem extends AbstractQueryModelNode {
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (operator == current) {
 			setOperator((AggregateOperator) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

@@ -13,7 +13,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * An optimizer that attempts to push upper limits into BGPs of the query.
@@ -24,12 +24,16 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * @author Andreas Schwarte
  *
  */
-public class LimitOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
+public class LimitOptimizer extends AbstractSimpleQueryModelVisitor<OptimizationException> implements FedXOptimizer {
 
 	/**
 	 * Helper variable that contains an applicable limit for the current scope. Set to -1 if no limit is applicable.
 	 */
 	private long applicableLimitInScope = -1;
+
+	public LimitOptimizer() {
+		super(true);
+	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr) {

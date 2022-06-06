@@ -81,7 +81,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-abstract public class Shape implements ConstraintComponent, Identifiable, Exportable, TargetChainInterface {
+abstract public class Shape implements ConstraintComponent, Identifiable {
 
 	private static final Logger logger = LoggerFactory.getLogger(Shape.class);
 	protected boolean produceValidationReports;
@@ -112,8 +112,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable, Export
 		this.produceValidationReports = shape.produceValidationReports;
 	}
 
-	public void populate(ShaclProperties properties, ShapeSource shapeSource,
-			Cache cache, ShaclSail shaclSail) {
+	public void populate(ShaclProperties properties, ShapeSource shapeSource, Cache cache,
+			ShaclSail shaclSail) {
 		this.deactivated = properties.isDeactivated();
 		this.message = properties.getMessage();
 		this.id = properties.getId();

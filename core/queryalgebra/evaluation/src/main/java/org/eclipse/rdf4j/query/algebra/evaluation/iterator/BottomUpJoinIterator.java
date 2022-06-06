@@ -183,7 +183,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 			add(rightArgResults, rightIter.next());
 		}
 
-		List<BindingSet> smallestResult = null;
+		List<BindingSet> smallestResult;
 
 		if (leftIter.hasNext()) { // leftArg is the greater relation
 			smallestResult = rightArgResults;
@@ -199,7 +199,7 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 		for (BindingSet b : smallestResult) {
 			BindingSet hashKey = calcKey(b, joinAttributes);
 
-			List<BindingSet> hashValue = null;
+			List<BindingSet> hashValue;
 			if (hashTable.containsKey(hashKey)) {
 				hashValue = hashTable.get(hashKey);
 			} else {

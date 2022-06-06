@@ -36,7 +36,7 @@ public class BooleanTextWriter extends AbstractQueryResultWriter implements Bool
 	/**
 	 * The writer to write the boolean result to.
 	 */
-	private Writer writer;
+	private final Writer writer;
 
 	/*--------------*
 	 * Constructors *

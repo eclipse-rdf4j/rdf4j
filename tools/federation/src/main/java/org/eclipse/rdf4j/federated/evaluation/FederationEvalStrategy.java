@@ -94,16 +94,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.ConstantOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
@@ -554,8 +554,8 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			return new QueryEvaluationStep() {
-				QueryEvaluationStep leftES = precompile(leftJoin.getLeftArg(), context);
-				QueryEvaluationStep rightES = precompile(leftJoin.getRightArg(), context);
+				final QueryEvaluationStep leftES = precompile(leftJoin.getLeftArg(), context);
+				final QueryEvaluationStep rightES = precompile(leftJoin.getRightArg(), context);
 
 				@Override
 				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {

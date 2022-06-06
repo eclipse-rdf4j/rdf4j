@@ -16,7 +16,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
  * @author Florian Kleedorfer
  */
 public class DirectRepositoryConnectionFactory implements RepositoryConnectionFactory {
-	private Repository repository;
+	private final Repository repository;
 
 	public DirectRepositoryConnectionFactory(Repository repository) {
 		this.repository = repository;
