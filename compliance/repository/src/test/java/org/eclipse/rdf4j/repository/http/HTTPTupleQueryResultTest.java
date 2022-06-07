@@ -9,14 +9,15 @@ package org.eclipse.rdf4j.repository.http;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.testsuite.repository.TupleQueryResultTest;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 
 public class HTTPTupleQueryResultTest extends TupleQueryResultTest {
 
 	private static HTTPMemServer server;
 
-	@BeforeClass
+	@BeforeAll
 	public static void startServer() throws Exception {
 		server = new HTTPMemServer();
 		try {
@@ -27,7 +28,7 @@ public class HTTPTupleQueryResultTest extends TupleQueryResultTest {
 		}
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void stopServer() throws Exception {
 		server.stop();
 	}
@@ -37,4 +38,9 @@ public class HTTPTupleQueryResultTest extends TupleQueryResultTest {
 		return new HTTPRepository(HTTPMemServer.REPOSITORY_URL);
 	}
 
+	@Override
+	@Disabled
+	public void testNotClosingResultThrowsException() {
+
+	}
 }
