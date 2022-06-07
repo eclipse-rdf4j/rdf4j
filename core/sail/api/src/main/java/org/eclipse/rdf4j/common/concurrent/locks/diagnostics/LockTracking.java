@@ -35,7 +35,7 @@ public class LockTracking<T extends Lock> implements LockMonitoring<T> {
 
 	private final Logger logger;
 
-	private final static ConcurrentCleaner cleaner = new ConcurrentCleaner();
+	private final static ConcurrentCleaner cleaner = ConcurrentCleaner.create();
 	private final static AtomicLong seq = new AtomicLong();
 
 	private final ReentrantLock staleLoggingLock = new ReentrantLock();
@@ -110,6 +110,7 @@ public class LockTracking<T extends Lock> implements LockMonitoring<T> {
 							// if something should fail we don't want to perform a new cleanup immediately
 							previousCleanup = 0;
 
+							cleaner.flush();
 							System.gc();
 							long activeLocksSignature = getActiveLocksSignature();
 							if (previousActiveLocksSignature == activeLocksSignature) {

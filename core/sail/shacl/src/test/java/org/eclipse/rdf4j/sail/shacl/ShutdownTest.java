@@ -20,6 +20,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -218,6 +219,7 @@ public class ShutdownTest {
 		Assertions.assertFalse(executorServices.isShutdown());
 
 		for (int i = 0; i < 100; i++) {
+			ConcurrentCleaner.flush();
 			System.gc();
 			if (executorServices.isShutdown()) {
 				return;

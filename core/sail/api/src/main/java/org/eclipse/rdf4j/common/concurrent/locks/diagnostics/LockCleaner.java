@@ -23,7 +23,7 @@ import org.slf4j.Logger;
 @InternalUseOnly
 public class LockCleaner<T extends Lock> implements LockMonitoring<T> {
 
-	private final static ConcurrentCleaner cleaner = new ConcurrentCleaner();
+	private final static ConcurrentCleaner cleaner = ConcurrentCleaner.create();
 	private final Logger logger;
 	private final Lock.ExtendedSupplier<T> supplier;
 	private final String alias;

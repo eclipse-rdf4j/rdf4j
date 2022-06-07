@@ -51,7 +51,7 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractSailConnection implements SailConnection {
 
-	private static final ConcurrentCleaner cleaner = new ConcurrentCleaner();
+	private static final ConcurrentCleaner cleaner = ConcurrentCleaner.create();
 
 	/**
 	 * Size of write queue before auto flushing changes within write operation

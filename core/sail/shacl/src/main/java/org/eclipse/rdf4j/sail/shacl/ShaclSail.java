@@ -163,7 +163,7 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
 
 	private static final Logger logger = LoggerFactory.getLogger(ShaclSail.class);
-	private static final ConcurrentCleaner cleaner = new ConcurrentCleaner();
+	private static final ConcurrentCleaner cleaner = ConcurrentCleaner.create();
 
 	/**
 	 * an initialized {@link Repository} for storing/retrieving Shapes data
