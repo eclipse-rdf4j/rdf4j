@@ -32,13 +32,6 @@
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-lmdb</artifactId>
-			<classifier>natives-linux-arm32</classifier>
-			<version>${lwjgl.version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.lwjgl</groupId>
-			<artifactId>lwjgl-lmdb</artifactId>
 			<classifier>natives-macos</classifier>
 			<version>${lwjgl.version}</version>
 			<scope>runtime</scope>
@@ -54,13 +47,6 @@
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl-lmdb</artifactId>
 			<classifier>natives-windows</classifier>
-			<version>${lwjgl.version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.lwjgl</groupId>
-			<artifactId>lwjgl-lmdb</artifactId>
-			<classifier>natives-windows-x86</classifier>
 			<version>${lwjgl.version}</version>
 			<scope>runtime</scope>
 		</dependency>
@@ -88,13 +74,6 @@
 		<dependency>
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl</artifactId>
-			<classifier>natives-linux-arm32</classifier>
-			<version>${lwjgl.version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.lwjgl</groupId>
-			<artifactId>lwjgl</artifactId>
 			<classifier>natives-macos</classifier>
 			<version>${lwjgl.version}</version>
 			<scope>runtime</scope>
@@ -110,13 +89,6 @@
 			<groupId>org.lwjgl</groupId>
 			<artifactId>lwjgl</artifactId>
 			<classifier>natives-windows</classifier>
-			<version>${lwjgl.version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.lwjgl</groupId>
-			<artifactId>lwjgl</artifactId>
-			<classifier>natives-windows-x86</classifier>
 			<version>${lwjgl.version}</version>
 			<scope>runtime</scope>
 		</dependency>
