@@ -200,8 +200,8 @@ TOKEN [IGNORE_CASE] :
 |	<MINUS_SETOPER: "minus">
 |	<FILTER: "filter">
 |	<HAVING: "having">
+|   <NOT_FUNC: "not">
 |	<EXISTS: "exists">
-|	<NOT_EXISTS: "not exists">
 |	<STR: "str">
 |	<LANG: "lang">
 |	<LANGMATCHES: "langmatches">
@@ -221,7 +221,6 @@ TOKEN [IGNORE_CASE] :
 |	<IRI: "IRI"|"URI">
 |	<IF: "if">
 |	<IN: "in">
-|	<NOT_IN: "not in">
 |	<COUNT: "count">
 |	<SUM: "sum">
 |	<MIN: "min">
@@ -1505,7 +1504,7 @@ void In() :
 void NotIn() :
 {}
 {
-    <NOT_IN> ArgList()
+    <NOT_FUNC> <IN> ArgList()
 }
 
 void Coalesce() : 
@@ -1631,7 +1630,7 @@ void ExistsFunc() :
 void NotExistsFunc() :
 {}
 {
-    <NOT_EXISTS> GroupGraphPattern()
+    <NOT_FUNC> <EXISTS> GroupGraphPattern()
 }
 
 

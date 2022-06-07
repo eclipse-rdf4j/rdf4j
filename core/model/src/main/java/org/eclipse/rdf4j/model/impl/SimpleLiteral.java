@@ -49,6 +49,8 @@ public class SimpleLiteral extends AbstractLiteral {
 	 * The literal's language tag.
 	 */
 	private String language;
+	// Cache Optional instance for the language, or null if not yet computed. Marked as transient because Optional is
+	// not serializable.
 	transient private Optional<String> optionalLanguageCache = null;
 
 	/**
@@ -56,6 +58,7 @@ public class SimpleLiteral extends AbstractLiteral {
 	 */
 	private IRI datatype;
 
+	// Cached CoreDatatype, or null if not yet computed.
 	private CoreDatatype coreDatatype = null;
 
 	/*--------------*
