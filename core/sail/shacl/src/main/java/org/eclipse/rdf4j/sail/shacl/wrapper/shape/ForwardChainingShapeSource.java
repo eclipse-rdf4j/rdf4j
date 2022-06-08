@@ -27,13 +27,10 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
-import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencerConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 
 public class ForwardChainingShapeSource implements ShapeSource {
@@ -71,12 +68,11 @@ public class ForwardChainingShapeSource implements ShapeSource {
 				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));
 		shapesRepoWithReasoning.init();
 
-		try (SailRepositoryConnection shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
+		try (var shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {
 
 			shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);
 
-			try (RepositoryResult<Statement> statements = shapesRepoConnection.getStatements(null, null, null,
-					false)) {
+			try (var statements = shapesRepoConnection.getStatements(null, null, null, false)) {
 				shapesRepoWithReasoningConnection.add(statements);
 			}
 
@@ -91,7 +87,7 @@ public class ForwardChainingShapeSource implements ShapeSource {
 		try (InputStream in = getResourceAsStream("shacl-sparql-inference/shaclVocabulary.ttl")) {
 			SchemaCachingRDFSInferencer schemaCachingRDFSInferencer = new SchemaCachingRDFSInferencer(
 					new MemoryStore());
-			try (SchemaCachingRDFSInferencerConnection connection = schemaCachingRDFSInferencer.getConnection()) {
+			try (var connection = schemaCachingRDFSInferencer.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
 				Model model = Rio.parse(in, "", RDFFormat.TURTLE);
 				model.forEach(s -> connection.addStatement(s.getSubject(), s.getPredicate(), s.getObject(),
@@ -130,7 +126,7 @@ public class ForwardChainingShapeSource implements ShapeSource {
 	}
 
 	private void implicitTargetClass(RepositoryConnection shaclSailConnection) {
-		try (Stream<Statement> stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, false).stream()) {
+		try (var stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, false).stream()) {
 			stream
 					.map(Statement::getSubject)
 					.filter(s ->
@@ -212,40 +208,15 @@ public class ForwardChainingShapeSource implements ShapeSource {
 
 	public Stream<Statement> getAllStatements(Resource id) {
 		assert context != null;
-		return connection.getStatements(id, null, null, true, context)
-				.stream();
+		return connection.getStatements(id, null, null, true, context).stream();
 	}
 
 	public Value getRdfFirst(Resource subject) {
-		assert context != null;
-
-		try (Stream<Statement> stream = connection.getStatements(subject, RDF.FIRST, null, true, context).stream()) {
-			return stream
-					.map(Statement::getObject)
-					.findAny()
-					.orElse(null);
-		}
-		// .orElseThrow(() -> new IllegalStateException("Corrupt rdf:list at rdf:first: " + subject));
+		return ShapeSourceHelper.getFirst(connection, subject, context);
 	}
 
 	public Resource getRdfRest(Resource subject) {
-		assert context != null;
-
-		try (Stream<Statement> stream = connection.getStatements(subject, RDF.REST, null, true, context).stream()) {
-			return (Resource) stream
-					.map(Statement::getObject)
-					.findAny()
-					.orElse(null);
-		}
-
-		// .orElseThrow(() -> new IllegalStateException("Corrupt rdf:list at rdf:rest: " + subject));
-
-//		if (value.isResource()) {
-//			return ((Resource) value);
-//		} else {
-//			throw new IllegalStateException("Corrupt rdf:list at rdf:rest: " + subject);
-//		}
-
+		return ShapeSourceHelper.getRdfRest(connection, subject, context);
 	}
 
 	@Override

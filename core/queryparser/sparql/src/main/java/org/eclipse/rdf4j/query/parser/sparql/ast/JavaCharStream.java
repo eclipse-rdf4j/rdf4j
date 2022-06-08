@@ -16,7 +16,7 @@ import java.io.IOException;
  * java-like unicode escape processing).
  */
 
-public class JavaCharStream {
+public class JavaCharStream implements CharStream {
 	/** Whether parser is static. */
 	public static final boolean staticFlag = false;
 	public static final IOException IO_EXCEPTION = new IOException() {
@@ -95,12 +95,13 @@ public class JavaCharStream {
 	protected int nextCharInd = -1;
 	protected int inBuf = 0;
 	protected int tabSize = 8;
+	private boolean trackLineColumn;
 
-	protected void setTabSize(int i) {
+	public void setTabSize(int i) {
 		tabSize = i;
 	}
 
-	protected int getTabSize(int i) {
+	public int getTabSize() {
 		return tabSize;
 	}
 
@@ -565,6 +566,16 @@ public class JavaCharStream {
 
 		line = bufline[j];
 		column = bufcolumn[j];
+	}
+
+	@Override
+	public boolean getTrackLineColumn() {
+		return trackLineColumn;
+	}
+
+	@Override
+	public void setTrackLineColumn(boolean trackLineColumn) {
+		this.trackLineColumn = trackLineColumn;
 	}
 
 }

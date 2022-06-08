@@ -374,12 +374,12 @@ public class GroupIterator extends AbstractCloseableIteration<BindingSet, QueryE
 
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
-		CloseableIteration<? extends BindingSet, QueryEvaluationException> iter;
-		iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings);
-		long setId = 0;
 
-		Function<BindingSet, Integer> hashMaker = hashMaker(context, group);
-		try {
+		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> iter = strategy
+				.precompile(group.getArg(), context)
+				.evaluate(parentBindings)) {
+			long setId = 0;
+			Function<BindingSet, Integer> hashMaker = hashMaker(context, group);
 			Map<Key, Entry> entries = new LinkedHashMap<>();
 
 			if (!iter.hasNext()) {
@@ -404,8 +404,6 @@ public class GroupIterator extends AbstractCloseableIteration<BindingSet, QueryE
 				}
 			}
 			return entries.values();
-		} finally {
-			iter.close();
 		}
 
 	}
@@ -441,23 +439,34 @@ public class GroupIterator extends AbstractCloseableIteration<BindingSet, QueryE
 	}
 
 	private static Function<BindingSet, Integer> hashMaker(QueryEvaluationContext context, Group group) {
-		List<Function<BindingSet, Value>> getValues = new ArrayList<>(group.getGroupBindingNames().size());
-		for (String name : group.getGroupBindingNames()) {
-			Function<BindingSet, Value> getValue = context.getValue(name);
-			getValues.add(getValue);
-		}
+		Set<String> groupBindingNames = group.getGroupBindingNames();
+		int size = groupBindingNames.size();
 
-		Function<BindingSet, Integer> hashFunction = (bs) -> {
-			int nextHash = 0;
-			for (Function<BindingSet, Value> getValue : getValues) {
+		if (size == 1) {
+			Function<BindingSet, Value> getValue = context.getValue(groupBindingNames.iterator().next());
+			return (bs) -> {
 				Value value = getValue.apply(bs);
-				if (value != null) {
-					nextHash ^= value.hashCode();
-				}
+				return value != null ? value.hashCode() : 0;
+			};
+		} else {
+
+			List<Function<BindingSet, Value>> getValues = new ArrayList<>(size);
+			for (String name : groupBindingNames) {
+				Function<BindingSet, Value> getValue = context.getValue(name);
+				getValues.add(getValue);
 			}
-			return nextHash;
-		};
-		return hashFunction;
+
+			return (bs) -> {
+				int nextHash = 0;
+				for (Function<BindingSet, Value> getValue : getValues) {
+					Value value = getValue.apply(bs);
+					if (value != null) {
+						nextHash ^= value.hashCode();
+					}
+				}
+				return nextHash;
+			};
+		}
 	}
 
 	/**
@@ -497,12 +506,16 @@ public class GroupIterator extends AbstractCloseableIteration<BindingSet, QueryE
 
 		@Override
 		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+
 			if (other instanceof Key && other.hashCode() == hash) {
-				BindingSet otherSolution = ((Key) other).bindingSet;
+				BindingSet otherBindingSet = ((Key) other).bindingSet;
 
 				for (String name : group.getGroupBindingNames()) {
 					Value v1 = bindingSet.getValue(name);
-					Value v2 = otherSolution.getValue(name);
+					Value v2 = otherBindingSet.getValue(name);
 
 					if (!Objects.equals(v1, v2)) {
 						return false;
@@ -545,7 +558,7 @@ public class GroupIterator extends AbstractCloseableIteration<BindingSet, QueryE
 	/**
 	 * This is to collect together in operation an aggregate function the name of it. And the suppliers that will give
 	 * the unique set and final value collectors per final binding set.
-	 *
+	 * <p>
 	 * Making an aggregate function is quite a lot of work and we do not want to repeat that for each final binding.
 	 */
 	private class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {

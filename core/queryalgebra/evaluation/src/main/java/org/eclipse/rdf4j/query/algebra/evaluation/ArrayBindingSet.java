@@ -225,6 +225,12 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	@Override
 	public Value getValue(String bindingName) {
 		for (int i = 0; i < bindingNames.length; i++) {
+			if (bindingNames[i] == bindingName && whichBindingsHaveBeenSet.get(i)) {
+				return values[i];
+			}
+		}
+
+		for (int i = 0; i < bindingNames.length; i++) {
 			if (bindingNames[i].equals(bindingName) && whichBindingsHaveBeenSet.get(i)) {
 				return values[i];
 			}
@@ -313,6 +319,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		@Override
 		public Binding next() {
+			for (; i < values.length; i++) {
+				if (whichBindingsHaveBeenSet.get(i) && values[i] != null) {
+					break;
+				}
+			}
 
 			String name = bindingNames[i];
 			Value value = values[i++];

@@ -238,8 +238,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private CloseableIteration<? extends Statement, QueryEvaluationException> handleFilter(Resource[] contexts,
 			Resource subject, IRI predicate, Value object,
 			CloseableIteration<? extends Statement, QueryEvaluationException> iteration) {
+
 		Predicate<Statement> filter = filterContextOrEqualVariables(statementPattern, subject, predicate, object,
 				contexts);
+
 		if (filter != null) {
 			return new PredicateFilterIteration<>(iteration, filter);
 		} else {
@@ -253,7 +255,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * in this StatementPattern, verify value equality in those cases.
 	 */
 	protected static Predicate<Statement> filterContextOrEqualVariables(StatementPattern statementPattern,
-			final Value subjValue, final Value predValue, final Value objValue, Resource[] contexts) {
+			Value subjValue, Value predValue, Value objValue, Resource[] contexts) {
 		Predicate<Statement> filter = null;
 		if (contexts.length == 0 && statementPattern.getScope() == Scope.NAMED_CONTEXTS) {
 			filter = (st) -> st.getContext() != null;
@@ -265,13 +267,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * Build one predicate that filters the statements for ?s ?p ?s cases. But only generates code that is actually
 	 * needed else returns null.
 	 */
-	private static Predicate<Statement> filterSameVariable(final StatementPattern statementPattern,
-			final Value subjValue, final Value predValue, final Value objValue, Predicate<Statement> filter) {
+	private static Predicate<Statement> filterSameVariable(StatementPattern statementPattern, Value subjValue,
+			Value predValue, Value objValue, Predicate<Statement> filter) {
 
 		Var subjVar = statementPattern.getSubjectVar();
 		Var predVar = statementPattern.getPredicateVar();
 		Var objVar = statementPattern.getObjectVar();
 		Var conVar = statementPattern.getContextVar();
+
 		if (subjVar != null && subjValue == null) {
 			boolean subEqPredVar = subjVar.equals(predVar);
 			boolean subEqObjVar = subjVar.equals(objVar);
@@ -280,14 +283,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				filter = andThen(filter, subjectVariableHasEquals(subEqPredVar, subEqObjVar, subEqConVar));
 			}
 		}
-		if (predVar != null && predValue == null) {
 
+		if (predVar != null && predValue == null) {
 			boolean predEqObjVar = predVar.equals(objVar);
 			boolean predEqConVar = predVar.equals(conVar);
 			if (predEqObjVar || predEqConVar) {
 				filter = andThen(filter, predicateVariableHasEquals(predEqObjVar, predEqConVar));
 			}
 		}
+
 		if (objVar != null && objValue == null) {
 			boolean objEqConVar = objVar.equals(conVar);
 			if (objEqConVar) {
@@ -298,6 +302,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				});
 			}
 		}
+
 		return filter;
 	}
 
@@ -327,7 +332,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		return eq;
 	}
 
-	protected static Function<Value, Resource[]> extractContextsFromDatasets(final Var contextVar, boolean emptyGraph,
+	/**
+	 * @return the contexts that are valid for this statement pattern or null
+	 */
+	protected static Function<Value, Resource[]> extractContextsFromDatasets(Var contextVar, boolean emptyGraph,
 			Set<IRI> graphs) {
 
 		if (emptyGraph) {
@@ -360,7 +368,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 	}
 
-	private static Resource[] contextsGivenContextVal(final Value contextValue) {
+	private static Resource[] contextsGivenContextVal(Value contextValue) {
 		if (contextValue != null) {
 			if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
 				return DEFAULT_CONTEXT;
@@ -403,19 +411,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		private final BiConsumer<MutableBindingSet, Statement> action;
 		private final QueryEvaluationContext context;
-		/**
-		 * The source type iteration.
-		 */
-		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter;
-		/**
-		 * Flag indicating whether this iteration has been closed.
-		 */
+		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration;
 		private boolean closed = false;
 
 		private ConvertStatementToBindingSetIterator(
-				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter,
+				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration,
 				BiConsumer<MutableBindingSet, Statement> action, QueryEvaluationContext context) {
-			this.iter = Objects.requireNonNull(iter, "The iterator was null");
+			this.iteration = Objects.requireNonNull(iteration, "The iterator was null");
 			this.action = action;
 			this.context = context;
 		}
@@ -426,80 +428,43 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return made;
 		}
 
-		/**
-		 * Checks whether the source type iteration contains more elements.
-		 *
-		 * @return <var>true</var> if the source type iteration contains more elements, <var>false</var> otherwise.
-		 * @throws QueryEvaluationException
-		 */
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
-			return iter.hasNext();
+			return iteration.hasNext();
 		}
 
-		/**
-		 * Returns the next element from the source type iteration.
-		 *
-		 * @throws QueryEvaluationException
-		 * @throws java.util.NoSuchElementException If all elements have been returned.
-		 * @throws IllegalStateException            If the iteration has been closed.
-		 */
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
-			return convert(iter.next());
+			return convert(iteration.next());
 		}
 
-		/**
-		 * Calls <var>remove()</var> on the underlying Iteration.
-		 *
-		 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <var>remove</var>
-		 *                                       operation.
-		 * @throws IllegalStateException         If the Iteration has been closed, or if {@link #next} has not yet been
-		 *                                       called, or {@link #remove} has already been called after the last call
-		 *                                       to {@link #next}.
-		 */
 		@Override
 		public void remove() throws QueryEvaluationException {
-			iter.remove();
-		}
-
-		/**
-		 * Checks whether this CloseableIteration has been closed.
-		 *
-		 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
-		 */
-		@Override
-		public boolean isClosed() {
-			return closed;
+			iteration.remove();
 		}
 
 		@Override
 		public void close() throws QueryEvaluationException {
 			if (!closed) {
 				closed = true;
-				iter.close();
+				iteration.close();
 			}
 		}
 	}
 
 	private static final class JoinStatementWithBindingSetIterator
 			implements CloseableIteration<BindingSet, QueryEvaluationException> {
+
 		private final BiConsumer<MutableBindingSet, Statement> action;
 		private final QueryEvaluationContext context;
 		private final BindingSet bindings;
-		/**
-		 * The source type iteration.
-		 */
-		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter;
-		/**
-		 * Flag indicating whether this iteration has been closed.
-		 */
+		private final CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration;
 		private boolean closed = false;
 
 		private JoinStatementWithBindingSetIterator(
-				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iter,
+				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
-			this.iter = Objects.requireNonNull(iter, "The iterator was null");
+			this.iteration = Objects.requireNonNull(iteration, "The iterator was null");
 			assert !bindings.isEmpty();
 			this.action = action;
 			this.context = context;
@@ -513,6 +478,21 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			return made;
 		}
 
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			return iteration.hasNext();
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			return convert(iteration.next());
+		}
+
+		@Override
+		public void remove() throws QueryEvaluationException {
+			iteration.remove();
+		}
+
 		/**
 		 * Checks whether the source type iteration contains more elements.
 		 *
@@ -520,57 +500,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		 * @throws QueryEvaluationException
 		 */
 		@Override
-		public boolean hasNext() throws QueryEvaluationException {
-			return iter.hasNext();
-		}
-
-		/**
-		 * Returns the next element from the source type iteration.
-		 *
-		 * @throws QueryEvaluationException
-		 * @throws java.util.NoSuchElementException If all elements have been returned.
-		 * @throws IllegalStateException            If the iteration has been closed.
-		 */
-		@Override
-		public BindingSet next() throws QueryEvaluationException {
-			return convert(iter.next());
-		}
-
-		/**
-		 * Calls <var>remove()</var> on the underlying Iteration.
-		 *
-		 * @throws UnsupportedOperationException If the wrapped Iteration does not support the <var>remove</var>
-		 *                                       operation.
-		 * @throws IllegalStateException         If the Iteration has been closed, or if {@link #next} has not yet been
-		 *                                       called, or {@link #remove} has already been called after the last call
-		 *                                       to {@link #next}.
-		 */
-		@Override
-		public void remove() throws QueryEvaluationException {
-			iter.remove();
-		}
-
-		/**
-		 * Checks whether this CloseableIteration has been closed.
-		 *
-		 * @return <var>true</var> if the CloseableIteration has been closed, <var>false</var> otherwise.
-		 */
-		@Override
-		public boolean isClosed() {
-			return closed;
-		}
-
-		@Override
 		public void close() throws QueryEvaluationException {
 			if (!closed) {
 				closed = true;
-				iter.close();
+				iteration.close();
 			}
 		}
 	}
 
 	/**
-	 * We are going to chain biconsumer functions allowing us to avoid a lot of equals etc. code
+	 * We are going to chain {@link BiConsumer} functions allowing us to avoid a lot of equals etc. code
 	 * <p>
 	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
 	 * evaluate(bs).
@@ -619,58 +558,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				.orElse((a, b) -> {
 				});
 
-//
-//		BiConsumer<MutableBindingSet, Statement> co = null;
-//
-//		if (subjVar != null && !subjVar.isConstant()) {
-//
-//			BiConsumer<Value, MutableBindingSet> setSubject = makeSetVariable(subjVar, context);
-//			Predicate<BindingSet> subjectIsNotSet = makeIsVariableNotSet(subjVar, context);
-//			co = andThen(co, (result, st) -> {
-//				if (result.isEmpty() || subjectIsNotSet.test(result)) {
-//					setSubject.accept(st.getSubject(), result);
-//				}
-//			});
-//		}
-//		// We should not overwrite previous set values so if pred == subj we don't need
-//		// to call this again.
-//		// etc.
-//		if (predVar != null && !predVar.isConstant() && !predVar.equals(subjVar)) {
-//			BiConsumer<Value, MutableBindingSet> setPredicate = makeSetVariable(predVar, context);
-//			Predicate<BindingSet> predicateIsNotSet = makeIsVariableNotSet(predVar, context);
-//			co = andThen(co,
-//				(result, st) -> {
-//					if (result.isEmpty() || predicateIsNotSet.test(result)) {
-//						setPredicate.accept(st.getPredicate(), result);
-//					}
-//				});
-//		}
-//		if (objVar != null && !objVar.isConstant() && !objVar.equals(subjVar) && !objVar.equals(predVar)) {
-//			BiConsumer<Value, MutableBindingSet> setObject = makeSetVariable(objVar, context);
-//			Predicate<BindingSet> objectIsNotSet = makeIsVariableNotSet(objVar, context);
-//			co = andThen(co, (result, st) -> {
-//				if (result.isEmpty() || objectIsNotSet.test(result)) {
-//					setObject.accept(st.getObject(), result);
-//				}
-//			});
-//		}
-//		if (conVar != null && !conVar.isConstant() && !conVar.equals(subjVar) && !conVar.equals(predVar)
-//				&& !conVar.equals(objVar)) {
-//			BiConsumer<Value, MutableBindingSet> setContext = makeSetVariable(conVar, context);
-//			Predicate<BindingSet> contextIsNotSet = makeIsVariableNotSet(conVar, context);
-//			co = andThen(co, (result, st) -> {
-//				if (st.getContext() != null) {
-//					if (result.isEmpty() || contextIsNotSet.test(result)) {
-//						setContext.accept(st.getContext(), result);
-//					}
-//				}
-//			});
-//		}
-//		if (co == null) {
-//			return (result, st) -> {
-//			};
-//		}
-//		return co;
 	}
 
 	private static Predicate<Statement> andThen(Predicate<Statement> pred, Predicate<Statement> and) {

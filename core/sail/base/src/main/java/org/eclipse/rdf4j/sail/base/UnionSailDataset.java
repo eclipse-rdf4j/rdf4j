@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -68,7 +69,7 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
-		return UnionIteration.getInstance(dataset1.getNamespaces(), dataset2.getNamespaces());
+		return DualUnionIteration.getWildcardInstance(dataset1.getNamespaces(), dataset2.getNamespaces());
 	}
 
 	@Override
@@ -82,13 +83,13 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
-		return UnionIteration.getInstance(dataset1.getContextIDs(), dataset2.getContextIDs());
+		return DualUnionIteration.getWildcardInstance(dataset1.getContextIDs(), dataset2.getContextIDs());
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
-		return UnionIteration.getInstance(dataset1.getStatements(subj, pred, obj, contexts),
+		return DualUnionIteration.getWildcardInstance(dataset1.getStatements(subj, pred, obj, contexts),
 				dataset2.getStatements(subj, pred, obj, contexts));
 	}
 
@@ -100,7 +101,8 @@ class UnionSailDataset implements SailDataset {
 	@Override
 	public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
-		return UnionIteration.getInstance(dataset1.getTriples(subj, pred, obj), dataset2.getTriples(subj, pred, obj));
+		return DualUnionIteration.getWildcardInstance(dataset1.getTriples(subj, pred, obj),
+				dataset2.getTriples(subj, pred, obj));
 	}
 
 	@Override

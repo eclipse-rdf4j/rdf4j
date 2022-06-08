@@ -11,9 +11,11 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -23,6 +25,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -47,7 +50,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	private final BiConsumer<Value, MutableBindingSet>[] setBinding;
 	private final BiConsumer<Value, MutableBindingSet>[] addBinding;
 
-	boolean initialized = false;
+	boolean initialized;
 
 	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables) {
 		this.context = context;
@@ -100,8 +103,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		}
 
 		assert variableName != null && !variableName.isEmpty();
-		Function<ArrayBindingSet, Boolean> directHasVariable = defaultArrayBindingSet
-				.getDirectHasBinding(variableName);
+		Function<ArrayBindingSet, Boolean> directHasVariable = defaultArrayBindingSet.getDirectHasBinding(variableName);
 		return new HasBinding(variableName, directHasVariable);
 	}
 
@@ -252,13 +254,13 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			@Override
 			public void meet(Var node) throws QueryEvaluationException {
 				super.meet(node);
-				if (node.isConstant() && node.getParentNode() instanceof StatementPattern) {
-					// we skip constants that are only used in StatementPatterns since these are never added to the
-					// BindingSet anyway
-				} else {
-					node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
+				// We can skip constants that are only used in StatementPatterns since these are never added to the
+				// BindingSet anyway
+				if (!(node.isConstant() && node.getParentNode() instanceof StatementPattern)) {
+					Var replacement = new Var(varNames.computeIfAbsent(node.getName(), k -> k), node.getValue(),
+							node.isAnonymous(), node.isConstant());
+					node.replaceWith(replacement);
 				}
-
 			}
 
 			@Override
@@ -300,9 +302,18 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
 				super.meet(node);
 			}
+
+			@Override
+			public void meet(Group node) throws QueryEvaluationException {
+				List<String> collect = node.getGroupBindingNames()
+						.stream()
+						.map(varName -> varNames.computeIfAbsent(varName, k -> k))
+						.collect(Collectors.toList());
+				node.setGroupBindingNames(collect);
+				super.meet(node);
+			}
 		};
 		node.visit(queryModelVisitorBase);
-		String[] varNamesArr = varNames.keySet().toArray(new String[0]);
-		return varNamesArr;
+		return varNames.keySet().toArray(new String[0]);
 	}
 }
