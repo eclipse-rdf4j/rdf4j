@@ -107,30 +107,11 @@ public class RepositoryConnectionShapeSource implements ShapeSource {
 	}
 
 	public Value getRdfFirst(Resource subject) {
-		assert context != null;
-
-		try (Stream<Statement> stream = connection.getStatements(subject, RDF.FIRST, null, true, context).stream()) {
-			return stream
-					.map(Statement::getObject)
-					.findAny()
-					.orElse(null);
-		}
-		// .orElseThrow(() -> new IllegalStateException("Corrupt rdf:list at rdf:first: " + subject));
+		return ShapeSourceHelper.getFirst(connection, subject, context);
 	}
 
 	public Resource getRdfRest(Resource subject) {
-		assert context != null;
-
-		Value value;
-		try (Stream<Statement> stream = connection.getStatements(subject, RDF.REST, null, true, context).stream()) {
-			value = stream
-					.map(Statement::getObject)
-					.findAny()
-					.orElse(null);
-		}
-		// .orElseThrow(() -> new IllegalStateException("Corrupt rdf:list at rdf:rest: " + subject));
-
-		return ((Resource) value);
+		return ShapeSourceHelper.getRdfRest(connection, subject, context);
 	}
 
 	@Override
