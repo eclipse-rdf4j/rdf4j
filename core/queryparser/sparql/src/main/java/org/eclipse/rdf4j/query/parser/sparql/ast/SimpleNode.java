@@ -2,103 +2,114 @@
 /* JavaCCOptions:MULTI=true,NODE_USES_PARSER=false,VISITOR=true,TRACK_TOKENS=false,NODE_PREFIX=AST,NODE_EXTENDS=,NODE_FACTORY=,SUPPORT_CLASS_VISIBILITY_PUBLIC=true */
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
-public
-class SimpleNode implements Node {
+public class SimpleNode implements Node {
 
-  protected Node parent;
-  protected Node[] children;
-  protected int id;
-  protected Object value;
-  protected SyntaxTreeBuilder parser;
+	protected Node parent;
+	protected Node[] children;
+	protected int id;
+	protected Object value;
+	protected SyntaxTreeBuilder parser;
 
-  public SimpleNode(int i) {
-    id = i;
-  }
+	public SimpleNode(int i) {
+		id = i;
+	}
 
-  public SimpleNode(SyntaxTreeBuilder p, int i) {
-    this(i);
-    parser = p;
-  }
+	public SimpleNode(SyntaxTreeBuilder p, int i) {
+		this(i);
+		parser = p;
+	}
 
-  public void jjtOpen() {
-  }
+	public void jjtOpen() {
+	}
 
-  public void jjtClose() {
-  }
+	public void jjtClose() {
+	}
 
-  public void jjtSetParent(Node n) { parent = n; }
-  public Node jjtGetParent() { return parent; }
+	public void jjtSetParent(Node n) {
+		parent = n;
+	}
 
-  public void jjtAddChild(Node n, int i) {
-    if (children == null) {
-      children = new Node[i + 1];
-    } else if (i >= children.length) {
-      Node c[] = new Node[i + 1];
-      System.arraycopy(children, 0, c, 0, children.length);
-      children = c;
-    }
-    children[i] = n;
-  }
+	public Node jjtGetParent() {
+		return parent;
+	}
 
-  public Node jjtGetChild(int i) {
-    return children[i];
-  }
+	public void jjtAddChild(Node n, int i) {
+		if (children == null) {
+			children = new Node[i + 1];
+		} else if (i >= children.length) {
+			Node c[] = new Node[i + 1];
+			System.arraycopy(children, 0, c, 0, children.length);
+			children = c;
+		}
+		children[i] = n;
+	}
 
-  public int jjtGetNumChildren() {
-    return (children == null) ? 0 : children.length;
-  }
+	public Node jjtGetChild(int i) {
+		return children[i];
+	}
 
-  public void jjtSetValue(Object value) { this.value = value; }
-  public Object jjtGetValue() { return value; }
+	public int jjtGetNumChildren() {
+		return (children == null) ? 0 : children.length;
+	}
 
-  /** Accept the visitor. **/
-  public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-     throws VisitorException
-{
-    return visitor.visit(this, data);
-  }
+	public void jjtSetValue(Object value) {
+		this.value = value;
+	}
 
-  /** Accept the visitor. **/
-  public Object childrenAccept(SyntaxTreeBuilderVisitor visitor, Object data)
-     throws VisitorException
-{
-    if (children != null) {
-      for (int i = 0; i < children.length; ++i) {
-        children[i].jjtAccept(visitor, data);
-      }
-    }
-    return data;
-  }
+	public Object jjtGetValue() {
+		return value;
+	}
 
-  /* You can override these two methods in subclasses of SimpleNode to
-     customize the way the node appears when the tree is dumped.  If
-     your output uses more than one line you should override
-     toString(String), otherwise overriding toString() is probably all
-     you need to do. */
+	/** Accept the visitor. **/
+	public Object jjtAccept(SyntaxTreeBuilderVisitor visitor, Object data)
+			throws VisitorException {
+		return visitor.visit(this, data);
+	}
 
-  public String toString() {
-    return SyntaxTreeBuilderTreeConstants.jjtNodeName[id];
-  }
-  public String toString(String prefix) { return prefix + toString(); }
+	/** Accept the visitor. **/
+	public Object childrenAccept(SyntaxTreeBuilderVisitor visitor, Object data)
+			throws VisitorException {
+		if (children != null) {
+			for (int i = 0; i < children.length; ++i) {
+				children[i].jjtAccept(visitor, data);
+			}
+		}
+		return data;
+	}
 
-  /* Override this method if you want to customize how the node dumps
-     out its children. */
+	/*
+	 * You can override these two methods in subclasses of SimpleNode to customize the way the node appears when the
+	 * tree is dumped. If your output uses more than one line you should override toString(String), otherwise overriding
+	 * toString() is probably all you need to do.
+	 */
 
-  public void dump(String prefix) {
-    System.out.println(toString(prefix));
-    if (children != null) {
-      for (int i = 0; i < children.length; ++i) {
-        SimpleNode n = (SimpleNode)children[i];
-        if (n != null) {
-          n.dump(prefix + " ");
-        }
-      }
-    }
-  }
+	public String toString() {
+		return SyntaxTreeBuilderTreeConstants.jjtNodeName[id];
+	}
 
-  public int getId() {
-    return id;
-  }
+	public String toString(String prefix) {
+		return prefix + toString();
+	}
+
+	/*
+	 * Override this method if you want to customize how the node dumps out its children.
+	 */
+
+	public void dump(String prefix) {
+		System.out.println(toString(prefix));
+		if (children != null) {
+			for (int i = 0; i < children.length; ++i) {
+				SimpleNode n = (SimpleNode) children[i];
+				if (n != null) {
+					n.dump(prefix + " ");
+				}
+			}
+		}
+	}
+
+	public int getId() {
+		return id;
+	}
 }
 
 /* JavaCC - OriginalChecksum=43de2f398dac53c0bbcf106e4a3ca6de (do not edit this line) */
