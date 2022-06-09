@@ -25,16 +25,16 @@ public class ASTPropertyList extends SimpleNode {
 	}
 
 	public Node getVerb() {
-		return children.get(0);
+		return children[0];
 	}
 
 	public ASTObjectList getObjectList() {
-		return (ASTObjectList) children.get(1);
+		return (ASTObjectList) children[1];
 	}
 
 	public ASTPropertyList getNextPropertyList() {
-		if (children.size() >= 3) {
-			return (ASTPropertyList) children.get(2);
+		if (children.length >= 3) {
+			return (ASTPropertyList) children[2];
 		}
 		return null;
 	}
