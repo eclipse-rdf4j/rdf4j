@@ -65,7 +65,7 @@ public class ConstructorBuilder {
 		return buildConstructor(bodyExpr, bodyExpr, false, distinct, reduced);
 	}
 
-	private class BasicPatternVerifier extends AbstractQueryModelVisitor<RuntimeException> {
+	private static class BasicPatternVerifier extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private boolean basicPattern = true;
 
