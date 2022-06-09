@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.helpers;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -52,6 +51,8 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractSailConnection implements SailConnection {
 
+	private static final ConcurrentCleaner cleaner = new ConcurrentCleaner();
+
 	/**
 	 * Size of write queue before auto flushing changes within write operation
 	 */
@@ -89,17 +90,20 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 */
 	protected final ReentrantLock updateLock = new ReentrantLock();
 
-	private final Map<SailBaseIteration, Throwable> activeIterations = new IdentityHashMap<>();
+	private final LongAdder iterationsOpened = new LongAdder();
+	private final LongAdder iterationsClosed = new LongAdder();
+
+	private final Map<SailBaseIteration<?, ?>, Throwable> activeIterationsDebug;
 
 	/**
 	 * Statements that are currently being removed, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, Collection<Statement>> removed = new HashMap<>();
+	private final Map<UpdateContext, Collection<Statement>> removed = new IdentityHashMap<>(0);
 
 	/**
 	 * Statements that are currently being added, but not yet realized, by an active operation.
 	 */
-	private final Map<UpdateContext, Collection<Statement>> added = new HashMap<>();
+	private final Map<UpdateContext, Collection<Statement>> added = new IdentityHashMap<>(0);
 
 	/**
 	 * Used to indicate a removed statement from all contexts.
@@ -120,6 +124,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 		this.sailBase = sailBase;
 		isOpen = true;
 		txnActive = false;
+		if (debugEnabled) {
+			activeIterationsDebug = new ConcurrentHashMap<>();
+		} else {
+			activeIterationsDebug = Collections.emptyMap();
+		}
 	}
 
 	/*---------*
@@ -227,6 +236,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 					}
 
 					closeInternal();
+
+					if (isActiveOperation()) {
+						throw new SailException("Connection closed before all iterations were closed.");
+					}
 				} finally {
 					isOpen = false;
 					sailBase.connectionClosed(this);
@@ -247,30 +260,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
-			boolean registered = false;
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> iteration = null;
-			CloseableIteration<? extends BindingSet, QueryEvaluationException> registeredIteration = null;
 			try {
 				iteration = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
-				registeredIteration = registerIteration(iteration);
-				registered = true;
-				return registeredIteration;
-			} finally {
-				if (!registered) {
-					try {
-						try {
-							if (registeredIteration != null) {
-								registeredIteration.close();
-							}
-						} finally {
-							if (iteration != null) {
-								iteration.close();
-							}
-						}
-					} catch (QueryEvaluationException e) {
-						throw new SailException(e);
-					}
-				}
+				return registerIteration(iteration);
+			} catch (Throwable t) {
+				if (iteration != null)
+					iteration.close();
+				throw t;
 			}
 		} finally {
 			connectionLock.readLock().unlock();
@@ -296,21 +293,38 @@ public abstract class AbstractSailConnection implements SailConnection {
 		connectionLock.readLock().lock();
 		try {
 			verifyIsOpen();
-			boolean registered = false;
-			CloseableIteration<? extends Statement, SailException> iteration = getStatementsInternal(subj, pred, obj,
-					includeInferred, contexts);
+			CloseableIteration<? extends Statement, SailException> iteration = null;
 			try {
-				CloseableIteration<? extends Statement, SailException> registeredIteration = registerIteration(
-						iteration);
-				registered = true;
-				return registeredIteration;
-			} finally {
-				if (!registered) {
+				iteration = getStatementsInternal(subj, pred, obj, includeInferred, contexts);
+				return registerIteration(iteration);
+			} catch (Throwable t) {
+				if (iteration != null)
 					iteration.close();
-				}
+				throw t;
 			}
 		} finally {
 			connectionLock.readLock().unlock();
+		}
+	}
+
+	@Override
+	public final boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+			throws SailException {
+		flushPendingUpdates();
+		connectionLock.readLock().lock();
+		try {
+			verifyIsOpen();
+			return hasStatementInternal(subj, pred, obj, includeInferred, contexts);
+		} finally {
+			connectionLock.readLock().unlock();
+		}
+
+	}
+
+	protected boolean hasStatementInternal(Resource subj, IRI pred, Value obj, boolean includeInferred,
+			Resource[] contexts) {
+		try (var iteration = getStatementsInternal(subj, pred, obj, includeInferred, contexts)) {
+			return iteration.hasNext();
 		}
 	}
 
@@ -733,21 +747,25 @@ public abstract class AbstractSailConnection implements SailConnection {
 			return iter;
 		}
 
-		SailBaseIteration<T, E> result = new SailBaseIteration<>(iter, this);
-		Throwable stackTrace = debugEnabled ? new Throwable() : null;
-		synchronized (activeIterations) {
-			activeIterations.put(result, stackTrace);
+		iterationsOpened.increment();
+
+		if (debugEnabled) {
+			var result = new SailBaseIteration<>(iter, this);
+			activeIterationsDebug.put(result, new Throwable("Unclosed iteration"));
+			return result;
+		} else {
+			return new CleanerIteration<>(new SailBaseIteration<>(iter, this), cleaner);
 		}
-		return result;
 	}
 
 	/**
 	 * Called by {@link SailBaseIteration} to indicate that it has been closed.
 	 */
-	protected void iterationClosed(SailBaseIteration iter) {
-		synchronized (activeIterations) {
-			activeIterations.remove(iter);
+	protected void iterationClosed(SailBaseIteration<?, ?> iter) {
+		if (debugEnabled) {
+			activeIterationsDebug.remove(iter);
 		}
+		iterationsClosed.increment();
 	}
 
 	protected abstract void closeInternal() throws SailException;
@@ -793,43 +811,47 @@ public abstract class AbstractSailConnection implements SailConnection {
 	protected abstract void clearNamespacesInternal() throws SailException;
 
 	protected boolean isActiveOperation() {
-		synchronized (activeIterations) {
-			return !activeIterations.isEmpty();
-		}
+		long closed = iterationsClosed.sum();
+		long opened = iterationsOpened.sum();
+		return closed != opened;
 	}
 
 	private void forceCloseActiveOperations() throws SailException {
-		final Map<SailBaseIteration, Throwable> activeIterationsCopy;
-
-		synchronized (activeIterations) {
-			// Copy the current contents of the map so that we don't have to
-			// synchronize on activeIterations. This prevents a potential
-			// deadlock with concurrent calls to connectionClosed()
-			activeIterationsCopy = new IdentityHashMap<>(activeIterations);
-			activeIterations.clear();
-		}
-
-		final List<SailException> toThrowExceptions = new ArrayList<>();
-
-		for (Map.Entry<SailBaseIteration, Throwable> entry : activeIterationsCopy.entrySet()) {
-			SailBaseIteration ci = entry.getKey();
-			Throwable creatorTrace = entry.getValue();
-
+		for (int i = 0; i < 10 && isActiveOperation() && !debugEnabled; i++) {
+			System.gc();
 			try {
-				if (creatorTrace != null) {
-					logger.warn("Forced closing of unclosed iteration that was created in:",
-							debugEnabled ? creatorTrace : null);
-				}
-				ci.close();
-			} catch (SailException e) {
-				toThrowExceptions.add(e);
-			} catch (Exception e) {
-				toThrowExceptions.add(new SailException(e));
+				Thread.sleep(1);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
 			}
 		}
 
-		if (!toThrowExceptions.isEmpty()) {
-			throw toThrowExceptions.get(0);
+		if (debugEnabled) {
+
+			List<SailException> toThrowExceptions = new ArrayList<>();
+
+			var activeIterationsCopy = new IdentityHashMap<>(activeIterationsDebug);
+			activeIterationsDebug.clear();
+
+			for (var entry : activeIterationsCopy.entrySet()) {
+				var ci = entry.getKey();
+				Throwable creatorTrace = entry.getValue();
+
+				try {
+					if (creatorTrace != null) {
+						logger.warn("Forced closing of unclosed iteration that was created in:", creatorTrace);
+					}
+					ci.close();
+				} catch (SailException e) {
+					toThrowExceptions.add(e);
+				} catch (Exception e) {
+					toThrowExceptions.add(new SailException(e));
+				}
+			}
+
+			if (!toThrowExceptions.isEmpty()) {
+				throw toThrowExceptions.get(0);
+			}
 		}
 	}
 
@@ -941,18 +963,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 		@Override
 		public String toString() {
-			StringBuilder sb = new StringBuilder(256);
-
-			sb.append("(");
-			sb.append(getSubject());
-			sb.append(", ");
-			sb.append(getPredicate());
-			sb.append(", ");
-			sb.append(getObject());
-			sb.append(")");
-			sb.append(" [").append(getContext()).append("]");
-
-			return sb.toString();
+			return "(" +
+					getSubject() +
+					", " +
+					getPredicate() +
+					", " +
+					getObject() +
+					")" +
+					" [" + getContext() + "]";
 		}
 	}
 
