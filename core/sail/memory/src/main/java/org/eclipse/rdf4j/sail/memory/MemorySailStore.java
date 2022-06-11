@@ -163,12 +163,14 @@ class MemorySailStore implements SailStore {
 			synchronized (snapshotCleanupThreadLockObject) {
 				if (snapshotCleanupThread != null) {
 					snapshotCleanupThread.interrupt();
+					snapshotCleanupThread = null;
 				}
 			}
 			Lock stLock = statementListLockManager.getWriteLock();
 			try {
 				valueFactory.clear();
 				statements.clear();
+				namespaceStore.clear();
 				invalidateCache();
 			} finally {
 				if (stLock.isActive()) {
@@ -615,9 +617,9 @@ class MemorySailStore implements SailStore {
 
 		private final Lock txnStLock;
 
-		private volatile int nextSnapshot;
+		private int nextSnapshot;
 
-		private volatile Set<StatementPattern> observations;
+		private Set<StatementPattern> observations;
 
 		private volatile boolean txnLock;
 
@@ -699,6 +701,7 @@ class MemorySailStore implements SailStore {
 				if (toCloseTxnLock) {
 					txnLockManager.unlock();
 				}
+				observations = null;
 			} finally {
 				if (txnStLock.isActive()) {
 					txnStLock.release();
@@ -765,10 +768,35 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
+		public synchronized void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+			acquireExclusiveTransactionLock();
+			invalidateCache();
+			for (Statement statement : approved) {
+				addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+						statement.getContext(), explicit);
+			}
+		}
+
+		@Override
+		public synchronized void deprecateAll(Set<Statement> deprecated) {
+			acquireExclusiveTransactionLock();
+			invalidateCache();
+			requireCleanup = true;
+			int nextSnapshot = this.nextSnapshot;
+			for (Statement statement : deprecated) {
+				innerDeprecate(statement, nextSnapshot);
+			}
+		}
+
+		@Override
 		public synchronized void deprecate(Statement statement) throws SailException {
 			acquireExclusiveTransactionLock();
 			invalidateCache();
 			requireCleanup = true;
+			innerDeprecate(statement, nextSnapshot);
+		}
+
+		private void innerDeprecate(Statement statement, int nextSnapshot) {
 			if (statement instanceof MemStatement) {
 				MemStatement toDeprecate = (MemStatement) statement;
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
@@ -786,23 +814,26 @@ class MemorySailStore implements SailStore {
 				}
 			} else {
 				try (CloseableIteration<MemStatement, SailException> iter = createStatementIterator(
-						statement.getSubject(),
-						statement.getPredicate(), statement.getObject(),
-						explicit, nextSnapshot, statement.getContext())) {
+						statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit, nextSnapshot,
+						statement.getContext())) {
 					while (iter.hasNext()) {
 						MemStatement st = iter.next();
 						st.setTillSnapshot(nextSnapshot);
 					}
 				}
 			}
-
 		}
 
 		private void acquireExclusiveTransactionLock() throws SailException {
 			if (!txnLock) {
-				txnLockManager.lock();
-				nextSnapshot = currentSnapshot + 1;
-				txnLock = true;
+				synchronized (this) {
+					if (!txnLock) {
+						txnLockManager.lock();
+						nextSnapshot = currentSnapshot + 1;
+						txnLock = true;
+					}
+				}
+
 			}
 		}
 

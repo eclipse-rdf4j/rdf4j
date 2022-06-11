@@ -83,6 +83,7 @@ public class MemValueFactory extends AbstractValueFactory {
 
 	public void clear() {
 		iriRegistry.clear();
+		tripleRegistry.clear();
 		bnodeRegistry.clear();
 		literalRegistry.clear();
 		namespaceRegistry.clear();
