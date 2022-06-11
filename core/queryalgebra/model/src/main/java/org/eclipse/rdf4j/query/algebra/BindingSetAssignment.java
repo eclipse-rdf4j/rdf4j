@@ -102,4 +102,9 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	public String getSignature() {
 		return super.getSignature() + " (" + this.getBindingSets().toString() + ")";
 	}
+
+	@Override
+	protected boolean shouldCacheCardinality() {
+		return true;
+	}
 }

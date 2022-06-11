@@ -10,12 +10,15 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.List;
 import java.util.ListIterator;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 
 /**
  * Base implementation of {@link QueryModelNode}.
  */
 public abstract class AbstractQueryModelNode implements QueryModelNode, VariableScopeChange, GraphPatternGroupable {
+
+	private static final double CARDINALITY_NOT_SET = Double.MIN_VALUE;
 
 	/*-----------*
 	 * Variables *
@@ -31,6 +34,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private long resultSizeActual = -1;
 	private double costEstimate = -1;
 	private long totalTimeNanosActual = -1;
+
+	private double cardinality = CARDINALITY_NOT_SET;
 
 	/*---------*
 	 * Methods *
@@ -118,6 +123,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		try {
 			AbstractQueryModelNode clone = (AbstractQueryModelNode) super.clone();
 			clone.setVariableScopeChange(this.isVariableScopeChange());
+			clone.cardinality = CARDINALITY_NOT_SET;
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -202,4 +208,31 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 
 		return humanReadbleString;
 	}
+
+	@Experimental
+	public double getCardinality() {
+		assert cardinality != CARDINALITY_NOT_SET;
+		return cardinality;
+	}
+
+	@Experimental
+	public void setCardinality(double cardinality) {
+		this.cardinality = cardinality;
+	}
+
+	@Experimental
+	public void resetCardinality() {
+		this.cardinality = CARDINALITY_NOT_SET;
+	}
+
+	@Experimental
+	public boolean isCardinalitySet() {
+		return shouldCacheCardinality() && cardinality != CARDINALITY_NOT_SET;
+	}
+
+	@Experimental
+	protected boolean shouldCacheCardinality() {
+		return false;
+	}
+
 }

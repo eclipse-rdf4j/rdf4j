@@ -166,11 +166,7 @@ public class EvaluationStrategyWithRDFStarTest {
 
 		baseSource = new CommonBaseSource();
 
-		tripleRefNode = new TripleRef();
-		tripleRefNode.setSubjectVar(new Var("s"));
-		tripleRefNode.setPredicateVar(new Var("p"));
-		tripleRefNode.setObjectVar(new Var("o"));
-		tripleRefNode.setExprVar(new Var("extern"));
+		tripleRefNode = new TripleRef(new Var("s"), new Var("p"), new Var("o"), new Var("extern"));
 
 		strategy = new StrictEvaluationStrategy(createSource(), null);
 	}

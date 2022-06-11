@@ -15,7 +15,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -32,10 +31,7 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
@@ -101,14 +97,28 @@ public class QueryBenchmark {
 	}
 
 	public static void main(String[] args) throws RunnerException, IOException, InterruptedException {
-		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark.complexQueryFirst") // adapt to run other benchmark tests
-				.include("QueryBenchmark.lots_of_optionalFirst")
-				.include("QueryBenchmark.different_datasets_with_similar_distributionsFirst")
-				.forks(1)
-				.build();
+//		Options opt = new OptionsBuilder()
+//				.include("QueryBenchmark") // adapt to run other benchmark tests
+//				// .addProfiler("stack", "lines=20;period=1;top=20")
+//				.forks(1)
+//				.build();
+//
+//		new Runner(opt).run();
 
-		new Runner(opt).run();
+		QueryBenchmark queryBenchmark = new QueryBenchmark();
+		queryBenchmark.beforeClass();
+		for (int i = 0; i < 100; i++) {
+			System.out.println(i);
+			queryBenchmark.pathExpressionQuery1();
+			queryBenchmark.groupByQuery();
+			queryBenchmark.different_datasets_with_similar_distributions();
+			queryBenchmark.long_chain();
+			queryBenchmark.simple_filter_not();
+			queryBenchmark.complexQuery();
+			queryBenchmark.lots_of_optional();
+			queryBenchmark.nested_optionals();
+		}
+		queryBenchmark.afterClass();
 
 	}
 
@@ -149,15 +159,6 @@ public class QueryBenchmark {
 					.evaluate()
 					.stream()
 					.count();
-		}
-	}
-
-	@Benchmark
-	public boolean complexQueryFirst() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (TupleQueryResult evaluate = connection.prepareTupleQuery(query4).evaluate()) {
-				return evaluate.hasNext();
-			}
 		}
 	}
 
@@ -208,18 +209,6 @@ public class QueryBenchmark {
 	}
 
 	@Benchmark
-	public boolean different_datasets_with_similar_distributionsFirst() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (TupleQueryResult evaluate = connection
-					.prepareTupleQuery(different_datasets_with_similar_distributions)
-					.evaluate()) {
-				return evaluate.hasNext();
-			}
-
-		}
-	}
-
-	@Benchmark
 	public long long_chain() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return connection
@@ -238,16 +227,6 @@ public class QueryBenchmark {
 					.evaluate()
 					.stream()
 					.count();
-		}
-	}
-
-	@Benchmark
-	public boolean lots_of_optionalFirst() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (TupleQueryResult evaluate = connection.prepareTupleQuery(lots_of_optional).evaluate()) {
-				return evaluate.hasNext();
-			}
-
 		}
 	}
 
