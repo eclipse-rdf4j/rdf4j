@@ -7,10 +7,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.collection.factory.mapdb;
 
+import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOError;
+import java.io.IOException;
+import java.io.Serializable;
 import java.util.AbstractMap;
 import java.util.AbstractQueue;
 import java.util.AbstractSet;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -22,13 +27,23 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.api.ValuePair;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultValuePair;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.mapdb.DB;
@@ -41,6 +56,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	protected final long iterationCacheSyncThreshold;
 	private final CollectionFactory delegate;
 //	private File tempFile;
+	private final ValueFactory vf;
 
 	private static final class RDF4jMapDBException extends RDF4JException {
 
@@ -53,13 +69,18 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	public MapDbCollectionFactory(long iterationCacheSyncThreshold) {
-		this(iterationCacheSyncThreshold, new DefaultCollectionFactory());
+		this(iterationCacheSyncThreshold, new DefaultCollectionFactory(), SimpleValueFactory.getInstance());
 	}
 
 	public MapDbCollectionFactory(long iterationCacheSyncThreshold, CollectionFactory delegate) {
+		this(iterationCacheSyncThreshold, delegate, SimpleValueFactory.getInstance());
+	}
+
+	public MapDbCollectionFactory(long iterationCacheSyncThreshold, CollectionFactory delegate, ValueFactory vf) {
 
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 		this.delegate = delegate;
+		this.vf = vf;
 	}
 
 	protected void init() {
@@ -85,8 +106,9 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
+			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer(vf, supplier, valueSetter);
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,
-					delegate.createSetOfBindingSets(supplier, valueSetter));
+					delegate.createSetOfBindingSets(supplier, valueSetter), bindingSetSerializer);
 			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createSetOfBindingSets(supplier, valueSetter);
@@ -97,7 +119,8 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public Set<Value> createValueSet() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet());
+			Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet(),
+					new ValueSerializer(vf));
 			return new CommitingSet<Value>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createValueSet();
@@ -226,7 +249,8 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	/**
-	 * Only create a disk based set once the contents are large enough that it starts to pay off.
+	 * Only create a disk based set once the contents are large enough that it
+	 * starts to pay off.
 	 *
 	 * @param <T> of the contents of the set.
 	 */
@@ -335,7 +359,9 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public Set<ValuePair> createValuePairSet() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			Set<ValuePair> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValuePairSet());
+			ValuePairSetSerializer valuePairSerializer = new ValuePairSetSerializer(vf);
+			Set<ValuePair> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValuePairSet(),
+					valuePairSerializer);
 			return new CommitingSet<ValuePair>(set, iterationCacheSyncThreshold, db);
 		} else {
 			return delegate.createValuePairSet();
@@ -402,5 +428,198 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			return wrapped.size();
 		}
 
+	}
+
+	// The idea of this converting set is that we serialize longs into the MapDB not
+	// actually falling back to
+	// the serialization to SimpleLiterals etc. unless we must
+	private static class BindingSetSerializer implements Serializer<BindingSet>, Serializable {
+		private static final long serialVersionUID = 1L;
+		private final ObjectIntHashMap<String> namesToInt = new ObjectIntHashMap<>();
+		@SuppressWarnings("unchecked")
+		private transient BiConsumer<Value, MutableBindingSet>[] names = new BiConsumer[1];
+		private transient ValueFactory vf;
+		private transient Supplier<MutableBindingSet> supplier;
+		private transient Function<String, BiConsumer<Value, MutableBindingSet>> setter;
+
+		public BindingSetSerializer(ValueFactory vf, Supplier<MutableBindingSet> supplier,
+				Function<String, BiConsumer<Value, MutableBindingSet>> valueSetter) {
+			super();
+			this.vf = vf;
+			this.supplier = supplier;
+			this.setter = valueSetter;
+		}
+
+		@Override
+		public void serialize(DataOutput out, BindingSet values) throws IOException {
+			out.writeInt(values.size());
+			for (Binding b : values) {
+				serializeValue(out, b.getValue());
+				out.writeInt(indexOf(b.getName()));
+			}
+		}
+
+		private int indexOf(String name) {
+			int ifAbsentPut = namesToInt.getIfAbsentPut(name, namesToInt.size());
+			if (ifAbsentPut >= names.length) {
+				names = Arrays.copyOf(names, ifAbsentPut + 1);
+			}
+			names[ifAbsentPut] = setter.apply(name);
+			return ifAbsentPut;
+		}
+
+		@Override
+		public BindingSet deserialize(DataInput in, int available) throws IOException {
+			int size = in.readInt();
+			MutableBindingSet qbs = supplier.get();
+			for (int i = 0; i < size; i++) {
+				Value v = deserializeValue(in, vf);
+				names[in.readInt()].accept(v, qbs);
+			}
+			return qbs;
+		}
+
+		@Override
+		public int fixedSize() {
+			return -1;
+		}
+
+	}
+
+	private static class ValueSerializer implements Serializer<Value>, Serializable {
+		private static final long serialVersionUID = 1L;
+		private transient ValueFactory vf;
+
+		public ValueSerializer(ValueFactory vf) {
+			super();
+			this.vf = vf;
+		}
+
+		@Override
+		public void serialize(DataOutput out, Value value) throws IOException {
+			serializeValue(out, value);
+		}
+
+		@Override
+		public Value deserialize(DataInput in, int available) throws IOException {
+			return deserializeValue(in, vf);
+		}
+
+		@Override
+		public int fixedSize() {
+			return -1;
+		}
+
+	}
+
+	// The idea of this converting set is that we serialize longs into the MapDB not
+	// actually falling back to
+	// the serialization to SimpleLiterals etc. unless we must
+	protected static class ValuePairSetSerializer implements Serializer<ValuePair>, Serializable {
+		private static final long serialVersionUID = 1L;
+		private transient final ValueFactory vf;
+
+		public ValuePairSetSerializer(ValueFactory vf) {
+			super();
+			this.vf = vf;
+		}
+
+		@Override
+		public void serialize(DataOutput out, ValuePair vp) throws IOException {
+			serializeValue(out, vp.getStartValue());
+			serializeValue(out, vp.getEndValue());
+		}
+
+		@Override
+		public ValuePair deserialize(DataInput in, int available) throws IOException {
+
+			Value start = deserializeValue(in, vf);
+			Value end = deserializeValue(in, vf);
+			return new DefaultValuePair(start, end);
+		}
+
+		@Override
+		public int fixedSize() {
+			return -1;
+		}
+
+	}
+
+	protected static void serializeValue(DataOutput out, Value v) throws IOException {
+		if (v instanceof IRI) {
+			out.writeByte('i');
+			out.writeUTF(v.stringValue());
+		} else if (v instanceof Literal) {
+			out.writeByte('l');
+			serializeLiteral(out, v);
+		} else if (v instanceof BNode) {
+			out.writeByte('b');
+			out.writeUTF(v.stringValue());
+		} else {
+			out.writeByte('t');
+			Triple t = (Triple) v;
+			serializeValue(out, t.getSubject());
+			serializeValue(out, t.getPredicate());
+			serializeValue(out, t.getObject());
+		}
+	}
+
+	protected static Value deserializeValue(DataInput in, ValueFactory vf) throws IOException {
+		byte t = in.readByte();
+		if (t == 'i') {
+			return vf.createIRI(in.readUTF());
+		} else if (t == 'l') {
+			return deserializeLiteral(in, vf);
+		} else if (t == 'b') {
+			return vf.createBNode(in.readUTF());
+		} else {
+
+			Value subject = deserializeValue(in, vf);
+			Value predicate = deserializeValue(in, vf);
+			Value object = deserializeValue(in, vf);
+			return vf.createTriple((Resource) subject, (IRI) predicate, object);
+		}
+	}
+
+	protected static void serializeLiteral(DataOutput out, Value v) throws IOException {
+		Literal l = (Literal) v;
+		out.writeUTF(v.stringValue());
+		boolean hasLanguage = l.getLanguage().isPresent();
+
+		if (hasLanguage) {
+			out.writeByte(1);
+			out.writeUTF(l.getLanguage().get());
+		} else {
+			CoreDatatype cdt = l.getCoreDatatype();
+			if (cdt.isGEODatatype()) {
+				out.writeByte(2);
+				out.writeByte(cdt.asGEODatatype().get().ordinal());
+			} else if (cdt.isRDFDatatype()) {
+				out.writeByte(3);
+				out.writeByte(cdt.asRDFDatatype().get().ordinal());
+			} else if (cdt.isXSDDatatype()) {
+				out.writeByte(4);
+				out.writeByte(cdt.asXSDDatatype().get().ordinal());
+			} else {
+				out.writeByte(5);
+				out.writeUTF(l.getDatatype().stringValue());
+			}
+		}
+	}
+
+	protected static Value deserializeLiteral(DataInput in, ValueFactory vf) throws IOException {
+		String label = in.readUTF();
+		int t = in.readByte();
+		if (t == 1) {
+			return vf.createLiteral(label, in.readUTF());
+		} else if (t == 2) {
+			return vf.createLiteral(label, CoreDatatype.GEO.values()[in.readByte()]);
+		} else if (t == 3) {
+			return vf.createLiteral(label, CoreDatatype.RDF.values()[in.readByte()]);
+		} else if (t == 4) {
+			return vf.createLiteral(label, CoreDatatype.XSD.values()[in.readByte()]);
+		} else {
+			return vf.createLiteral(label, vf.createIRI(in.readUTF()));
+		}
 	}
 }

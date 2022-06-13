@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.Test;
 
-public class MapDBCollectionFactory {
+public class MapDBCollectionFactoryTest {
 
 	private static final int NUMBER_TO_TEST = 32;
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();

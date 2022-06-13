@@ -35,13 +35,7 @@ import org.eclipse.rdf4j.collection.factory.impl.DefaultBindingSetKey;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultValuePair;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
-import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -204,84 +198,6 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			return -1;
 		}
 
-	}
-
-	private static void serializeValue(DataOutput out, Value v) throws IOException {
-		if (v instanceof IRI) {
-			out.writeByte('i');
-			out.writeUTF(v.stringValue());
-		} else if (v instanceof Literal) {
-			out.writeByte('l');
-			serializeLiteral(out, v);
-		} else if (v instanceof BNode) {
-			out.writeByte('b');
-			out.writeUTF(v.stringValue());
-		} else {
-			out.writeByte('t');
-			Triple t = (Triple) v;
-			serializeValue(out, t.getSubject());
-			serializeValue(out, t.getPredicate());
-			serializeValue(out, t.getObject());
-		}
-	}
-
-	private static Value deserializeValue(DataInput in, ValueStore vs) throws IOException {
-		byte t = in.readByte();
-		if (t == 'i') {
-			return vs.createIRI(in.readUTF());
-		} else if (t == 'l') {
-			return deserializeLiteral(in, vs);
-		} else if (t == 'b') {
-			return vs.createBNode(in.readUTF());
-		} else {
-
-			Value subject = deserializeValue(in, vs);
-			Value predicate = deserializeValue(in, vs);
-			Value object = deserializeValue(in, vs);
-			return vs.createTriple((Resource) subject, (IRI) predicate, object);
-		}
-	}
-
-	private static void serializeLiteral(DataOutput out, Value v) throws IOException {
-		Literal l = (Literal) v;
-		out.writeUTF(v.stringValue());
-		boolean hasLanguage = l.getLanguage().isPresent();
-
-		if (hasLanguage) {
-			out.writeByte(1);
-			out.writeUTF(l.getLanguage().get());
-		} else {
-			CoreDatatype cdt = l.getCoreDatatype();
-			if (cdt.isGEODatatype()) {
-				out.writeByte(2);
-				out.writeByte(cdt.asGEODatatype().get().ordinal());
-			} else if (cdt.isRDFDatatype()) {
-				out.writeByte(3);
-				out.writeByte(cdt.asRDFDatatype().get().ordinal());
-			} else if (cdt.isXSDDatatype()) {
-				out.writeByte(4);
-				out.writeByte(cdt.asXSDDatatype().get().ordinal());
-			} else {
-				out.writeByte(5);
-				out.writeUTF(l.getDatatype().stringValue());
-			}
-		}
-	}
-
-	private static Value deserializeLiteral(DataInput in, ValueStore vs) throws IOException {
-		String label = in.readUTF();
-		int t = in.readByte();
-		if (t == 1) {
-			return vs.createLiteral(label, in.readUTF());
-		} else if (t == 2) {
-			return vs.createLiteral(label, CoreDatatype.GEO.values()[in.readByte()]);
-		} else if (t == 3) {
-			return vs.createLiteral(label, CoreDatatype.RDF.values()[in.readByte()]);
-		} else if (t == 4) {
-			return vs.createLiteral(label, CoreDatatype.XSD.values()[in.readByte()]);
-		} else {
-			return vs.createLiteral(label, vs.createIRI(in.readUTF()));
-		}
 	}
 
 	private int hash(BindingSet bs, List<Function<BindingSet, Value>> getValues) {
