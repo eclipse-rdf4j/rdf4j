@@ -58,7 +58,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
 			MemoryTillSizeXSet<Value> set = new MemoryTillSizeXSet<>(colectionId++, new LmdbValueSet(rev));
-			return new CommitingSet<Value>(set, iterationCacheSyncThreshold, db);
+			return set;
 		} else {
 			return new LmdbValueSet(rev);
 		}
@@ -72,7 +72,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer(rev, supplier, valueSetter);
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++, new HashSet<>(),
 					bindingSetSerializer);
-			return new CommitingSet<BindingSet>(set, iterationCacheSyncThreshold, db);
+			return set;
 		} else {
 			return new HashSet<>();
 		}
@@ -85,7 +85,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			ValuePairSetSerializer bindingSetSerializer = new ValuePairSetSerializer(rev);
 			MemoryTillSizeXSet<ValuePair> set = new MemoryTillSizeXSet<>(colectionId++, new LmdbValuePairSet(rev),
 					bindingSetSerializer);
-			return new CommitingSet<ValuePair>(set, iterationCacheSyncThreshold, db);
+			return set;
 		} else {
 			return new LmdbValuePairSet(rev);
 		}

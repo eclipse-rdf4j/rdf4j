@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
+import org.mapdb.HTreeMap;
 import org.mapdb.Serializer;
 
 public class MapDbCollectionFactory implements CollectionFactory {
@@ -92,6 +93,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 								.deleteFilesAfterClose()
 								.closeOnJvmShutdown()
 								.commitFileSyncDisable()
+								.transactionDisable()
 								.make();
 					} catch (IOError e) {
 						throw new RDF4jMapDBException("could not initialize temp db", e);
@@ -109,7 +111,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			BindingSetSerializer bindingSetSerializer = new BindingSetSerializer(vf, supplier, valueSetter);
 			MemoryTillSizeXSet<BindingSet> set = new MemoryTillSizeXSet<>(colectionId++,
 					delegate.createSetOfBindingSets(supplier, valueSetter), bindingSetSerializer);
-			return new CommitingSet<>(set, iterationCacheSyncThreshold, db);
+			return set;
 		} else {
 			return delegate.createSetOfBindingSets(supplier, valueSetter);
 		}
@@ -121,7 +123,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			init();
 			Set<Value> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValueSet(),
 					new ValueSerializer(vf));
-			return new CommitingSet<Value>(set, iterationCacheSyncThreshold, db);
+			return set;
 		} else {
 			return delegate.createValueSet();
 		}
@@ -131,8 +133,8 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public <V> Map<Value, V> createValueKeyedMap() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
-					iterationCacheSyncThreshold, db);
+			HTreeMap<Value, V> map = db.createHashMap(Long.toHexString(colectionId++)).make();
+			return map;
 		} else {
 			return delegate.createValueKeyedMap();
 		}
@@ -149,8 +151,8 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public <E> Map<BindingSetKey, E> createGroupByMap() {
 		if (iterationCacheSyncThreshold > 0) {
 			init();
-			return new CommitingMap<>(db.createHashMap(Long.toHexString(colectionId++)).make(),
-					iterationCacheSyncThreshold, db);
+			HTreeMap<BindingSetKey, E> map = db.createHashMap(Long.toHexString(colectionId++)).make();
+			return map;
 		} else {
 			return delegate.createGroupByMap();
 		}
@@ -159,57 +161,6 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	@Override
 	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
 		return delegate.createBindingSetKey(bindingSet, getValues);
-	}
-
-	protected static final class CommitingSet<T> extends AbstractSet<T> {
-		private final Set<T> wrapped;
-		private final long iterationCacheSyncThreshold;
-		private final DB db;
-		private long iterationCount;
-
-		public CommitingSet(Set<T> wrapped, long iterationCacheSyncThreshold, DB db) {
-			super();
-			this.wrapped = wrapped;
-			this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
-			this.db = db;
-		}
-
-		@Override
-		public boolean add(T e) {
-
-			boolean res = wrapped.add(e);
-			if (iterationCount++ % iterationCacheSyncThreshold == 0) {
-				// write to disk every $iterationCacheSyncThreshold items
-				db.commit();
-			}
-			return res;
-
-		}
-
-		@Override
-		public boolean addAll(Collection<? extends T> c) {
-			int preinsertSize = wrapped.size();
-			boolean res = wrapped.addAll(c);
-			int inserted = preinsertSize - c.size();
-			if (inserted + iterationCount > iterationCacheSyncThreshold) {
-				// write to disk every $iterationCacheSyncThreshold items
-				db.commit();
-				iterationCount = 0;
-			} else {
-				iterationCount += inserted;
-			}
-			return res;
-		}
-
-		@Override
-		public Iterator<T> iterator() {
-			return wrapped.iterator();
-		}
-
-		@Override
-		public int size() {
-			return wrapped.size();
-		}
 	}
 
 	protected static final class CommitingMap<K, V> extends AbstractMap<K, V> {
@@ -249,8 +200,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	/**
-	 * Only create a disk based set once the contents are large enough that it
-	 * starts to pay off.
+	 * Only create a disk based set once the contents are large enough that it starts to pay off.
 	 *
 	 * @param <T> of the contents of the set.
 	 */
@@ -362,7 +312,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 			ValuePairSetSerializer valuePairSerializer = new ValuePairSetSerializer(vf);
 			Set<ValuePair> set = new MemoryTillSizeXSet<>(colectionId++, delegate.createValuePairSet(),
 					valuePairSerializer);
-			return new CommitingSet<ValuePair>(set, iterationCacheSyncThreshold, db);
+			return set;
 		} else {
 			return delegate.createValuePairSet();
 		}
