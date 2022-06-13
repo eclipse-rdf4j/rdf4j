@@ -40,6 +40,10 @@
 			<version>${jmhVersion}</version>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>org.eclipse.collections</groupId>
+			<artifactId>eclipse-collections</artifactId>
+		</dependency>
 	</dependencies>
 	<build>
 		<plugins>

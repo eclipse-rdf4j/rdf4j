@@ -359,7 +359,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 			if (o instanceof LmdbValue) {
 				LmdbValue lv = (LmdbValue) o;
 				if (lv.getValueStoreRevision() == rev) {
-					return storeKnownValues.add(lv.getInternalID());
+					return storeKnownValues.contains(lv.getInternalID());
 				}
 			} else if (o instanceof Value) {
 				Value v = (Value) o;
@@ -370,9 +370,9 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 					throw new LmdbValueStoreException(e);
 				}
 				if (id == LmdbValue.UNKNOWN_ID) {
-					return notKnownToStoreValues.add(v);
+					return notKnownToStoreValues.contains(v);
 				} else {
-					return storeKnownValues.add(id);
+					return storeKnownValues.contains(id);
 				}
 			}
 			return false;
