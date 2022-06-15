@@ -56,8 +56,6 @@ import org.eclipse.rdf4j.sail.memory.model.WeakObjectRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jdk.jfr.StackTrace;
-
 /**
  * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.
  *

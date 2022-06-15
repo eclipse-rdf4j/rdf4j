@@ -13,7 +13,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
-import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 import org.apache.commons.io.IOUtils;
