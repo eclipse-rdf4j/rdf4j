@@ -42,9 +42,6 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
-import org.openjdk.jmh.runner.Runner;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
@@ -76,15 +73,6 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 		}
 	}
 
-	public static void main(String[] args) throws Exception {
-		Options opt = new OptionsBuilder()
-				.include("ParallelQueryBenchmark.*") // adapt to run other benchmark tests
-				.forks(1)
-				.build();
-
-		new Runner(opt).run();
-	}
-
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
 		super.setup();
@@ -103,6 +91,18 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 	public void tearDown() throws Exception {
 		repository.shutDown();
 		super.tearDown();
+	}
+
+	public static void main(String[] args) throws Exception {
+		ParallelQueryBenchmark benchmark = new ParallelQueryBenchmark();
+		benchmark.setup();
+		for (int i = 0; i < 1000; i++) {
+			System.out.println(i);
+			benchmark.mixedQueriesAndReads(new Blackhole(
+					"Today's password is swordfish. I understand instantiating Blackholes directly is dangerous."));
+		}
+		benchmark.tearDown();
+
 	}
 
 	@Benchmark

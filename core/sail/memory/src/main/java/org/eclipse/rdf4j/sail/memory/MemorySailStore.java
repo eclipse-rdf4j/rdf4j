@@ -7,20 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.NavigableMap;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.lang3.time.StopWatch;
-import org.eclipse.rdf4j.common.concurrent.locks.Lock;
-import org.eclipse.rdf4j.common.concurrent.locks.LockingIteration;
-import org.eclipse.rdf4j.common.concurrent.locks.Properties;
-import org.eclipse.rdf4j.common.concurrent.locks.ReadPrefReadWriteLockManager;
-import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
-import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -30,7 +28,6 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -52,6 +49,7 @@ import org.eclipse.rdf4j.sail.memory.model.MemStatementIterator;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementIteratorCache;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
 import org.eclipse.rdf4j.sail.memory.model.MemTriple;
+import org.eclipse.rdf4j.sail.memory.model.MemTripleIterator;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.eclipse.rdf4j.sail.memory.model.WeakObjectRegistry;
@@ -98,6 +96,7 @@ class MemorySailStore implements SailStore {
 	 * List containing all available statements.
 	 */
 	private final MemStatementList statements = new MemStatementList(256);
+	private final boolean debug;
 
 	/**
 	 * This gets set to `true` when we add our first inferred statement. If the value is `false` we guarantee that there
@@ -115,6 +114,8 @@ class MemorySailStore implements SailStore {
 	 */
 	private volatile int currentSnapshot;
 
+	final SnapshotMonitor snapshotMonitor;
+
 	/**
 	 * Store for namespace prefix info.
 	 */
@@ -123,7 +124,6 @@ class MemorySailStore implements SailStore {
 	/**
 	 * Lock manager used to give the snapshot cleanup thread exclusive access to the statement list.
 	 */
-	private final ReadWriteLockManager statementListLockManager;
 
 	/**
 	 * Lock manager used to prevent concurrent writes.
@@ -142,14 +142,8 @@ class MemorySailStore implements SailStore {
 	private final Object snapshotCleanupThreadLockObject = new Object();
 
 	public MemorySailStore(boolean debug) {
-		if (debug || Properties.lockTrackingEnabled()) {
-			statementListLockManager = new ReadPrefReadWriteLockManager("MemorySailStore statementListLockManager",
-					LockDiagnostics.releaseAbandoned, LockDiagnostics.detectStalledOrDeadlock,
-					LockDiagnostics.stackTrace);
-		} else {
-			statementListLockManager = new ReadPrefReadWriteLockManager("MemorySailStore statementListLockManager",
-					LockDiagnostics.releaseAbandoned);
-		}
+		this.debug = debug;
+		snapshotMonitor = new SnapshotMonitor(debug);
 	}
 
 	@Override
@@ -159,27 +153,16 @@ class MemorySailStore implements SailStore {
 
 	@Override
 	public void close() {
-		try {
-			synchronized (snapshotCleanupThreadLockObject) {
-				if (snapshotCleanupThread != null) {
-					snapshotCleanupThread.interrupt();
-					snapshotCleanupThread = null;
-				}
+		synchronized (snapshotCleanupThreadLockObject) {
+			if (snapshotCleanupThread != null) {
+				snapshotCleanupThread.interrupt();
+				snapshotCleanupThread = null;
 			}
-			Lock stLock = statementListLockManager.getWriteLock();
-			try {
-				valueFactory.clear();
-				statements.clear();
-				namespaceStore.clear();
-				invalidateCache();
-			} finally {
-				if (stLock.isActive()) {
-					stLock.release();
-				}
-			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
 		}
+		valueFactory.clear();
+		statements.clear();
+		namespaceStore.clear();
+		invalidateCache();
 	}
 
 	private void invalidateCache() {
@@ -201,14 +184,6 @@ class MemorySailStore implements SailStore {
 		return new MemorySailSource(false);
 	}
 
-	private Lock openStatementsReadLock() throws SailException {
-		try {
-			return statementListLockManager.getReadLock();
-		} catch (InterruptedException e) {
-			throw convertToSailException(e);
-		}
-	}
-
 	/**
 	 * Creates a StatementIterator that contains the statements matching the specified pattern of subject, predicate,
 	 * object, context. Inferred statements are excluded when <var>explicitOnly</var> is set to <var>true</var> .
@@ -216,7 +191,7 @@ class MemorySailStore implements SailStore {
 	 * returned StatementIterator will assume the specified read mode.
 	 */
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
-			Boolean explicit, int snapshot, Resource... contexts) {
+			Boolean explicit, int snapshot, Resource... contexts) throws InterruptedException {
 		// Perform look-ups for value-equivalents of the specified values
 
 		if (explicit != null && !explicit && !mayHaveInferred && snapshot >= 0) {
@@ -290,7 +265,7 @@ class MemorySailStore implements SailStore {
 	}
 
 	private CloseableIteration<MemStatement, SailException> createStatementIterator(MemResource subj, MemIRI pred,
-			MemValue obj, Boolean explicit, int snapshot, MemResource... contexts) {
+			MemValue obj, Boolean explicit, int snapshot, MemResource... contexts) throws InterruptedException {
 
 		if (statements.isEmpty()) {
 			return EMPTY_ITERATION;
@@ -314,7 +289,8 @@ class MemorySailStore implements SailStore {
 	}
 
 	private CloseableIteration<MemStatement, SailException> getMemStatementIterator(MemResource subj, MemIRI pred,
-			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList statementList) {
+			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList statementList)
+			throws InterruptedException {
 
 		if (explicit != null && !explicit) {
 			// we are looking for inferred statements
@@ -376,7 +352,7 @@ class MemorySailStore implements SailStore {
 	 * context.
 	 */
 	private CloseableIteration<MemTriple, SailException> createTripleIterator(Resource subj, IRI pred, Value obj,
-			int snapshot) {
+			int snapshot) throws InterruptedException {
 		// Perform look-ups for value-equivalents of the specified values
 
 		MemResource memSubj = valueFactory.getMemResource(subj);
@@ -409,96 +385,73 @@ class MemorySailStore implements SailStore {
 	 * @throws InterruptedException
 	 */
 	protected void cleanSnapshots() throws InterruptedException {
-
-		StopWatch stopWatch = null;
-		if (logger.isDebugEnabled()) {
-			stopWatch = StopWatch.createStarted();
-			logger.debug("Started cleaning snapshots.");
-		}
-
-		// Sets used to keep track of which lists have already been processed
-		HashSet<MemValue> processedSubjects = new HashSet<>();
-		HashSet<MemValue> processedPredicates = new HashSet<>();
-		HashSet<MemValue> processedObjects = new HashSet<>();
-		HashSet<MemValue> processedContexts = new HashSet<>();
-
-		int lastStmtPos;
-		Lock stReadLock = statementListLockManager.getReadLock();
 		try {
-			lastStmtPos = statements.size() - 1;
-		} finally {
-			if (stReadLock.isActive()) {
-				stReadLock.release();
+
+			boolean prioritiseCleaning = false;
+
+			StopWatch stopWatch = null;
+			if (logger.isDebugEnabled()) {
+				stopWatch = StopWatch.createStarted();
+				logger.debug("Started cleaning snapshots.");
 			}
-		}
 
-		/*
-		 * The order of the statement list won't change from lastStmtPos down while we don't have the write lock (it
-		 * might shrink or grow) as (1) new statements are always appended last, (2) we are the only process that
-		 * removes statements, (3) this list is cleared on close.
-		 */
+			prioritiseCleaning = prioritiseSnapshotCleaningIfLowOnMemory(prioritiseCleaning);
 
-		boolean prioritiseCleaning = false;
-		Lock stWriteLock = null;
-		try {
-			int nextSnapshot = currentSnapshot;
-			for (int i = lastStmtPos; i >= 0; i--) {
+			// Sets used to keep track of which lists have already been processed
+			HashSet<MemValue> processedSubjects = new HashSet<>();
+			HashSet<MemValue> processedPredicates = new HashSet<>();
+			HashSet<MemValue> processedObjects = new HashSet<>();
+			HashSet<MemValue> processedContexts = new HashSet<>();
+
+			MemStatement[] statements = this.statements.getStatements();
+
+			/*
+			 * The order of the statement list won't change from lastStmtPos down while we don't have the write lock (it
+			 * might shrink or grow) as (1) new statements are always appended last, (2) we are the only process that
+			 * removes statements, (3) this list is cleared on close.
+			 */
+
+			int highestUnusedTillSnapshot = snapshotMonitor.getFirstUnusedOrElse(currentSnapshot);
+
+			for (int i = statements.length - 1; i >= 0; i--) {
 				if (Thread.currentThread().isInterrupted()) {
 					break;
 				}
 
-				if (stWriteLock == null) {
-					// As we are running in the background, yield the write lock frequently to other writers.
-					stWriteLock = statementListLockManager.getWriteLock();
+				MemStatement st = statements[i];
+				if (st == null) {
+					continue;
 				}
 
-				// guard against shrinkage, e.g. clear() on close()
-				lastStmtPos = statements.size() - 1;
-				i = Math.min(i, lastStmtPos);
-				if (i >= 0) {
-					MemStatement st = statements.get(i);
-
-					if (st.getTillSnapshot() <= nextSnapshot) {
-						MemResource subj = st.getSubject();
-						if (processedSubjects.add(subj)) {
-							subj.cleanSnapshotsFromSubjectStatements(nextSnapshot);
-						}
-
-						MemIRI pred = st.getPredicate();
-						if (processedPredicates.add(pred)) {
-							pred.cleanSnapshotsFromPredicateStatements(nextSnapshot);
-						}
-
-						MemValue obj = st.getObject();
-						if (processedObjects.add(obj)) {
-							obj.cleanSnapshotsFromObjectStatements(nextSnapshot);
-						}
-
-						MemResource context = st.getContext();
-						if (context != null && processedContexts.add(context)) {
-							context.cleanSnapshotsFromContextStatements(nextSnapshot);
-						}
-
-						// stale statement
-						statements.remove(i);
-
-						if (!prioritiseCleaning && MAX_MEMORY >= CLEANUP_MAX_MEMORY_THRESHOLD) {
-							long freeToAllocateMemory = getFreeToAllocateMemory();
-
-							if (memoryIsLow(freeToAllocateMemory)) {
-								logger.debug(
-										"Low free memory ({} MB)! Prioritising cleaning of removed statements from the MemoryStore.",
-										freeToAllocateMemory / 1024 / 1024);
-								prioritiseCleaning = true;
-							}
-						}
-
+				if (st.getTillSnapshot() <= highestUnusedTillSnapshot) {
+					MemResource subj = st.getSubject();
+					if (processedSubjects.add(subj)) {
+						subj.cleanSnapshotsFromSubjectStatements(highestUnusedTillSnapshot);
 					}
+
+					MemIRI pred = st.getPredicate();
+					if (processedPredicates.add(pred)) {
+						pred.cleanSnapshotsFromPredicateStatements(highestUnusedTillSnapshot);
+					}
+
+					MemValue obj = st.getObject();
+					if (processedObjects.add(obj)) {
+						obj.cleanSnapshotsFromObjectStatements(highestUnusedTillSnapshot);
+					}
+
+					MemResource context = st.getContext();
+					if (context != null && processedContexts.add(context)) {
+						context.cleanSnapshotsFromContextStatements(highestUnusedTillSnapshot);
+					}
+
+					// stale statement
+					this.statements.remove(st, i);
+					prioritiseCleaning = prioritiseSnapshotCleaningIfLowOnMemory(prioritiseCleaning);
 				}
 
 				if (i % 100_000 == 0) {
 					if (getFreeToAllocateMemory() < CLEANUP_MINIMUM_FREE_MEMORY / 2) {
-						prioritiseCleaning = true;
+						prioritiseCleaning = prioritiseSnapshotCleaningIfLowOnMemory(prioritiseCleaning);
 						processedSubjects = new HashSet<>();
 						processedPredicates = new HashSet<>();
 						processedObjects = new HashSet<>();
@@ -506,31 +459,36 @@ class MemorySailStore implements SailStore {
 						System.gc();
 					}
 				}
-
-				assert stWriteLock != null;
-
-				if (!prioritiseCleaning) {
-					stWriteLock.release();
-					stWriteLock = null;
-				}
-
 			}
+
+			processedSubjects.clear();
+			processedPredicates.clear();
+			processedObjects.clear();
+			processedContexts.clear();
+
+			if (logger.isDebugEnabled() && stopWatch != null) {
+				stopWatch.stop();
+				logger.debug("Cleaning snapshots took {} seconds.", stopWatch.getTime(TimeUnit.SECONDS));
+			}
+
 		} finally {
-			if (stWriteLock != null) {
-				stWriteLock.release();
-				stWriteLock = null;
+			statements.setPrioritiseCleanup(false);
+		}
+	}
+
+	private boolean prioritiseSnapshotCleaningIfLowOnMemory(boolean prioritiseCleaning) {
+		if (!prioritiseCleaning && MAX_MEMORY >= CLEANUP_MAX_MEMORY_THRESHOLD) {
+			long freeToAllocateMemory = getFreeToAllocateMemory();
+
+			if (memoryIsLow(freeToAllocateMemory)) {
+				logger.debug(
+						"Low free memory ({} MB)! Prioritising cleaning of removed statements from the MemoryStore.",
+						freeToAllocateMemory / 1024 / 1024);
+				prioritiseCleaning = true;
+				this.statements.setPrioritiseCleanup(true);
 			}
 		}
-
-		processedSubjects.clear();
-		processedPredicates.clear();
-		processedObjects.clear();
-		processedContexts.clear();
-
-		if (logger.isDebugEnabled() && stopWatch != null) {
-			stopWatch.stop();
-			logger.debug("Cleaning snapshots took {} seconds.", stopWatch.getTime(TimeUnit.SECONDS));
-		}
+		return prioritiseCleaning;
 	}
 
 	private static boolean memoryIsLow(long freeToAllocateMemory) {
@@ -565,8 +523,8 @@ class MemorySailStore implements SailStore {
 				if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {
 					Runnable runnable = () -> {
 						try {
-							// sleep for up to 5 seconds unless we are low on memory
-							for (int i = 0; i < 100 * 5 && !memoryIsLow(getFreeToAllocateMemory()); i++) {
+//							 sleep for up to 5 seconds unless we are low on memory
+							for (int i = 0; i < 100 * 5 && !memoryIsLow(getFreeToAllocateMemory() * 2); i++) {
 								Thread.sleep(10);
 							}
 
@@ -581,6 +539,7 @@ class MemorySailStore implements SailStore {
 							"MemoryStore snapshot cleanup");
 					toCheckSnapshotCleanupThread.setDaemon(true);
 					toCheckSnapshotCleanupThread.start();
+					Thread.yield();
 				}
 			}
 		}
@@ -611,11 +570,12 @@ class MemorySailStore implements SailStore {
 
 	private final class MemorySailSink implements SailSink {
 
+		private volatile boolean closed = false;
+
 		private final boolean explicit;
 
 		private final int serializable;
-
-		private final Lock txnStLock;
+		private final SnapshotMonitor.ReservedSnapshot reservedSnapshot;
 
 		private int nextSnapshot;
 
@@ -629,10 +589,11 @@ class MemorySailStore implements SailStore {
 			this.explicit = explicit;
 			if (serializable) {
 				this.serializable = currentSnapshot;
+				reservedSnapshot = snapshotMonitor.reserve(this.serializable, this);
 			} else {
 				this.serializable = Integer.MAX_VALUE;
+				reservedSnapshot = null;
 			}
-			txnStLock = openStatementsReadLock();
 		}
 
 		@Override
@@ -677,6 +638,8 @@ class MemorySailStore implements SailStore {
 								throw new SailConflictException("Observed State has Changed");
 							}
 						}
+					} catch (InterruptedException e) {
+						throw convertToSailException(e);
 					}
 				}
 			}
@@ -695,34 +658,38 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public void close() {
-			try {
-				boolean toCloseTxnLock = txnLock;
-				txnLock = false;
-				if (toCloseTxnLock) {
-					txnLockManager.unlock();
+			if (!closed) {
+				closed = true;
+				try {
+					if (reservedSnapshot != null) {
+						reservedSnapshot.release();
+					}
+				} finally {
+					boolean toCloseTxnLock = txnLock;
+					txnLock = false;
+					if (toCloseTxnLock) {
+						txnLockManager.unlock();
+					}
+					observations = null;
 				}
-				observations = null;
-			} finally {
-				if (txnStLock.isActive()) {
-					txnStLock.release();
-				}
+
 			}
 		}
 
 		@Override
-		public synchronized void setNamespace(String prefix, String name) throws SailException {
+		public synchronized void setNamespace(String prefix, String name) {
 			acquireExclusiveTransactionLock();
 			namespaceStore.setNamespace(prefix, name);
 		}
 
 		@Override
-		public synchronized void removeNamespace(String prefix) throws SailException {
+		public synchronized void removeNamespace(String prefix) {
 			acquireExclusiveTransactionLock();
 			namespaceStore.removeNamespace(prefix);
 		}
 
 		@Override
-		public synchronized void clearNamespaces() throws SailException {
+		public synchronized void clearNamespaces() {
 			acquireExclusiveTransactionLock();
 			namespaceStore.clear();
 		}
@@ -747,7 +714,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public synchronized void clear(Resource... contexts) throws SailException {
+		public synchronized void clear(Resource... contexts) {
 			acquireExclusiveTransactionLock();
 			invalidateCache();
 			requireCleanup = true;
@@ -757,23 +724,33 @@ class MemorySailStore implements SailStore {
 					MemStatement st = iter.next();
 					st.setTillSnapshot(nextSnapshot);
 				}
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
 			}
 		}
 
 		@Override
-		public synchronized void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+		public synchronized void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
 			acquireExclusiveTransactionLock();
 			invalidateCache();
-			addStatement(subj, pred, obj, ctx, explicit);
+			try {
+				addStatement(subj, pred, obj, ctx, explicit);
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
+			}
 		}
 
 		@Override
 		public synchronized void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
 			acquireExclusiveTransactionLock();
 			invalidateCache();
-			for (Statement statement : approved) {
-				addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-						statement.getContext(), explicit);
+			try {
+				for (Statement statement : approved) {
+					addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+							statement.getContext(), explicit);
+				}
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
 			}
 		}
 
@@ -820,6 +797,8 @@ class MemorySailStore implements SailStore {
 						MemStatement st = iter.next();
 						st.setTillSnapshot(nextSnapshot);
 					}
+				} catch (InterruptedException e) {
+					throw convertToSailException(e);
 				}
 			}
 		}
@@ -838,7 +817,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		private MemStatement addStatement(Resource subj, IRI pred, Value obj, Resource context, boolean explicit)
-				throws SailException {
+				throws SailException, InterruptedException {
 			if (!explicit) {
 				mayHaveInferred = true;
 			}
@@ -854,7 +833,7 @@ class MemorySailStore implements SailStore {
 				// All values are used in at least one statement. Possibly, the
 				// statement is already present. Check this.
 
-				if (statementAlreadyExists(explicit, memSubj, memPred, memObj, memContext)) {
+				if (statementAlreadyExists(explicit, memSubj, memPred, memObj, memContext, nextSnapshot)) {
 					return null;
 				}
 			}
@@ -868,18 +847,16 @@ class MemorySailStore implements SailStore {
 		}
 
 		private boolean statementAlreadyExists(boolean explicit, MemResource memSubj, MemIRI memPred, MemValue memObj,
-				MemResource memContext) {
+				MemResource memContext, int nextSnapshot) throws InterruptedException {
 
 			MemStatementList statementList = getSmallestMemStatementList(memSubj, memPred, memObj, memContext);
 
 			MemStatement memStatement = statementList.getExact(memSubj, memPred, memObj, memContext,
-					Integer.MAX_VALUE - 1);
+					nextSnapshot);
 			if (memStatement != null) {
 				if (!memStatement.isExplicit() && explicit) {
 					// Implicit statement is now added explicitly
-					memStatement.setTillSnapshot(nextSnapshot);
-				} else if (!memStatement.isInSnapshot(nextSnapshot)) {
-					memStatement.setSinceSnapshot(nextSnapshot);
+					memStatement.setTillSnapshot(this.nextSnapshot);
 				} else {
 					// statement already exists
 					return true;
@@ -931,6 +908,8 @@ class MemorySailStore implements SailStore {
 					MemStatement st = iter.next();
 					st.setTillSnapshot(nextSnapshot);
 				}
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
 			}
 			invalidateCache();
 
@@ -947,19 +926,19 @@ class MemorySailStore implements SailStore {
 		private final boolean explicit;
 
 		private final int snapshot;
-
-		private final Lock lock;
+		private final SnapshotMonitor.ReservedSnapshot reservedSnapshot;
+		private volatile boolean closed;
 
 		public MemorySailDataset(boolean explicit) throws SailException {
 			this.explicit = explicit;
 			this.snapshot = -1;
-			this.lock = null;
+			this.reservedSnapshot = null;
 		}
 
 		public MemorySailDataset(boolean explicit, int snapshot) throws SailException {
 			this.explicit = explicit;
 			this.snapshot = snapshot;
-			this.lock = openStatementsReadLock();
+			this.reservedSnapshot = snapshotMonitor.reserve(snapshot, this);
 		}
 
 		@Override
@@ -980,9 +959,12 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public void close() {
-			if (lock != null) {
-				// serializable read or higher isolation
-				lock.release();
+			if (closed) {
+				return;
+			}
+			closed = true;
+			if (reservedSnapshot != null) {
+				reservedSnapshot.release();
 			}
 		}
 
@@ -1007,79 +989,52 @@ class MemorySailStore implements SailStore {
 			// Create a list of all resources that are used as contexts
 			ArrayList<MemResource> contextIDs = new ArrayList<>(32);
 
-			Lock stLock = openStatementsReadLock();
-			try {
-				int snapshot = getCurrentSnapshot();
-				try (WeakObjectRegistry.AutoCloseableIterator<MemIRI> memIRIsIterator = valueFactory
-						.getMemIRIsIterator()) {
-					while (memIRIsIterator.hasNext()) {
-						MemResource memResource = memIRIsIterator.next();
-						if (isContextResource(memResource, snapshot)) {
-							contextIDs.add(memResource);
-						}
-					}
-				}
+			int snapshot = getCurrentSnapshot();
 
-				try (WeakObjectRegistry.AutoCloseableIterator<MemBNode> memBNodesIterator = valueFactory
-						.getMemBNodesIterator()) {
-					while (memBNodesIterator.hasNext()) {
-						MemResource memResource = memBNodesIterator.next();
-						if (isContextResource(memResource, snapshot)) {
-							contextIDs.add(memResource);
-						}
+			try (WeakObjectRegistry.AutoCloseableIterator<MemIRI> memIRIsIterator = valueFactory
+					.getMemIRIsIterator()) {
+				while (memIRIsIterator.hasNext()) {
+					MemResource memResource = memIRIsIterator.next();
+					if (isContextResource(memResource, snapshot)) {
+						contextIDs.add(memResource);
 					}
 				}
-			} finally {
-				stLock.release();
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
+			}
+
+			try (WeakObjectRegistry.AutoCloseableIterator<MemBNode> memBNodesIterator = valueFactory
+					.getMemBNodesIterator()) {
+				while (memBNodesIterator.hasNext()) {
+					MemResource memResource = memBNodesIterator.next();
+					if (isContextResource(memResource, snapshot)) {
+						contextIDs.add(memResource);
+					}
+				}
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
 			}
 
 			return new CloseableIteratorIteration<>(contextIDs.iterator());
 		}
 
 		@Override
-		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
+		public CloseableIteration<MemStatement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
-			if (!explicit && !mayHaveInferred && snapshot >= 0) {
-				return EMPTY_ITERATION;
-			}
-
-			Lock stLock = openStatementsReadLock();
 			try {
-				CloseableIteration<MemStatement, SailException> statementIterator = createStatementIterator(subj, pred,
-						obj, explicit, getCurrentSnapshot(), contexts);
-				try {
-					return LockingIteration.getInstance(stLock, statementIterator);
-				} catch (Throwable t) {
-					statementIterator.close();
-					throw t;
-				}
-			} catch (Throwable t) {
-				stLock.release();
-				throw t;
+				return createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
 			}
-
 		}
 
 		@Override
-		public CloseableIteration<? extends Triple, SailException> getTriples(Resource subj, IRI pred, Value obj)
+		public CloseableIteration<MemTriple, SailException> getTriples(Resource subj, IRI pred, Value obj)
 				throws SailException {
-			if (!explicit && !mayHaveInferred && snapshot >= 0) {
-				return EMPTY_TRIPLE_ITERATION;
-			}
-
-			Lock stLock = openStatementsReadLock();
 			try {
-				CloseableIteration<MemTriple, SailException> tripleIterator = createTripleIterator(subj, pred, obj,
-						getCurrentSnapshot());
-				try {
-					return LockingIteration.getInstance(stLock, tripleIterator);
-				} catch (Throwable t) {
-					tripleIterator.close();
-					throw t;
-				}
-			} catch (Throwable t) {
-				stLock.release();
-				throw t;
+				return createTripleIterator(subj, pred, obj, getCurrentSnapshot());
+			} catch (InterruptedException e) {
+				throw convertToSailException(e);
 			}
 		}
 
@@ -1091,7 +1046,8 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
-		private boolean isContextResource(MemResource memResource, int snapshot) throws SailException {
+		private boolean isContextResource(MemResource memResource, int snapshot)
+				throws SailException, InterruptedException {
 			MemStatementList contextStatements = memResource.getContextStatementList();
 
 			// Filter resources that are not used as context identifier
@@ -1112,5 +1068,95 @@ class MemorySailStore implements SailStore {
 	private SailException convertToSailException(InterruptedException e) {
 		Thread.currentThread().interrupt();
 		return new SailException(e);
+	}
+
+	static class SnapshotMonitor {
+
+		private static final ConcurrentCleaner cleaner = new ConcurrentCleaner();
+
+		private final NavigableMap<Integer, Integer> activeSnapshots = new TreeMap<>();
+		private final boolean debug;
+
+		public SnapshotMonitor(boolean debug) {
+			this.debug = debug;
+		}
+
+		public int getFirstUnusedOrElse(int currentSnapshot) {
+			synchronized (activeSnapshots) {
+				if (!activeSnapshots.isEmpty()) {
+					Integer firstKey = activeSnapshots.firstKey();
+					if (firstKey != null) {
+						assert activeSnapshots.get(firstKey) > 0;
+						return firstKey - 1;
+					}
+				}
+			}
+
+			return currentSnapshot;
+		}
+
+		public ReservedSnapshot reserve(int snapshot, Object reservedBy) {
+			synchronized (activeSnapshots) {
+				Integer count = activeSnapshots.get(snapshot);
+				if (count == null) {
+					count = 0;
+				}
+				activeSnapshots.put(snapshot, count + 1);
+			}
+
+			return new ReservedSnapshot(snapshot, reservedBy);
+		}
+
+		private class ReservedSnapshot {
+
+			private static final int SNAPSHOT_RELEASED = -1;
+
+			private volatile int snapshot;
+			private Cleaner.Cleanable cleanable;
+			private final Throwable stackTraceForDebugging;
+
+			public ReservedSnapshot(int snapshot, Object reservedBy) {
+				this.snapshot = snapshot;
+				if (debug) {
+					stackTraceForDebugging = new Throwable("Unreleased snapshot version");
+				} else {
+					stackTraceForDebugging = null;
+				}
+				cleanable = cleaner.register(reservedBy, () -> {
+					if (this.snapshot != SNAPSHOT_RELEASED) {
+						String message = "Releasing MemorySailStore snapshot {} which was reserved and never released (possibly unclosed MemorySailDataset or MemorySailSink).";
+						if (stackTraceForDebugging != null) {
+							logger.warn(message, snapshot, stackTraceForDebugging);
+						} else {
+							logger.warn(message, snapshot);
+						}
+						release();
+					}
+				});
+			}
+
+			public void release() {
+				synchronized (activeSnapshots) {
+					if (snapshot != SNAPSHOT_RELEASED) {
+						Integer count = activeSnapshots.get(snapshot);
+						assert count != null;
+						assert count > 0;
+						if (count == 1) {
+							activeSnapshots.remove(snapshot);
+						} else {
+							activeSnapshots.put(snapshot, count - 1);
+						}
+						snapshot = SNAPSHOT_RELEASED;
+					}
+				}
+
+				Cleaner.Cleanable cleanable = this.cleanable;
+				if (cleanable != null) {
+					this.cleanable = null;
+					cleanable.clean();
+				}
+			}
+
+		}
 	}
 }

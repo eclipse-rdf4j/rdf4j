@@ -8,10 +8,8 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import java.util.Arrays;
-import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
@@ -58,7 +56,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	/**
 	 * Flag indicating whether this iterator should only return explicitly added statements or only return inferred
 	 * statements.
-	 *
+	 * <p>
 	 * If this has not been specified (null) and we should return both explicit and inferred statements, then the flag
 	 * below will be set to true.
 	 */
@@ -97,10 +95,10 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	 * @param contexts      context(s) of pattern.
 	 */
 	public MemStatementIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, MemValue object,
-			Boolean explicit, int snapshot, MemResource... contexts) {
-		this.statementListSize = statementList.size();
+			Boolean explicit, int snapshot, MemResource... contexts) throws InterruptedException {
 		this.statementList = statementList.getStatements();
-
+		this.statementListSize = statementList.getGuaranteedLastIndexInUse() + 1;
+		assert this.statementListSize <= this.statementList.length;
 		this.subject = subject;
 		this.predicate = predicate;
 		this.object = object;
@@ -119,7 +117,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 	public static LookAheadIteration<MemStatement, SailException> cacheAwareInstance(MemStatementList smallestList,
 			MemResource subj, MemIRI pred, MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts,
-			MemStatementIteratorCache iteratorCache) {
+			MemStatementIteratorCache iteratorCache) throws InterruptedException {
 
 		if (smallestList.size() > MemStatementIterator.MIN_SIZE_TO_CONSIDER_FOR_CACHE) {
 			return new CacheAwareIteration<>(
@@ -132,7 +130,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 
 	public static boolean cacheAwareHasStatement(MemStatementList smallestList, MemResource subj, MemIRI pred,
 			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts,
-			MemStatementIteratorCache iteratorCache) {
+			MemStatementIteratorCache iteratorCache) throws InterruptedException {
 
 		if (smallestList.size() > MemStatementIterator.MIN_SIZE_TO_CONSIDER_FOR_CACHE) {
 			try (CacheAwareIteration<SailException> exceptionCacheAwareIteration = new CacheAwareIteration<>(
@@ -166,7 +164,9 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 			// method in MemStatementList that does this for us.
 
 			MemStatement statement = statementList[statementIndex++];
-			if ((statement.matchesSPO(subject, predicate, object)) && statement.matchesContext(contexts)
+
+			if (statement != null && (statement.matchesSPO(subject, predicate, object))
+					&& statement.matchesContext(contexts)
 					&& matchesExplicitAndSnapshot(statement)) {
 				// First check if we match the specified SPO, then check the context, then finally check the
 				// explicit/inferred and snapshot.
@@ -199,7 +199,7 @@ public class MemStatementIterator<X extends Exception> extends LookAheadIteratio
 	 */
 	private boolean isCandidateForCache() {
 		if (statementIndex == statementListSize) { // we will only consider caching if the iterator has been completely
-													// consumed
+			// consumed
 			if (statementIndex > MIN_SIZE_TO_CONSIDER_FOR_CACHE) { // minimum 1000 statements need to have been checked
 				// by the iterator
 				if (matchingStatements == 0) { // if the iterator was effectively empty we can always cache it

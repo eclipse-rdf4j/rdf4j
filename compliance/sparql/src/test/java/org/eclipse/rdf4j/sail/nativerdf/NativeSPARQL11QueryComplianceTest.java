@@ -22,8 +22,8 @@ import org.junit.rules.TemporaryFolder;
 public class NativeSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest {
 
 	public NativeSPARQL11QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered) {
-		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
+			String resultFileURL, Dataset dataset, boolean ordered, boolean laxCardinality) {
+		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered, laxCardinality);
 	}
 
 	@Rule

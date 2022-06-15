@@ -23,8 +23,8 @@ import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL12QueryCom
 public class SPARQL12QueryTest extends SPARQL12QueryComplianceTest {
 
 	public SPARQL12QueryTest(String displayName, String testURI, String name, String queryFileURL, String resultFileURL,
-			Dataset dataset, boolean ordered) {
-		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
+			Dataset dataset, boolean ordered, boolean laxCardinality) {
+		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered, laxCardinality);
 	}
 
 	@Override

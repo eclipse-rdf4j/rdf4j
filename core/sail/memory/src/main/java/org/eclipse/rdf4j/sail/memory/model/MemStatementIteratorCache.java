@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.sail.memory.model;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 

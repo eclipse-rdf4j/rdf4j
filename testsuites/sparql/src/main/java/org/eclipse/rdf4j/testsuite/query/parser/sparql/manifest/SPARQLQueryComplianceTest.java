@@ -75,6 +75,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	private final String resultFileURL;
 	private final Dataset dataset;
 	private final boolean ordered;
+	private final boolean laxCardinality;
 
 	private Repository dataRepository;
 
@@ -88,12 +89,13 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	 * @param ordered
 	 */
 	public SPARQLQueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered) {
+			String resultFileURL, Dataset dataset, boolean ordered, boolean laxCardinality) {
 		super(displayName, testURI, name);
 		this.queryFileURL = queryFileURL;
 		this.resultFileURL = resultFileURL;
 		this.dataset = dataset;
 		this.ordered = ordered;
+		this.laxCardinality = laxCardinality;
 	}
 
 	@Before
@@ -236,7 +238,6 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		MutableTupleQueryResult expectedResultTable = new MutableTupleQueryResult(expectedResult);
 
 		boolean resultsEqual;
-		boolean laxCardinality = false; // TODO determine if we still need this
 		if (laxCardinality) {
 			resultsEqual = QueryResults.isSubset(queryResultTable, expectedResultTable);
 		} else {
@@ -395,7 +396,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 				query.append(" PREFIX sd: <http://www.w3.org/ns/sparql-service-description#> \n");
 				query.append(" PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
 				query.append(
-						" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered \n");
+						" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered ?laxCardinality \n");
 				query.append(" WHERE { [] rdf:first ?testURI . \n");
 				if (approvedOnly) {
 					query.append(" ?testURI dawgt:approval dawgt:Approved . \n");
@@ -408,6 +409,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 				query.append(" ?action qt:query ?queryFile . \n");
 				query.append(" OPTIONAL { ?action qt:data ?defaultGraph } \n");
 				query.append(" OPTIONAL { ?action sd:entailmentRegime ?regime } \n");
+				query.append(" OPTIONAL { ?testURI mf:resultCardinality ?laxCardinality, mf:LaxCardinality } \n");
 				// skip tests involving CSV result files, these are not query tests
 				query.append(" FILTER(!STRENDS(STR(?resultFile), \"csv\")) \n");
 				// skip tests involving entailment regimes
@@ -460,7 +462,9 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 								bs.getValue("queryFile").stringValue(),
 								bs.getValue("resultFile").stringValue(),
 								dataset,
-								Literals.getBooleanValue(ordered, false) });
+								Literals.getBooleanValue(ordered, false),
+								bs.hasBinding("laxCardinality")
+						});
 					}
 				}
 

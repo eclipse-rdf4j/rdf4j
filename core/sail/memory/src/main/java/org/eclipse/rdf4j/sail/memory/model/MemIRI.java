@@ -186,14 +186,14 @@ public class MemIRI extends MemResource implements IRI {
 	/**
 	 * Adds a statement to this MemURI's list of statements for which it is the predicate.
 	 */
-	public void addPredicateStatement(MemStatement st) {
+	public void addPredicateStatement(MemStatement st) throws InterruptedException {
 		predicateStatements.add(st);
 	}
 
 	/**
 	 * Removes a statement from this MemURI's list of statements for which it is the predicate.
 	 */
-	public void removePredicateStatement(MemStatement st) {
+	public void removePredicateStatement(MemStatement st) throws InterruptedException {
 		predicateStatements.remove(st);
 	}
 
@@ -203,7 +203,7 @@ public class MemIRI extends MemResource implements IRI {
 	 *
 	 * @param currentSnapshot The current snapshot version.
 	 */
-	public void cleanSnapshotsFromPredicateStatements(int currentSnapshot) {
+	public void cleanSnapshotsFromPredicateStatements(int currentSnapshot) throws InterruptedException {
 		predicateStatements.cleanSnapshots(currentSnapshot);
 	}
 
@@ -218,17 +218,17 @@ public class MemIRI extends MemResource implements IRI {
 	}
 
 	@Override
-	public void addObjectStatement(MemStatement st) {
+	public void addObjectStatement(MemStatement st) throws InterruptedException {
 		objectStatements.add(st);
 	}
 
 	@Override
-	public void removeObjectStatement(MemStatement st) {
+	public void removeObjectStatement(MemStatement st) throws InterruptedException {
 		objectStatements.remove(st);
 	}
 
 	@Override
-	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) {
+	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
 		objectStatements.cleanSnapshots(currentSnapshot);
 	}
 
