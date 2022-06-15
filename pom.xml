@@ -345,7 +345,7 @@
 		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.3</jaxb.version>
 		<lucene.version>8.5.1</lucene.version>
-		<lwjgl.version>3.3.0</lwjgl.version>
+		<lwjgl.version>3.3.1</lwjgl.version>
 		<solr.version>8.4.1</solr.version>
 		<elasticsearch.version>7.8.1</elasticsearch.version>
 		<jetty.version>9.4.43.v20210629</jetty.version>
