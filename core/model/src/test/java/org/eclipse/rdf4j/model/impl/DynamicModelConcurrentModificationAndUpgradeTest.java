@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.fail;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -37,12 +38,12 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 			Exception exception = runTest();
 
 			if (exception != null) {
-				assertThat(exception).isInstanceOf(UnsupportedOperationException.class);
+				assertThat(exception).isInstanceOf(ConcurrentModificationException.class);
 				return;
 			}
 		}
 
-		fail("There should have been an UnsupportedOperationException earlier");
+		fail("There should have been a ConcurrentModificationException earlier");
 
 	}
 
