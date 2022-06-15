@@ -46,3 +46,4 @@ cache.db
 formatter-maven-cache.properties
 compliance/*/overlays
 docker/ignore
+/core/queryparser/sparql/JavaCC/javacc/

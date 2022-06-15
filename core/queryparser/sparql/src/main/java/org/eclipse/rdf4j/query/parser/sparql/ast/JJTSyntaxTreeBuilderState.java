@@ -2,16 +2,16 @@
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
 public class JJTSyntaxTreeBuilderState {
-	private final java.util.List<Node> nodes;
-	private final java.util.List<Integer> marks;
+	private java.util.List<Node> nodes;
+	private java.util.List<Integer> marks;
 
 	private int sp; // number of nodes on stack
 	private int mk; // current mark
 	private boolean node_created;
 
 	public JJTSyntaxTreeBuilderState() {
-		nodes = new java.util.ArrayList<>();
-		marks = new java.util.ArrayList<>();
+		nodes = new java.util.ArrayList<Node>();
+		marks = new java.util.ArrayList<Integer>();
 		sp = 0;
 		mk = 0;
 	}
