@@ -143,7 +143,7 @@ public class TestSparqlStarParser {
 
 		assertTrue("expect BindingSetAssignment as arg", proj.getArg() instanceof BindingSetAssignment);
 		BindingSetAssignment values = (BindingSetAssignment) proj.getArg();
-		boolean oneValue[] = new boolean[] { false };
+		boolean[] oneValue = new boolean[] { false };
 		values.getBindingSets().forEach(bs -> {
 			Value v = bs.getValue("ref");
 			assertTrue("expect binding for ref", v != null);

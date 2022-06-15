@@ -35,12 +35,12 @@ public class ASTRDFLiteral extends ASTRDFValue {
 	}
 
 	public ASTString getLabel() {
-		return (ASTString) children.get(0);
+		return (ASTString) children[0];
 	}
 
 	public ASTIRI getDatatype() {
-		if (children.size() >= 2) {
-			return (ASTIRI) children.get(1);
+		if (children.length >= 2) {
+			return (ASTIRI) children[1];
 		}
 		return null;
 	}
