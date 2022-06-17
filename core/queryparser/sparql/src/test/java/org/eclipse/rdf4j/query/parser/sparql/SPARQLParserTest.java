@@ -11,15 +11,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.IOException;
+import java.io.StringReader;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.InsertData;
@@ -41,6 +54,8 @@ import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -515,6 +530,222 @@ public class SPARQLParserTest {
 
 		// should parse without error
 		parser.parseQuery(query, null);
+	}
+
+	@Test
+	public void testDefaultPrefixes() {
+		String queryTuple = "SELECT ?s {?s ex:aaa ex:ooo}";
+
+		Set<Namespace> defaultPrefixes = new HashSet<>();
+		defaultPrefixes.add(new SimpleNamespace("ex", "http://example.org/"));
+		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
+
+		parser.parseQuery(queryTuple, null);
+	}
+
+	@Test
+	public void testDefaultPrefixesOverride() {
+		final String namespaceEx1 = "http://example1.org/";
+		final String namespaceEx2 = "http://example2.org/";
+
+		assertNotEquals(namespaceEx1, namespaceEx2);
+
+		String query = "PREFIX ex: <" + namespaceEx1 + "> CONSTRUCT {?s ex:bbb ex:ccc} WHERE {?s ex:aaa ex:ooo}";
+
+		Set<Namespace> defaultPrefixes = new HashSet<>();
+		defaultPrefixes.add(new SimpleNamespace("ex", namespaceEx2));
+		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		assertInstanceOf(ParsedGraphQuery.class, parsedQuery);
+
+		ParsedGraphQuery parsedGraphQuery = (ParsedGraphQuery) parsedQuery;
+
+		assertEquals(namespaceEx1, parsedGraphQuery.getQueryNamespaces().get("ex"));
+	}
+
+	@Test
+	public void testDefaultPrefixesNoOverride() {
+		final String namespaceEx1 = "http://example1.org/";
+
+		String query = "CONSTRUCT {?s ex:bbb ex:ccc} WHERE {?s ex:aaa ex:ooo}";
+
+		Set<Namespace> defaultPrefixes = new HashSet<>();
+		defaultPrefixes.add(new SimpleNamespace("ex", namespaceEx1));
+		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+		assertInstanceOf(ParsedGraphQuery.class, parsedQuery);
+
+		ParsedGraphQuery parsedGraphQuery = (ParsedGraphQuery) parsedQuery;
+
+		assertEquals(namespaceEx1, parsedGraphQuery.getQueryNamespaces().get("ex"));
+	}
+
+	@Test
+	public void testNoDefaultPrefixes() {
+		assertThrows(MalformedQueryException.class, () -> {
+			String query = "SELECT ?s {?s ex:aaa ex:ooo}";
+
+			HashSet<Namespace> customPrefixes = new HashSet<>();
+			SPARQLParser parser = new SPARQLParser(customPrefixes);
+
+			parser.parseQuery(query, null);
+		});
+	}
+
+	@Test
+	public void testDefaultPrefixesInsertDataOverride() throws IOException {
+		final String namespaceEx1 = "http://example1.org/";
+		final String namespaceEx2 = "http://example2.org/";
+		String query = "PREFIX ex: <" + namespaceEx2 + "> INSERT DATA { ex:A ex:P ex:B . }";
+
+		Set<Namespace> defaultPrefixes = new HashSet<>();
+		defaultPrefixes.add(new SimpleNamespace("ex", namespaceEx1));
+		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
+
+		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
+		assertEquals(1, parsedUpdate.getUpdateExprs().size());
+		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+
+		assertInstanceOf(InsertData.class, expr);
+		Model parse = Rio.parse(new StringReader(((InsertData) expr).getDataBlock()), RDFFormat.TURTLE);
+		Iterable<Statement> iterable = parse.getStatements(null, null, null);
+		Iterator<Statement> it = iterable.iterator();
+		assertTrue(it.hasNext());
+		Statement line = it.next();
+		assertFalse(it.hasNext());
+		assertEquals(namespaceEx2 + "A", line.getSubject().stringValue());
+		assertEquals(namespaceEx2 + "P", line.getPredicate().stringValue());
+		assertEquals(namespaceEx2 + "B", line.getObject().stringValue());
+	}
+
+	@Test
+	public void testDefaultPrefixesInsertDataInsideOverride() throws IOException {
+		final String namespaceEx1 = "http://example1.org/";
+		final String namespaceEx2 = "http://example2.org/";
+		String query = "INSERT DATA { PREFIX ex: <" + namespaceEx2 + "> ex:A ex:P ex:B . }";
+
+		Set<Namespace> defaultPrefixes = new HashSet<>();
+		defaultPrefixes.add(Values.namespace("ex", namespaceEx1));
+		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
+
+		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
+		assertEquals(1, parsedUpdate.getUpdateExprs().size());
+		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+
+		assertInstanceOf(InsertData.class, expr);
+		Model parse = Rio.parse(new StringReader(((InsertData) expr).getDataBlock()), RDFFormat.TURTLE);
+		Iterable<Statement> iterable = parse.getStatements(null, null, null);
+		Iterator<Statement> it = iterable.iterator();
+		assertTrue(it.hasNext());
+		Statement line = it.next();
+		assertFalse(it.hasNext());
+		assertEquals(namespaceEx2 + "A", line.getSubject().stringValue());
+		assertEquals(namespaceEx2 + "P", line.getPredicate().stringValue());
+		assertEquals(namespaceEx2 + "B", line.getObject().stringValue());
+	}
+
+	@Test
+	public void testDefaultPrefixesInsertDataNoOverride() throws IOException {
+		final String namespaceEx1 = "http://example1.org/";
+		String query = "INSERT DATA { ex:A ex:P ex:B . }";
+
+		Set<Namespace> defaultPrefixes = new HashSet<>();
+		defaultPrefixes.add(Values.namespace("ex", namespaceEx1));
+		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
+
+		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
+		assertEquals(1, parsedUpdate.getUpdateExprs().size());
+		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+
+		assertInstanceOf(InsertData.class, expr);
+		Model parse = Rio.parse(new StringReader(((InsertData) expr).getDataBlock()), RDFFormat.TURTLE);
+		Iterable<Statement> iterable = parse.getStatements(null, null, null);
+		Iterator<Statement> it = iterable.iterator();
+		assertTrue(it.hasNext());
+		Statement line = it.next();
+		assertFalse(it.hasNext());
+		assertEquals(namespaceEx1 + "A", line.getSubject().stringValue());
+		assertEquals(namespaceEx1 + "P", line.getPredicate().stringValue());
+		assertEquals(namespaceEx1 + "B", line.getObject().stringValue());
+	}
+
+	@Test
+	public void testDefaultPrefixesDeleteDataOverride() throws IOException {
+		final String namespaceEx1 = "http://example1.org/";
+		final String namespaceEx2 = "http://example2.org/";
+		String query = "PREFIX ex: <" + namespaceEx2 + "> DELETE DATA { ex:A ex:P ex:B . }";
+
+		Set<Namespace> defaultPrefixes = new HashSet<>();
+		defaultPrefixes.add(Values.namespace("ex", namespaceEx1));
+		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
+
+		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
+		assertEquals(1, parsedUpdate.getUpdateExprs().size());
+		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+
+		assertInstanceOf(DeleteData.class, expr);
+		Model parse = Rio.parse(new StringReader(((DeleteData) expr).getDataBlock()), RDFFormat.TURTLE);
+		Iterable<Statement> iterable = parse.getStatements(null, null, null);
+		Iterator<Statement> it = iterable.iterator();
+		assertTrue(it.hasNext());
+		Statement line = it.next();
+		assertFalse(it.hasNext());
+		assertEquals(namespaceEx2 + "A", line.getSubject().stringValue());
+		assertEquals(namespaceEx2 + "P", line.getPredicate().stringValue());
+		assertEquals(namespaceEx2 + "B", line.getObject().stringValue());
+	}
+
+	@Test
+	public void testDefaultPrefixesDeleteDataInsideOverride() throws IOException {
+		final String namespaceEx1 = "http://example1.org/";
+		final String namespaceEx2 = "http://example2.org/";
+		String query = "DELETE DATA { PREFIX ex: <" + namespaceEx2 + "> ex:A ex:P ex:B . }";
+
+		Set<Namespace> defaultPrefixes = new HashSet<>();
+		defaultPrefixes.add(Values.namespace("ex", namespaceEx1));
+		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
+
+		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
+		assertEquals(1, parsedUpdate.getUpdateExprs().size());
+		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+
+		assertInstanceOf(DeleteData.class, expr);
+		Model parse = Rio.parse(new StringReader(((DeleteData) expr).getDataBlock()), RDFFormat.TURTLE);
+		Iterable<Statement> iterable = parse.getStatements(null, null, null);
+		Iterator<Statement> it = iterable.iterator();
+		assertTrue(it.hasNext());
+		Statement line = it.next();
+		assertFalse(it.hasNext());
+		assertEquals(namespaceEx2 + "A", line.getSubject().stringValue());
+		assertEquals(namespaceEx2 + "P", line.getPredicate().stringValue());
+		assertEquals(namespaceEx2 + "B", line.getObject().stringValue());
+	}
+
+	@Test
+	public void testDefaultPrefixesDeleteDataNoOverride() throws IOException {
+		final String namespaceEx1 = "http://example1.org/";
+		String query = "DELETE DATA { ex:A ex:P ex:B . }";
+
+		Set<Namespace> defaultPrefixes = new HashSet<>();
+		defaultPrefixes.add(Values.namespace("ex", namespaceEx1));
+		SPARQLParser parser = new SPARQLParser(defaultPrefixes);
+
+		ParsedUpdate parsedUpdate = parser.parseUpdate(query, null);
+		assertEquals(1, parsedUpdate.getUpdateExprs().size());
+		UpdateExpr expr = parsedUpdate.getUpdateExprs().get(0);
+
+		assertInstanceOf(DeleteData.class, expr);
+		Model parse = Rio.parse(new StringReader(((DeleteData) expr).getDataBlock()), RDFFormat.TURTLE);
+		Iterable<Statement> iterable = parse.getStatements(null, null, null);
+		Iterator<Statement> it = iterable.iterator();
+		assertTrue(it.hasNext());
+		Statement line = it.next();
+		assertFalse(it.hasNext());
+		assertEquals(namespaceEx1 + "A", line.getSubject().stringValue());
+		assertEquals(namespaceEx1 + "P", line.getPredicate().stringValue());
+		assertEquals(namespaceEx1 + "B", line.getObject().stringValue());
 	}
 
 	@Test
