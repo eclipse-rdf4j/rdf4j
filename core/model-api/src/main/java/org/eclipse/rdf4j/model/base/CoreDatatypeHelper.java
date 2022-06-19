@@ -43,38 +43,4 @@ class CoreDatatypeHelper {
 		return reverseLookup;
 	}
 
-	static class DatatypeIRI extends AbstractIRI {
-
-		private static final long serialVersionUID = 169243624049169159L;
-
-		private final String namespace;
-		private final String localName;
-		private final String stringValue;
-
-		public DatatypeIRI(String namespace, String localName) {
-			this.namespace = namespace;
-			this.localName = localName;
-			this.stringValue = namespace.concat(localName).intern();
-		}
-
-		@Override
-		public String stringValue() {
-			return stringValue;
-		}
-
-		@Override
-		public String getNamespace() {
-			return namespace;
-		}
-
-		@Override
-		public String getLocalName() {
-			return localName;
-		}
-
-		@Override
-		public String toString() {
-			return stringValue;
-		}
-	}
 }

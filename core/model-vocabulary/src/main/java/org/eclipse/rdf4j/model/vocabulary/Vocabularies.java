@@ -8,67 +8,57 @@
 
 package org.eclipse.rdf4j.model.vocabulary;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.lang.reflect.Field;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.base.AbstractIRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractNamespace;
+import org.eclipse.rdf4j.model.base.InternedIRI;
 
 /**
  * Utility methods related to RDF vocabularies.
  *
  * @author Alessandro Bollini
- * @since 3.5.0
- *
  * @implNote To be eventually removed or merged with {@code org.eclipse.rdf4j.model.util.Vocabularies}.
+ * @since 3.5.0
  */
 class Vocabularies {
 
+	private Vocabularies() {
+	}
+
 	static Namespace createNamespace(String prefix, String namespace) {
-		return new AbstractNamespace() {
+		return new VocabularyNamespace(prefix, namespace);
+	}
 
-			private static final long serialVersionUID = 3913851292983866831L;
+	private static class VocabularyNamespace extends AbstractNamespace {
 
-			@Override
-			public String getPrefix() {
-				return prefix;
-			}
+		private final String prefix;
+		private final String namespace;
 
-			@Override
-			public String getName() {
-				return namespace;
-			}
+		public VocabularyNamespace(String prefix, String namespace) {
 
-		};
+			this.prefix = prefix;
+			this.namespace = namespace;
+		}
+
+		@Override
+		public String getPrefix() {
+			return prefix;
+		}
+
+		@Override
+		public String getName() {
+			return namespace;
+		}
 	}
 
 	static IRI createIRI(String namespace, String localName) {
-		return new AbstractIRI() {
-
-			private static final long serialVersionUID = 1692436252019169159L;
-
-			// ;( removing .toString() causes a 2x penalty in .equals() performance on Oracle JDK 1.8/11…
-
-			private final String stringValue = (namespace + localName).toString();
-
-			@Override
-			public String stringValue() {
-				return stringValue;
-			}
-
-			@Override
-			public String getNamespace() {
-				return namespace;
-			}
-
-			@Override
-			public String getLocalName() {
-				return localName;
-			}
-
-		};
-	}
-
-	private Vocabularies() {
+		return new InternedIRI(namespace, localName);
 	}
 
 }
