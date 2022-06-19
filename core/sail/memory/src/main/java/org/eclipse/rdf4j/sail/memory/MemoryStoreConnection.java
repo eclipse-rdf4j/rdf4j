@@ -42,6 +42,7 @@ public class MemoryStoreConnection extends SailSourceConnection implements Threa
 		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.sail = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
+		useConnectionLock = false;
 	}
 
 	/*---------*
