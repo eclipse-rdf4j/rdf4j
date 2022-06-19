@@ -29,7 +29,9 @@ public class SnapshotMonitorTest {
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				getAndAbandonDataset(explicitSailSource, memorySailStore.snapshotMonitor);
 
-				while (memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE) != Integer.MIN_VALUE) {
+				memorySailStore.snapshotMonitor.reserve(100, this).release();
+
+				while (memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100) != 99) {
 					System.gc();
 					Thread.sleep(1);
 				}
@@ -47,7 +49,9 @@ public class SnapshotMonitorTest {
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				getAndAbandonSink(explicitSailSource, memorySailStore.snapshotMonitor);
 
-				while (memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE) != Integer.MIN_VALUE) {
+				memorySailStore.snapshotMonitor.reserve(100, this).release();
+
+				while (memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100) != 99) {
 					System.gc();
 					Thread.sleep(1);
 				}
@@ -64,10 +68,13 @@ public class SnapshotMonitorTest {
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				try (SailDataset dataset = explicitSailSource.dataset(IsolationLevels.SNAPSHOT)) {
 					Assertions.assertEquals(-1,
-							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 				}
-				Assertions.assertEquals(Integer.MIN_VALUE,
-						memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+
+				memorySailStore.snapshotMonitor.reserve(100, this).release();
+
+				Assertions.assertEquals(99,
+						memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 			}
 
 		}
@@ -80,8 +87,8 @@ public class SnapshotMonitorTest {
 
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				try (SailDataset dataset = explicitSailSource.dataset(IsolationLevels.NONE)) {
-					Assertions.assertEquals(Integer.MIN_VALUE,
-							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+					Assertions.assertEquals(99,
+							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 				}
 			}
 
@@ -96,10 +103,12 @@ public class SnapshotMonitorTest {
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				try (SailSink sink = explicitSailSource.sink(IsolationLevels.SERIALIZABLE)) {
 					Assertions.assertEquals(-1,
-							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 				}
-				Assertions.assertEquals(Integer.MIN_VALUE,
-						memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+				memorySailStore.snapshotMonitor.reserve(100, this).release();
+
+				Assertions.assertEquals(99,
+						memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 			}
 
 		}
@@ -112,8 +121,8 @@ public class SnapshotMonitorTest {
 
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				try (SailSink sink = explicitSailSource.sink(IsolationLevels.SNAPSHOT)) {
-					Assertions.assertEquals(Integer.MIN_VALUE,
-							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+					Assertions.assertEquals(-1,
+							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(0));
 				}
 			}
 
@@ -128,7 +137,7 @@ public class SnapshotMonitorTest {
 			try (SailSource explicitSailSource = memorySailStore.getExplicitSailSource()) {
 				try (SailDataset dataset = explicitSailSource.dataset(IsolationLevels.SNAPSHOT)) {
 					Assertions.assertEquals(-1,
-							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+							memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 				}
 				try (SailSink sink = explicitSailSource.sink(IsolationLevels.SNAPSHOT)) {
 					sink.prepare();
@@ -139,23 +148,25 @@ public class SnapshotMonitorTest {
 						sink.prepare();
 						sink.flush();
 					}
-					Assertions.assertEquals(0, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+					Assertions.assertEquals(0, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 					try (SailDataset dataset2 = explicitSailSource.dataset(IsolationLevels.SNAPSHOT)) {
 						try (SailSink sink = explicitSailSource.sink(IsolationLevels.SNAPSHOT)) {
 							sink.prepare();
 							sink.flush();
 						}
 						Assertions.assertEquals(0,
-								memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+								memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 					}
 				}
 
 				try (SailDataset dataset = explicitSailSource.dataset(IsolationLevels.SNAPSHOT)) {
-					Assertions.assertEquals(2, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+					Assertions.assertEquals(2, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 				}
 
-				Assertions.assertEquals(Integer.MIN_VALUE,
-						memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+				memorySailStore.snapshotMonitor.reserve(100, this).release();
+
+				Assertions.assertEquals(99,
+						memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 			}
 
 		}
@@ -180,27 +191,28 @@ public class SnapshotMonitorTest {
 				sink.close();
 
 				sink = explicitSailSource.sink(IsolationLevels.SERIALIZABLE);
-				Assertions.assertEquals(-1, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+				Assertions.assertEquals(-1, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 
 				dataset.close();
 
-				Assertions.assertEquals(1, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+				Assertions.assertEquals(1, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 
 				sink.prepare();
 				sink.flush();
 
 				dataset = explicitSailSource.dataset(IsolationLevels.SNAPSHOT);
 
-				Assertions.assertEquals(1, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+				Assertions.assertEquals(1, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 
 				sink.close();
 
-				Assertions.assertEquals(2, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+				Assertions.assertEquals(2, memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 
 				dataset.close();
+				memorySailStore.snapshotMonitor.reserve(100, this).release();
 
-				Assertions.assertEquals(Integer.MIN_VALUE,
-						memorySailStore.snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+				Assertions.assertEquals(99,
+						memorySailStore.snapshotMonitor.getFirstUnusedOrElse(100));
 
 			}
 
@@ -212,13 +224,13 @@ public class SnapshotMonitorTest {
 		SailDataset dataset = explicitSailSource.dataset(IsolationLevels.SNAPSHOT);
 		CloseableIteration<? extends Resource, SailException> contextIDs = dataset.getContextIDs();
 		contextIDs.close();
-		Assertions.assertNotEquals(Integer.MIN_VALUE, snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+		Assertions.assertNotEquals(100, snapshotMonitor.getFirstUnusedOrElse(100));
 	}
 
 	private void getAndAbandonSink(SailSource explicitSailSource, MemorySailStore.SnapshotMonitor snapshotMonitor) {
 		SailSink sink = explicitSailSource.sink(IsolationLevels.SERIALIZABLE);
 		sink.prepare();
 		sink.flush();
-		Assertions.assertNotEquals(Integer.MIN_VALUE, snapshotMonitor.getFirstUnusedOrElse(Integer.MIN_VALUE));
+		Assertions.assertNotEquals(100, snapshotMonitor.getFirstUnusedOrElse(100));
 	}
 }

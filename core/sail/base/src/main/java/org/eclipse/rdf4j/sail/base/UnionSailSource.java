@@ -47,8 +47,11 @@ class UnionSailSource implements SailSource {
 
 	@Override
 	public void close() throws SailException {
-		primary.close();
-		additional.close();
+		try {
+			primary.close();
+		} finally {
+			additional.close();
+		}
 	}
 
 	@Override
@@ -75,7 +78,25 @@ class UnionSailSource implements SailSource {
 
 	@Override
 	public SailDataset dataset(IsolationLevel level) throws SailException {
-		return new UnionSailDataset(primary.dataset(level), additional.dataset(level));
+		SailDataset primaryDataset = null;
+		SailDataset additionalDataset = null;
+		try {
+			primaryDataset = primary.dataset(level);
+			additionalDataset = additional.dataset(level);
+
+			return UnionSailDataset.getInstance(primaryDataset, additionalDataset);
+		} catch (Throwable t) {
+			try {
+				if (primaryDataset != null) {
+					primaryDataset.close();
+				}
+			} finally {
+				if (additionalDataset != null) {
+					additionalDataset.close();
+				}
+			}
+			throw t;
+		}
 	}
 
 }

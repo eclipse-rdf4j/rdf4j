@@ -7,14 +7,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
-import java.util.NavigableMap;
+import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.lang3.time.StopWatch;
@@ -96,7 +100,6 @@ class MemorySailStore implements SailStore {
 	 * List containing all available statements.
 	 */
 	private final MemStatementList statements = new MemStatementList(256);
-	private final boolean debug;
 
 	/**
 	 * This gets set to `true` when we add our first inferred statement. If the value is `false` we guarantee that there
@@ -142,7 +145,6 @@ class MemorySailStore implements SailStore {
 	private final Object snapshotCleanupThreadLockObject = new Object();
 
 	public MemorySailStore(boolean debug) {
-		this.debug = debug;
 		snapshotMonitor = new SnapshotMonitor(debug);
 	}
 
@@ -385,6 +387,13 @@ class MemorySailStore implements SailStore {
 	 * @throws InterruptedException
 	 */
 	protected void cleanSnapshots() throws InterruptedException {
+		int currentSnapshot = this.currentSnapshot;
+		int highestUnusedTillSnapshot = snapshotMonitor.getFirstUnusedOrElse(currentSnapshot - 1);
+		if (highestUnusedTillSnapshot >= currentSnapshot) {
+			logger.debug("No old snapshot versions are currently unused, {} >= {} (currentSnapshot).",
+					highestUnusedTillSnapshot, currentSnapshot);
+		}
+
 		try {
 
 			boolean prioritiseCleaning = false;
@@ -410,8 +419,6 @@ class MemorySailStore implements SailStore {
 			 * might shrink or grow) as (1) new statements are always appended last, (2) we are the only process that
 			 * removes statements, (3) this list is cleared on close.
 			 */
-
-			int highestUnusedTillSnapshot = snapshotMonitor.getFirstUnusedOrElse(currentSnapshot);
 
 			for (int i = statements.length - 1; i >= 0; i--) {
 				if (Thread.currentThread().isInterrupted()) {
@@ -1070,65 +1077,117 @@ class MemorySailStore implements SailStore {
 		return new SailException(e);
 	}
 
+	/**
+	 * SnapshotMonitor is used to keep track of which snapshot version are no longer is use (read or write) so that we
+	 * can safely clean that snapshot version.
+	 */
 	static class SnapshotMonitor {
-
 		private static final ConcurrentCleaner cleaner = new ConcurrentCleaner();
 
-		private final NavigableMap<Integer, Integer> activeSnapshots = new TreeMap<>();
+		private final ConcurrentHashMap<Integer, LongAdder> activeSnapshots = new ConcurrentHashMap<>();
 		private final boolean debug;
+
+		// The LongAdder used to track the number of reservations (uses) for a snapshot version is kept in the
+		// activeSnapshots map. When all reservations are released and the LongAdder.sum() == 0 we should be able to
+		// safely remove it, this can however cause race conditions if the LongAdder can still be incremented (e.g. when
+		// the snapshot version is the current snapshot). By assuming that there will never be any new reservations for
+		// an "old" snapshot version, we can then safely remove the LongAdder if the snapshot version that it is
+		// tracking is lower than the highestEverReservedSnapshot.
+		private final AtomicInteger highestEverReservedSnapshot = new AtomicInteger(-1);
 
 		public SnapshotMonitor(boolean debug) {
 			this.debug = debug;
 		}
 
 		public int getFirstUnusedOrElse(int currentSnapshot) {
-			synchronized (activeSnapshots) {
-				if (!activeSnapshots.isEmpty()) {
-					Integer firstKey = activeSnapshots.firstKey();
-					if (firstKey != null) {
-						assert activeSnapshots.get(firstKey) > 0;
-						return firstKey - 1;
+
+			int maximum = this.highestEverReservedSnapshot.getAcquire();
+
+			int min = Integer.MAX_VALUE;
+			for (Map.Entry<Integer, LongAdder> entry : activeSnapshots.entrySet()) {
+				if (entry.getKey() <= min) {
+					if (entry.getKey() < maximum && entry.getValue().sum() == 0) {
+						activeSnapshots.computeIfPresent(entry.getKey(), (k, v) -> {
+							if (v.sum() == 0) {
+								return null;
+							}
+							return v;
+						});
+					} else {
+						min = entry.getKey() - 1;
 					}
+
 				}
 			}
 
-			return currentSnapshot;
+			if (min == Integer.MAX_VALUE) {
+				return currentSnapshot - 1;
+			} else {
+				return min;
+			}
 		}
 
 		public ReservedSnapshot reserve(int snapshot, Object reservedBy) {
-			synchronized (activeSnapshots) {
-				Integer count = activeSnapshots.get(snapshot);
-				if (count == null) {
-					count = 0;
+			int highestEverReservedSnapshot = this.highestEverReservedSnapshot.getAcquire();
+			while (snapshot > highestEverReservedSnapshot) {
+				if (this.highestEverReservedSnapshot.compareAndSet(highestEverReservedSnapshot, snapshot)) {
+					highestEverReservedSnapshot = snapshot;
+				} else {
+					highestEverReservedSnapshot = this.highestEverReservedSnapshot.getAcquire();
 				}
-				activeSnapshots.put(snapshot, count + 1);
 			}
 
-			return new ReservedSnapshot(snapshot, reservedBy);
+			LongAdder longAdder = activeSnapshots.computeIfAbsent(snapshot, (k) -> new LongAdder());
+			longAdder.increment();
+
+			return new ReservedSnapshot(snapshot, reservedBy, debug, longAdder, activeSnapshots,
+					this.highestEverReservedSnapshot);
 		}
 
-		private class ReservedSnapshot {
+		static class ReservedSnapshot {
 
 			private static final int SNAPSHOT_RELEASED = -1;
+			private final ConcurrentHashMap<Integer, LongAdder> activeSnapshots;
+			private final LongAdder frequency;
+			private final AtomicInteger highestEverReservedSnapshot;
 
-			private volatile int snapshot;
 			private Cleaner.Cleanable cleanable;
 			private final Throwable stackTraceForDebugging;
 
-			public ReservedSnapshot(int snapshot, Object reservedBy) {
+			@SuppressWarnings("FieldMayBeFinal")
+			private volatile int snapshot;
+			private final static VarHandle SNAPSHOT;
+
+			static {
+				try {
+					SNAPSHOT = MethodHandles.lookup()
+							.in(ReservedSnapshot.class)
+							.findVarHandle(ReservedSnapshot.class, "snapshot", int.class);
+				} catch (ReflectiveOperationException e) {
+					throw new Error(e);
+				}
+			}
+
+			public ReservedSnapshot(int snapshot, Object reservedBy, boolean debug,
+					LongAdder frequency, ConcurrentHashMap<Integer, LongAdder> activeSnapshots,
+					AtomicInteger highestEverReservedSnapshot) {
 				this.snapshot = snapshot;
 				if (debug) {
 					stackTraceForDebugging = new Throwable("Unreleased snapshot version");
 				} else {
 					stackTraceForDebugging = null;
 				}
+				this.activeSnapshots = activeSnapshots;
+				this.frequency = frequency;
+				this.highestEverReservedSnapshot = highestEverReservedSnapshot;
 				cleanable = cleaner.register(reservedBy, () -> {
-					if (this.snapshot != SNAPSHOT_RELEASED) {
+					int tempSnapshot = ((int) SNAPSHOT.getVolatile(this));
+					if (tempSnapshot != SNAPSHOT_RELEASED) {
 						String message = "Releasing MemorySailStore snapshot {} which was reserved and never released (possibly unclosed MemorySailDataset or MemorySailSink).";
 						if (stackTraceForDebugging != null) {
-							logger.warn(message, snapshot, stackTraceForDebugging);
+							logger.warn(message, tempSnapshot, stackTraceForDebugging);
 						} else {
-							logger.warn(message, snapshot);
+							logger.warn(message, tempSnapshot);
 						}
 						release();
 					}
@@ -1136,17 +1195,19 @@ class MemorySailStore implements SailStore {
 			}
 
 			public void release() {
-				synchronized (activeSnapshots) {
-					if (snapshot != SNAPSHOT_RELEASED) {
-						Integer count = activeSnapshots.get(snapshot);
-						assert count != null;
-						assert count > 0;
-						if (count == 1) {
-							activeSnapshots.remove(snapshot);
-						} else {
-							activeSnapshots.put(snapshot, count - 1);
+				int snapshot = (int) SNAPSHOT.getAcquire(this);
+				if (snapshot != SNAPSHOT_RELEASED) {
+					if (SNAPSHOT.compareAndSet(this, snapshot, SNAPSHOT_RELEASED)) {
+						frequency.decrement();
+						assert frequency.sum() >= 0;
+						if (snapshot < highestEverReservedSnapshot.getAcquire() && frequency.sum() == 0) {
+							activeSnapshots.computeIfPresent(snapshot, (k, v) -> {
+								if (v.sum() == 0) {
+									return null;
+								}
+								return v;
+							});
 						}
-						snapshot = SNAPSHOT_RELEASED;
 					}
 				}
 

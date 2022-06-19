@@ -82,13 +82,13 @@ public class MemStatementList {
 				if (length > (int) SIZE.getAcquire(this)) {
 
 					int previouslyInsertedIndex = (int) PREVIOUSLY_INSERTED_INDEX.getOpaque(this);
-					if (previouslyInsertedIndex > length) {
+					if (previouslyInsertedIndex >= length) {
 						continue;
 					}
 
-					int i = previouslyInsertedIndex + 1 == length ? 0 : previouslyInsertedIndex + 1;
+					int i = previouslyInsertedIndex + 1 >= length ? 0 : previouslyInsertedIndex + 1;
 
-					for (; i != previouslyInsertedIndex; i = i + 1 == length ? 0 : i + 1) {
+					for (; i != previouslyInsertedIndex; i = (i + 1 >= length ? 0 : i + 1)) {
 
 						if (statements[i] == null) {
 

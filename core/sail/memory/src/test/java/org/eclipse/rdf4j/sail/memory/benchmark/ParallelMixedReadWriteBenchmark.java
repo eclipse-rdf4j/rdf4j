@@ -51,6 +51,9 @@ import org.openjdk.jmh.infra.Blackhole;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Logger;
 
 /**
  * @author Håvard Ottestad
@@ -96,6 +99,9 @@ public class ParallelMixedReadWriteBenchmark extends BaseConcurrentBenchmark {
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
 		super.setup();
+		Logger root = (Logger) LoggerFactory.getLogger("org.eclipse.rdf4j.sail.memory.MemorySailStore");
+		root.setLevel(ch.qos.logback.classic.Level.DEBUG);
+
 		repository = new SailRepository(new MemoryStore());
 		try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl")) {
 			data = Rio.parse(resourceAsStream, RDFFormat.TURTLE);
@@ -110,6 +116,9 @@ public class ParallelMixedReadWriteBenchmark extends BaseConcurrentBenchmark {
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
 		super.tearDown();
+
+		Logger root = (Logger) LoggerFactory.getLogger("org.eclipse.rdf4j.sail.memory.MemorySailStore");
+		root.setLevel(ch.qos.logback.classic.Level.WARN);
 
 		if (repository != null) {
 			repository.shutDown();
