@@ -31,6 +31,11 @@ class EvaluateResultHttpResponse implements EvaluateResult {
 	}
 
 	@Override
+	public String getContentType() {
+		return response.getContentType();
+	}
+
+	@Override
 	public OutputStream getOutputstream() throws IOException {
 		return response.getOutputStream();
 	}
