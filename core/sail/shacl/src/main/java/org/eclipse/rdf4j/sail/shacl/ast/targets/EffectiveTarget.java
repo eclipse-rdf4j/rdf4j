@@ -181,6 +181,8 @@ public class EffectiveTarget {
 			boolean includeTargetsAffectedByRemoval, Function<PlanNode, PlanNode> filter) {
 		assert !chain.isEmpty();
 
+		includeTargetsAffectedByRemoval = includeTargetsAffectedByRemoval && connectionsGroup.getStats().hasRemoved();
+
 		if (chain.size() == 1 && !(includeTargetsAffectedByRemoval && optional != null)) {
 			// simple chain
 
