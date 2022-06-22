@@ -16,5 +16,7 @@ import java.io.OutputStream;
 public interface EvaluateResult {
 	void setContentType(String contentType);
 
+	String getContentType();
+
 	OutputStream getOutputstream() throws IOException;
 }
