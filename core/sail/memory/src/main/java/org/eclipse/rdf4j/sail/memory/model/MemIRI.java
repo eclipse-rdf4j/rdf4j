@@ -136,6 +136,13 @@ public class MemIRI extends MemResource implements IRI {
 			if (oValue.isIRI()) {
 				String oStr = oValue.stringValue();
 
+				if (toStringCache != null) {
+					String stringValue = toStringCache.get();
+					if (stringValue != null) {
+						return stringValue.equals(oStr);
+					}
+				}
+
 				return namespace.length() + localName.length() == oStr.length() &&
 						oStr.endsWith(localName) &&
 						oStr.startsWith(namespace);
