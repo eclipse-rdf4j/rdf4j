@@ -9,7 +9,7 @@ spring-boot application
 
 <dependency>
 	<groupId>org.eclipse.rdf4j</groupId>
-	<artifactId>spring-boot-sparql-web</artifactId>
+	<artifactId>rdf4j-spring-boot-sparql-web</artifactId>
 	<version>${rdf4j.version}</version>
 </dependency>
 
@@ -39,7 +39,7 @@ public class Server {
 	public Repository getRepository() {
 		SailRepository sailRepository = new SailRepository(store);
 		sailRepository.init();
-		retun sailRepository;
+		return sailRepository;
 	}
 
 	public static void main(String[] args) {
