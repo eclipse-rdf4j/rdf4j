@@ -32,6 +32,10 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode,
 			Scope scope);
 
+	PlanNode generateBulkValidationPlan(ConnectionsGroup connectionsGroup,
+										ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode,
+										Scope scope);
+
 	/**
 	 * A constraint component should decide which validation approach is going to be the optimal performance wise based
 	 * on the state of the transaction and base sail.
@@ -43,6 +47,8 @@ public interface ConstraintComponent extends Exportable, TargetChainInterface {
 	 * components the most compatible should be chosen.
 	 */
 	ValidationApproach getOptimalBulkValidationApproach();
+
+	ValidationApproach[] getSupportedValidationApproach();
 
 	/**
 	 * @param connectionsGroup

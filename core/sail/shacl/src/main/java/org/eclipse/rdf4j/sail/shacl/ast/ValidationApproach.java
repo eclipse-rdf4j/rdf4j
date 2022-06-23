@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.sail.shacl.ast;
 public enum ValidationApproach {
 
 	Transactional,
+	Bulk,
 	SPARQL;
 
 	public static final ValidationApproach MOST_COMPATIBLE = Transactional;
@@ -35,13 +36,10 @@ public enum ValidationApproach {
 	 * validation then we return Transactional validation.
 	 */
 	public static ValidationApproach reduceCompatible(ValidationApproach a, ValidationApproach b) {
-		if (a == MOST_COMPATIBLE) {
-			return a;
-		}
-		if (b == MOST_COMPATIBLE) {
-			return b;
-		}
-
-		return a;
+		if(a == b) return a;
+		return MOST_COMPATIBLE;
 	}
+
+	
+
 }

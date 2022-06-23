@@ -57,16 +57,24 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
+														 ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
 		logger.error("SPARQL based validation for {} has not been implemented", getConstraintComponent());
 		throw new ShaclUnsupportedException();
 	}
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope) {
+														ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope) {
 		logger.error("Transactional validation for {} has not been implemented", getConstraintComponent());
 		return EmptyNode.getInstance();
+	}
+
+	@Override
+	public PlanNode generateBulkValidationPlan(ConnectionsGroup connectionsGroup,
+											   ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode,
+											   Scope scope) {
+		logger.error("Bulk validation for {} has not been implemented", getConstraintComponent());
+		throw new ShaclUnsupportedException();
 	}
 
 	@Override
@@ -81,22 +89,22 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 
 	@Override
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+									  StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		return getTargetChain()
-				.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
-				.couldMatch(connectionsGroup, dataGraph);
+			.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
+			.couldMatch(connectionsGroup, dataGraph);
 	}
 
 	@Override
 	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+									  StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
 	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
-			StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
-			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+																StatementMatcher.Variable object, RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+																StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}
 
