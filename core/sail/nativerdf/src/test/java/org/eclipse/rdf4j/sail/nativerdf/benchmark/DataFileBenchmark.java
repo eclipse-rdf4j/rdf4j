@@ -64,7 +64,6 @@ public class DataFileBenchmark {
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("DataFileBenchmark.read") // adapt to run other benchmark tests
-				// .addProfiler("stack", "lines=20;period=1;top=20")
 				.forks(1)
 				.build();
 

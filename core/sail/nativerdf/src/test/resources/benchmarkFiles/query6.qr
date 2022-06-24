@@ -1,0 +1,60 @@
+PREFIX ex: <http://example.com/ns#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dc: <http://purl.org/dc/terms/>
+PREFIX skos:  <http://www.w3.org/2004/02/skos/core#>
+PREFIX foaf:  <http://xmlns.com/foaf/0.1/>
+PREFIX dct: <http://purl.org/dc/terms/>
+
+
+
+select * where {
+        ?a ?b ?c.
+        ?c ?d ?e.
+        ?e ?f ?g.
+        ?g ?h ?k.
+        ?k ?l ?m.
+        ?m ?n ?o.
+        ?o ?p ?q.
+        ?q ?r ?s.
+        ?s ?t ?u.
+        ?u <http://example.org/doesNotExist> ?v.
+        ?v ?w ?x.
+        ?x ?y ?z.
+
+        ?z ?jfefeo ?2a.
+
+        ?2a ?2b ?2c.
+        ?2c ?2d ?2e.
+        ?2e ?2f ?2g.
+        ?2g ?2h ?2k.
+        ?2k ?2l ?2m.
+        ?2m ?2n ?2o.
+        ?2o ?2p ?2q.
+        ?2q ?2r ?2s.
+        ?2s ?2t ?2u.
+        ?2u <http://example.org/doesNotExist> ?2v.
+        ?2v ?2w ?2x.
+        ?2x ?2y ?2z.
+
+        ?2z ?gjreijoir ?3a.
+
+        ?3a ?3b ?3c.
+        ?3c ?3d ?3e.
+        ?3e ?3f ?3g.
+        ?3g ?3h ?3k.
+        ?3k ?3l ?3m.
+        ?3m ?3n ?3o.
+        ?3o ?3p ?3q.
+        ?3q ?3r ?3s.
+        ?3s ?3t ?3u.
+        ?3u <http://example.org/doesNotExist> ?3v.
+        ?3v ?3w ?3x.
+        ?3x ?3y ?3z.
+
+}
+
