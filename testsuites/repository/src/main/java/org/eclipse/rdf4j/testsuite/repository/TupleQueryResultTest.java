@@ -235,12 +235,7 @@ public abstract class TupleQueryResultTest {
 		logger.info("Open lots of TupleQueryResults without closing them");
 		for (int i = 0; i < 100; i++) {
 			try (RepositoryConnection repCon = rep.getConnection()) {
-				String queryString = "select * where {?s ?p ?o}";
-				TupleQuery tupleQuery = repCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-
-				// see if open results hangs test
-				// DO NOT CLOSE THIS
-				tupleQuery.evaluate();
+				evaluateQueryWithoutClosing(repCon);
 			}
 		}
 	}
@@ -255,15 +250,20 @@ public abstract class TupleQueryResultTest {
 
 		for (int i = 0; i < 100; i++) {
 			try (RepositoryConnection repCon = rep.getConnection()) {
-				String queryString = "select * where {?s ?p ?o}";
-				TupleQuery tupleQuery = repCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
-
-				// see if open results hangs test
-				// DO NOT CLOSE THIS
-				tupleQuery.evaluate();
+				evaluateQueryWithoutClosing(repCon);
 			}
 		}
 
+	}
+
+	private void evaluateQueryWithoutClosing(RepositoryConnection repCon) {
+		String queryString = "select * where {?s ?p ?o}";
+		TupleQuery tupleQuery = repCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
+
+		// see if open results hangs test
+		// DO NOT CLOSE THIS
+		TupleQueryResult evaluate = tupleQuery.evaluate();
+		Assertions.assertNotNull(evaluate);
 	}
 
 	@Test
