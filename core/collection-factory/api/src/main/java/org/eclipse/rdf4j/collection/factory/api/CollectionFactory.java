@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
  *
  * Factories like this should not be cached but created a new everytime as the closing is important if they are disk
  * based.
+ * 
+ * They are all mutable, but unlikely to be threadsafe for multiple concurrent write access.
  */
 @InternalUseOnly
 @Experimental
@@ -47,8 +49,11 @@ public interface CollectionFactory extends AutoCloseable {
 	Set<Value> createValueSet();
 
 	/**
-	 * @param <V> value type
-	 * @return a map
+	 * 
+	 * @param <V>        value type
+	 * @param bindingSet to group
+	 * @param getValues  functions to extract values from the bindingset
+	 * @return a binding set key is used to group
 	 */
 	<V> Map<Value, V> createValueKeyedMap();
 
