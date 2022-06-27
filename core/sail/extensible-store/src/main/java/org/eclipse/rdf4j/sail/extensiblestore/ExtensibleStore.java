@@ -158,8 +158,7 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		return ExtensibleStatementHelper.getDefaultImpl();
 	}
 
-	@Override
-	public CollectionFactory getCollectionFactory() {
+	CollectionFactory getCollectionFactory() {
 		return new MapDbCollectionFactory(getIterationCacheSyncThreshold());
 	}
 }

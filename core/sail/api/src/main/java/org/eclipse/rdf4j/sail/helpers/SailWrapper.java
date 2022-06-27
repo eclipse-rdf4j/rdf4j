@@ -133,9 +133,4 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 		return baseSail.getDefaultIsolationLevel();
 	}
 
-	@Override
-	public CollectionFactory getCollectionFactory() {
-		verifyBaseSailSet();
-		return baseSail.getCollectionFactory();
-	}
 }
