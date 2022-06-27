@@ -39,35 +39,35 @@ public interface CollectionFactory extends AutoCloseable {
 	/**
 	 * @return a set that may be optimised and/or disk based
 	 */
-	public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier,
+	Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> supplier,
 			Function<String, BiConsumer<Value, MutableBindingSet>> valueSetters);
 
 	/**
 	 * @return a set that may be optimised and/or disk based for Values
 	 */
-	public Set<Value> createValueSet();
+	Set<Value> createValueSet();
 
 	/**
 	 * @param <V> value type
 	 * @return a map
 	 */
-	public <V> Map<Value, V> createValueKeyedMap();
+	<V> Map<Value, V> createValueKeyedMap();
 
 	@InternalUseOnly
-	public <E> Map<BindingSetKey, E> createGroupByMap();
+	<E> Map<BindingSetKey, E> createGroupByMap();
 
 	@InternalUseOnly
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues);
-
-	@InternalUseOnly
-	@Experimental
-	public ValuePair createValuePair(Value start, Value end);
+	BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues);
 
 	@InternalUseOnly
 	@Experimental
-	public Set<ValuePair> createValuePairSet();
+	ValuePair createValuePair(Value start, Value end);
 
 	@InternalUseOnly
 	@Experimental
-	public Queue<ValuePair> createValuePairQueue();
+	Set<ValuePair> createValuePairSet();
+
+	@InternalUseOnly
+	@Experimental
+	Queue<ValuePair> createValuePairQueue();
 }

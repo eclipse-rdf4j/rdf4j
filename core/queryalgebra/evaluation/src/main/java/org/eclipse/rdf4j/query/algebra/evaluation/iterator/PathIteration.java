@@ -52,11 +52,11 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private final boolean endVarFixed;
 
-	private final Queue<ValuePair> valueQueue;
+	private Queue<ValuePair> valueQueue;
 
-	private final Set<ValuePair> reportedValues;
+	private Set<ValuePair> reportedValues;
 
-	private final Set<ValuePair> unreportedValues;
+	private Set<ValuePair> unreportedValues;
 
 	private final TupleExpr pathExpression;
 
@@ -193,9 +193,9 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 			// if we're done, throw away the cached lists of values to avoid
 			// hogging resources
-			reportedValues.clear();
-			unreportedValues.clear();
-			valueQueue.clear();
+			reportedValues = null;
+			unreportedValues = null;
+			valueQueue = null;
 			return null;
 		}
 	}

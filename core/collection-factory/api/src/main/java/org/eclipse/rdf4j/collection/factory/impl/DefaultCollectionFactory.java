@@ -9,6 +9,8 @@ package org.eclipse.rdf4j.collection.factory.impl;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -33,6 +35,8 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
  * A DefaultColelctionFactory that provides lists/sets/maps using standard common java in memory types
  */
 public class DefaultCollectionFactory implements CollectionFactory {
+
+	private static final List<Value> SINGLETON_LIST_OF_NULL = Collections.singletonList(null);
 
 	@Override
 	public Set<Value> createValueSet() {
@@ -67,8 +71,11 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	}
 
 	private int hash(List<Value> values) {
-
-		if (values.size() == 1) {
+		switch (values.size()) {
+		case 0: {
+			return -1;
+		}
+		case 1: {
 			Value value = values.get(0);
 			if (value != null) {
 				return value.hashCode();
@@ -76,14 +83,18 @@ public class DefaultCollectionFactory implements CollectionFactory {
 			return -1;
 		}
 
-		int nextHash = 0;
+		default: {
+			int nextHash = 0;
 
-		for (Value value : values) {
-			if (value != null) {
-				nextHash = 31 * nextHash + value.hashCode();
+			for (Value value : values) {
+				if (value != null) {
+					nextHash = 31 * nextHash + value.hashCode();
+				}
 			}
+			return nextHash;
 		}
-		return nextHash;
+		}
+
 	}
 
 	@InternalUseOnly
@@ -91,24 +102,46 @@ public class DefaultCollectionFactory implements CollectionFactory {
 		List<Value> values;
 
 		switch (getValues.size()) {
-		case 1:
-			values = List.of(getValues.get(0).apply(bindingSet));
+		case 0: {
+			values = List.of();
 			break;
-		case 2:
-			values = List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet));
+		}
+		case 1: {
+			Value value = getValues.get(0).apply(bindingSet);
+			if (value != null) {
+				values = List.of(value);
+			} else {
+				values = SINGLETON_LIST_OF_NULL;
+			}
 			break;
-		case 3:
-			values = List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet),
-					getValues.get(2).apply(bindingSet));
+		}
+		case 2: {
+			Value value1 = getValues.get(0).apply(bindingSet);
+			Value value2 = getValues.get(1).apply(bindingSet);
+			if (value1 != null && value2 != null) {
+				values = List.of(value1, value2);
+			} else {
+				values = Arrays.asList(value1, value2);
+			}
 			break;
-		case 4:
-			values = List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet),
-					getValues.get(2).apply(bindingSet), getValues.get(3).apply(bindingSet));
-		default:
+		}
+		case 3: {
+			Value value1 = getValues.get(0).apply(bindingSet);
+			Value value2 = getValues.get(1).apply(bindingSet);
+			Value value3 = getValues.get(2).apply(bindingSet);
+			if (value1 != null && value2 != null && value3 != null) {
+				values = List.of(value1, value2, value3);
+			} else {
+				values = Arrays.asList(value1, value2, value3);
+			}
+			break;
+		}
+		default: {
 			values = new ArrayList<>(getValues.size());
 			for (Function<BindingSet, Value> getValue : getValues) {
 				values.add(getValue.apply(bindingSet));
 			}
+		}
 		}
 		return values;
 	}
