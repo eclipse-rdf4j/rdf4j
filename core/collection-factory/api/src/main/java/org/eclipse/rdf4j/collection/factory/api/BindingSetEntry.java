@@ -16,5 +16,5 @@ import org.eclipse.rdf4j.query.BindingSet;
 @InternalUseOnly
 public interface BindingSetEntry extends Serializable {
 
-	public BindingSet getPrototype();
+	BindingSet getPrototype();
 }

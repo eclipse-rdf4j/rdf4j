@@ -1,11 +1,14 @@
 package org.eclipse.rdf4j.collection.factory.impl;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.collection.factory.api.ValuePair;
 import org.eclipse.rdf4j.model.Value;
 
 public class DefaultValuePair implements ValuePair {
 
-	private static final long serialVersionUID = 1L;
+	private static final long serialVersionUID = 4873622936339338464L;
+
 	private final Value start;
 	private final Value end;
 
@@ -26,33 +29,23 @@ public class DefaultValuePair implements ValuePair {
 
 	@Override
 	public int hashCode() {
-		final int prime = 31;
 		int result = 1;
-		result = prime * result + ((end == null) ? 0 : end.hashCode());
-		result = prime * result + ((start == null) ? 0 : start.hashCode());
+		result = 31 * result + ((end == null) ? 0 : end.hashCode());
+		result = 31 * result + ((start == null) ? 0 : start.hashCode());
 		return result;
 	}
 
 	@Override
-	public boolean equals(Object obj) {
-		if (this == obj)
+	public boolean equals(Object o) {
+		if (this == o) {
 			return true;
-		if (obj == null)
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
-		if (getClass() != obj.getClass())
-			return false;
-		ValuePair other = (ValuePair) obj;
-		if (end == null) {
-			if (other.getEndValue() != null)
-				return false;
-		} else if (!end.equals(other.getEndValue()))
-			return false;
-		if (start == null) {
-			if (other.getStartValue() != null)
-				return false;
-		} else if (!start.equals(other.getStartValue()))
-			return false;
-		return true;
-	}
+		}
 
+		DefaultValuePair that = (DefaultValuePair) o;
+
+		return Objects.equals(start, that.start) && Objects.equals(end, that.end);
+	}
 }

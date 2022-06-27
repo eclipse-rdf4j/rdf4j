@@ -9,22 +9,22 @@
 package org.eclipse.rdf4j.collection.factory.impl;
 
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.model.Value;
 
 public class DefaultBindingSetKey implements BindingSetKey, Serializable {
 
-	private static final long serialVersionUID = 1;
+	private static final long serialVersionUID = 2814401859137048413L;
 
-	private final Value[] values;
+	private final List<Value> values;
 
 	private final int hash;
 
 	public DefaultBindingSetKey(List<Value> values, int hash) {
-		this.values = values.toArray(new Value[0]);
+		this.values = values;
 		this.hash = hash;
 	}
 
@@ -34,10 +34,30 @@ public class DefaultBindingSetKey implements BindingSetKey, Serializable {
 	}
 
 	@Override
-	public boolean equals(Object other) {
-		if (other instanceof DefaultBindingSetKey && other.hashCode() == hash) {
-			return Arrays.deepEquals(values, ((DefaultBindingSetKey) other).values);
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
 		}
-		return false;
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		DefaultBindingSetKey that = (DefaultBindingSetKey) o;
+
+		if (hash != that.hash || values.size() != that.values.size()) {
+			return false;
+		}
+
+		if (values == that.values || values.isEmpty()) {
+			return true;
+		}
+
+		for (int i = 0; i < values.size(); i++) {
+			if (!Objects.equals(values.get(i), that.values.get(i))) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 }

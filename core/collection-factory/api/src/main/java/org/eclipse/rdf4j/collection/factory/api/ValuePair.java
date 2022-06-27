@@ -9,10 +9,10 @@ public interface ValuePair extends Serializable {
 	/**
 	 * @return Returns the startValue.
 	 */
-	public Value getStartValue();
+	Value getStartValue();
 
 	/**
 	 * @return Returns the endValue.
 	 */
-	public Value getEndValue();
+	Value getEndValue();
 }
