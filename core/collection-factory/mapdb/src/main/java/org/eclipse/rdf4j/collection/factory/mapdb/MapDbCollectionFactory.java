@@ -234,7 +234,7 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	public class MemoryTillSizeXSet<V> extends AbstractSet<V> {
 		private Set<V> wrapped;
 		private final long setName;
-		private Serializer<V> serializer;
+		private final Serializer<V> serializer;
 		private boolean disk;
 
 		@SuppressWarnings("unchecked")

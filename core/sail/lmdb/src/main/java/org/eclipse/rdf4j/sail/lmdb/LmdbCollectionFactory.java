@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import static org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory.extractValues;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -329,7 +331,7 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 		}
 
 		/**
-		 * 
+		 *
 		 */
 		private static final long serialVersionUID = 1L;
 
@@ -338,10 +340,9 @@ public class LmdbCollectionFactory extends MapDbCollectionFactory {
 	@Override
 	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
 		int hash = hash(bindingSet, getValues);
-		List<Value> values = new ArrayList<>(getValues.size());
-		for (int i = 0; i < getValues.size(); i++) {
-			values.add(getValues.get(i).apply(bindingSet));
-		}
+
+		List<Value> values = extractValues(bindingSet, getValues);
+
 		long[] ids = new long[values.size()];
 		boolean allLong = tryToFillWithValueStoreLong(values, ids);
 		if (allLong) {

@@ -23,6 +23,7 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.api.ValuePair;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -46,7 +47,7 @@ public class DefaultCollectionFactory implements CollectionFactory {
 
 	@Override
 	public <V> Map<Value, V> createValueKeyedMap() {
-		return new HashMap<Value, V>();
+		return new HashMap<>();
 	}
 
 	@Override
@@ -61,46 +62,55 @@ public class DefaultCollectionFactory implements CollectionFactory {
 
 	@Override
 	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
-		Function<BindingSet, Integer> hashMaker = hashMaker(getValues);
+		List<Value> values = extractValues(bindingSet, getValues);
+		return new DefaultBindingSetKey(values, hash(values));
+	}
+
+	private int hash(List<Value> values) {
+
+		if (values.size() == 1) {
+			Value value = values.get(0);
+			if (value != null) {
+				return value.hashCode();
+			}
+			return -1;
+		}
+
+		int nextHash = 0;
+
+		for (Value value : values) {
+			if (value != null) {
+				nextHash = 31 * nextHash + value.hashCode();
+			}
+		}
+		return nextHash;
+	}
+
+	@InternalUseOnly
+	public static List<Value> extractValues(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
+		List<Value> values;
+
 		switch (getValues.size()) {
 		case 1:
-			return new DefaultBindingSetKey(List.of(getValues.get(0).apply(bindingSet)), hashMaker.apply(bindingSet));
+			values = List.of(getValues.get(0).apply(bindingSet));
+			break;
 		case 2:
-			return new DefaultBindingSetKey(
-					List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet)),
-					hashMaker.apply(bindingSet));
+			values = List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet));
+			break;
 		case 3:
-			return new DefaultBindingSetKey(List.of(getValues.get(0).apply(bindingSet),
-					getValues.get(1).apply(bindingSet), getValues.get(2).apply(bindingSet)),
-					hashMaker.apply(bindingSet));
+			values = List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet),
+					getValues.get(2).apply(bindingSet));
+			break;
 		case 4:
-			return new DefaultBindingSetKey(
-					List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet),
-							getValues.get(2).apply(bindingSet), getValues.get(3).apply(bindingSet)),
-					hashMaker.apply(bindingSet));
+			values = List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet),
+					getValues.get(2).apply(bindingSet), getValues.get(3).apply(bindingSet));
 		default:
-			List<Value> values = new ArrayList<>(getValues.size());
+			values = new ArrayList<>(getValues.size());
 			for (Function<BindingSet, Value> getValue : getValues) {
 				values.add(getValue.apply(bindingSet));
 			}
-			return new DefaultBindingSetKey(values, hashMaker.apply(bindingSet));
 		}
-
-	}
-
-	private static Function<BindingSet, Integer> hashMaker(List<Function<BindingSet, Value>> getValues) {
-
-		Function<BindingSet, Integer> hashFunction = (bs) -> {
-			int nextHash = 0;
-			for (Function<BindingSet, Value> getValue : getValues) {
-				Value value = getValue.apply(bs);
-				if (value != null) {
-					nextHash = 31 * nextHash + value.hashCode();
-				}
-			}
-			return nextHash;
-		};
-		return hashFunction;
+		return values;
 	}
 
 	@Override
@@ -110,11 +120,11 @@ public class DefaultCollectionFactory implements CollectionFactory {
 
 	@Override
 	public Set<ValuePair> createValuePairSet() {
-		return new HashSet<ValuePair>();
+		return new HashSet<>();
 	}
 
 	@Override
 	public Queue<ValuePair> createValuePairQueue() {
-		return new ArrayDeque<ValuePair>();
+		return new ArrayDeque<>();
 	}
 }
