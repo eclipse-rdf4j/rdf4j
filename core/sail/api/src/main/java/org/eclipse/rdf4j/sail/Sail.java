@@ -96,13 +96,4 @@ public interface Sail {
 	 */
 	IsolationLevel getDefaultIsolationLevel();
 
-	/**
-	 * Gets a Collection factory that may return optimised collections that may spill to disk.
-	 * 
-	 * @return a CollectionFactory
-	 */
-	default CollectionFactory getCollectionFactory() {
-		return new DefaultCollectionFactory();
-	}
-
 }

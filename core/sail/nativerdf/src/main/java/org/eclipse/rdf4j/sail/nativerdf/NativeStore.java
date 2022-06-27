@@ -494,8 +494,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		}
 	}
 
-	@Override
-	public CollectionFactory getCollectionFactory() {
+	CollectionFactory getCollectionFactory() {
 		return new MapDbCollectionFactory(getIterationCacheSyncThreshold());
 	}
 }

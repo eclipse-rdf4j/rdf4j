@@ -392,8 +392,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return true;
 	}
 
-	@Override
-	public CollectionFactory getCollectionFactory() {
+	CollectionFactory getCollectionFactory() {
 		return new LmdbCollectionFactory((ValueStore) getBackingStore().getValueFactory(),
 				getIterationCacheSyncThreshold());
 	}

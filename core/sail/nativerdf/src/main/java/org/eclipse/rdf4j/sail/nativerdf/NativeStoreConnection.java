@@ -14,6 +14,9 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
@@ -158,4 +161,10 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 		return getTransactionIsolation() != null && getTransactionIsolation() != IsolationLevels.SERIALIZABLE;
 	}
 
+	@Override
+	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+		EvaluationStrategy evaluationStrategy = super.getEvaluationStrategy(dataset, tripleSource);
+		evaluationStrategy.setCollectionFactory(nativeStore.getCollectionFactory());
+		return evaluationStrategy;
+	}
 }
