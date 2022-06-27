@@ -10,14 +10,12 @@ package org.eclipse.rdf4j.sail.shacl.benchmark;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -44,10 +42,10 @@ import ch.qos.logback.classic.Logger;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xmx64M", "-XX:+UseSerialGC" })
-@Measurement(iterations = 10)
+@Fork(value = 1, jvmArgs = { "-Xmx64M" })
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MaxCountBenchmarkEmpty {
 
@@ -97,71 +95,6 @@ public class MaxCountBenchmarkEmpty {
 				connection.add(statements);
 			}
 			connection.commit();
-		}
-		repository.shutDown();
-
-	}
-
-	@Benchmark
-	public void noShacl() {
-
-		SailRepository repository = new SailRepository(new TestNotifyingSail(new MemoryStore()));
-
-		repository.init();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin();
-				connection.add(statements);
-				connection.commit();
-			}
-		}
-		repository.shutDown();
-
-	}
-
-	@Benchmark
-	public void sparqlInsteadOfShacl() {
-
-		SailRepository repository = new SailRepository(new MemoryStore());
-
-		repository.init();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin();
-				connection.add(statements);
-				try (Stream<BindingSet> stream = connection.prepareTupleQuery("select * where {?a a <"
-						+ RDFS.RESOURCE + ">. ?a <" + RDFS.LABEL + "> ?c, ?d. FILTER(?c != ?d)}").evaluate().stream()) {
-					stream.forEach(System.out::println);
-				}
-				connection.commit();
-			}
-		}
-		repository.shutDown();
-
-	}
-
-	@Benchmark
-	public void sparqlGroupByInsteadOfShacl() {
-
-		SailRepository repository = new SailRepository(new MemoryStore());
-
-		repository.init();
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (List<Statement> statements : allStatements) {
-				connection.begin();
-				connection.add(statements);
-				try (Stream<BindingSet> stream = connection
-						.prepareTupleQuery("select ?a (count(?c) as ?count) where {?a a <" + RDFS.RESOURCE + ">. ?a <"
-								+ RDFS.LABEL + "> ?c} group by ?a having(?count > 1)")
-						.evaluate()
-						.stream()) {
-					stream.forEach(System.out::println);
-				}
-				connection.commit();
-			}
 		}
 		repository.shutDown();
 

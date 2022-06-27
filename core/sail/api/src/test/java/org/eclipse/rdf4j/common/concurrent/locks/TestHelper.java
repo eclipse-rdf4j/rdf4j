@@ -13,7 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.util.concurrent.CountDownLatch;
 
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
+
 public class TestHelper {
+
+	private final static ConcurrentCleaner cleaner = new ConcurrentCleaner();
 
 	public static void callGC(AbstractReadWriteLockManager lockManager) throws InterruptedException {
 		while (lockManager.isReaderActive() || lockManager.isWriterActive()) {

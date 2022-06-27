@@ -50,7 +50,7 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 				.map(r -> new ShaclProperties(r, shapeSource))
 				.map(p -> {
 					if (p.getType() == SHACL.NODE_SHAPE) {
-						return NodeShape.getInstance(p, shapeSource, cache, false, shaclSail);
+						return NodeShape.getInstance(p, shapeSource, cache, shaclSail);
 					} else if (p.getType() == SHACL.PROPERTY_SHAPE) {
 						return PropertyShape.getInstance(p, shapeSource, cache, shaclSail);
 					}
@@ -115,9 +115,11 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		PlanNode planNode = and.stream()
-				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, scope))
+				.map(c -> c.getAllTargetsPlan(connectionsGroup, dataGraph, scope,
+						new StatementMatcher.StableRandomVariableProvider()))
 				.distinct()
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
@@ -139,8 +141,10 @@ public class AndConstraintComponent extends LogicalOperatorConstraintComponent {
 	}
 
 	@Override
-	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph) {
-		return and.stream().anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope, dataGraph));
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+		return and.stream()
+				.anyMatch(c -> c.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider));
 	}
 
 	@Override

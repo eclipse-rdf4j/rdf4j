@@ -55,3 +55,7 @@ Parts of this product use software developed by the Google Guava project (https:
 #### Spatial4J
 
 Parts of this product use software developed by the Spatial4j project (https://github.com/spatial4j/spatial4j/). License: https://github.com/spatial4j/spatial4j/blob/master/LICENSE.txt
+
+#### Lightning Memory-Mapped Database (LMDB)
+
+Parts of this product use software developed by the OpenLDAP LMDB project (https://www.openldap.org/). Use of this software is governed by the terms of the OpenLDAP Public License, v2.8. A copy of the license is available at https://git.openldap.org/openldap/openldap/-/blob/master/libraries/liblmdb/LICENSE .

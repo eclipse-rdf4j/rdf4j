@@ -100,33 +100,46 @@ public class MemLiteral extends SimpleLiteral implements MemValue {
 
 	@Override
 	public MemStatementList getObjectStatementList() {
-
 		return objectStatements;
-
 	}
 
 	@Override
 	public int getObjectStatementCount() {
-
 		return objectStatements.size();
-
 	}
 
 	@Override
-	public void addObjectStatement(MemStatement st) {
-
+	public void addObjectStatement(MemStatement st) throws InterruptedException {
 		objectStatements.add(st);
 	}
 
 	@Override
-	public void removeObjectStatement(MemStatement st) {
+	public void removeObjectStatement(MemStatement st) throws InterruptedException {
 		objectStatements.remove(st);
-
 	}
 
 	@Override
-	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) {
+	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
 		objectStatements.cleanSnapshots(currentSnapshot);
+	}
 
+	@Override
+	public boolean hasSubjectStatements() {
+		return false;
+	}
+
+	@Override
+	public boolean hasPredicateStatements() {
+		return false;
+	}
+
+	@Override
+	public boolean hasObjectStatements() {
+		return !objectStatements.isEmpty();
+	}
+
+	@Override
+	public boolean hasContextStatements() {
+		return false;
 	}
 }

@@ -25,6 +25,11 @@ public class InsertData extends AbstractQueryModelNode implements UpdateExpr {
 		visitor.meet(this);
 	}
 
+	@Override
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+		// no-op
+	}
+
 	public String getDataBlock() {
 		return dataBlock;
 	}

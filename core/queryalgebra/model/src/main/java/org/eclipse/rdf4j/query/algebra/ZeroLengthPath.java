@@ -188,7 +188,6 @@ public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr 
 			contextVar.visit(visitor);
 		}
 
-		super.visitChildren(visitor);
 	}
 
 	@Override
@@ -199,8 +198,6 @@ public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr 
 			setObjectVar((Var) replacement);
 		} else if (contextVar == current) {
 			setContextVar((Var) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

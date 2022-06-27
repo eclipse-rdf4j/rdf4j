@@ -12,77 +12,65 @@ import org.eclipse.rdf4j.model.Resource;
 /**
  * A MemoryStore-specific extension of Resource giving it subject statements.
  */
-public interface MemResource extends MemValue, Resource {
+public abstract class MemResource implements MemValue, Resource {
 
 	/**
-	 * Gets the list of statements for which this MemResource is the subject.
-	 *
-	 * @return a MemStatementList containing the statements.
+	 * The list of statements for which this MemURI is the subject.
 	 */
-	MemStatementList getSubjectStatementList();
+	transient final MemStatementList subjectStatements = new MemStatementList();
 
 	/**
-	 * Gets the number of statements for which this MemResource is the subject.
-	 *
-	 * @return An integer larger than or equal to 0.
+	 * The list of statements for which this MemURI represents the context.
 	 */
-	int getSubjectStatementCount();
+	transient final MemStatementList contextStatements = new MemStatementList();
 
-	/**
-	 * Adds a statement to this MemResource's list of statements for which it is the subject.
-	 *
-	 * @param st
-	 */
-	void addSubjectStatement(MemStatement st);
+	public MemStatementList getSubjectStatementList() {
+		return subjectStatements;
+	}
 
-	/**
-	 * Removes a statement from this MemResource's list of statements for which it is the subject.
-	 *
-	 * @param st
-	 */
-	void removeSubjectStatement(MemStatement st);
+	public int getSubjectStatementCount() {
+		return subjectStatements.size();
+	}
 
-	/**
-	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
-	 * this MemValue's list of statements for which it is the subject.
-	 *
-	 * @param currentSnapshot The current snapshot version.
-	 */
-	void cleanSnapshotsFromSubjectStatements(int currentSnapshot);
+	public void addSubjectStatement(MemStatement st) throws InterruptedException {
+		subjectStatements.add(st);
+	}
 
-	/**
-	 * Gets the list of statements for which this MemResource represents the context.
-	 *
-	 * @return a MemStatementList containing the statements.
-	 */
-	MemStatementList getContextStatementList();
+	public void removeSubjectStatement(MemStatement st) throws InterruptedException {
+		subjectStatements.remove(st);
+	}
 
-	/**
-	 * Gets the number of statements for which this MemResource represents the context.
-	 *
-	 * @return An integer larger than or equal to 0.
-	 */
-	int getContextStatementCount();
+	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) throws InterruptedException {
+		subjectStatements.cleanSnapshots(currentSnapshot);
+	}
 
-	/**
-	 * Adds a statement to this MemResource's list of statements for which it represents the context.
-	 *
-	 * @param st
-	 */
-	void addContextStatement(MemStatement st);
+	@Override
+	public boolean hasSubjectStatements() {
+		return !subjectStatements.isEmpty();
+	}
 
-	/**
-	 * Removes a statement from this MemResource's list of statements for which it represents the context.
-	 *
-	 * @param st
-	 */
-	void removeContextStatement(MemStatement st);
+	@Override
+	public boolean hasContextStatements() {
+		return !contextStatements.isEmpty();
+	}
 
-	/**
-	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
-	 * this MemValue's list of statements for which it is the context.
-	 *
-	 * @param currentSnapshot The current snapshot version.
-	 */
-	void cleanSnapshotsFromContextStatements(int currentSnapshot);
+	public MemStatementList getContextStatementList() {
+		return contextStatements;
+	}
+
+	public int getContextStatementCount() {
+		return contextStatements.size();
+	}
+
+	public void addContextStatement(MemStatement st) throws InterruptedException {
+		contextStatements.add(st);
+	}
+
+	public void removeContextStatement(MemStatement st) throws InterruptedException {
+		contextStatements.remove(st);
+	}
+
+	public void cleanSnapshotsFromContextStatements(int currentSnapshot) throws InterruptedException {
+		contextStatements.cleanSnapshots(currentSnapshot);
+	}
 }

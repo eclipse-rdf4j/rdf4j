@@ -12,7 +12,12 @@ import java.io.InputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
@@ -22,16 +27,27 @@ import org.openjdk.jmh.annotations.TearDown;
 @State(Scope.Benchmark)
 public class BaseConcurrentBenchmark {
 
-	ExecutorService executorService;
+	Repository repository;
+	private ExecutorService executorService;
+
+	static InputStream getResourceAsStream(String filename) {
+		return BaseConcurrentBenchmark.class.getClassLoader().getResourceAsStream(filename);
+	}
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+		if (executorService != null) {
+			executorService.shutdownNow();
+		}
+		executorService = Executors.newFixedThreadPool(8);
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
-		executorService.shutdownNow();
+		if (executorService != null) {
+			executorService.shutdownNow();
+			executorService = null;
+		}
 	}
 
 	void threads(int threadCount, Runnable runnable) throws InterruptedException {
@@ -57,8 +73,40 @@ public class BaseConcurrentBenchmark {
 
 	}
 
-	static InputStream getResourceAsStream(String filename) {
-		return BaseConcurrentBenchmark.class.getClassLoader().getResourceAsStream(filename);
+	Future<?> submit(Runnable runnable) {
+		return executorService.submit(runnable);
+	}
+
+	Runnable getRunnable(CountDownLatch startSignal, RepositoryConnection connection,
+			IsolationLevel isolationLevel, Consumer<RepositoryConnection> workload) {
+
+		return () -> {
+			try {
+				startSignal.await();
+			} catch (InterruptedException e) {
+				throw new IllegalStateException();
+			}
+			RepositoryConnection localConnection = connection;
+			try {
+				if (localConnection == null) {
+					localConnection = repository.getConnection();
+				}
+
+				if (isolationLevel == null) {
+					localConnection.begin();
+				} else {
+					localConnection.begin(isolationLevel);
+				}
+				workload.accept(localConnection);
+				localConnection.commit();
+
+			} finally {
+				if (connection == null) {
+					assert localConnection != null;
+					localConnection.close();
+				}
+			}
+		};
 	}
 
 }

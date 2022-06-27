@@ -91,7 +91,7 @@ public class FedXRepositoryWrapper extends RepositoryWrapper
 
 	/**
 	 * Create the initialized {@link FedXFactory}
-	 * 
+	 *
 	 * @return
 	 */
 	protected FedXFactory createFactory() {

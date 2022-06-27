@@ -143,7 +143,7 @@ public class TestSparqlStarParser {
 
 		assertTrue("expect BindingSetAssignment as arg", proj.getArg() instanceof BindingSetAssignment);
 		BindingSetAssignment values = (BindingSetAssignment) proj.getArg();
-		boolean oneValue[] = new boolean[] { false };
+		boolean[] oneValue = new boolean[] { false };
 		values.getBindingSets().forEach(bs -> {
 			Value v = bs.getValue("ref");
 			assertTrue("expect binding for ref", v != null);
@@ -901,7 +901,7 @@ public class TestSparqlStarParser {
 		      Var (name=_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9, anonymous)
 		      Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
 		      Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
-	 
+	
 		   Extension
 		      ExtensionElem (_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9)
 		         ValueExprTripleRef
@@ -917,7 +917,7 @@ public class TestSparqlStarParser {
 		         StatementPattern
 		            Var (name=_anon_9e07cd00_0c02_4754_89ad_0ce4a5264d6e, anonymous)
 		            Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
-		            Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)	 
+		            Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
 	 * @throws Exception
 	 */
 	@Test

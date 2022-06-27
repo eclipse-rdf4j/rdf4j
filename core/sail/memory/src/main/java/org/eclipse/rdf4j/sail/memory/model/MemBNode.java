@@ -7,12 +7,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
-import org.eclipse.rdf4j.model.impl.SimpleBNode;
+import org.eclipse.rdf4j.model.BNode;
 
 /**
  * A MemoryStore-specific extension of BNodeImpl giving it node properties.
  */
-public class MemBNode extends SimpleBNode implements MemResource {
+public class MemBNode extends MemResource implements BNode {
 
 	private static final long serialVersionUID = -887382892580321647L;
 
@@ -26,19 +26,13 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	transient final private Object creator;
 
 	/**
-	 * The list of statements for which this MemBNode is the subject.
-	 */
-	transient private final MemStatementList subjectStatements = new MemStatementList();
-
-	/**
 	 * The list of statements for which this MemBNode is the object.
 	 */
 	transient private final MemStatementList objectStatements = new MemStatementList();
-
 	/**
-	 * The list of statements for which this MemBNode represents the context.
+	 * The blank node's identifier.
 	 */
-	transient private final MemStatementList contextStatements = new MemStatementList();
+	private final String id;
 
 	/*--------------*
 	 * Constructors *
@@ -51,7 +45,7 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	 * @param id      bnode ID.
 	 */
 	public MemBNode(Object creator, String id) {
-		super(id);
+		this.id = id;
 		this.creator = creator;
 	}
 
@@ -70,38 +64,6 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	}
 
 	@Override
-	public MemStatementList getSubjectStatementList() {
-
-		return subjectStatements;
-
-	}
-
-	@Override
-	public int getSubjectStatementCount() {
-
-		return subjectStatements.size();
-
-	}
-
-	@Override
-	public void addSubjectStatement(MemStatement st) {
-
-		subjectStatements.add(st);
-	}
-
-	@Override
-	public void removeSubjectStatement(MemStatement st) {
-		subjectStatements.remove(st);
-
-	}
-
-	@Override
-	public void cleanSnapshotsFromSubjectStatements(int currentSnapshot) {
-		subjectStatements.cleanSnapshots(currentSnapshot);
-
-	}
-
-	@Override
 	public MemStatementList getObjectStatementList() {
 
 		return objectStatements;
@@ -116,52 +78,56 @@ public class MemBNode extends SimpleBNode implements MemResource {
 	}
 
 	@Override
-	public void addObjectStatement(MemStatement st) {
+	public void addObjectStatement(MemStatement st) throws InterruptedException {
 
 		objectStatements.add(st);
 	}
 
 	@Override
-	public void removeObjectStatement(MemStatement st) {
+	public void removeObjectStatement(MemStatement st) throws InterruptedException {
 		objectStatements.remove(st);
 
 	}
 
 	@Override
-	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) {
+	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
 		objectStatements.cleanSnapshots(currentSnapshot);
 
 	}
 
 	@Override
-	public MemStatementList getContextStatementList() {
-
-		return contextStatements;
-
+	public boolean hasPredicateStatements() {
+		return false;
 	}
 
 	@Override
-	public int getContextStatementCount() {
-
-		return contextStatements.size();
-
+	public boolean hasObjectStatements() {
+		return !objectStatements.isEmpty();
 	}
 
 	@Override
-	public void addContextStatement(MemStatement st) {
-
-		contextStatements.add(st);
+	public String getID() {
+		return id;
 	}
 
 	@Override
-	public void removeContextStatement(MemStatement st) {
-		contextStatements.remove(st);
-
+	public String stringValue() {
+		return getID();
 	}
 
 	@Override
-	public void cleanSnapshotsFromContextStatements(int currentSnapshot) {
-		contextStatements.cleanSnapshots(currentSnapshot);
+	public boolean equals(Object o) {
+		return this == o || o instanceof BNode
+				&& getID().equals(((BNode) o).getID());
+	}
 
+	@Override
+	public int hashCode() {
+		return getID().hashCode();
+	}
+
+	@Override
+	public String toString() {
+		return "_:" + getID();
 	}
 }

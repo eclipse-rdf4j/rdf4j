@@ -34,10 +34,12 @@ import org.openjdk.jmh.annotations.Warmup;
  * @author Håvard Mikkelsen Ottestad
  */
 
-@Measurement(iterations = 3)
-@Warmup(iterations = 3)
-@Fork(1)
-@State(Scope.Thread)
+@State(Scope.Benchmark)
+@BenchmarkMode({ Mode.AverageTime })
+@OutputTimeUnit(TimeUnit.MILLISECONDS)
+@Warmup(iterations = 5)
+@Measurement(iterations = 5)
+@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
 public class ReasoningBenchmark {
 
 	private int expectedCount;
@@ -46,8 +48,6 @@ public class ReasoningBenchmark {
 	public String param;
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void noReasoning() throws IOException {
 		SailRepository sail = new SailRepository(new MemoryStore());
 
@@ -62,8 +62,6 @@ public class ReasoningBenchmark {
 	}
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void noReasoningMultipleTransactions() throws IOException {
 		SailRepository sail = new SailRepository(new MemoryStore());
 
@@ -79,8 +77,6 @@ public class ReasoningBenchmark {
 	}
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencer() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
 
@@ -114,8 +110,6 @@ public class ReasoningBenchmark {
 	}
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactions() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
 
@@ -133,8 +127,6 @@ public class ReasoningBenchmark {
 	}
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencerSchema() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
 
@@ -148,8 +140,6 @@ public class ReasoningBenchmark {
 	}
 
 	@Benchmark
-	@BenchmarkMode(Mode.AverageTime)
-	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactionsSchema() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
 
@@ -209,7 +199,7 @@ public class ReasoningBenchmark {
 	}
 
 	private InputStream resourceAsStream(String resourceName) {
-		String[] split = param.split("\\:\\:");
+		String[] split = param.split("::");
 
 		this.expectedCount = Integer.parseInt(split[1]);
 		return ReasoningBenchmark.class.getClassLoader().getResourceAsStream(split[0] + "/" + resourceName);

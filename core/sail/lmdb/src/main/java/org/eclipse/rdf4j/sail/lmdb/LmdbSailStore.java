@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
@@ -268,11 +269,12 @@ class LmdbSailStore implements SailStore {
 	}
 
 	CloseableIteration<Resource, SailException> getContexts() throws IOException {
-		RecordIterator records = tripleStore.getAllTriplesSortedByContext();
+		Txn txn = tripleStore.getTxnManager().createReadTxn();
+		RecordIterator records = tripleStore.getAllTriplesSortedByContext(txn);
 		CloseableIteration<? extends Statement, SailException> stIter1;
 		if (records == null) {
 			// Iterator over all statements
-			stIter1 = createStatementIterator(null, null, null, true);
+			stIter1 = createStatementIterator(txn, null, null, null, true);
 		} else {
 			stIter1 = new LmdbStatementIterator(records, valueStore);
 		}
@@ -290,6 +292,13 @@ class LmdbSailStore implements SailStore {
 			protected Resource convert(Statement sourceObject) throws SailException {
 				return sourceObject.getContext();
 			}
+
+			@Override
+			protected void handleClose() throws SailException {
+				// correctly close read txn
+				txn.close();
+				super.handleClose();
+			}
 		};
 	}
 
@@ -303,8 +312,8 @@ class LmdbSailStore implements SailStore {
 	 *                 no contexts are supplied the method operates on the entire repository.
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
-	CloseableIteration<? extends Statement, SailException> createStatementIterator(Resource subj, IRI pred, Value obj,
-			boolean explicit, Resource... contexts) throws IOException {
+	CloseableIteration<? extends Statement, SailException> createStatementIterator(
+			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getId(subj);
@@ -350,7 +359,7 @@ class LmdbSailStore implements SailStore {
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (long contextID : contextIDList) {
-			RecordIterator records = tripleStore.getTriples(subjID, predID, objID, contextID, explicit);
+			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
 			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
 		}
 
@@ -396,7 +405,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
-			// no-op
+			// do nothing
 		}
 
 		@Override
@@ -631,8 +640,7 @@ class LmdbSailStore implements SailStore {
 				throws IOException {
 			long removeCount = 0;
 			for (long contextId : contexts) {
-				Map<Long, Long> result = tripleStore.removeTriplesByContext(subj, pred, obj, contextId,
-						explicit);
+				Map<Long, Long> result = tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit);
 
 				for (Entry<Long, Long> entry : result.entrySet()) {
 					Long entryContextId = entry.getKey();
@@ -757,14 +765,21 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailDataset implements SailDataset {
 
 		private final boolean explicit;
+		private final Txn txn;
 
 		public LmdbSailDataset(boolean explicit) throws SailException {
 			this.explicit = explicit;
+			try {
+				this.txn = tripleStore.getTxnManager().createReadTxn();
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
 		}
 
 		@Override
 		public void close() {
-			// no-op
+			// close the associated txn
+			txn.close();
 		}
 
 		@Override
@@ -786,7 +801,7 @@ class LmdbSailStore implements SailStore {
 		public CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
 			try {
-				return createStatementIterator(subj, pred, obj, explicit, contexts);
+				return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {
 				throw new SailException("Unable to get statements", e);
 			}

@@ -109,17 +109,13 @@ public class CombinedShapeSource implements ShapeSource {
 	public Value getRdfFirst(Resource subject) {
 		assert context != null;
 		Value rdfFirst1 = rdf4jShapesGraph.getRdfFirst(subject);
-		Value rdfFirst2 = baseSail.getRdfFirst(subject);
-		return rdfFirst1 != null ? rdfFirst1 : rdfFirst2;
+		return rdfFirst1 != null ? rdfFirst1 : baseSail.getRdfFirst(subject);
 	}
 
 	public Resource getRdfRest(Resource subject) {
 		assert context != null;
-
 		Value rdfRest1 = rdf4jShapesGraph.getRdfRest(subject);
-		Value rdfRest2 = baseSail.getRdfRest(subject);
-
-		return (Resource) (rdfRest1 != null ? rdfRest1 : rdfRest2);
+		return (Resource) (rdfRest1 != null ? rdfRest1 : baseSail.getRdfRest(subject));
 	}
 
 	@Override

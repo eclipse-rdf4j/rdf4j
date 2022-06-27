@@ -8,12 +8,13 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 
 public class BindingAssignerTest extends QueryOptimizerTest {
 
 	@Override
-	public BindingAssigner getOptimizer() {
-		return new BindingAssigner();
+	public BindingAssignerOptimizer getOptimizer() {
+		return new BindingAssignerOptimizer();
 	}
 
 }

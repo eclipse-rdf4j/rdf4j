@@ -7,6 +7,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sail;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -17,7 +18,7 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 class SailCloseableIteration<E> extends ExceptionConvertingIteration<E, RepositoryException> {
 
-	public SailCloseableIteration(Iteration<? extends E, ? extends SailException> iter) {
+	public SailCloseableIteration(CloseableIteration<? extends E, ? extends SailException> iter) {
 		super(iter);
 	}
 

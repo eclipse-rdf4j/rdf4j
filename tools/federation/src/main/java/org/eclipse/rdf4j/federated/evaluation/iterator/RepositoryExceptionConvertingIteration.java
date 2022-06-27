@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
  *
  * @param <T>
  */
+@Deprecated(since = "4.1.0", forRemoval = true)
 public class RepositoryExceptionConvertingIteration<T>
 		extends ExceptionConvertingIteration<T, QueryEvaluationException> {
 

@@ -50,6 +50,11 @@ public class ValueConstant extends AbstractQueryModelNode implements ValueExpr {
 	}
 
 	@Override
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+		// no-op
+	}
+
+	@Override
 	public String getSignature() {
 		StringBuilder sb = new StringBuilder(64);
 

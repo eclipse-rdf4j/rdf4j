@@ -49,8 +49,6 @@ public abstract class SubQueryValueOperator extends AbstractQueryModelNode imple
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (subQuery == current) {
 			setSubQuery((TupleExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

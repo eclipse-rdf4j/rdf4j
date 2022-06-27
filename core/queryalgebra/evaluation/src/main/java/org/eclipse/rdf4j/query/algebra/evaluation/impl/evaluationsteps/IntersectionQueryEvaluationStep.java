@@ -24,41 +24,46 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  */
 public class IntersectionQueryEvaluationStep implements QueryEvaluationStep {
 
-	private final QueryEvaluationStep leftArgDelayed;
-	private final QueryEvaluationStep rightArgDelayed;
+	private final QueryEvaluationStep leftArg;
+	private final QueryEvaluationStep rightArg;
 	private final Supplier<CollectionFactory> collectionFactorySupplier;
 	private final QueryEvaluationContext context;
 
 	@Deprecated
 	public IntersectionQueryEvaluationStep(QueryEvaluationStep leftArg, QueryEvaluationStep rightArg,
 			Supplier<Set<BindingSet>> setMaker) {
-		this(DefaultCollectionFactory::new, bs -> new QueryEvaluationStep.DelayedEvaluationIteration(leftArg, bs),
-				bs -> new QueryEvaluationStep.DelayedEvaluationIteration(rightArg, bs),
-				new QueryEvaluationContext.Minimal(null));
+		this(DefaultCollectionFactory::new, leftArg, rightArg, new QueryEvaluationContext.Minimal(null));
 	}
 
 	public IntersectionQueryEvaluationStep(Supplier<CollectionFactory> collectionFactorySupplier,
-			QueryEvaluationStep leftArgDelayed, QueryEvaluationStep rightArgDelayed, QueryEvaluationContext context) {
-		this.leftArgDelayed = leftArgDelayed;
-		this.rightArgDelayed = rightArgDelayed;
+			QueryEvaluationStep leftArg, QueryEvaluationStep rightArg, QueryEvaluationContext context) {
+		this.leftArg = leftArg;
+		this.rightArg = rightArg;
 		this.collectionFactorySupplier = collectionFactorySupplier;
 		this.context = context;
 	}
 
 	@Override
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-		CollectionFactory cf = collectionFactorySupplier.get();
-		return new IntersectIteration<>(leftArgDelayed.evaluate(bs), rightArgDelayed.evaluate(bs),
-				() -> cf.createSetOfBindingSets(context::createBindingSet, s -> context.setBinding(s))) {
 
-			@Override
-			protected void handleClose() throws QueryEvaluationException {
-				try {
-					cf.close();
-				} finally {
-					super.handleClose();
+		CollectionFactory cf = collectionFactorySupplier.get();
+		try {
+			return new IntersectIteration<>(leftArg.evaluate(bs), rightArg.evaluate(bs),
+					() -> cf.createSetOfBindingSets(context::createBindingSet, context::setBinding)) {
+
+				@Override
+				protected void handleClose() throws QueryEvaluationException {
+					try {
+						cf.close();
+					} finally {
+						super.handleClose();
+					}
 				}
-			}
-		};
+			};
+		} catch (Throwable t) {
+			cf.close();
+			throw t;
+		}
+
 	}
 }

@@ -8,10 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static junit.framework.TestCase.assertTrue;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.fail;
 import static org.junit.jupiter.api.parallel.ExecutionMode.CONCURRENT;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
@@ -120,6 +116,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/complex/dcat",
 			"test-cases/complex/foaf",
 			"test-cases/complex/targetShapeAndQualifiedShape",
+			"test-cases/complex/mms",
 //		"test-cases/complex/sparqlTarget",
 			"test-cases/datatype/allObjects",
 			"test-cases/datatype/not",
@@ -167,6 +164,7 @@ abstract public class AbstractShaclTest {
 			"test-cases/languageIn/simple",
 			"test-cases/maxCount/not",
 			"test-cases/maxCount/nested",
+			"test-cases/maxCount/nestedCombination",
 			"test-cases/maxCount/not2",
 			"test-cases/maxCount/notNot",
 			"test-cases/maxCount/simple",

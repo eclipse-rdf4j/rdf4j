@@ -50,6 +50,7 @@ public class MemStatementIteratorCache {
 		if (!(iteratorFrequencyMap.isEmpty())) {
 			iteratorFrequencyMap.clear();
 			iteratorCache.invalidateAll();
+			iteratorCache.cleanUp();
 
 			if (logger.isTraceEnabled()) {
 				logger.debug("Invalidated cache", new Throwable());

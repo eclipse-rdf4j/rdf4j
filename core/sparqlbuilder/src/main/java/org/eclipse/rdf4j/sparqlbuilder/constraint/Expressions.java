@@ -15,20 +15,13 @@ import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CEIL;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.COALESCE;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
+import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.AlternativePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePredicatePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.NegatedPropertySet;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.OneOrMorePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PredicatePathOrInversePredicatePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.SequencePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrMorePath;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.ZeroOrOnePath;
+import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.*;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Assignable;
@@ -231,7 +224,7 @@ public class Expressions {
 
 	/**
 	 * {@code operand IN (expression1, expression2...)}
-	 * 
+	 *
 	 * @param searchTerm
 	 * @param expressions
 	 * @return an {@code IN} function
@@ -244,7 +237,7 @@ public class Expressions {
 
 	/**
 	 * {@code operand NOT IN (expression1, expression2...)}
-	 * 
+	 *
 	 * @param searchTerm
 	 * @param expressions
 	 * @return an {@code NOT IN} function
@@ -330,6 +323,14 @@ public class Expressions {
 	 */
 	public static Expression<?> notEquals(Operand left, Operand right) {
 		return binaryExpression(BinaryOperator.NOT_EQUALS, left, right);
+	}
+
+	public static Expression<?> notEquals(Variable left, RdfValue right) {
+		return binaryExpression(BinaryOperator.NOT_EQUALS, left, right);
+	}
+
+	public static Expression<?> notEquals(Variable left, IRI right) {
+		return binaryExpression(BinaryOperator.NOT_EQUALS, left, iri(right));
 	}
 
 	/**
@@ -607,8 +608,16 @@ public class Expressions {
 		return new NotIn(var, options);
 	}
 
+	public static Expression<?> notIn(Variable var, IRI... options) {
+		return notIn(var, parseIRIOptionsToRDFValueVarargs(options));
+	}
+
 	public static Expression<?> in(Variable var, RdfValue... options) {
 		return new In(var, options);
+	}
+
+	public static Expression<?> in(Variable var, IRI... options) {
+		return in(var, parseIRIOptionsToRDFValueVarargs(options));
 	}
 
 	public static Expression<?> strdt(Operand lexicalForm, Operand datatype) {
@@ -629,5 +638,19 @@ public class Expressions {
 
 	public static Expression<?> iff(Operand testExp, Operand thenExp, Operand elseExp) {
 		return function(SparqlFunction.IF, testExp, thenExp, elseExp);
+	}
+
+	/**
+	 * Parses IRI... options to RdfValue... options to give more flexibility in expressions use
+	 * 
+	 * @param options options as IRIs
+	 * @return options as RDFValues
+	 */
+	private static RdfValue[] parseIRIOptionsToRDFValueVarargs(IRI... options) {
+		List<RdfValue> rdfValueOptions = new ArrayList<>();
+		for (IRI option : options) {
+			rdfValueOptions.add(iri(option));
+		}
+		return rdfValueOptions.toArray(new RdfValue[0]);
 	}
 }

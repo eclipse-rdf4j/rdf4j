@@ -169,21 +169,96 @@ public class StatementMatcher {
 		// We just need a random base that isn't used elsewhere in the ShaclSail, but we don't want it to be stable so
 		// we can compare the SPARQL queries where these variables are used
 		private static final String BASE = UUID.randomUUID().toString().replace("-", "") + "_";
+		private final String prefix;
 
-		private int counter = 0;
+		// Best effort to store the highest value of all counters
+		private static volatile int max = 0;
+
+		private int counter = -1;
 
 		public Variable next() {
 			counter++;
+
+			// this isn't really threadsafe, but that is ok because the variable is just used as a guide
+			if (counter > max) {
+				max = counter;
+			}
 			return current();
 		}
 
 		public Variable current() {
-			return new Variable(BASE + counter);
+			if (counter < 0) {
+				throw new IllegalStateException("next() has not been called");
+			}
+			return new Variable(prefix + BASE + counter + "_");
 		}
 
+		public StableRandomVariableProvider() {
+			this.prefix = "";
+		}
+
+		public StableRandomVariableProvider(String prefix) {
+			this.prefix = prefix;
+		}
+
+		/**
+		 * Normalize the use of random variables in a SPARQL query so that the numbering of queries starts at 0 in
+		 * increments of one.
+		 *
+		 * @param inputQuery the query string that should be normalized
+		 * @return a normalized query string
+		 */
+		public static String normalize(String inputQuery) {
+			if (!inputQuery.contains(BASE)) {
+				return inputQuery;
+			}
+
+			// We don't want to go too high for performance reasons, so capping it at 100.
+			int max = Math.min(100, StableRandomVariableProvider.max);
+
+			int lowest = max;
+			int highest = 0;
+			boolean incrementsOfOne = true;
+			int prev = -1;
+			for (int i = 0; i <= max; i++) {
+				if (inputQuery.contains(BASE + i + "_")) {
+					lowest = Math.min(lowest, i);
+					highest = Math.max(highest, i);
+					if (prev >= 0 && prev + 1 != i) {
+						incrementsOfOne = false;
+					}
+					prev = i;
+				}
+			}
+
+			if (lowest == 0 && incrementsOfOne) {
+				return inputQuery;
+			}
+
+			return normalizeRange(inputQuery, lowest, highest);
+		}
+
+		private static String normalizeRange(String inputQuery, int lowest, int highest) {
+
+			String normalizedQuery = inputQuery;
+			for (int i = 0; i <= highest; i++) {
+				if (!normalizedQuery.contains(BASE + i + "_")) {
+					for (int j = Math.max(i + 1, lowest); j <= highest; j++) {
+						if (normalizedQuery.contains(BASE + j + "_")) {
+							normalizedQuery = normalizedQuery.replace(BASE + j + "_", BASE + i + "_");
+							break;
+						}
+					}
+				}
+			}
+
+			return normalizedQuery;
+		}
 	}
 
 	public static class Variable {
+		public static final Variable VALUE = new Variable("value");
+
 		String name;
 		Value value;
 

@@ -53,10 +53,10 @@ import com.google.common.collect.Lists;
  * @author Håvard M. Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", })
-@Measurement(iterations = 10)
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class MemValueFactoryConcurrentBenchmark extends BaseConcurrentBenchmark {
 

@@ -7,7 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearch;
 
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 

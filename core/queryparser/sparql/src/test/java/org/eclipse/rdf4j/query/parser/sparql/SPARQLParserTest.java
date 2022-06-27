@@ -52,17 +52,11 @@ public class SPARQLParserTest {
 
 	private SPARQLParser parser;
 
-	/**
-	 * @throws java.lang.Exception
-	 */
 	@BeforeEach
 	public void setUp() throws Exception {
 		parser = new SPARQLParser();
 	}
 
-	/**
-	 * @throws java.lang.Exception
-	 */
 	@AfterEach
 	public void tearDown() throws Exception {
 		parser = null;
@@ -297,6 +291,28 @@ public class SPARQLParserTest {
 	}
 
 	@Test
+	public void testAdditionalWhitespace_Not_In() throws Exception {
+		String query = "SELECT * WHERE { ?s ?p ?o. FILTER(?o NOT  IN (1, 2, 3)) }";
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+
+		// parsing should not throw exception
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+
+	}
+
+	@Test
+	public void testAdditionalWhitespace_Not_Exists() throws Exception {
+		String query = "SELECT * WHERE { ?s ?p ?o. FILTER NOT  EXISTS { ?s ?p ?o } }";
+
+		ParsedQuery parsedQuery = parser.parseQuery(query, null);
+
+		// parsing should not throw exception
+		TupleExpr tupleExpr = parsedQuery.getTupleExpr();
+
+	}
+
+	@Test
 	public void testWildCardPathFixedEnd() {
 
 		String query = "PREFIX : <http://example.org/>\n ASK {:IBM ((:|!:)|(^:|!^:))* :Jane.} ";
@@ -447,7 +463,6 @@ public class SPARQLParserTest {
 
 		// should parse without error
 		parser.parseQuery(query, null);
-
 	}
 
 	@Test
@@ -459,6 +474,47 @@ public class SPARQLParserTest {
 
 		// should parse without error
 		parser.parseQuery(query, null);
-
 	}
+
+	@Test
+	public void testGroupByProjectionHandling_variableEffectivelyAggregationResult() {
+		String query = "SELECT (COUNT (*) AS ?count) (?count / ?count AS ?result) (?result AS ?temp) (?temp / 2 AS ?temp2) {\n"
+				+
+				"    ?s a ?o .\n" +
+				"}";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_effectivelyConstant() {
+		String query = "SELECT  (2  AS ?constant1) (?constant1  AS ?constant2) (?constant2/2  AS ?constant3){\n" +
+				"    ?o ?p ?o .\n" +
+				"} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_renameVariable() {
+		String query = "SELECT ?o (?o  AS ?o2) (?o2  AS ?o3) (?o3/2  AS ?o4){\n" +
+				"    ?o ?p ?o .\n" +
+				"} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+	}
+
+	@Test
+	public void testGroupByProjectionHandling_renameVariableWithAggregation() {
+		String query = "SELECT ?o (?o  AS ?o2) (COUNT (*) AS ?count) (?o2/?count  AS ?newCount){\n" +
+				"    ?o ?p ?o .\n" +
+				"} GROUP BY ?o";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+	}
+
 }

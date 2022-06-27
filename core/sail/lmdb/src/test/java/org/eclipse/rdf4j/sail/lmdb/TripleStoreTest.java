@@ -12,6 +12,7 @@ import static org.junit.Assert.assertEquals;
 import java.io.File;
 import java.io.IOException;
 
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.After;
 import org.junit.Before;
@@ -49,21 +50,23 @@ public class TripleStoreTest {
 		tripleStore.storeTriple(1, 2, 3, 1, false);
 		tripleStore.commit();
 
-		assertEquals("Store should have 1 inferred statement", 1,
-				count(tripleStore.getTriples(1, 2, 3, 1, false)));
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertEquals("Store should have 1 inferred statement", 1,
+					count(tripleStore.getTriples(txn, 1, 2, 3, 1, false)));
 
-		assertEquals("Store should have 0 explicit statements", 0,
-				count(tripleStore.getTriples(1, 2, 3, 1, true)));
+			assertEquals("Store should have 0 explicit statements", 0,
+					count(tripleStore.getTriples(txn, 1, 2, 3, 1, true)));
 
-		tripleStore.startTransaction();
-		tripleStore.storeTriple(1, 2, 3, 1, true);
-		tripleStore.commit();
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(1, 2, 3, 1, true);
+			tripleStore.commit();
 
-		assertEquals("Store should have 0 inferred statements", 0,
-				count(tripleStore.getTriples(1, 2, 3, 1, false)));
+			assertEquals("Store should have 0 inferred statements", 0,
+					count(tripleStore.getTriples(txn, 1, 2, 3, 1, false)));
 
-		assertEquals("Store should have 1 explicit statements", 1,
-				count(tripleStore.getTriples(1, 2, 3, 1, true)));
+			assertEquals("Store should have 1 explicit statements", 1,
+					count(tripleStore.getTriples(txn, 1, 2, 3, 1, true)));
+		}
 	}
 
 	@After

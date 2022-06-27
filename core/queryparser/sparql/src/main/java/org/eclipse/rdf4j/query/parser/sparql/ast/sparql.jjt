@@ -5,7 +5,7 @@
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
- 
+
 /*
  * SPARQL JJTree input file for JavaCC, a Java Compiler Compiler. JavaCC can be
  * downloaded from https://javacc.dev.java.net/
@@ -29,7 +29,7 @@ import java.io.StringReader;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 
@@ -46,7 +46,7 @@ public class SyntaxTreeBuilder {
 	public static ASTQueryContainer parseQuery(String query)
 		throws TokenMgrError, ParseException
 	{
-		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(new StringReader(query), 1) );
+		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(query, 1) );
 
 		// Set size of tab to 1 to force tokenmanager to report correct column
 		// index for substring splitting of service graph pattern.
@@ -67,7 +67,7 @@ public class SyntaxTreeBuilder {
 	public static ASTUpdateSequence parseUpdateSequence(String sequence)
 		throws TokenMgrError, ParseException
 	{
-		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(new StringReader(sequence), 1) );
+		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(sequence, 1) );
 
 		// Set size of tab to 1 to force tokenmanager to report correct column
 		// index for substring splitting of service graph pattern.
@@ -76,7 +76,7 @@ public class SyntaxTreeBuilder {
 		seq.setSourceString(sequence);
 		return seq;
 	}
-	
+
 	/**
 	 * Trims <tt>n</tt> character from the start and end of the supplied string.
 	 */
@@ -200,8 +200,8 @@ TOKEN [IGNORE_CASE] :
 |	<MINUS_SETOPER: "minus">
 |	<FILTER: "filter">
 |	<HAVING: "having">
+|   <NOT_FUNC: "not">
 |	<EXISTS: "exists">
-|	<NOT_EXISTS: "not exists">
 |	<STR: "str">
 |	<LANG: "lang">
 |	<LANGMATCHES: "langmatches">
@@ -221,7 +221,6 @@ TOKEN [IGNORE_CASE] :
 |	<IRI: "IRI"|"URI">
 |	<IF: "if">
 |	<IN: "in">
-|	<NOT_IN: "not in">
 |	<COUNT: "count">
 |	<SUM: "sum">
 |	<MIN: "min">
@@ -340,7 +339,7 @@ TOKEN:
 	>
 |	<#PN_CHARS_U: <PN_CHARS_BASE> | "_">
 |	<#VAR_CHAR: <PN_CHARS_U> | <NUM> | "\u00B7" | ["\u0300"-"\u036F"] | ["\u203F"-"\u2040"]>
-|	<#PN_CHARS: <PN_CHARS_U> | "-" | <NUM> | "\u00B7" | ["\u0300"-"\u036F"] | ["\u203F"-"\u2040"]> 
+|	<#PN_CHARS: <PN_CHARS_U> | "-" | <NUM> | "\u00B7" | ["\u0300"-"\u036F"] | ["\u203F"-"\u2040"]>
 |	<#PN_PREFIX: <PN_CHARS_BASE> ( (<PN_CHARS> | ".")* <PN_CHARS>)?>
 |	<#PN_LOCAL: (<PN_CHARS_U> | ":" | <NUM> | <PLX> ) ( (<PN_CHARS> | "." | ":" | <PLX>)* ( <PN_CHARS> | ":" | <PLX>) )?>
 |	<#PLX: <PERCENT> | <PN_LOCAL_ESC>>
@@ -430,7 +429,7 @@ void Select() :
 {}
 {
 	<SELECT>
-	
+
 	[
 		<DISTINCT> {jjtThis.setDistinct(true);}
 	|
@@ -440,14 +439,14 @@ void Select() :
 	(
 		<STAR> { jjtThis.setWildcard(true); }
 	|
-		( ProjectionElem() )+ 
+		( ProjectionElem() )+
 	)
 }
 
 void ProjectionElem() :
 {}
 {
-    Var() 
+    Var()
     |
     <LPAREN> Expression() <AS> Var() <RPAREN>
 }
@@ -464,9 +463,9 @@ void ConstructQuery() :
 
 void Construct() :
 {}
-{	
+{
 	<CONSTRUCT> [ LOOKAHEAD(2) ConstructClause() ]
-	
+
 }
 
 void ConstructClause() #void :
@@ -511,10 +510,10 @@ void DatasetClause() :
 {}
 {
 	<FROM>
-	( 
+	(
 	    [<NAMED> {jjtThis.setNamed(true);}] IRIref()
 	    |
-	    <DEFAULT_GRAPH> 
+	    <DEFAULT_GRAPH>
 	)
 }
 
@@ -560,13 +559,13 @@ void InlineDataFull() #void :
 void SimpleBindingSet() #BindingSet :
 {}
 {
-    BindingValue() 
+    BindingValue()
 }
 
 void BindingSet() :
 {}
 {
-    <LPAREN> ( BindingValue() )* <RPAREN> | <NIL> 
+    <LPAREN> ( BindingValue() )* <RPAREN> | <NIL>
 }
 
 void BindingValue() :
@@ -576,7 +575,7 @@ void BindingValue() :
 |	RDFLiteral()
 |	NumericLiteral()
 |	BooleanLiteral()
-|	<UNDEF> 
+|	<UNDEF>
 |	ConstTripleRef()
 }
 
@@ -603,7 +602,7 @@ void GroupCondition() :
 {
 	FunctionCall()
 |	BuiltInCall()
-|	<LPAREN> Expression() [ <AS> Var() ] <RPAREN> 
+|	<LPAREN> Expression() [ <AS> Var() ] <RPAREN>
 |	Var()
 }
 
@@ -647,12 +646,12 @@ void Offset() :
 Token GroupGraphPattern() #GraphPatternGroup :
 {Token endOfPatternToken; }
 {
-	<LBRACE> 
+	<LBRACE>
 	(
-	    SubSelect() 
-	    | 
+	    SubSelect()
+	    |
 	    GraphPattern()
-	) 
+	)
 	endOfPatternToken = <RBRACE>
 	{
 	    return endOfPatternToken;
@@ -737,13 +736,13 @@ void MinusGraphPattern() :
 void ServiceGraphPattern() :
 { Token t; }
 {
-    t =  <SERVICE> 
+    t =  <SERVICE>
     {
 	jjtThis.setBeginTokenLinePos(t.beginLine);
 	jjtThis.setBeginTokenColumnPos(t.beginColumn);
     }
-    [<SILENT> { jjtThis.setSilent(true); } ] 
-    VarOrIRIref() 
+    [<SILENT> { jjtThis.setSilent(true); } ]
+    VarOrIRIref()
     t = GroupGraphPattern()
     {
 	jjtThis.setEndTokenLinePos(t.beginLine);
@@ -852,11 +851,11 @@ void PathElt() :
 void PathPrimary() #void :
 {}
 {
-    IRIref() 
+    IRIref()
     |
     <IS_A> { jjtThis.setValue(RDF.TYPE.toString()); } #IRI
     |
-    <NOT> PathNegatedPropertySet() 
+    <NOT> PathNegatedPropertySet()
     |
     <LPAREN> Path() <RPAREN>
 }
@@ -864,7 +863,7 @@ void PathPrimary() #void :
 void PathNegatedPropertySet() #void :
 {}
 {
-    PathOneInPropertySet() 
+    PathOneInPropertySet()
     |
     <LPAREN>
 	[ PathOneInPropertySet() ( <PIPE> PathOneInPropertySet() )* ]
@@ -874,7 +873,7 @@ void PathNegatedPropertySet() #void :
 void PathOneInPropertySet() :
 {}
 {
-    IRIref() 
+    IRIref()
     |
     <IS_A> { jjtThis.setValue(RDF.TYPE.toString()); } #IRI
     |
@@ -883,7 +882,7 @@ void PathOneInPropertySet() :
 
 void PathMod() :
 { Token min;
-  Token max; 
+  Token max;
 }
 {
     <STAR> { jjtThis.setLowerBound(0);
@@ -891,7 +890,7 @@ void PathMod() :
     }
     |
     <QUESTION> { jjtThis.setLowerBound(0);
-		 jjtThis.setUpperBound(1); 
+		 jjtThis.setUpperBound(1);
     }
     |
     <PLUS> { jjtThis.setLowerBound(1);
@@ -1027,21 +1026,21 @@ void GraphTerm() #void :
 void TripleRef() :
 {}
 {
-	<TRIPLE_OPEN> 
-		(GraphTerm() | Var()) 
-		(IRIref() | Var()) 
-		(GraphTerm() | Var()) 
-	<TRIPLE_CLOSE> 
+	<TRIPLE_OPEN>
+		(GraphTerm() | Var())
+		(IRIref() | Var())
+		(GraphTerm() | Var())
+	<TRIPLE_CLOSE>
 }
 
 void ConstTripleRef() :
 {}
 {
-	<TRIPLE_OPEN> 
-		(ConstTripleRef() | IRIref()) 
-		IRIref() 
-		(ConstTripleRef() | IRIref() | NumericLiteral() | RDFLiteral() |BooleanLiteral() ) 
-	<TRIPLE_CLOSE> 
+	<TRIPLE_OPEN>
+		(ConstTripleRef() | IRIref())
+		IRIref()
+		(ConstTripleRef() | IRIref() | NumericLiteral() | RDFLiteral() |BooleanLiteral() )
+	<TRIPLE_CLOSE>
 }
 
 void Expression() #void :
@@ -1128,7 +1127,7 @@ void UnaryMinus() #NumericLiteral :
 	<MINUS>
 	{
 		jjtThis.setValue("-1");
-		jjtThis.setDatatype(XMLSchema.INTEGER);
+		jjtThis.setDatatype(XSD.INTEGER);
 	}
 }
 
@@ -1149,7 +1148,7 @@ void PrimaryExpression() #void :
 void Aggregate() #void :
 {}
 {
-    Count() 
+    Count()
 |   Sum()
 |   Min()
 |   Max()
@@ -1505,10 +1504,10 @@ void In() :
 void NotIn() :
 {}
 {
-    <NOT_IN> ArgList()
+    <NOT_FUNC> <IN> ArgList()
 }
 
-void Coalesce() : 
+void Coalesce() :
 {}
 {
     <COALESCE> <LPAREN> Expression() (<COMMA> Expression())* <RPAREN>
@@ -1577,7 +1576,7 @@ void IsNumeric() :
 void BNodeFunc() :
 {}
 {
-	<BNODE> ( <NIL> | <LPAREN> Expression() <RPAREN> ) 
+	<BNODE> ( <NIL> | <LPAREN> Expression() <RPAREN> )
 }
 
 void IRIFunc() :
@@ -1631,7 +1630,7 @@ void ExistsFunc() :
 void NotExistsFunc() :
 {}
 {
-    <NOT_EXISTS> GroupGraphPattern()
+    <NOT_FUNC> <EXISTS> GroupGraphPattern()
 }
 
 
@@ -1660,9 +1659,9 @@ void NumericLiteralUnsigned() #NumericLiteral :
 { Token t; IRI datatype; }
 {
 	(
-		t = <INTEGER> { datatype = XMLSchema.INTEGER; }
-	|	t = <DECIMAL> { datatype = XMLSchema.DECIMAL; }
-	|	t = <DOUBLE> { datatype = XMLSchema.DOUBLE; }
+		t = <INTEGER> { datatype = XSD.INTEGER; }
+	|	t = <DECIMAL> { datatype = XSD.DECIMAL; }
+	|	t = <DOUBLE> { datatype = XSD.DOUBLE; }
 	)
 
 	{
@@ -1675,9 +1674,9 @@ void NumericLiteralPositive() #NumericLiteral :
 { Token t; IRI datatype; }
 {
 	(
-		t = <INTEGER_POSITIVE> { datatype = XMLSchema.INTEGER; }
-	|	t = <DECIMAL_POSITIVE> { datatype = XMLSchema.DECIMAL; }
-	|	t = <DOUBLE_POSITIVE> { datatype = XMLSchema.DOUBLE; }
+		t = <INTEGER_POSITIVE> { datatype = XSD.INTEGER; }
+	|	t = <DECIMAL_POSITIVE> { datatype = XSD.DECIMAL; }
+	|	t = <DOUBLE_POSITIVE> { datatype = XSD.DOUBLE; }
 	)
 
 	{
@@ -1690,9 +1689,9 @@ void NumericLiteralNegative() #NumericLiteral :
 { Token t; IRI datatype; }
 {
 	(
-		t = <INTEGER_NEGATIVE> { datatype = XMLSchema.INTEGER; }
-	|	t = <DECIMAL_NEGATIVE> { datatype = XMLSchema.DECIMAL; }
-	|	t = <DOUBLE_NEGATIVE> { datatype = XMLSchema.DOUBLE; }
+		t = <INTEGER_NEGATIVE> { datatype = XSD.INTEGER; }
+	|	t = <DECIMAL_NEGATIVE> { datatype = XSD.DECIMAL; }
+	|	t = <DOUBLE_NEGATIVE> { datatype = XSD.DOUBLE; }
 	)
 
 	{
@@ -1752,7 +1751,7 @@ void IRI() :
 void GraphRefAll() :
 {}
 {
-	GraphRef() 
+	GraphRef()
 |	<DEFAULT_GRAPH> {jjtThis.setDefault(true); }
 |	<NAMED> 	{jjtThis.setNamed(true); }
 |	<ALL>
@@ -1767,8 +1766,8 @@ void GraphOrDefault() :
 
 void GraphRef() #void :
 {}
-{ 
-	<GRAPH> IRIref() 
+{
+	<GRAPH> IRIref()
 }
 
 void UnparsedQuadDataBlock() :
@@ -1780,7 +1779,7 @@ void UnparsedQuadDataBlock() :
 void QuadData() #void :
 {}
 {
-    <LBRACE> Quads() <RBRACE> 
+    <LBRACE> Quads() <RBRACE>
 }
 
 void Quads() #void :
@@ -1806,7 +1805,7 @@ void Update() #void :
 |	Copy()
 |	Create()
 |	LOOKAHEAD(2) InsertData()
-|	LOOKAHEAD(2) DeleteData() 
+|	LOOKAHEAD(2) DeleteData()
 |	LOOKAHEAD(2) DeleteWhere()
 |	Modify()
 }
@@ -1908,7 +1907,7 @@ void ModifyWhereClause() #WhereClause :
 void Modify() :
 {}
 {
-    [ WithClause() ] 
-    ( DeleteClause() [InsertClause()] | InsertClause() ) (UsingClause())* 
+    [ WithClause() ]
+    ( DeleteClause() [InsertClause()] | InsertClause() ) (UsingClause())*
     ModifyWhereClause()
 }

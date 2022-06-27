@@ -210,7 +210,8 @@ public class SailModel extends AbstractModel {
 
 	private Iterator<Statement> iterator(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		try {
-			Iteration<? extends Statement, ?> iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
+			CloseableIteration<? extends Statement, ?> iter = conn.getStatements(subj, pred, obj, includeInferred,
+					contexts);
 			return new CloseableIterationIterator<>(
 					new ExceptionConvertingIteration<Statement, ModelException>(iter) {
 

@@ -13,18 +13,20 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -40,22 +42,18 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
-import org.openjdk.jmh.runner.Runner;
-import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20)
+@Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
-//@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=60s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 10)
+//@Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=delay=20s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints" })
+@Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class ParallelQueryBenchmark {
+public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 
 	private static final String query1;
 	private static final String query4;
@@ -75,13 +73,12 @@ public class ParallelQueryBenchmark {
 		}
 	}
 
-	private SailRepository repository;
-
 	@Setup(Level.Trial)
-	public void beforeClass() throws IOException, InterruptedException {
+	public void setup() throws Exception {
+		super.setup();
 		repository = new SailRepository(new MemoryStore());
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl")) {
 				connection.add(resourceAsStream, RDFFormat.TURTLE);
@@ -91,40 +88,50 @@ public class ParallelQueryBenchmark {
 	}
 
 	@TearDown(Level.Trial)
-	public void afterClass() {
+	public void tearDown() throws Exception {
 		repository.shutDown();
+		super.tearDown();
 	}
 
-	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("ParallelQueryBenchmark.*") // adapt to run other benchmark tests
-				.build();
+	public static void main(String[] args) throws Exception {
+		ParallelQueryBenchmark benchmark = new ParallelQueryBenchmark();
+		benchmark.setup();
+		for (int i = 0; i < 1000; i++) {
+			System.out.println(i);
+			benchmark.mixedQueriesAndReads(new Blackhole(
+					"Today's password is swordfish. I understand instantiating Blackholes directly is dangerous."));
+		}
+		benchmark.tearDown();
 
-		new Runner(opt).run();
 	}
 
 	@Benchmark
-	public void mixedWorkload(Blackhole blackhole) throws InterruptedException {
-		ExecutorService executorService = Executors.newCachedThreadPool();
+	public void mixedQueriesAndReads(Blackhole blackhole) throws InterruptedException {
 		CountDownLatch startSignal = new CountDownLatch(1);
 
-		getMixedWorkload(blackhole, startSignal, null)
-				.forEach(executorService::submit);
+		List<Future<?>> collect = getMixedWorkload(blackhole, startSignal, null, null)
+				.stream()
+				.map(this::submit)
+				.collect(Collectors.toList());
 
 		startSignal.countDown();
 
-		executorService.shutdown();
-		while (!executorService.isTerminated()) {
-			executorService.awaitTermination(100, TimeUnit.MILLISECONDS);
+		for (Future<?> future : collect) {
+			try {
+				future.get();
+			} catch (ExecutionException e) {
+				throw new IllegalStateException(e);
+			}
 		}
+
 	}
 
 	private ArrayList<Runnable> getMixedWorkload(Blackhole blackhole, CountDownLatch startSignal,
-			SailRepositoryConnection connection) {
+			RepositoryConnection connection, IsolationLevel isolationLevel) {
 		ArrayList<Runnable> list = new ArrayList<>();
 
 		for (int i = 0; i < 10; i++) {
-			list.add(getRunnable(startSignal, connection, (localConnection) -> {
+			list.add(getRunnable(startSignal, connection, isolationLevel, (localConnection) -> {
 				long count = localConnection
 						.prepareTupleQuery(query4)
 						.evaluate()
@@ -136,7 +143,7 @@ public class ParallelQueryBenchmark {
 		}
 
 		for (int i = 0; i < 10; i++) {
-			list.add(getRunnable(startSignal, connection, (localConnection) -> {
+			list.add(getRunnable(startSignal, connection, isolationLevel, (localConnection) -> {
 				long count = localConnection
 						.prepareTupleQuery(query7_pathexpression1)
 						.evaluate()
@@ -148,7 +155,7 @@ public class ParallelQueryBenchmark {
 		}
 
 		for (int i = 0; i < 10; i++) {
-			list.add(getRunnable(startSignal, connection, (localConnection) -> {
+			list.add(getRunnable(startSignal, connection, isolationLevel, (localConnection) -> {
 				long count = localConnection
 						.prepareTupleQuery(query8_pathexpression2)
 						.evaluate()
@@ -160,19 +167,19 @@ public class ParallelQueryBenchmark {
 		}
 
 		for (int i = 0; i < 100; i++) {
-			list.add(getRunnable(startSignal, connection, (localConnection) -> {
+			list.add(getRunnable(startSignal, connection, isolationLevel, (localConnection) -> {
 				blackhole.consume(localConnection.hasStatement(null, RDF.TYPE, null, false));
 			}));
 		}
 
 		for (int i = 0; i < 100; i++) {
-			list.add(getRunnable(startSignal, connection, (localConnection) -> {
+			list.add(getRunnable(startSignal, connection, isolationLevel, (localConnection) -> {
 				blackhole.consume(localConnection.hasStatement(null, RDF.TYPE, null, true));
 			}));
 		}
 
 		for (int i = 0; i < 5; i++) {
-			list.add(getRunnable(startSignal, connection, (localConnection) -> {
+			list.add(getRunnable(startSignal, connection, isolationLevel, (localConnection) -> {
 				long count = localConnection
 						.prepareTupleQuery(query1)
 						.evaluate()
@@ -187,33 +194,4 @@ public class ParallelQueryBenchmark {
 		return list;
 	}
 
-	private Runnable getRunnable(CountDownLatch startSignal, SailRepositoryConnection connection,
-			Consumer<SailRepositoryConnection> workload) {
-
-		return () -> {
-			try {
-				startSignal.await();
-			} catch (InterruptedException e) {
-				throw new IllegalStateException();
-			}
-			SailRepositoryConnection localConnection = connection;
-			try {
-				if (localConnection == null) {
-					localConnection = repository.getConnection();
-				}
-
-				workload.accept(localConnection);
-
-			} finally {
-				if (connection == null) {
-					assert localConnection != null;
-					localConnection.close();
-				}
-			}
-		};
-	}
-
-	private static InputStream getResourceAsStream(String filename) {
-		return ParallelQueryBenchmark.class.getClassLoader().getResourceAsStream(filename);
-	}
 }

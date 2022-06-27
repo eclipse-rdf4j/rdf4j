@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.common.concurrent.locks;
 
+import java.lang.invoke.VarHandle;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
@@ -16,6 +17,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockCleaner;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockMonitoring;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockTracking;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -252,6 +254,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 			}
 		}
 
+		VarHandle.releaseFence();
 		return new WriteLock(stampedLock, writeStamp);
 	}
 
@@ -321,6 +324,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 			long lockedSum = readersLocked.sum();
 			if (unlockedSum == lockedSum) {
 				// No active readers.
+				VarHandle.releaseFence();
 				return new WriteLock(stampedLock, writeStamp);
 			} else {
 				stampedLock.unlockWrite(writeStamp);
@@ -417,6 +421,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 				throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
 			}
 
+			VarHandle.acquireFence();
 			locked = false;
 			readersUnlocked.increment();
 

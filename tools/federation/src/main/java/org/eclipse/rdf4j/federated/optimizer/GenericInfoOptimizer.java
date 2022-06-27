@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * Generic optimizer
@@ -37,7 +37,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  *
  * @author Andreas Schwarte
  */
-public class GenericInfoOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
+public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<OptimizationException>
+		implements FedXOptimizer {
 
 	protected boolean hasFilter = false;
 	protected boolean hasUnion = false;
@@ -51,7 +52,7 @@ public class GenericInfoOptimizer extends AbstractQueryModelVisitor<Optimization
 	protected final QueryInfo queryInfo;
 
 	public GenericInfoOptimizer(QueryInfo queryInfo) {
-		super();
+		super(true);
 		this.queryInfo = queryInfo;
 	}
 

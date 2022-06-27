@@ -88,9 +88,15 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		this(strategy, group, parentBindings, 0, context);
+		this.strategy = strategy;
+		this.group = group;
+		this.parentBindings = parentBindings;
+		this.context = context;
+		this.arguments = strategy.precompile(group.getArg(), context);
+		this.cf = strategy.getCollectionFactory();
 	}
 
+	@Deprecated(since = "4.1.0", forRemoval = true)
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			long iterationCacheSyncThreshold, QueryEvaluationContext context) throws QueryEvaluationException {
 		this.strategy = strategy;
@@ -248,16 +254,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
-		CloseableIteration<BindingSet, QueryEvaluationException> iter = arguments.evaluate(parentBindings);
-
-		try {
+		try (var iter = arguments.evaluate(parentBindings)) {
 			if (!iter.hasNext()) {
 				return emptySolutionSpecialCase(aggregates);
 			} else {
 				return constructEntries(aggregates, iter);
 			}
-		} finally {
-			iter.close();
 		}
 
 	}
@@ -325,7 +327,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		return getValues;
 	}
 
-	private class Entry implements BindingSetEntry {
+	private static class Entry implements BindingSetEntry {
 
 		private static final long serialVersionUID = 1L;
 		private final BindingSet prototype;
@@ -355,10 +357,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	/**
 	 * This is to collect together in operation an aggregate function the name of it. And the suppliers that will give
 	 * the unique set and final value collectors per final binding set.
-	 *
+	 * <p>
 	 * Making an aggregate function is quite a lot of work and we do not want to repeat that for each final binding.
 	 */
-	private class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
+	private static class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
 		public final String name;
 		private final Aggregate<T, D> agg;
 		private final Supplier<Predicate<D>> makePotentialDistinctTest;
@@ -547,7 +549,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private final Set<BindingSet> distinctValues;
 
 		public DistinctBindingSets() {
-			distinctValues = cf.createSetOfBindingSets(context::createBindingSet, (s) -> context.setBinding(s));
+			distinctValues = cf.createSetOfBindingSets(context::createBindingSet, context::setBinding);
 		}
 
 		@Override
@@ -681,7 +683,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 					} else {
 						typeError = new ValueExprEvaluationException("not a number: " + v);
 					}
-				} else if (v != null) {
+				} else {
 					typeError = new ValueExprEvaluationException("not a number: " + v);
 				}
 			}

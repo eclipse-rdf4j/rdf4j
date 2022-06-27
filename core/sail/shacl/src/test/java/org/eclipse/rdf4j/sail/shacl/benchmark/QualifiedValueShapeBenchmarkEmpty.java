@@ -45,7 +45,7 @@ import ch.qos.logback.classic.Logger;
 @State(Scope.Benchmark)
 @Warmup(iterations = 5)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xmx256M", "-XX:+UseSerialGC" })
+@Fork(value = 1, jvmArgs = { "-Xmx256M" })
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QualifiedValueShapeBenchmarkEmpty {

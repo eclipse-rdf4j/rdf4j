@@ -25,6 +25,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.apache.commons.lang3.math.NumberUtils;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -334,6 +335,11 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String EVALUATION_MODE_KEY = "evaluationMode";
 
 	/**
+	 * Set this key as sail parameter to influence the fuzzy prefix length.
+	 */
+	public static final String FUZZY_PREFIX_LENGTH_KEY = "fuzzyPrefixLength";
+
+	/**
 	 * The LuceneIndex holding the indexed literals.
 	 */
 	private volatile SearchIndex luceneIndex;
@@ -448,6 +454,9 @@ public class LuceneSail extends NotifyingSailWrapper {
 			if (parameters.containsKey(EVALUATION_MODE_KEY)) {
 				setEvaluationMode(TupleFunctionEvaluationMode.valueOf(parameters.getProperty(EVALUATION_MODE_KEY)));
 			}
+			if (parameters.containsKey(FUZZY_PREFIX_LENGTH_KEY)) {
+				setFuzzyPrefixLength(NumberUtils.toInt(parameters.getProperty(FUZZY_PREFIX_LENGTH_KEY), 0));
+			}
 			if (luceneIndex == null) {
 				initializeLuceneIndex();
 			}
@@ -552,6 +561,10 @@ public class LuceneSail extends NotifyingSailWrapper {
 		Objects.requireNonNull(mode);
 		this.setParameter(INDEX_TYPE_BACKTRACE_MODE, mode.name());
 		this.indexBacktraceMode = mode;
+	}
+
+	public void setFuzzyPrefixLength(int fuzzyPrefixLength) {
+		setParameter(FUZZY_PREFIX_LENGTH_KEY, String.valueOf(fuzzyPrefixLength));
 	}
 
 	public TupleFunctionRegistry getTupleFunctionRegistry() {

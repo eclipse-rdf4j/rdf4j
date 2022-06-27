@@ -80,7 +80,7 @@ public class TransactionReaderTest {
 
 	/**
 	 * reproduces GH-3048
-	 * 
+	 *
 	 * @throws Exception
 	 */
 	@Test

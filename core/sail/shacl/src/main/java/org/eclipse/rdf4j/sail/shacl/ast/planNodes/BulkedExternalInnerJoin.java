@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 
 /**
  * @author Håvard Ottestad
@@ -52,7 +53,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode);
 
-		this.query = query;
+		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
 
 		this.connection = connection;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;

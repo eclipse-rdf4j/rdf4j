@@ -431,22 +431,7 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private void prepare(Changeset change, SailSink sink) throws SailException {
-		Set<Changeset.SimpleStatementPattern> observations = change.getObserved();
-		if (observations != null) {
-			for (Changeset.SimpleStatementPattern p : observations) {
-
-				Resource subj = p.getSubject();
-				IRI pred = p.getPredicate();
-				Value obj = p.getObject();
-				Resource context = p.getContext();
-				if (p.isAllContexts()) {
-					sink.observe(subj, pred, obj);
-				} else {
-					sink.observe(subj, pred, obj, context);
-				}
-
-			}
-		}
+		change.sinkObserved(sink);
 	}
 
 	private void flush(SailSink sink) throws SailException {
@@ -493,18 +478,9 @@ class SailSourceBranch implements SailSource {
 		if (deprecatedContexts != null && !deprecatedContexts.isEmpty()) {
 			sink.clear(deprecatedContexts.toArray(new Resource[0]));
 		}
-		List<Statement> deprecated = change.getDeprecatedStatements();
-		if (deprecated != null) {
-			for (Statement st : deprecated) {
-				sink.deprecate(st);
-			}
-		}
-		List<Statement> approved = change.getApprovedStatements();
-		if (approved != null) {
-			for (Statement st : approved) {
-				sink.approve(st);
-			}
-		}
+
+		change.sinkDeprecated(sink);
+		change.sinkApproved(sink);
 	}
 
 }

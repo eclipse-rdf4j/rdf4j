@@ -63,6 +63,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL11ManifestTest;
+import org.eclipse.rdf4j.testsuite.sparql.RepositorySPARQLComplianceTestSuite;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -76,8 +77,10 @@ import org.slf4j.LoggerFactory;
  * {@link SPARQL11ManifestTest} format. This includes tests on queries with non-deterministic output (e.g.
  * GROUP_CONCAT).
  *
+ * @deprecated use {@link RepositorySPARQLComplianceTestSuite} instead.
  * @author Jeen Broekstra
  */
+@Deprecated(since = "4.0.2", forRemoval = true)
 public abstract class ComplexSPARQLQueryTest {
 
 	@BeforeClass

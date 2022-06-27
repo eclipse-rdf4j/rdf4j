@@ -146,6 +146,14 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	}
 
 	/**
+	 * Enable or disable results size tracking for the query plan.
+	 */
+	@Experimental
+	default boolean isTrackResultSize() {
+		return false;
+	}
+
+	/**
 	 * Enable or disable time tracking for the query plan. Useful to determine which parts of a query plan take the most
 	 * time to evaluate.
 	 *
@@ -180,4 +188,5 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	default <T> Queue<T> makeQueue() {
 		return new ArrayDeque<T>();
 	}
+
 }

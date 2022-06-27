@@ -10,7 +10,6 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.vocabulary.FOAF;

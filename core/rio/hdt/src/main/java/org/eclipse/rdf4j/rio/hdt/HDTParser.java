@@ -52,7 +52,7 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
  * | Dictionary (Shared) |
  * | Dictionary (S)      |
  * | Dictionary (P)      |
- * | Dictionary (O)      |    
+ * | Dictionary (O)      |
  * | Triples             |
  * +---------------------+
  * </pre>

@@ -13,6 +13,7 @@ import java.util.Iterator;
 /**
  * An Iteration that can convert an {@link Iterator} to a {@link Iteration}.
  */
+@Deprecated(since = "4.1.0")
 public class IteratorIteration<E, X extends Exception> implements Iteration<E, X> {
 
 	private final Iterator<? extends E> iter;

@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -309,6 +310,6 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 
 	@Override
 	public QueryOptimizer getOptimizer() {
-		return new BindingSetAssignmentInliner();
+		return new BindingSetAssignmentInlinerOptimizer();
 	}
 }

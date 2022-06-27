@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * Optimizer for SERVICE nodes.
@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * @author Andreas Schwarte
  *
  */
-public class ServiceOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
+public class ServiceOptimizer extends AbstractSimpleQueryModelVisitor<OptimizationException> implements FedXOptimizer {
 
 	protected final QueryInfo queryInfo;
 
@@ -40,7 +40,7 @@ public class ServiceOptimizer extends AbstractQueryModelVisitor<OptimizationExce
 	 * @param queryInfo
 	 */
 	public ServiceOptimizer(QueryInfo queryInfo) {
-		super();
+		super(true);
 		this.queryInfo = queryInfo;
 	}
 

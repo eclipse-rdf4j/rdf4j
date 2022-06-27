@@ -35,7 +35,7 @@ abstract class SailClosingIteration<T, X extends Exception> extends IterationWra
 	 */
 	public static <E> SailClosingIteration<E, SailException> makeClosable(
 			CloseableIteration<? extends E, SailException> iter, SailClosable... closes) {
-		return new SailClosingIteration<E, SailException>(iter, closes) {
+		return new SailClosingIteration<>(iter, closes) {
 
 			@Override
 			protected void handleSailException(SailException e) throws SailException {

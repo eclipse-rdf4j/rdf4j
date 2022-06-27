@@ -1,9 +1,9 @@
-/******************************************************************************* 
- * Copyright (c) 2021 Eclipse RDF4J contributors. 
- * All rights reserved. This program and the accompanying materials 
- * are made available under the terms of the Eclipse Distribution License v1.0 
- * which accompanies this distribution, and is available at 
- * http://www.eclipse.org/org/documents/edl-v10.php. 
+/*******************************************************************************
+ * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
@@ -12,7 +12,7 @@ import org.eclipse.rdf4j.model.Namespace;
 
 /**
  * Utility functions for working with SPARQL query strings.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class SPARQLQueries {
@@ -20,16 +20,16 @@ public class SPARQLQueries {
 	/**
 	 * Creates a string representing of the supplied {@link Namespace namespaces} as SPARQL prefix declarations. This
 	 * can be used when composing a SPARQL query string in code, for example:
-	 * 
+	 *
 	 * <pre>
 	 * <code>
 	 * String query = SPARQLQueries.getPrefixClauses(connection.getNamespaces()) + "SELECT * WHERE { ?s ex:myprop ?o }";
 	 * </code>
 	 * </pre>
-	 * 
+	 *
 	 * @param namespaces one or more {@link Namespace} objects.
 	 * @return one or more SPARQL prefix declarations (each separated by a newline), as a String.
-	 * 
+	 *
 	 * @since 3.6.0
 	 */
 	public static String getPrefixClauses(Iterable<Namespace> namespaces) {
@@ -43,9 +43,9 @@ public class SPARQLQueries {
 	/**
 	 * Escape the supplied string with backslashes for any special characters, so it can be used as a string literal
 	 * value in a SPARQL query.
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/sparql11-query/#grammarEscapes">SPAQL 1.1 grammar escapes</a>
-	 * 
+	 *
 	 * @since 3.6.0
 	 */
 	public static String escape(String s) {
@@ -67,9 +67,9 @@ public class SPARQLQueries {
 	 * @param s An SPARQL literal string with backslash escapes.
 	 * @return The un-escaped string.
 	 * @exception IllegalArgumentException If the supplied string is not a correctly escaped SPARQL string.
-	 * 
+	 *
 	 * @see <a href="https://www.w3.org/TR/sparql11-query/#grammarEscapes">SPAQL 1.1 grammar escapes</a>
-	 * 
+	 *
 	 * @since 3.6.0
 	 */
 	public static String unescape(String s) {
@@ -85,7 +85,7 @@ public class SPARQLQueries {
 		StringBuilder sb = new StringBuilder(sLength);
 
 		while (backSlashIdx != -1) {
-			sb.append(s.substring(startIdx, backSlashIdx));
+			sb.append(s, startIdx, backSlashIdx);
 
 			if (backSlashIdx + 1 >= sLength) {
 				throw new IllegalArgumentException("Unescaped backslash in: " + s);

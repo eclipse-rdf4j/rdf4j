@@ -13,8 +13,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.testsuite.sail.SailConcurrencyTest;
-import org.junit.Ignore;
-import org.junit.Test;
 
 public class ShaclConcurrencyTest extends SailConcurrencyTest {
 

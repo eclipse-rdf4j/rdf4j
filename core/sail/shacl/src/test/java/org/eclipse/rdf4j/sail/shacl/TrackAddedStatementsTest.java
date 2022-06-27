@@ -8,11 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static junit.framework.TestCase.assertEquals;
-import static junit.framework.TestCase.assertNotNull;
-import static junit.framework.TestCase.assertNull;
-import static org.junit.Assert.fail;
-
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
@@ -22,16 +17,13 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * @author Håvard Ottestad
  */
 public class TrackAddedStatementsTest {
-
-	private static final Logger logger = LoggerFactory.getLogger(TrackAddedStatementsTest.class);
 
 	@Test
 	public void testCleanup() throws Exception {
@@ -45,8 +37,8 @@ public class TrackAddedStatementsTest {
 
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
 
-			assertNull(shaclSailConnection.addedStatements);
-			assertNull(shaclSailConnection.removedStatements);
+			Assertions.assertNull(shaclSailConnection.addedStatements);
+			Assertions.assertNull(shaclSailConnection.removedStatements);
 		} finally {
 			shaclRepository.shutDown();
 		}
@@ -66,8 +58,8 @@ public class TrackAddedStatementsTest {
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
-			assertNotNull(shaclSailConnection.addedStatements);
-			assertNotNull(shaclSailConnection.removedStatements);
+			Assertions.assertNotNull(shaclSailConnection.addedStatements);
+			Assertions.assertNotNull(shaclSailConnection.removedStatements);
 
 			connection.commit();
 
@@ -90,18 +82,18 @@ public class TrackAddedStatementsTest {
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 
-			assertNotNull(shaclSailConnection.addedStatements);
-			assertNotNull(shaclSailConnection.removedStatements);
+			Assertions.assertNotNull(shaclSailConnection.addedStatements);
+			Assertions.assertNotNull(shaclSailConnection.removedStatements);
 
 			connection.rollback();
 
-			assertNull(shaclSailConnection.addedStatements);
-			assertNull(shaclSailConnection.removedStatements);
+			Assertions.assertNull(shaclSailConnection.addedStatements);
+			Assertions.assertNull(shaclSailConnection.removedStatements);
 
 			connection.add(RDFS.RESOURCE, RDF.TYPE, RDFS.RESOURCE);
 
-			assertNull(shaclSailConnection.addedStatements);
-			assertNull(shaclSailConnection.removedStatements);
+			Assertions.assertNull(shaclSailConnection.addedStatements);
+			Assertions.assertNull(shaclSailConnection.removedStatements);
 
 		} finally {
 			shaclRepository.shutDown();
@@ -130,8 +122,8 @@ public class TrackAddedStatementsTest {
 
 			ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
 
-			assertNull(shaclSailConnection.addedStatements);
-			assertNull(shaclSailConnection.removedStatements);
+			Assertions.assertNull(shaclSailConnection.addedStatements);
+			Assertions.assertNull(shaclSailConnection.removedStatements);
 
 		} finally {
 			shaclRepository.shutDown();
@@ -152,7 +144,7 @@ public class TrackAddedStatementsTest {
 
 			try {
 				connection.commit();
-				fail("commit should have failed");
+				Assertions.fail("commit should have failed");
 			} catch (RepositoryException e) {
 				// do nothing, expected
 			}
@@ -160,7 +152,7 @@ public class TrackAddedStatementsTest {
 		}
 
 		try (SailRepositoryConnection connection = shaclRepository.getConnection()) {
-			assertEquals(0, size(connection));
+			Assertions.assertEquals(0, size(connection));
 		} finally {
 			shaclRepository.shutDown();
 		}
@@ -181,10 +173,10 @@ public class TrackAddedStatementsTest {
 
 		ShaclSailConnection shaclSailConnection = (ShaclSailConnection) connection.getSailConnection();
 
-		assertNull(shaclSailConnection.addedStatements);
-		assertNull(shaclSailConnection.removedStatements);
+		Assertions.assertNull(shaclSailConnection.addedStatements);
+		Assertions.assertNull(shaclSailConnection.removedStatements);
 
-		assertEquals(0, size(shaclRepository));
+		Assertions.assertEquals(0, size(shaclRepository));
 
 		shaclRepository.shutDown();
 
@@ -209,8 +201,8 @@ public class TrackAddedStatementsTest {
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 			try (ConnectionsGroup connectionsGroup = shaclSailConnection.getConnectionsGroup()) {
 
-				assertEquals(0, size(connectionsGroup.getAddedStatements()));
-				assertEquals(1, size(connectionsGroup.getRemovedStatements()));
+				Assertions.assertEquals(0, size(connectionsGroup.getAddedStatements()));
+				Assertions.assertEquals(1, size(connectionsGroup.getRemovedStatements()));
 			}
 
 			connection.commit();
@@ -246,8 +238,8 @@ public class TrackAddedStatementsTest {
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 			try (ConnectionsGroup connectionsGroup = shaclSailConnection.getConnectionsGroup()) {
 
-				assertEquals(1, size(connectionsGroup.getAddedStatements()));
-				assertEquals(0, size(connectionsGroup.getRemovedStatements()));
+				Assertions.assertEquals(1, size(connectionsGroup.getAddedStatements()));
+				Assertions.assertEquals(0, size(connectionsGroup.getRemovedStatements()));
 			}
 
 			connection.commit();
@@ -285,8 +277,8 @@ public class TrackAddedStatementsTest {
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 			try (ConnectionsGroup connectionsGroup = shaclSailConnection.getConnectionsGroup()) {
 
-				assertEquals(0, size(connectionsGroup.getAddedStatements()));
-				assertEquals(0, size(connectionsGroup.getRemovedStatements()));
+				Assertions.assertEquals(0, size(connectionsGroup.getAddedStatements()));
+				Assertions.assertEquals(0, size(connectionsGroup.getRemovedStatements()));
 			}
 
 			connection.commit();
@@ -318,8 +310,8 @@ public class TrackAddedStatementsTest {
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 			try (ConnectionsGroup connectionsGroup = shaclSailConnection.getConnectionsGroup()) {
 
-				assertEquals(0, size(connectionsGroup.getAddedStatements()));
-				assertEquals(1, size(connectionsGroup.getRemovedStatements()));
+				Assertions.assertEquals(0, size(connectionsGroup.getAddedStatements()));
+				Assertions.assertEquals(1, size(connectionsGroup.getRemovedStatements()));
 			}
 
 			connection.commit();
@@ -345,8 +337,8 @@ public class TrackAddedStatementsTest {
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 			try (ConnectionsGroup connectionsGroup = shaclSailConnection.getConnectionsGroup()) {
 
-				assertEquals(0, size(connectionsGroup.getAddedStatements()));
-				assertEquals(0, size(connectionsGroup.getRemovedStatements()));
+				Assertions.assertEquals(0, size(connectionsGroup.getAddedStatements()));
+				Assertions.assertEquals(0, size(connectionsGroup.getRemovedStatements()));
 			}
 
 			connection.commit();
@@ -373,8 +365,8 @@ public class TrackAddedStatementsTest {
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 			try (ConnectionsGroup connectionsGroup = shaclSailConnection.getConnectionsGroup()) {
 
-				assertEquals(0, size(connectionsGroup.getAddedStatements()));
-				assertEquals(1, size(connectionsGroup.getRemovedStatements()));
+				Assertions.assertEquals(0, size(connectionsGroup.getAddedStatements()));
+				Assertions.assertEquals(1, size(connectionsGroup.getRemovedStatements()));
 			}
 
 			connection.commit();
@@ -399,8 +391,8 @@ public class TrackAddedStatementsTest {
 			shaclSailConnection.fillAddedAndRemovedStatementRepositories();
 			try (ConnectionsGroup connectionsGroup = shaclSailConnection.getConnectionsGroup()) {
 
-				assertEquals(1, size(connectionsGroup.getAddedStatements()));
-				assertEquals(0, size(connectionsGroup.getRemovedStatements()));
+				Assertions.assertEquals(1, size(connectionsGroup.getAddedStatements()));
+				Assertions.assertEquals(0, size(connectionsGroup.getRemovedStatements()));
 			}
 
 			connection.commit();

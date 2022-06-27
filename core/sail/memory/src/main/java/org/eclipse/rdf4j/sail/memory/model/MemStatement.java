@@ -7,10 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 
-import org.eclipse.rdf4j.model.impl.ContextStatement;
+import org.eclipse.rdf4j.model.impl.GenericStatement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,7 +19,7 @@ import org.slf4j.LoggerFactory;
  * A MemStatement is a Statement which contains context information and a flag indicating whether the statement is
  * explicit or inferred.
  */
-public class MemStatement extends ContextStatement {
+public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue> {
 
 	private static final Logger logger = LoggerFactory.getLogger(MemStatement.class);
 
@@ -40,13 +41,23 @@ public class MemStatement extends ContextStatement {
 	/**
 	 * Identifies the snapshot in which this statement was introduced.
 	 */
-	private volatile int sinceSnapshot;
+	private final int sinceSnapshot;
 
 	/**
 	 * Identifies the snapshot in which this statement was revoked, defaults to {@link Integer#MAX_VALUE}.
 	 */
 	private volatile int tillSnapshot = Integer.MAX_VALUE;
+	private static final VarHandle TILL_SNAPSHOT;
 
+	static {
+		try {
+			TILL_SNAPSHOT = MethodHandles.lookup()
+					.in(MemStatement.class)
+					.findVarHandle(MemStatement.class, "tillSnapshot", int.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
+		}
+	}
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -67,35 +78,7 @@ public class MemStatement extends ContextStatement {
 			int sinceSnapshot) {
 		super(subject, predicate, object, context);
 		this.explicit = explicit;
-		setSinceSnapshot(sinceSnapshot);
-	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
-
-	@Override
-	public MemResource getSubject() {
-		return (MemResource) super.getSubject();
-	}
-
-	@Override
-	public MemIRI getPredicate() {
-		return (MemIRI) super.getPredicate();
-	}
-
-	@Override
-	public MemValue getObject() {
-		return (MemValue) super.getObject();
-	}
-
-	@Override
-	public MemResource getContext() {
-		return (MemResource) super.getContext();
-	}
-
-	public void setSinceSnapshot(int snapshot) {
-		sinceSnapshot = snapshot;
+		this.sinceSnapshot = sinceSnapshot;
 	}
 
 	public int getSinceSnapshot() {
@@ -103,15 +86,15 @@ public class MemStatement extends ContextStatement {
 	}
 
 	public void setTillSnapshot(int snapshot) {
-		tillSnapshot = snapshot;
+		TILL_SNAPSHOT.setRelease(this, snapshot);
 	}
 
 	public int getTillSnapshot() {
-		return tillSnapshot;
+		return (int) TILL_SNAPSHOT.getAcquire(this);
 	}
 
 	public boolean isInSnapshot(int snapshot) {
-		return snapshot >= sinceSnapshot && snapshot < tillSnapshot;
+		return snapshot >= sinceSnapshot && snapshot < ((int) TILL_SNAPSHOT.getAcquire(this));
 	}
 
 	@Deprecated(since = "4.0.0", forRemoval = true)
@@ -138,7 +121,7 @@ public class MemStatement extends ContextStatement {
 	 * Lets this statement add itself to the appropriate statement lists of its subject, predicate, object and context.
 	 * The transaction status will be set to new.
 	 */
-	public void addToComponentLists() {
+	public void addToComponentLists() throws InterruptedException {
 		getSubject().addSubjectStatement(this);
 		getPredicate().addPredicateStatement(this);
 		getObject().addObjectStatement(this);
@@ -148,23 +131,28 @@ public class MemStatement extends ContextStatement {
 		}
 	}
 
-	/**
-	 * Lets this statement remove itself from the appropriate statement lists of its subject, predicate, object and
-	 * context. The transaction status will be set to <var>null</var>.
-	 */
-	public void removeFromComponentLists() {
-		getSubject().removeSubjectStatement(this);
-		getPredicate().removePredicateStatement(this);
-		getObject().removeObjectStatement(this);
-		MemResource context = getContext();
-		if (context != null) {
-			context.removeContextStatement(this);
+	public boolean matchesSPO(MemResource subject, MemIRI predicate, MemValue object) {
+		return (object == null || object == this.object) && (subject == null || subject == this.subject) &&
+				(predicate == null || predicate == this.predicate);
+	}
+
+	public boolean matchesContext(MemResource[] memContexts) {
+		if (memContexts != null && memContexts.length > 0) {
+			for (MemResource context : memContexts) {
+				if (context == this.context) {
+					return true;
+				}
+			}
+			return false;
+		} else {
+			// there is no context to check so we can return this statement
+			return true;
 		}
 	}
 
-	public boolean matchesSPO(MemResource subject, MemIRI predicate, MemValue object) {
-		return (subject == null || exactSameSubject(subject)) &&
-				(predicate == null || exactSamePredicate(predicate)) &&
-				(object == null || exactSameObject(object));
+	public boolean exactMatch(MemResource subject, MemIRI predicate, MemValue object, MemResource context) {
+		return this.subject == subject && this.predicate == predicate && this.object == object
+				&& this.context == context;
 	}
+
 }

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
+import org.eclipse.rdf4j.sail.base.Changeset;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -416,6 +418,11 @@ class NativeSailStore implements SailStore {
 
 		@Override
 		public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			// serializable is not supported at this level
+		}
+
+		@Override
+		public void observeAll(Set<Changeset.SimpleStatementPattern> observed) {
 			// serializable is not supported at this level
 		}
 

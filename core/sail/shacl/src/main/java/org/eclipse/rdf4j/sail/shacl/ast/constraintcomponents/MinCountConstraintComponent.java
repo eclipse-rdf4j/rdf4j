@@ -11,11 +11,10 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.LongStream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
@@ -68,11 +67,13 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
 		PlanNode target = getTargetChain()
-				.getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+				.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
 				.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, true, null);
 
 		if (overrideTargetNode != null) {
-			target = getTargetChain().getEffectiveTarget("_target", scope, connectionsGroup.getRdfsSubClassOfReasoner())
+			target = getTargetChain()
+					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
 							scope, EffectiveTarget.Extend.right,
 							false, null);
@@ -107,7 +108,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope) {
+	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		return EmptyNode.getInstance();
 	}
 
@@ -123,15 +125,14 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 			return ValidationQuery.Deactivated.getInstance();
 		}
 
-		String targetVarPrefix = "target_";
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(targetVarPrefix, scope,
-				connectionsGroup.getRdfsSubClassOfReasoner());
+		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
+				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 		String query = effectiveTarget.getQuery(false);
 
 		if (minCount == 1) {
-			StatementMatcher.Variable value = new StatementMatcher.Variable("value");
+			StatementMatcher.Variable value = StatementMatcher.Variable.VALUE;
 
 			String pathQuery = getTargetChain().getPath()
 					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
@@ -142,10 +143,11 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		} else {
 
 			StringBuilder condition = new StringBuilder();
-			String valuePrefix = "value_";
+			ArrayList<StatementMatcher.Variable> valueVariables = new ArrayList<>();
 
 			for (int i = 0; i < minCount; i++) {
-				StatementMatcher.Variable value = new StatementMatcher.Variable(valuePrefix + i);
+				StatementMatcher.Variable value = stableRandomVariableProvider.next();
+				valueVariables.add(value);
 
 				String pathQuery = getTargetChain().getPath()
 						.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
@@ -155,22 +157,19 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				condition.append(pathQuery).append("\n");
 			}
 
-			List<String> collect = LongStream.range(0, minCount)
-					.mapToObj(i -> "?" + valuePrefix + i)
-					.collect(Collectors.toList());
-
 			Set<String> notEquals = new HashSet<>();
 
-			for (String left : collect) {
-				for (String right : collect) {
-					if (left == right) {
+			for (int i = 0; i < valueVariables.size(); i++) {
+				for (int j = 0; j < valueVariables.size(); j++) {
+					if (i == j) {
 						continue;
 					}
-					if (left.compareTo(right) < 0) {
-						notEquals.add(left + " != " + right);
+					if (i > j) {
+						notEquals.add(valueVariables.get(i).asSparqlVariable() + " != "
+								+ valueVariables.get(j).asSparqlVariable());
 					} else {
-						notEquals.add(right + " != " + left);
-
+						notEquals.add(valueVariables.get(j).asSparqlVariable() + " != "
+								+ valueVariables.get(i).asSparqlVariable());
 					}
 				}
 			}

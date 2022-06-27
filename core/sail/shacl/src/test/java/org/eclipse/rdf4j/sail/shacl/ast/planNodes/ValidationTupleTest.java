@@ -7,8 +7,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import static org.junit.Assert.assertEquals;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -16,6 +14,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class ValidationTupleTest {
@@ -34,8 +33,8 @@ public class ValidationTupleTest {
 						Arrays.asList(RDF.TYPE, RDF.HTML, SimpleValueFactory.getInstance().createLiteral("abc"))),
 				ConstraintComponent.Scope.nodeShape, false, CONTEXTS);
 
-		assertEquals(abc, abc1);
-		assertEquals(abc.hashCode(), abc1.hashCode());
+		Assertions.assertEquals(abc, abc1);
+		Assertions.assertEquals(abc.hashCode(), abc1.hashCode());
 
 	}
 

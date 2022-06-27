@@ -60,12 +60,12 @@ public interface MemValue extends Value {
 	/**
 	 * Adds a statement to this MemValue's list of statements for which it is the object.
 	 */
-	void addObjectStatement(MemStatement st);
+	void addObjectStatement(MemStatement st) throws InterruptedException;
 
 	/**
 	 * Removes a statement from this MemValue's list of statements for which it is the object.
 	 */
-	void removeObjectStatement(MemStatement st);
+	void removeObjectStatement(MemStatement st) throws InterruptedException;
 
 	/**
 	 * Removes statements from old snapshots (those that have expired at or before the specified snapshot version) from
@@ -73,5 +73,13 @@ public interface MemValue extends Value {
 	 *
 	 * @param currentSnapshot The current snapshot version.
 	 */
-	void cleanSnapshotsFromObjectStatements(int currentSnapshot);
+	void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException;
+
+	boolean hasSubjectStatements();
+
+	boolean hasPredicateStatements();
+
+	boolean hasObjectStatements();
+
+	boolean hasContextStatements();
 }

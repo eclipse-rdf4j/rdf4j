@@ -366,7 +366,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 
 	/**
 	 * Get the RDF4J Server's protocol version, as an integer
-	 * 
+	 *
 	 * @return the protocol version implemented by the RDF4J, as an integer number.
 	 */
 	int getServerProtocolVersion() {

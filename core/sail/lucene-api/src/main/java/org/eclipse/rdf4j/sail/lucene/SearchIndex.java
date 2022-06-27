@@ -55,7 +55,7 @@ public interface SearchIndex {
 	/**
 	 * Returns true if the given statement is a type statement, see {@link LuceneSail#INDEXEDTYPES} to use. This method
 	 * should return false if {@link #isTypeFilteringEnabled()} returns false.
-	 * 
+	 *
 	 * @param statement statement
 	 * @return boolean
 	 */
@@ -63,7 +63,7 @@ public interface SearchIndex {
 
 	/**
 	 * is the {@link LuceneSail#INDEXEDTYPES} parameter set for this index.
-	 * 
+	 *
 	 * @return boolean
 	 */
 	boolean isTypeFilteringEnabled();
@@ -71,7 +71,7 @@ public interface SearchIndex {
 	/**
 	 * Returns true if the given statement is a type statement of the right type, see {@link LuceneSail#INDEXEDTYPES} to
 	 * use. This method should return false if {@link #isTypeFilteringEnabled()} returns false.
-	 * 
+	 *
 	 * @param statement statement
 	 * @return boolean
 	 */

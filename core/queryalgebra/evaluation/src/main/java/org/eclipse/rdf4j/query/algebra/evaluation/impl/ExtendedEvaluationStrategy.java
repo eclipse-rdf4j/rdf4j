@@ -39,7 +39,7 @@ public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy 
 	@Deprecated(forRemoval = true)
 	@Override
 	public Value evaluate(Compare node, BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
@@ -56,7 +56,7 @@ public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy 
 	@Deprecated(forRemoval = true)
 	@Override
 	public Value evaluate(MathExpr node, BindingSet bindings)
-			throws ValueExprEvaluationException, QueryEvaluationException {
+			throws QueryEvaluationException {
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
@@ -64,7 +64,7 @@ public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy 
 	}
 
 	private Value mathOperationApplier(MathExpr node, Value leftVal, Value rightVal) {
-		if (leftVal instanceof Literal && rightVal instanceof Literal) {
+		if (leftVal.isLiteral() && rightVal.isLiteral()) {
 			return XMLDatatypeMathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());
 		}
 

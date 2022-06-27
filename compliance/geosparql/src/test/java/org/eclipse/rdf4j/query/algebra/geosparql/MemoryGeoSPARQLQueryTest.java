@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.testsuite.query.algebra.geosparql.GeoSPARQLManifestTest
 public class MemoryGeoSPARQLQueryTest extends GeoSPARQLManifestTest {
 
 	public MemoryGeoSPARQLQueryTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered) {
-		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered);
+			String resultFileURL, Dataset dataset, boolean ordered, boolean laxCardinality) {
+		super(displayName, testURI, name, queryFileURL, resultFileURL, dataset, ordered, laxCardinality);
 	}
 
 	@Override
