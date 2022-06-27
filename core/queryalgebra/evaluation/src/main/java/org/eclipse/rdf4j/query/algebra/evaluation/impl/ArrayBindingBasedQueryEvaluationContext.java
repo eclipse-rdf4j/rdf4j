@@ -51,9 +51,6 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		@Override
 		public Value apply(BindingSet bs) {
-			if (bs.isEmpty()) {
-				return null;
-			}
 			if (bs instanceof ArrayBindingSet) {
 				return directAccessForVariable.apply((ArrayBindingSet) bs);
 			} else {
@@ -141,9 +138,6 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		@Override
 		public boolean test(BindingSet bs) {
-			if (bs.isEmpty()) {
-				return false;
-			}
 			if (bs instanceof ArrayBindingSet) {
 				return directHasVariable.apply((ArrayBindingSet) bs);
 			} else {
@@ -165,9 +159,6 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
 				.getDirectGetBinding(variableName);
 		return (bs) -> {
-			if (bs.isEmpty()) {
-				return null;
-			}
 			if (bs instanceof ArrayBindingSet) {
 				return directAccessForVariable.apply((ArrayBindingSet) bs);
 			} else {

@@ -43,9 +43,6 @@ public interface QueryEvaluationContext {
 
 		@Override
 		public Binding apply(BindingSet bs) {
-			if (bs.isEmpty()) {
-				return null;
-			}
 			return bs.getBinding(variableName);
 		}
 	}
@@ -60,9 +57,6 @@ public interface QueryEvaluationContext {
 
 		@Override
 		public Value apply(BindingSet bs) {
-			if (bs.isEmpty()) {
-				return null;
-			}
 			Binding binding = getBinding.apply(bs);
 			if (binding == null) {
 				return null;

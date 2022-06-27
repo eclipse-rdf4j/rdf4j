@@ -62,11 +62,30 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	@Override
 	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
 		Function<BindingSet, Integer> hashMaker = hashMaker(getValues);
-		List<Value> values = new ArrayList<>(getValues.size());
-		for (int i = 0; i < getValues.size(); i++) {
-			values.add(getValues.get(i).apply(bindingSet));
+		switch (getValues.size()) {
+		case 1:
+			return new DefaultBindingSetKey(List.of(getValues.get(0).apply(bindingSet)), hashMaker.apply(bindingSet));
+		case 2:
+			return new DefaultBindingSetKey(
+					List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet)),
+					hashMaker.apply(bindingSet));
+		case 3:
+			return new DefaultBindingSetKey(List.of(getValues.get(0).apply(bindingSet),
+					getValues.get(1).apply(bindingSet), getValues.get(2).apply(bindingSet)),
+					hashMaker.apply(bindingSet));
+		case 4:
+			return new DefaultBindingSetKey(
+					List.of(getValues.get(0).apply(bindingSet), getValues.get(1).apply(bindingSet),
+							getValues.get(2).apply(bindingSet), getValues.get(3).apply(bindingSet)),
+					hashMaker.apply(bindingSet));
+		default:
+			List<Value> values = new ArrayList<>(getValues.size());
+			for (Function<BindingSet, Value> getValue : getValues) {
+				values.add(getValue.apply(bindingSet));
+			}
+			return new DefaultBindingSetKey(values, hashMaker.apply(bindingSet));
 		}
-		return new DefaultBindingSetKey(values, hashMaker.apply(bindingSet));
+
 	}
 
 	private static Function<BindingSet, Integer> hashMaker(List<Function<BindingSet, Value>> getValues) {
