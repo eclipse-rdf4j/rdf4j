@@ -138,7 +138,6 @@ MVN_VERSION_RELEASE=$(xmllint --xpath "//*[local-name()='project']/*[local-name(
 
 #Remove backup files. Finally, commit the version number changes:
 mvn versions:commit
-mvn -P compliance versions:commit
 
 
 BRANCH="releases/${MVN_VERSION_RELEASE}"
@@ -183,7 +182,6 @@ mvn versions:set -DnewVersion="${MVN_NEXT_SNAPSHOT_VERSION}"
 
 #Remove backup files. Finally, commit the version number changes:
 mvn versions:commit
-mvn -P compliance versions:commit
 
 echo "";
 echo "Committing the new version to git"
@@ -214,7 +212,6 @@ git checkout "${BRANCH}"
 git checkout -b "merge_main_into_develop_after_release_${MVN_VERSION_RELEASE}"
 mvn versions:set -DnewVersion="${MVN_VERSION_DEVELOP}"
 mvn versions:commit
-mvn -P compliance versions:commit
 git commit -s -a -m "set correct version"
 git push --set-upstream origin "merge_main_into_develop_after_release_${MVN_VERSION_RELEASE}"
 
@@ -230,8 +227,9 @@ echo "Build javadocs"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 git checkout "${MVN_VERSION_RELEASE}"
-mvn clean install -DskipTests -Djapicmp.skip
-mvn package -Passembly,!formatting -Djapicmp.skip -DskipTests --batch-mode
+mvn clean
+mvn install -P quick
+mvn package -Passembly -DskipTests --batch-mode
 
 git checkout main
 RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
