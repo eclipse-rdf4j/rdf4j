@@ -684,8 +684,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	private static boolean isIllegalCombinedWithGroupByExpression(ValueExpr expr, List<ProjectionElem> elements,
 			Set<String> groupNames) {
-		if (expr instanceof ValueConstant)
+		if (expr instanceof ValueConstant) {
 			return false;
+		}
 
 		VarNameCollector varNameCollector = new VarNameCollector();
 		expr.visit(varNameCollector);
@@ -702,6 +703,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	private static boolean isIllegalCombinedWithGroupByExpression(String varName, List<ProjectionElem> elements,
 			Set<String> groupNames) {
+		if (groupNames.contains(varName)) {
+			return false;
+		}
+
 		do {
 			String prev = varName;
 
