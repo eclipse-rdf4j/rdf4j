@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.helpers;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -16,10 +18,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -69,8 +72,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	private final AbstractSail sailBase;
 
-	private volatile boolean isOpen;
-
 	private volatile boolean txnActive;
 
 	private volatile boolean txnPrepared;
@@ -82,13 +83,37 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * <li>read lock: all other (public) methods
 	 * </ul>
 	 */
-	protected final ReentrantReadWriteLock connectionLock = new ReentrantReadWriteLock();
+	private final LongAdder blockClose = new LongAdder();
+	private final LongAdder unblockClose = new LongAdder();
+
+	@SuppressWarnings("FieldMayBeFinal")
+	private boolean isOpen = true;
+	private static final VarHandle IS_OPEN;
+
+	static {
+		try {
+			IS_OPEN = MethodHandles.lookup()
+					.in(AbstractSailConnection.class)
+					.findVarHandle(AbstractSailConnection.class, "isOpen", boolean.class);
+		} catch (ReflectiveOperationException e) {
+			throw new Error(e);
+		}
+	}
 
 	/**
 	 * Lock used to prevent concurrent calls to update methods like addStatement, clear, commit, etc. within a
 	 * transaction.
+	 *
+	 * @deprecated Will be made private.
 	 */
+	@Deprecated(since = "4.1.0")
 	protected final ReentrantLock updateLock = new ReentrantLock();
+
+	@Deprecated(since = "4.1.0", forRemoval = true)
+	protected final ReentrantReadWriteLock connectionLock = new ReentrantReadWriteLock();
+
+	@InternalUseOnly
+	protected boolean useConnectionLock = true;
 
 	private final LongAdder iterationsOpened = new LongAdder();
 	private final LongAdder iterationsClosed = new LongAdder();
@@ -122,7 +147,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	public AbstractSailConnection(AbstractSail sailBase) {
 		this.sailBase = sailBase;
-		isOpen = true;
 		txnActive = false;
 		if (debugEnabled) {
 			activeIterationsDebug = new ConcurrentHashMap<>();
@@ -137,11 +161,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final boolean isOpen() throws SailException {
-		return isOpen;
+		return ((boolean) IS_OPEN.getAcquire(this));
 	}
 
 	protected void verifyIsOpen() throws SailException {
-		if (!isOpen) {
+		if (!((boolean) IS_OPEN.getAcquire(this))) {
 			throw new IllegalStateException("Connection has been closed");
 		}
 	}
@@ -176,7 +200,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 		this.transactionIsolationLevel = compatibleLevel;
 
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 
@@ -192,7 +219,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 				updateLock.unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
+
 		}
 		startUpdate(null);
 	}
@@ -215,49 +246,64 @@ public abstract class AbstractSailConnection implements SailConnection {
 	public final void close() throws SailException {
 		// obtain an exclusive lock so that any further operations on this
 		// connection (including those from any concurrent threads) are blocked.
-		connectionLock.writeLock().lock();
-
+		if (!IS_OPEN.compareAndSet(this, true, false)) {
+			return;
+		}
+		if (useConnectionLock) {
+			connectionLock.writeLock().lock();
+		}
 		try {
-			if (isOpen) {
-				try {
-					forceCloseActiveOperations();
 
-					if (txnActive) {
-						logger.warn("Rolling back transaction due to connection close",
-								debugEnabled ? new Throwable() : null);
-						try {
-							// Use internal method to avoid deadlock: the public
-							// rollback method will try to obtain a connection lock
-							rollbackInternal();
-						} finally {
-							txnActive = false;
-							txnPrepared = false;
-						}
-					}
-
-					closeInternal();
-
-					if (isActiveOperation()) {
-						throw new SailException("Connection closed before all iterations were closed.");
-					}
-				} finally {
-					isOpen = false;
-					sailBase.connectionClosed(this);
+			while (true) {
+				long sumDone = unblockClose.sum();
+				long sumBlocking = blockClose.sum();
+				if (sumDone == sumBlocking) {
+					break;
+				} else {
+					Thread.onSpinWait();
 				}
 			}
+
+			try {
+				forceCloseActiveOperations();
+
+				if (txnActive) {
+					logger.warn("Rolling back transaction due to connection close",
+							debugEnabled ? new Throwable() : null);
+					try {
+						// Use internal method to avoid deadlock: the public
+						// rollback method will try to obtain a connection lock
+						rollbackInternal();
+					} finally {
+						txnActive = false;
+						txnPrepared = false;
+					}
+				}
+
+				closeInternal();
+
+				if (isActiveOperation()) {
+					throw new SailException("Connection closed before all iterations were closed.");
+				}
+			} finally {
+				sailBase.connectionClosed(this);
+			}
 		} finally {
-			// Release the exclusive lock. Any threads waiting to obtain a
-			// non-exclusive read lock will get one and then fail with an
-			// IllegalStateException, because the connection is no longer open.
-			connectionLock.writeLock().unlock();
+			if (useConnectionLock) {
+				connectionLock.writeLock().unlock();
+			}
 		}
+
 	}
 
 	@Override
 	public final CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluate(TupleExpr tupleExpr,
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		flushPendingUpdates();
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> iteration = null;
@@ -265,24 +311,34 @@ public abstract class AbstractSailConnection implements SailConnection {
 				iteration = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
 				return registerIteration(iteration);
 			} catch (Throwable t) {
-				if (iteration != null)
+				if (iteration != null) {
 					iteration.close();
+				}
 				throw t;
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
 	@Override
 	public final CloseableIteration<? extends Resource, SailException> getContextIDs() throws SailException {
 		flushPendingUpdates();
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 			return registerIteration(getContextIDsInternal());
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
@@ -290,7 +346,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 	public final CloseableIteration<? extends Statement, SailException> getStatements(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
 		flushPendingUpdates();
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 			CloseableIteration<? extends Statement, SailException> iteration = null;
@@ -298,12 +357,16 @@ public abstract class AbstractSailConnection implements SailConnection {
 				iteration = getStatementsInternal(subj, pred, obj, includeInferred, contexts);
 				return registerIteration(iteration);
 			} catch (Throwable t) {
-				if (iteration != null)
+				if (iteration != null) {
 					iteration.close();
+				}
 				throw t;
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
@@ -311,12 +374,18 @@ public abstract class AbstractSailConnection implements SailConnection {
 	public final boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws SailException {
 		flushPendingUpdates();
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 			return hasStatementInternal(subj, pred, obj, includeInferred, contexts);
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 
 	}
@@ -331,12 +400,18 @@ public abstract class AbstractSailConnection implements SailConnection {
 	@Override
 	public final long size(Resource... contexts) throws SailException {
 		flushPendingUpdates();
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 			return sizeInternal(contexts);
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
@@ -351,10 +426,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * transaction has been started via {@link SailConnection#isActive} and throw a SailException if not. Implementors
 	 * can use {@link AbstractSailConnection#verifyIsActive()} as a convenience method for this check.
 	 *
+	 * @throws SailException if no transaction is active.
 	 * @deprecated since 2.7.0. Use {@link #verifyIsActive()} instead. We should not automatically start a transaction
 	 *             at the sail level. Instead, an exception should be thrown when an update is executed without first
 	 *             starting a transaction.
-	 * @throws SailException if no transaction is active.
 	 */
 	@Deprecated
 	protected void autoStartTransaction() throws SailException {
@@ -374,7 +449,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (isActive()) {
 			endUpdate(null);
 		}
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 
@@ -388,7 +466,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 				updateLock.unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
@@ -398,7 +479,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 			endUpdate(null);
 		}
 
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 
@@ -416,7 +500,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 				updateLock.unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
@@ -428,7 +515,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		synchronized (removed) {
 			removed.clear();
 		}
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 
@@ -449,7 +539,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 				updateLock.unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
@@ -543,7 +636,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	@Override
 	public final void endUpdate(UpdateContext op) throws SailException {
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 
@@ -555,7 +651,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 				updateLock.unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 			if (op != null) {
 				flush();
 			}
@@ -592,7 +691,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 	@Override
 	public final void clear(Resource... contexts) throws SailException {
 		flushPendingUpdates();
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 
@@ -605,18 +707,27 @@ public abstract class AbstractSailConnection implements SailConnection {
 				updateLock.unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
 	@Override
 	public final CloseableIteration<? extends Namespace, SailException> getNamespaces() throws SailException {
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 			return registerIteration(getNamespacesInternal());
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
@@ -625,12 +736,18 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (prefix == null) {
 			throw new NullPointerException("prefix must not be null");
 		}
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 			return getNamespaceInternal(prefix);
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
@@ -642,7 +759,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (name == null) {
 			throw new NullPointerException("name must not be null");
 		}
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 
@@ -654,7 +774,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 				updateLock.unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
@@ -663,7 +786,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (prefix == null) {
 			throw new NullPointerException("prefix must not be null");
 		}
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 
@@ -675,13 +801,19 @@ public abstract class AbstractSailConnection implements SailConnection {
 				updateLock.unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
 		}
 	}
 
 	@Override
 	public final void clearNamespaces() throws SailException {
-		connectionLock.readLock().lock();
+		if (useConnectionLock) {
+			connectionLock.readLock().lock();
+		}
+		blockClose.increment();
 		try {
 			verifyIsOpen();
 
@@ -693,7 +825,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 				updateLock.unlock();
 			}
 		} finally {
-			connectionLock.readLock().unlock();
+			unblockClose.increment();
+			if (useConnectionLock) {
+				connectionLock.readLock().unlock();
+			}
+
 		}
 	}
 
@@ -714,27 +850,18 @@ public abstract class AbstractSailConnection implements SailConnection {
 		statementsRemoved = true;
 	}
 
-	/**
-	 * @deprecated Use {@link #connectionLock} directly instead.
-	 */
-	@Deprecated
-	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getSharedConnectionLock() throws SailException {
+	@Deprecated(forRemoval = true)
+	protected Lock getSharedConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.readLock());
 	}
 
-	/**
-	 * @deprecated Use {@link #connectionLock} directly instead.
-	 */
-	@Deprecated
-	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getExclusiveConnectionLock() throws SailException {
+	@Deprecated(forRemoval = true)
+	protected Lock getExclusiveConnectionLock() throws SailException {
 		return new JavaLock(connectionLock.writeLock());
 	}
 
-	/**
-	 * @deprecated Use {@link #updateLock} directly instead.
-	 */
-	@Deprecated
-	protected org.eclipse.rdf4j.common.concurrent.locks.Lock getTransactionLock() throws SailException {
+	@Deprecated(forRemoval = true)
+	protected Lock getTransactionLock() throws SailException {
 		return new JavaLock(updateLock);
 	}
 
@@ -974,13 +1101,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
-	private static class JavaLock implements org.eclipse.rdf4j.common.concurrent.locks.Lock {
+	private static class JavaLock implements Lock {
 
-		private final Lock javaLock;
+		private final java.util.concurrent.locks.Lock javaLock;
 
 		private boolean isActive = true;
 
-		public JavaLock(Lock javaLock) {
+		public JavaLock(java.util.concurrent.locks.Lock javaLock) {
 			this.javaLock = javaLock;
 			javaLock.lock();
 		}

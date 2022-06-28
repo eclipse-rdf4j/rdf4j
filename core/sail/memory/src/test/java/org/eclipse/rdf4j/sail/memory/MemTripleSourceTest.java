@@ -815,18 +815,16 @@ public class MemTripleSourceTest {
 	protected void loadTestData(String dataFile, Resource... contexts)
 			throws RDFParseException, IOException, SailException {
 		logger.debug("loading dataset {}", dataFile);
-		InputStream dataset = this.getClass().getResourceAsStream(dataFile);
-		SailConnection con = store.getConnection();
-		try {
-			con.begin();
-			for (Statement nextStatement : Rio.parse(dataset, "", RDFFormat.TURTLE, contexts)) {
-				con.addStatement(nextStatement.getSubject(), nextStatement.getPredicate(), nextStatement.getObject(),
-						nextStatement.getContext());
+		try (InputStream dataset = this.getClass().getResourceAsStream(dataFile)) {
+			try (SailConnection con = store.getConnection()) {
+				con.begin();
+				for (Statement nextStatement : Rio.parse(dataset, "", RDFFormat.TURTLE, contexts)) {
+					con.addStatement(nextStatement.getSubject(), nextStatement.getPredicate(),
+							nextStatement.getObject(),
+							nextStatement.getContext());
+				}
+				con.commit();
 			}
-		} finally {
-			con.commit();
-			con.close();
-			dataset.close();
 		}
 		logger.debug("dataset loaded.");
 	}
