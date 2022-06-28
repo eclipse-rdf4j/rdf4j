@@ -517,4 +517,14 @@ public class SPARQLParserTest {
 		parser.parseQuery(query, null);
 	}
 
+	@Test
+	public void testGroupByProjectionHandling_function() {
+		String query = "select (strlen(concat(strlen(?s)+2, \"abc\", count(?o))) as ?len) where { \n" +
+				"?s ?p ?o .\n" +
+				"} group by ?s";
+
+		// should parse without error
+		parser.parseQuery(query, null);
+	}
+
 }
