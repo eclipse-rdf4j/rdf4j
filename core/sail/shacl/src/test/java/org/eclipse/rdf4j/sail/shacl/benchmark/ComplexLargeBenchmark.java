@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
@@ -267,6 +266,46 @@ public class ComplexLargeBenchmark {
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
+		}
+
+	}
+
+	@Benchmark
+	public void noPreloadingNonEmptyParallelNativeStore() throws IOException {
+
+		File file = Files.newTemporaryFolder();
+
+		try {
+
+			SailRepository repository = new SailRepository(Utils
+					.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "complexBenchmark/shacl.trig"));
+
+			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+				SimpleValueFactory vf = SimpleValueFactory.getInstance();
+				connection.add(vf.createBNode(), vf.createIRI("http://fjljfiwoejfoiwefiew/a"), vf.createBNode());
+				connection.commit();
+			}
+
+			((ShaclSail) repository.getSail()).setParallelValidation(true);
+			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(realData);
+				connection.commit();
+			}
+
+			repository.shutDown();
+
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		} finally {
+			FileUtils.deleteDirectory(file);
+
 		}
 
 	}
