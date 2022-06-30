@@ -82,6 +82,10 @@ public class ConnectionsGroup implements AutoCloseable {
 		return previousStateConnection;
 	}
 
+	public boolean hasPreviousStateConnection() {
+		return previousStateConnection != null;
+	}
+
 	public SailConnection getAddedStatements() {
 		return addedStatements;
 	}

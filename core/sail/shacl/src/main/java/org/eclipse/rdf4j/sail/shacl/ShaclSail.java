@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.CombinedShapeSource;
@@ -239,9 +240,9 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 	}
 
 	/**
+	 * @return
 	 * @implNote This is an extension point for configuring a different executor service for parallel validation. The
 	 *           code is marked as experimental because it may change from one minor release to another.
-	 * @return
 	 */
 	@Experimental
 	protected RevivableExecutorService getExecutorService() {
@@ -452,9 +453,19 @@ public class ShaclSail extends ShaclSailBaseConfiguration {
 		}
 
 		try {
-			return new ShaclSailConnection(this, super.getConnection(),
-					super.getConnection(), super.getConnection(), super.getConnection(),
-					shapesRepo.getConnection());
+			NotifyingSailConnection connection = super.getConnection();
+			if (connection instanceof MemoryStoreConnection) {
+				if (isSerializableValidation()) {
+					return new ShaclSailConnection(this, connection, super.getConnection(), shapesRepo.getConnection(),
+							super.getConnection());
+				} else {
+					return new ShaclSailConnection(this, connection, super.getConnection(), shapesRepo.getConnection());
+				}
+			} else if (isSerializableValidation()) {
+				return new ShaclSailConnection(this, connection, shapesRepo.getConnection(), super.getConnection());
+			} else {
+				return new ShaclSailConnection(this, connection, shapesRepo.getConnection());
+			}
 		} catch (Throwable t) {
 			singleConnectionCounter.decrementAndGet();
 			throw t;

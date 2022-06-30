@@ -68,7 +68,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private final SailConnection previousStateConnection;
 	private final SailConnection serializableConnection;
-	private final SailConnection previousStateSerializableConnection;
 
 	private final boolean useDefaultShapesGraph;
 	private IRI[] shapesGraphs;
@@ -107,14 +106,44 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private TransactionSetting[] transactionSettingsRaw = new TransactionSetting[0];
 	private volatile boolean closed;
 
-	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
-			SailConnection previousStateConnection, SailConnection serializableConnection,
-			SailConnection previousStateSerializableConnection,
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, SailConnection previousStateConnection,
+			SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
+		super(connection);
+		this.previousStateConnection = previousStateConnection;
+		this.shapesRepoConnection = shapesRepoConnection;
+		this.serializableConnection = serializableConnection;
+		this.sail = sail;
+		this.transactionSettings = getDefaultSettings(sail);
+		this.useDefaultShapesGraph = sail.getShapesGraphs().contains(RDF4J.SHACL_SHAPE_GRAPH);
+	}
+
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, SailConnection previousStateConnection,
 			SailRepositoryConnection shapesRepoConnection) {
 		super(connection);
 		this.previousStateConnection = previousStateConnection;
+		this.shapesRepoConnection = shapesRepoConnection;
+		this.serializableConnection = null;
+		this.sail = sail;
+		this.transactionSettings = getDefaultSettings(sail);
+		this.useDefaultShapesGraph = sail.getShapesGraphs().contains(RDF4J.SHACL_SHAPE_GRAPH);
+	}
+
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
+			SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
+		super(connection);
+		this.previousStateConnection = null;
+		this.shapesRepoConnection = shapesRepoConnection;
 		this.serializableConnection = serializableConnection;
-		this.previousStateSerializableConnection = previousStateSerializableConnection;
+		this.sail = sail;
+		this.transactionSettings = getDefaultSettings(sail);
+		this.useDefaultShapesGraph = sail.getShapesGraphs().contains(RDF4J.SHACL_SHAPE_GRAPH);
+	}
+
+	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
+			SailRepositoryConnection shapesRepoConnection) {
+		super(connection);
+		this.previousStateConnection = null;
+		this.serializableConnection = null;
 		this.shapesRepoConnection = shapesRepoConnection;
 		this.sail = sail;
 		this.transactionSettings = getDefaultSettings(sail);
@@ -168,8 +197,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			super.begin(level);
 			hasStatement(null, null, null, false); // actually force a transaction to start
 			shapesRepoConnection.begin(currentIsolationLevel);
-			previousStateConnection.begin(currentIsolationLevel);
-			previousStateConnection.hasStatement(null, null, null, false); // actually force a transaction to start
+			if (previousStateConnection != null) {
+				previousStateConnection.begin(currentIsolationLevel);
+				previousStateConnection.hasStatement(null, null, null, false); // actually force a transaction to start
+			}
 		}
 
 		stats.setEmptyBeforeTransaction(ConnectionHelper.isEmpty(this));
@@ -195,7 +226,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	/**
-	 *
 	 * @return the transaction settings that are based purely on the settings based down through the begin(...) method
 	 *         without considering any sail level settings for things like caching or parallel validation.
 	 */
@@ -241,7 +271,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 		try {
 			long before = getTimeStamp();
-			previousStateConnection.commit();
+			if (previousStateConnection != null) {
+				previousStateConnection.commit();
+			}
 			super.commit();
 			shapesRepoConnection.commit();
 
@@ -323,7 +355,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				writableShapesCache = null;
 			}
 
-			if (previousStateConnection.isActive()) {
+			if (previousStateConnection != null && previousStateConnection.isActive()) {
 				previousStateConnection.rollback();
 			}
 		} finally {
@@ -704,31 +736,32 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 			} finally {
 				try {
-					previousStateConnection.close();
+					if (previousStateConnection != null) {
+						previousStateConnection.close();
+					}
 
 				} finally {
 					try {
-						serializableConnection.close();
-
+						if (serializableConnection != null) {
+							serializableConnection.close();
+						}
 					} finally {
+
 						try {
-							previousStateSerializableConnection.close();
+							super.close();
 						} finally {
 							try {
-								super.close();
+								sail.closeConnection();
 							} finally {
 								try {
-									sail.closeConnection();
+									cleanupShapesReadWriteLock();
 								} finally {
 									try {
-										cleanupShapesReadWriteLock();
+										cleanupReadWriteLock();
 									} finally {
-										try {
-											cleanupReadWriteLock();
-										} finally {
-											closed = true;
-										}
+										closed = true;
 									}
+
 								}
 							}
 						}
@@ -853,7 +886,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			// if the thread has been interrupted we should try to return quickly
 			if (!Thread.currentThread().isInterrupted()) {
 				shapesRepoConnection.prepare();
-				previousStateConnection.prepare();
+				if (previousStateConnection != null) {
+					previousStateConnection.prepare();
+				}
 				super.prepare();
 			}
 
@@ -874,7 +909,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	}
 
 	private boolean shouldUseSerializableValidation() {
-		return sail.isSerializableValidation() && currentIsolationLevel == IsolationLevels.SNAPSHOT;
+		return serializableConnection != null && sail.isSerializableValidation()
+				&& currentIsolationLevel == IsolationLevels.SNAPSHOT;
 	}
 
 	private boolean isBulkValidation() {
@@ -884,43 +920,36 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 	private ValidationReport serializableValidation(List<ContextWithShapes> shapesAfterRefresh)
 			throws InterruptedException {
 		try {
-			try {
-				try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(
-						new VerySimpleRdfsBackwardsChainingConnection(serializableConnection, rdfsSubClassOfReasoner),
-						previousStateSerializableConnection, addedStatements, removedStatements, stats,
-						this::getRdfsSubClassOfReasoner, transactionSettings, sail.sparqlValidation)) {
+			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(
+					new VerySimpleRdfsBackwardsChainingConnection(serializableConnection, rdfsSubClassOfReasoner), null,
+					addedStatements, removedStatements, stats, this::getRdfsSubClassOfReasoner, transactionSettings,
+					sail.sparqlValidation)) {
 
-					connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);
-					// actually force a transaction to start
-					connectionsGroup.getBaseConnection().hasStatement(null, null, null, false);
+				connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);
+				// actually force a transaction to start
+				connectionsGroup.getBaseConnection().hasStatement(null, null, null, false);
 
-					connectionsGroup.getPreviousStateConnection().begin(IsolationLevels.SNAPSHOT);
-					// actually force a transaction to start
-					connectionsGroup.getPreviousStateConnection().hasStatement(null, null, null, false);
+				stats.setEmptyBeforeTransaction(ConnectionHelper.isEmpty(connectionsGroup.getBaseConnection()));
 
-					stats.setEmptyBeforeTransaction(ConnectionHelper.isEmpty(connectionsGroup.getBaseConnection()));
-
-					try (SailConnection connection = addedStatements.getConnection()) {
-						SailConnection baseConnection = connectionsGroup.getBaseConnection();
-						ConnectionHelper.transferStatements(connection, baseConnection::addStatement);
-					}
-
-					try (SailConnection connection = removedStatements.getConnection()) {
-						SailConnection baseConnection = connectionsGroup.getBaseConnection();
-						ConnectionHelper.transferStatements(connection, baseConnection::removeStatements);
-					}
-
-					serializableConnection.flush();
-
-					return performValidation(shapesAfterRefresh,
-							shapesModifiedInCurrentTransaction || isBulkValidation(), connectionsGroup);
-
-				} finally {
-					serializableConnection.rollback();
+				try (SailConnection connection = addedStatements.getConnection()) {
+					SailConnection baseConnection = connectionsGroup.getBaseConnection();
+					ConnectionHelper.transferStatements(connection, baseConnection::addStatement);
 				}
+
+				try (SailConnection connection = removedStatements.getConnection()) {
+					SailConnection baseConnection = connectionsGroup.getBaseConnection();
+					ConnectionHelper.transferStatements(connection, baseConnection::removeStatements);
+				}
+
+				serializableConnection.flush();
+
+				return performValidation(shapesAfterRefresh, shapesModifiedInCurrentTransaction || isBulkValidation(),
+						connectionsGroup);
+
 			} finally {
-				previousStateSerializableConnection.rollback();
+				serializableConnection.rollback();
 			}
+
 		} finally {
 			rdfsSubClassOfReasoner = null;
 

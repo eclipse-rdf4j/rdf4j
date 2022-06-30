@@ -117,8 +117,6 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 					validationSettings.getDataGraph(),
 					path.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);

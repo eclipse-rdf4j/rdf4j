@@ -113,7 +113,6 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 				PlanNode overrideTargetPlanNode = overrideTargetNode.getPlanNode();
 
 				if (overrideTargetPlanNode instanceof AllTargetsPlanNode) {
-
 					// We are cheating a bit here by retrieving all the targets and values at the same time by
 					// pretending to be in node shape scope and then shifting the results back to property shape scope
 					PlanNode allTargets = targetChain
@@ -139,8 +138,8 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 											new StatementMatcher.Variable("c"),
 											connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 							false, null,
-							(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-									validationSettings.getDataGraph()));
+							BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
+					);
 				}
 			}
 
@@ -183,11 +182,12 @@ public abstract class SimpleAbstractConstraintComponent extends AbstractConstrai
 					effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
 							null),
 					connectionsGroup.getBaseConnection(),
-					validationSettings.getDataGraph(), path.get()
+					validationSettings.getDataGraph(),
+					path.get()
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
-									new StatementMatcher.Variable("c"),
-									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					true,
+									new StatementMatcher.Variable("c"), connectionsGroup.getRdfsSubClassOfReasoner(),
+									stableRandomVariableProvider),
+					connectionsGroup.hasPreviousStateConnection(),
 					connectionsGroup.getPreviousStateConnection(),
 					b -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph()));
