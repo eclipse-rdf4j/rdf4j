@@ -130,11 +130,20 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 							validationSettings.getDataGraph())
 			);
 
+			PlanNode falseNode = joined;
+			if (connectionsGroup.getAddedStatements() != null) {
+				// filter by type against the added statements
+				falseNode = new ExternalPredicateObjectFilter(
+						connectionsGroup.getAddedStatements(),
+						validationSettings.getDataGraph(), RDF.TYPE, Collections.singleton(clazz),
+						falseNode, false, ExternalPredicateObjectFilter.FilterOn.value);
+			}
+
 			// filter by type against the base sail
-			PlanNode falseNode = new ExternalPredicateObjectFilter(
+			falseNode = new ExternalPredicateObjectFilter(
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(), RDF.TYPE, Collections.singleton(clazz),
-					joined, false, ExternalPredicateObjectFilter.FilterOn.value);
+					falseNode, false, ExternalPredicateObjectFilter.FilterOn.value);
 
 			return falseNode;
 
