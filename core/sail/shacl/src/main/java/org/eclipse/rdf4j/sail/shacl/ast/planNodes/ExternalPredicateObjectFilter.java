@@ -47,6 +47,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
 
 		this.connection = connection;
+		assert this.connection != null;
 		this.filterOnPredicate = filterOnPredicate;
 		this.filterOnObject = filterOnObject;
 		this.filterOn = filterOn;
@@ -260,7 +261,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 					&& filterOn == that.filterOn && Arrays.equals(dataGraph, that.dataGraph)
 					&& parent.equals(that.parent);
 		} else {
-			return returnMatching == that.returnMatching && connection.equals(that.connection)
+			return returnMatching == that.returnMatching && Objects.equals(connection, that.connection)
 					&& filterOnObject.equals(that.filterOnObject) && filterOnPredicate.equals(that.filterOnPredicate)
 					&& filterOn == that.filterOn && Arrays.equals(dataGraph, that.dataGraph)
 					&& parent.equals(that.parent);

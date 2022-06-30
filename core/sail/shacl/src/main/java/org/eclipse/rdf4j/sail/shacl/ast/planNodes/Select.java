@@ -50,6 +50,7 @@ public class Select implements PlanNode {
 	public Select(SailConnection connection, String queryFregment, String orderBy,
 			Function<BindingSet, ValidationTuple> mapper, Resource[] dataGraph) {
 		this.connection = connection;
+		assert this.connection != null;
 		this.mapper = mapper;
 		if (queryFregment.trim().equals("")) {
 			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
@@ -77,6 +78,7 @@ public class Select implements PlanNode {
 		assert query.trim().toLowerCase().startsWith("select") : "Expected query to start with select.";
 
 		this.connection = connection;
+		assert this.connection != null;
 		this.mapper = mapper;
 		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
@@ -191,23 +193,23 @@ public class Select implements PlanNode {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		Select select = (Select) o;
+		Select that = (Select) o;
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
-		if (connection instanceof MemoryStoreConnection && select.connection instanceof MemoryStoreConnection) {
-			return sorted == select.sorted &&
+		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
+			return sorted == that.sorted &&
 					((MemoryStoreConnection) connection).getSail()
-							.equals(((MemoryStoreConnection) select.connection).getSail())
+							.equals(((MemoryStoreConnection) that.connection).getSail())
 					&&
-					mapper.equals(select.mapper) &&
-					dataset.equals(select.dataset) &&
-					query.equals(select.query);
+					mapper.equals(that.mapper) &&
+					dataset.equals(that.dataset) &&
+					query.equals(that.query);
 		} else {
-			return sorted == select.sorted &&
-					connection.equals(select.connection) &&
-					mapper.equals(select.mapper) &&
-					dataset.equals(select.dataset) &&
-					query.equals(select.query);
+			return sorted == that.sorted &&
+					Objects.equals(connection, that.connection) &&
+					mapper.equals(that.mapper) &&
+					dataset.equals(that.dataset) &&
+					query.equals(that.query);
 		}
 	}
 

@@ -149,10 +149,12 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNodeProvider planNodeProvider = () -> {
 
-			PlanNode target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-					stableRandomVariableProvider);
+			PlanNode target;
 
-			if (overrideTargetNode != null) {
+			if (overrideTargetNode == null) {
+				target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
+						stableRandomVariableProvider);
+			} else {
 				target = getTargetChain()
 						.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -193,10 +195,12 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode invalid = Unique.getInstance(planNode, false);
 
-		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-				stableRandomVariableProvider);
+		PlanNode allTargetsPlan;
 
-		if (overrideTargetNode != null) {
+		if (overrideTargetNode == null) {
+			allTargetsPlan = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
+					stableRandomVariableProvider);
+		} else {
 			allTargetsPlan = getTargetChain()
 					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
 							stableRandomVariableProvider)

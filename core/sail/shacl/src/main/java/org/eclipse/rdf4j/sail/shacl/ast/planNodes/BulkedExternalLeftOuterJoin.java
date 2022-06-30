@@ -49,6 +49,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 		this.leftNode = leftNode;
 		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
 		this.connection = connection;
+		assert this.connection != null;
 		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
 		this.previousStateConnection = previousStateConnection;
 		this.mapper = mapper;
@@ -213,7 +214,8 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 			return false;
 		}
 		BulkedExternalLeftOuterJoin that = (BulkedExternalLeftOuterJoin) o;
-		return skipBasedOnPreviousConnection == that.skipBasedOnPreviousConnection && connection.equals(that.connection)
+		return skipBasedOnPreviousConnection == that.skipBasedOnPreviousConnection
+				&& Objects.equals(connection, that.connection)
 				&& leftNode.equals(that.leftNode)
 				&& Objects.equals(dataset, that.dataset)
 				&& Objects.equals(previousStateConnection, that.previousStateConnection) && query.equals(that.query);

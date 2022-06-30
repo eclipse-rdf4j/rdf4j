@@ -48,6 +48,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 		this.dataGraph = dataGraph;
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.connection = connection;
+		assert this.connection != null;
 		this.filterOnPredicates = filterOnPredicates;
 		this.on = on;
 	}
@@ -222,7 +223,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 		}
 
-		return connection.equals(that.connection) && filterOnPredicates.equals(that.filterOnPredicates) &&
+		return Objects.equals(connection, that.connection) && filterOnPredicates.equals(that.filterOnPredicates) &&
 				Arrays.equals(dataGraph, that.dataGraph)
 				&& parent.equals(that.parent) && on == that.on;
 	}
