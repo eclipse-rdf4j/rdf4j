@@ -8,8 +8,8 @@
 
 package org.eclipse.rdf4j.sail.shacl.wrapper.data;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -21,6 +21,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
@@ -30,6 +32,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
  */
 @InternalUseOnly
 public class ConnectionsGroup implements AutoCloseable {
+
+	private static final Logger logger = LoggerFactory.getLogger(ConnectionsGroup.class);
 
 	private final SailConnection baseConnection;
 	private final SailConnection previousStateConnection;
@@ -45,7 +49,7 @@ public class ConnectionsGroup implements AutoCloseable {
 	private final boolean sparqlValidation;
 
 	// used to cache Select plan nodes so that we don't query a store for the same data during the same validation step.
-	private final Map<PlanNode, BufferedSplitter> nodeCache = new HashMap<>();
+	private final Map<PlanNode, BufferedSplitter> nodeCache = new ConcurrentHashMap<>();
 
 	public ConnectionsGroup(SailConnection baseConnection,
 			SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
@@ -104,19 +108,34 @@ public class ConnectionsGroup implements AutoCloseable {
 		return baseConnection;
 	}
 
-	synchronized public PlanNode getCachedNodeFor(PlanNode planNode) {
+	public PlanNode getCachedNodeFor(PlanNode planNode) {
 
 		if (!transactionSettings.isCacheSelectNodes()) {
 			return planNode;
 		}
 
-		if (planNode instanceof UnorderedSelect || planNode instanceof UnBufferedPlanNode) {
+		if (planNode instanceof UnorderedSelect || planNode instanceof UnBufferedPlanNode
+				|| (planNode instanceof BufferedSplitter.BufferedSplitterPlaneNode
+						&& ((BufferedSplitter.BufferedSplitterPlaneNode) planNode).cached)) {
 			return planNode;
 		}
 
-		BufferedSplitter bufferedSplitter = nodeCache.computeIfAbsent(planNode, BufferedSplitter::new);
+		if (logger.isDebugEnabled()) {
+			boolean[] matchedCache = { true };
 
-		return bufferedSplitter.getPlanNode();
+			BufferedSplitter bufferedSplitter = nodeCache.computeIfAbsent(planNode, parent -> {
+				matchedCache[0] = false;
+				return new BufferedSplitter(parent, true, true);
+			});
+
+			logger.debug("Found in cache: {} {}  -  {} : {}", matchedCache[0] ? " TRUE" : "FALSE",
+					bufferedSplitter.getId(), planNode.getClass().getSimpleName(), planNode.getId());
+
+			return bufferedSplitter.getPlanNode();
+		} else {
+			return nodeCache.computeIfAbsent(planNode, BufferedSplitter::new).getPlanNode();
+		}
+
 	}
 
 	public RdfsSubClassOfReasoner getRdfsSubClassOfReasoner() {
