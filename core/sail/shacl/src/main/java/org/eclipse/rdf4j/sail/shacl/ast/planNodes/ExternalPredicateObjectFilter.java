@@ -9,13 +9,18 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -57,7 +62,48 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 
 			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
+			List<Resource> filterOnObject = null;
+			IRI filterOnPredicate = null;
+
 			void calculateNext() {
+
+				if (filterOnObject == null) {
+					if (!parentIterator.hasNext()) {
+						return;
+					}
+
+					try (var stream = connection
+							.getStatements(null, ExternalPredicateObjectFilter.this.filterOnPredicate, null, true,
+									dataGraph)
+							.stream()) {
+						filterOnPredicate = stream.map(Statement::getPredicate).findAny().orElse(null);
+					}
+
+					if (filterOnPredicate == null) {
+						filterOnObject = Collections.emptyList();
+					} else {
+						filterOnObject = ExternalPredicateObjectFilter.this.filterOnObject.stream()
+								.map(object -> {
+									try (var stream = connection
+											.getStatements(null, filterOnPredicate, object, true, dataGraph)
+											.stream()) {
+										return stream.map(Statement::getObject)
+												.map(o -> ((Resource) o))
+												.findAny()
+												.orElse(null);
+									}
+								}
+								)
+								.filter(Objects::nonNull)
+								.collect(Collectors.toList());
+					}
+
+				}
+
+				if (returnMatching && (filterOnPredicate == null || filterOnObject.isEmpty())) {
+					return;
+				}
+
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
@@ -73,7 +119,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 						throw new IllegalStateException("Unknown filterOn: " + filterOn);
 					}
 
-					boolean matches = matches(value);
+					boolean matches = matches(value, filterOnPredicate, filterOnObject);
 
 					if (returnMatching) {
 						if (matches) {
@@ -104,7 +150,11 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 				assert next != null || !parentIterator.hasNext() : parentIterator.toString();
 			}
 
-			private boolean matches(Value subject) {
+			private boolean matches(Value subject, IRI filterOnPredicate, Collection<Resource> filterOnObject) {
+				if (filterOnPredicate == null || filterOnObject.isEmpty()) {
+					return false;
+				}
+
 				if (subject.isResource()) {
 					return filterOnObject.stream()
 							.anyMatch(object -> connection.hasStatement((Resource) subject, filterOnPredicate, object,
