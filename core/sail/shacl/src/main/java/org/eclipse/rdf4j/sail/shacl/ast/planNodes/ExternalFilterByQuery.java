@@ -49,6 +49,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 			Function<ValidationTuple, Value> filterOn) {
 		super(parent);
 		this.connection = connection;
+		assert this.connection != null;
 		this.queryVariable = queryVariable;
 		this.filterOn = filterOn;
 
@@ -114,7 +115,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 					&& queryString.equals(that.queryString);
 		}
 
-		return connection.equals(that.connection) && queryVariable.equals(that.queryVariable)
+		return Objects.equals(connection, that.connection) && queryVariable.equals(that.queryVariable)
 				&& Objects.equals(dataset, that.dataset)
 				&& filterOn.equals(that.filterOn) && queryString.equals(that.queryString);
 	}

@@ -109,8 +109,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,
 					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
+					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
 			);
 		} else {
 			relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(
@@ -121,8 +120,6 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);

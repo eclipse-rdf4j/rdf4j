@@ -73,6 +73,7 @@ public class BindSelect implements PlanNode {
 			List<String> varNames, ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction,
 			boolean includePropertyShapeValues) {
 		this.connection = connection;
+		assert this.connection != null;
 		this.mapper = (bindingSet) -> new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues,
 				dataGraph);
 		this.varNames = varNames;
@@ -367,7 +368,7 @@ public class BindSelect implements PlanNode {
 		} else {
 			return bulkSize == that.bulkSize &&
 					includePropertyShapeValues == that.includePropertyShapeValues &&
-					connection.equals(that.connection) &&
+					Objects.equals(connection, that.connection) &&
 					varNames.equals(that.varNames) &&
 					scope.equals(that.scope) &&
 					query.equals(that.query) &&

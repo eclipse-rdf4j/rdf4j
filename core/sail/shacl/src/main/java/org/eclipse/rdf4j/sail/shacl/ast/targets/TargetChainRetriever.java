@@ -171,8 +171,6 @@ public class TargetChainRetriever implements PlanNode {
 
 						}
 
-						MapBindingSet bindings = new MapBindingSet();
-
 						while (statements == null || !statements.hasNext()) {
 							calculateNextStatementMatcher();
 							if (statements == null) {
@@ -185,6 +183,8 @@ public class TargetChainRetriever implements PlanNode {
 						}
 
 						Statement next = statements.next();
+
+						MapBindingSet bindings = new MapBindingSet();
 
 						if (currentStatementMatcher.getSubjectValue() == null
 								&& !currentStatementMatcher.subjectIsWildcard()) {

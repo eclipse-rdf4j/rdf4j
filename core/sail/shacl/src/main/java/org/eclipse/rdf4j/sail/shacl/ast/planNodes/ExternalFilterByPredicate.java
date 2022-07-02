@@ -9,13 +9,17 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -44,19 +48,48 @@ public class ExternalFilterByPredicate implements PlanNode {
 		this.dataGraph = dataGraph;
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.connection = connection;
+		assert this.connection != null;
 		this.filterOnPredicates = filterOnPredicates;
 		this.on = on;
 	}
 
 	@Override
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
+
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
 			ValidationTuple next = null;
 
 			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
+			List<IRI> filterOnPredicates = null;
+
 			void calculateNext() {
+				if (filterOnPredicates == null) {
+					if (!parentIterator.hasNext()) {
+						return;
+					}
+
+					filterOnPredicates = ExternalFilterByPredicate.this.filterOnPredicates.stream()
+							.map(predicate -> {
+								try (var stream = connection
+										.getStatements(null, predicate, null, true, dataGraph)
+										.stream()) {
+									return stream.map(Statement::getPredicate)
+											.findAny()
+											.orElse(null);
+								}
+							}
+							)
+							.filter(Objects::nonNull)
+							.collect(Collectors.toList());
+
+				}
+
+				if (filterOnPredicates.isEmpty()) {
+					return;
+				}
+
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
 
@@ -190,7 +223,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 
 		}
 
-		return connection.equals(that.connection) && filterOnPredicates.equals(that.filterOnPredicates) &&
+		return Objects.equals(connection, that.connection) && filterOnPredicates.equals(that.filterOnPredicates) &&
 				Arrays.equals(dataGraph, that.dataGraph)
 				&& parent.equals(that.parent) && on == that.on;
 	}

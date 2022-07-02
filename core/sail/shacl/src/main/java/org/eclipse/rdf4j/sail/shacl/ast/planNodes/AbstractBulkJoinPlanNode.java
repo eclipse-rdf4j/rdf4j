@@ -46,8 +46,7 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
 	void runQuery(ArrayDeque<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection,
 			ParsedQuery parsedQuery, Dataset dataset, Resource[] dataGraph, boolean skipBasedOnPreviousConnection,
-			SailConnection previousStateConnection,
-			Function<BindingSet, ValidationTuple> mapper) {
+			SailConnection previousStateConnection, Function<BindingSet, ValidationTuple> mapper) {
 		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection,
 				previousStateConnection, dataGraph);
 

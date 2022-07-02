@@ -46,6 +46,7 @@ public class UnorderedSelect implements PlanNode {
 	public UnorderedSelect(SailConnection connection, Resource subject, IRI predicate, Value object,
 			Resource[] dataGraph, Function<Statement, ValidationTuple> mapper) {
 		this.connection = connection;
+		assert this.connection != null;
 		this.subject = subject;
 		this.predicate = predicate;
 		this.object = object;
@@ -155,7 +156,7 @@ public class UnorderedSelect implements PlanNode {
 					Arrays.equals(dataGraph, that.dataGraph) &&
 					mapper.equals(that.mapper);
 		} else {
-			return connection.equals(that.connection) &&
+			return Objects.equals(connection, that.connection) &&
 					Objects.equals(subject, that.subject) &&
 					Objects.equals(predicate, that.predicate) &&
 					Objects.equals(object, that.object) &&
