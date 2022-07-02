@@ -10,6 +10,9 @@ package org.eclipse.rdf4j.sail.shacl;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -18,6 +21,7 @@ import java.util.Random;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -428,7 +432,31 @@ public abstract class MultithreadedTest {
 		}
 
 		ExecutorService executorService = null;
+		Thread deadlockDetectionThread = null;
 		try {
+
+			deadlockDetectionThread = new Thread(() -> {
+				try {
+					Thread.sleep(TimeUnit.SECONDS.toMillis(20));
+					ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+					long[] ids = threadMXBean.findDeadlockedThreads();
+					if (ids != null) {
+						ThreadInfo[] deadlockedThreads = threadMXBean.getThreadInfo(ids, true, true);
+						StringBuilder sb = new StringBuilder();
+						for (ThreadInfo deadlockedThread : deadlockedThreads) {
+							sb.append("Deadlocked thread - ").append(deadlockedThread).append("\n");
+						}
+						String deadlockMessage = sb.toString();
+						if (!deadlockMessage.isEmpty()) {
+							System.err.println(deadlockMessage);
+						}
+					}
+
+				} catch (InterruptedException ignored) {
+				}
+			});
+			deadlockDetectionThread.setDaemon(true);
+			deadlockDetectionThread.start();
 
 			executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 
@@ -516,8 +544,10 @@ public abstract class MultithreadedTest {
 							throw new RuntimeException(e);
 						}
 					});
-
 		} finally {
+			if (deadlockDetectionThread != null) {
+				deadlockDetectionThread.interrupt();
+			}
 			if (executorService != null) {
 				List<Runnable> runnables = executorService.shutdownNow();
 				assert runnables.isEmpty();

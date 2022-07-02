@@ -10,10 +10,13 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -51,7 +54,8 @@ class SailSourceBranch implements SailSource {
 	/**
 	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this {@link SailSource}.
 	 */
-	private final Collection<Changeset> pending = new ArrayList<>();
+	private final Set<Changeset> pending = Collections
+			.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
 
 	/**
 	 * Set of open {@link SailDataset} for this {@link SailSource}.
@@ -176,12 +180,12 @@ class SailSourceBranch implements SailSource {
 			@Override
 			public void close() throws SailException {
 				try {
-					semaphore.lock();
-					// This ChangeSet should have been removed from `pending` already, unless we are rolling back a
-					// transaction in which case we need to remove it when closing the ChangeSet.
-					pending.remove(this);
+					// ´this´ Changeset should have been removed from `pending` already, unless we are rolling back a
+					// transaction in which case we need to remove it when closing the Changeset.
+					if (pending.contains(this)) {
+						removeThisFromPendingWithoutCausingDeadlock();
+					}
 				} finally {
-					semaphore.unlock();
 					try {
 						super.close();
 					} finally {
@@ -191,6 +195,32 @@ class SailSourceBranch implements SailSource {
 						}
 						autoFlush();
 					}
+				}
+			}
+
+			/**
+			 * The outer SailSourceBranch could be in use in a SERIALIZABLE transaction, so we don't want to cause any
+			 * deadlocks by taking the ´semaphore´ if ´this´ Changeset is already in the process of being removed from
+			 * ´pending´.
+			 */
+			private void removeThisFromPendingWithoutCausingDeadlock() {
+				long tryLockMillis = 10;
+				while (pending.contains(this)) {
+					boolean locked = false;
+					try {
+						locked = semaphore.tryLock(tryLockMillis *= 2, TimeUnit.MILLISECONDS);
+						if (locked) {
+							pending.remove(this);
+						}
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new SailException(e);
+					} finally {
+						if (locked) {
+							semaphore.unlock();
+						}
+					}
+
 				}
 			}
 
@@ -312,6 +342,11 @@ class SailSourceBranch implements SailSource {
 				changes.add(change.shallowClone());
 				compressChanges();
 				merged = changes.getLast();
+
+				// ´pending´ is a synchronized collection, so we should in theory use a synchronized block here to
+				// protect our iterator. The ´semaphore´ is already protecting all writes, and we have already acquired
+				// the ´semaphore´. Synchronizing on the ´pending´ collection could potentially lead to a deadlock when
+				// closing a Changeset during rollback.
 				for (Changeset c : pending) {
 					c.prepend(merged);
 				}
