@@ -358,10 +358,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				for (int j = i + 1; j < subSelects.size(); j++) {
 					TupleExpr secondArg = subSelects.get(j);
 
-					Set<String> names = firstArg.getBindingNames();
-					names.retainAll(secondArg.getBindingNames());
+					int joinSize = getJoinSize(firstArg.getBindingNames(), secondArg.getBindingNames());
 
-					int joinSize = names.size();
 					if (joinSize > maxJoinSize) {
 						maxJoinSize = joinSize;
 					}
@@ -433,13 +431,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			int currentJoinSize = -1;
 			for (TupleExpr candidate : joinArgs) {
 				if (!currentList.contains(candidate)) {
-					Set<String> names = candidate.getBindingNames();
-					names.retainAll(currentListNames);
-					int joinSize = names.size();
 
-					names = candidate.getBindingNames();
-					names.addAll(currentListNames);
-					int unionSize = names.size();
+					Set<String> names = candidate.getBindingNames();
+					int joinSize = getJoinSize(currentListNames, names);
+
+					Set<String> candidateBindingNames = candidate.getBindingNames();
+					int unionSize = getUnionSize(currentListNames, candidateBindingNames);
 
 					if (joinSize > currentJoinSize) {
 						selected = candidate;
@@ -665,6 +662,26 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+	}
+
+	private static int getUnionSize(Set<String> currentListNames, Set<String> candidateBindingNames) {
+		int count = 0;
+		for (String n : currentListNames) {
+			if (!candidateBindingNames.contains(n)) {
+				count++;
+			}
+		}
+		return candidateBindingNames.size() + count;
+	}
+
+	private static int getJoinSize(Set<String> currentListNames, Set<String> names) {
+		int count = 0;
+		for (String name : names) {
+			if (currentListNames.contains(name)) {
+				count++;
+			}
+		}
+		return count;
 	}
 
 	private static boolean hasCachedCardinality(TupleExpr tupleExpr) {

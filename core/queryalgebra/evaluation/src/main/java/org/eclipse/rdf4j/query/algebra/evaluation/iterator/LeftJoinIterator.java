@@ -14,6 +14,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -113,8 +114,14 @@ public class LeftJoinIterator extends LookAheadIteration<BindingSet, QueryEvalua
 						} else {
 							// Limit the bindings to the ones that are in scope for
 							// this filter
-							QueryBindingSet scopeBindings = new QueryBindingSet(rightBindings);
-							scopeBindings.retainAll(scopeBindingNames);
+
+							QueryBindingSet scopeBindings = new QueryBindingSet(scopeBindingNames.size());
+							for (String scopeBindingName : scopeBindingNames) {
+								Binding binding = rightBindings.getBinding(scopeBindingName);
+								if (binding != null) {
+									scopeBindings.addBinding(binding);
+								}
+							}
 
 							if (isTrue(joinCondition, scopeBindings)) {
 								return rightBindings;
