@@ -98,4 +98,9 @@ jobs:
       uses: scacap/action-surefire-report@v1
       with:
         check_name: Test report - slow-tests
-
+  copyright-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: check copyright header present
+      run: scripts/checkCopyrightPresent.sh
