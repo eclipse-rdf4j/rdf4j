@@ -8,6 +8,8 @@
 
 package org.eclipse.rdf4j.spring.dao.support.sparql;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -17,6 +19,7 @@ import java.util.function.Supplier;
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
+@Experimental
 public class NamedSparqlSupplier {
 	private final String name;
 	private final Supplier<String> sparqlSupplier;

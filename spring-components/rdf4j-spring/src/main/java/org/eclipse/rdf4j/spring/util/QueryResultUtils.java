@@ -10,6 +10,7 @@ package org.eclipse.rdf4j.spring.util;
 
 import java.util.Optional;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -19,6 +20,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
+@Experimental
 public class QueryResultUtils {
 
 	public static Optional<Value> getValueOptional(BindingSet resultRow, String varName) {

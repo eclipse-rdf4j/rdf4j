@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.spring.dao.support.bindingsBuilder;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
@@ -16,6 +17,7 @@ import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
+@Experimental
 public interface MutableBindings {
 	BindingsBuilder add(Variable key, Value value);
 
