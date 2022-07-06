@@ -15,15 +15,8 @@ import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CEIL;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.COALESCE;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
 import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
-import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
-
-import java.util.ArrayList;
-import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.*;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
-import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Assignable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
@@ -325,14 +318,6 @@ public class Expressions {
 		return binaryExpression(BinaryOperator.NOT_EQUALS, left, right);
 	}
 
-	public static Expression<?> notEquals(Variable left, RdfValue right) {
-		return binaryExpression(BinaryOperator.NOT_EQUALS, left, right);
-	}
-
-	public static Expression<?> notEquals(Variable left, IRI right) {
-		return binaryExpression(BinaryOperator.NOT_EQUALS, left, iri(right));
-	}
-
 	/**
 	 * <code>left > right</code>
 	 *
@@ -608,16 +593,8 @@ public class Expressions {
 		return new NotIn(var, options);
 	}
 
-	public static Expression<?> notIn(Variable var, IRI... options) {
-		return notIn(var, parseIRIOptionsToRDFValueVarargs(options));
-	}
-
 	public static Expression<?> in(Variable var, RdfValue... options) {
 		return new In(var, options);
-	}
-
-	public static Expression<?> in(Variable var, IRI... options) {
-		return in(var, parseIRIOptionsToRDFValueVarargs(options));
 	}
 
 	public static Expression<?> strdt(Operand lexicalForm, Operand datatype) {
@@ -638,19 +615,5 @@ public class Expressions {
 
 	public static Expression<?> iff(Operand testExp, Operand thenExp, Operand elseExp) {
 		return function(SparqlFunction.IF, testExp, thenExp, elseExp);
-	}
-
-	/**
-	 * Parses IRI... options to RdfValue... options to give more flexibility in expressions use
-	 * 
-	 * @param options options as IRIs
-	 * @return options as RDFValues
-	 */
-	private static RdfValue[] parseIRIOptionsToRDFValueVarargs(IRI... options) {
-		List<RdfValue> rdfValueOptions = new ArrayList<>();
-		for (IRI option : options) {
-			rdfValueOptions.add(iri(option));
-		}
-		return rdfValueOptions.toArray(new RdfValue[0]);
 	}
 }

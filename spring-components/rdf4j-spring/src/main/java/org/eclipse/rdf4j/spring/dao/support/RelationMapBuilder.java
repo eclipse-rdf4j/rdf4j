@@ -8,7 +8,6 @@
 
 package org.eclipse.rdf4j.spring.dao.support;
 
-import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
 import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRI;
 import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRIOptional;
 
@@ -54,11 +53,6 @@ public class RelationMapBuilder {
 	public RelationMapBuilder(RDF4JTemplate rdf4JTemplate, RdfPredicate predicate) {
 		this.rdf4JTemplate = rdf4JTemplate;
 		this.predicate = predicate;
-	}
-
-	public RelationMapBuilder(RDF4JTemplate rdf4JTemplate, IRI predicate) {
-		this.rdf4JTemplate = rdf4JTemplate;
-		this.predicate = iri(predicate);
 	}
 
 	/**

@@ -69,7 +69,6 @@ public class ServiceLayerTests extends RDF4JSpringTestBase {
 				null));
 	}
 
-	// TODO
 	@Test
 	public void testRollbackOnException() {
 		transactionTemplate.execute(status -> {

@@ -14,6 +14,7 @@ import static org.springframework.transaction.TransactionDefinition.TIMEOUT_DEFA
 
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.springframework.transaction.support.SmartTransactionObject;
 
@@ -22,6 +23,7 @@ import org.springframework.transaction.support.SmartTransactionObject;
  * @author ameingast@gmail.com
  * @author Florian Kleedorfer
  */
+@Experimental
 public class TransactionObject {
 
 	private RepositoryConnection connection;
