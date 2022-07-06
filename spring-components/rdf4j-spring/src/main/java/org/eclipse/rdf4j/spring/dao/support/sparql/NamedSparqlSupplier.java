@@ -8,10 +8,10 @@
 
 package org.eclipse.rdf4j.spring.dao.support.sparql;
 
-import org.eclipse.rdf4j.common.annotation.Experimental;
-
 import java.util.Objects;
 import java.util.function.Supplier;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
  * Associates a String key with a {@link Supplier<String>} that provides a SPARQL operation.
