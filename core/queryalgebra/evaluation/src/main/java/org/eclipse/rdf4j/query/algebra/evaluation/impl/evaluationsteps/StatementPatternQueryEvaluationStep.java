@@ -12,7 +12,6 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -42,6 +41,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	public static final Resource[] DEFAULT_CONTEXT = { null };
 	public static final Resource[] ALL_CONTEXT = new Resource[0];
+	private static final Function<Value, Resource[]> RETURN_NULL_VALUE_RESOURCE_ARRAY = (v) -> null;
 
 	private final StatementPattern statementPattern;
 	private final TripleSource tripleSource;
@@ -86,6 +86,33 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Var objVar = statementPattern.getObjectVar();
 		Var conVar = statementPattern.getContextVar();
 
+		if (subjVar != null) {
+			if (predVar != null && predVar.getName().equals(subjVar.getName())) {
+				predVar = null;
+			}
+			if (objVar != null && objVar.getName().equals(subjVar.getName())) {
+				objVar = null;
+			}
+			if (conVar != null && conVar.getName().equals(subjVar.getName())) {
+				conVar = null;
+			}
+		}
+
+		if (predVar != null) {
+			if (objVar != null && objVar.getName().equals(predVar.getName())) {
+				objVar = null;
+			}
+			if (conVar != null && conVar.getName().equals(predVar.getName())) {
+				conVar = null;
+			}
+		}
+
+		if (objVar != null) {
+			if (conVar != null && conVar.getName().equals(objVar.getName())) {
+				conVar = null;
+			}
+		}
+
 		converter = makeConverter(context, subjVar, predVar, objVar, conVar);
 
 		unboundTest = getUnboundTest(context, subjVar, predVar, objVar, conVar);
@@ -97,43 +124,67 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	}
 
-	private static Predicate<BindingSet> getUnboundTest(QueryEvaluationContext context, Var subjVar, Var predVar,
-			Var objVar, Var conVar) {
-		Predicate<BindingSet> isSubjBound = unbound(subjVar, context);
-		Predicate<BindingSet> isPredBound = unbound(predVar, context);
-		Predicate<BindingSet> isObjBound = unbound(objVar, context);
-		Predicate<BindingSet> isConBound = unbound(conVar, context);
+	private static Predicate<BindingSet> getUnboundTest(QueryEvaluationContext context, Var s, Var p,
+			Var o, Var c) {
 
-		return (bs) -> {
-			if (!bs.isEmpty()) {
-				return ((isSubjBound != null) && isSubjBound.test(bs))
-						|| ((isPredBound != null) && isPredBound.test(bs))
-						|| ((isObjBound != null) && isObjBound.test(bs))
-						|| ((isConBound != null) && isConBound.test(bs));
+		if (s != null && !s.isConstant()) {
+			if (p != null && !p.isConstant()) {
+				if (o != null && !o.isConstant()) {
+					if (c != null && !c.isConstant()) {
+						return UnboundTest.spoc(context, s, p, o, c);
+					} else {
+						return UnboundTest.spo(context, s, p, o);
+					}
+				} else if (c != null && !c.isConstant()) {
+					return UnboundTest.spc(context, s, p, c);
+				} else {
+					return UnboundTest.sp(context, s, p);
+				}
+			} else if (o != null && !o.isConstant()) {
+				if (c != null && !c.isConstant()) {
+					return UnboundTest.soc(context, s, o, c);
+				} else {
+					return UnboundTest.so(context, s, o);
+				}
+			} else if (c != null && !c.isConstant()) {
+				return UnboundTest.sc(context, s, c);
+			} else {
+				return UnboundTest.s(context, s);
 			}
-			return false;
-		};
+		} else if (p != null && !p.isConstant()) {
+			if (o != null && !o.isConstant()) {
+				if (c != null && !c.isConstant()) {
+					return UnboundTest.poc(context, p, o, c);
+				} else {
+					return UnboundTest.po(context, p, o);
+				}
+			} else if (c != null && !c.isConstant()) {
+				return UnboundTest.pc(context, p, c);
+			} else {
+				return UnboundTest.p(context, p);
+			}
+		} else if (o != null && !o.isConstant()) {
+			if (c != null && !c.isConstant()) {
+				return UnboundTest.oc(context, o, c);
+			} else {
+				return UnboundTest.o(context, o);
+			}
+		} else if (c != null && !c.isConstant()) {
+			return UnboundTest.c(context, c);
+		}
+
+		return (b) -> false;
+
 	}
 
 	private static Function<BindingSet, Value> makeGetVarValue(Var var, QueryEvaluationContext context) {
 		if (var == null) {
-			return (b) -> null;
+			return null;
 		} else if (var.hasValue()) {
 			Value value = var.getValue();
 			return (b) -> value;
 		} else {
 			return context.getValue(var.getName());
-		}
-	}
-
-	private static Predicate<BindingSet> unbound(Var var, QueryEvaluationContext context) {
-		if (var == null || var.isConstant()) {
-			return null;
-		} else {
-			Predicate<BindingSet> hasBinding = context.hasBinding(var.getName());
-			Function<BindingSet, Value> getValue = context.getValue(var.getName());
-			Predicate<BindingSet> getBindingIsNull = (binding) -> getValue.apply(binding) == null;
-			return hasBinding.and(getBindingIsNull);
 		}
 	}
 
@@ -162,7 +213,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	private JoinStatementWithBindingSetIterator getIteration(BindingSet bindings) {
-		final Value contextValue = getContextVar.apply(bindings);
+		final Value contextValue = getContextVar != null ? getContextVar.apply(bindings) : null;
 
 		Resource[] contexts = contextSup.apply(contextValue);
 		if (contexts == null) {
@@ -172,17 +223,17 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		// Check that the subject is a Resource and the predicate can be an IRI
 		// if not we can't return any value.
 
-		Value subject = getSubjectVar.apply(bindings);
+		Value subject = getSubjectVar != null ? getSubjectVar.apply(bindings) : null;
 		if (subject != null && !subject.isResource()) {
 			return null;
 		}
 
-		Value predicate = getPredicateVar.apply(bindings);
+		Value predicate = getPredicateVar != null ? getPredicateVar.apply(bindings) : null;
 		if (predicate != null && !predicate.isIRI()) {
 			return null;
 		}
 
-		Value object = getObjectVar.apply(bindings);
+		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
 
 		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
 		try {
@@ -345,7 +396,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			Set<IRI> graphs) {
 
 		if (emptyGraph) {
-			return (cv) -> null;
+			return RETURN_NULL_VALUE_RESOURCE_ARRAY;
 		}
 
 		if (graphs == null || graphs.isEmpty()) {
@@ -423,7 +474,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		private ConvertStatementToBindingSetIterator(
 				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration,
 				BiConsumer<MutableBindingSet, Statement> action, QueryEvaluationContext context) {
-			this.iteration = Objects.requireNonNull(iteration, "The iterator was null");
+			assert iteration != null;
+			this.iteration = iteration;
 			this.action = action;
 			this.context = context;
 		}
@@ -470,7 +522,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		private JoinStatementWithBindingSetIterator(
 				CloseableIteration<? extends Statement, ? extends QueryEvaluationException> iteration,
 				BiConsumer<MutableBindingSet, Statement> action, BindingSet bindings, QueryEvaluationContext context) {
-			this.iteration = Objects.requireNonNull(iteration, "The iterator was null");
+			assert iteration != null;
+			this.iteration = iteration;
 			assert !bindings.isEmpty();
 			this.action = action;
 			this.context = context;
@@ -516,47 +569,57 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 *
 	 * @return a converter from statement into MutableBindingSet
 	 */
-	private static BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context, Var subjVar,
-			Var predVar, Var objVar, Var conVar) {
+	private static BiConsumer<MutableBindingSet, Statement> makeConverter(QueryEvaluationContext context, Var s,
+			Var p, Var o, Var c) {
 
-		return Stream.of(subjVar, predVar, objVar, conVar)
-				.filter(Objects::nonNull)
-				.filter(var -> !var.isConstant())
-				.distinct()
-				.map(var -> {
-					BiConsumer<Value, MutableBindingSet> setVar = context.addBinding(var.getName());
-					Predicate<BindingSet> varIsNotSet = Predicate.not(context.hasBinding(var.getName()));
-
-					if (var == subjVar) {
-						return (BiConsumer<MutableBindingSet, Statement>) (result, st) -> {
-							if (result.isEmpty() || varIsNotSet.test(result)) {
-								setVar.accept(st.getSubject(), result);
-							}
-						};
-					} else if (var == predVar) {
-						return (BiConsumer<MutableBindingSet, Statement>) (result, st) -> {
-							if (result.isEmpty() || varIsNotSet.test(result)) {
-								setVar.accept(st.getPredicate(), result);
-							}
-						};
-					} else if (var == objVar) {
-						return (BiConsumer<MutableBindingSet, Statement>) (result, st) -> {
-							if (result.isEmpty() || varIsNotSet.test(result)) {
-								setVar.accept(st.getObject(), result);
-							}
-						};
+		if (s != null && !s.isConstant()) {
+			if (p != null && !p.isConstant()) {
+				if (o != null && !o.isConstant()) {
+					if (c != null && !c.isConstant()) {
+						return StatementConvertor.spoc(context, s, p, o, c);
 					} else {
-						return (BiConsumer<MutableBindingSet, Statement>) (result, st) -> {
-							if (result.isEmpty() || varIsNotSet.test(result)) {
-								setVar.accept(st.getContext(), result);
-							}
-						};
+						return StatementConvertor.spo(context, s, p, o);
 					}
+				} else if (c != null && !c.isConstant()) {
+					return StatementConvertor.spc(context, s, p, c);
+				} else {
+					return StatementConvertor.sp(context, s, p);
+				}
+			} else if (o != null && !o.isConstant()) {
+				if (c != null && !c.isConstant()) {
+					return StatementConvertor.soc(context, s, o, c);
+				} else {
+					return StatementConvertor.so(context, s, o);
+				}
+			} else if (c != null && !c.isConstant()) {
+				return StatementConvertor.sc(context, s, c);
+			} else {
+				return StatementConvertor.s(context, s);
+			}
+		} else if (p != null && !p.isConstant()) {
+			if (o != null && !o.isConstant()) {
+				if (c != null && !c.isConstant()) {
+					return StatementConvertor.poc(context, p, o, c);
+				} else {
+					return StatementConvertor.po(context, p, o);
+				}
+			} else if (c != null && !c.isConstant()) {
+				return StatementConvertor.pc(context, p, c);
+			} else {
+				return StatementConvertor.p(context, p);
+			}
+		} else if (o != null && !o.isConstant()) {
+			if (c != null && !c.isConstant()) {
+				return StatementConvertor.oc(context, o, c);
+			} else {
+				return StatementConvertor.o(context, o);
+			}
+		} else if (c != null && !c.isConstant()) {
+			return StatementConvertor.c(context, c);
+		}
 
-				})
-				.reduce(BiConsumer::andThen)
-				.orElse((a, b) -> {
-				});
+		return (a, b) -> {
+		};
 
 	}
 
