@@ -22,6 +22,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -58,6 +59,7 @@ import org.springframework.core.io.ResourceLoader;
  * @author Florian Kleedorfer
  * @author Gabriel Pickl
  */
+@Experimental
 public class RDF4JTemplate {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private RepositoryConnectionFactory repositoryConnectionFactory;
