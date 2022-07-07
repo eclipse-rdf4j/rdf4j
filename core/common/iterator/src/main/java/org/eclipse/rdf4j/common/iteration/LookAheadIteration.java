@@ -92,10 +92,6 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 
 	@Override
 	protected void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			nextElement = null;
-		}
+		nextElement = null;
 	}
 }

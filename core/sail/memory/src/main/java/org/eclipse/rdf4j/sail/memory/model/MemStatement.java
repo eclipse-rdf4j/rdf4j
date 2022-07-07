@@ -46,6 +46,7 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 	/**
 	 * Identifies the snapshot in which this statement was revoked, defaults to {@link Integer#MAX_VALUE}.
 	 */
+	@SuppressWarnings("FieldMayBeFinal")
 	private volatile int tillSnapshot = Integer.MAX_VALUE;
 	private static final VarHandle TILL_SNAPSHOT;
 
@@ -137,17 +138,12 @@ public class MemStatement extends GenericStatement<MemResource, MemIRI, MemValue
 	}
 
 	public boolean matchesContext(MemResource[] memContexts) {
-		if (memContexts != null && memContexts.length > 0) {
-			for (MemResource context : memContexts) {
-				if (context == this.context) {
-					return true;
-				}
+		for (MemResource context : memContexts) {
+			if (context == this.context) {
+				return true;
 			}
-			return false;
-		} else {
-			// there is no context to check so we can return this statement
-			return true;
 		}
+		return false;
 	}
 
 	public boolean exactMatch(MemResource subject, MemIRI predicate, MemValue object, MemResource context) {
