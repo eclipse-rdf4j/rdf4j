@@ -9,9 +9,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -42,7 +44,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
 	private final QueryEvaluationContext context;
 	private final String[] allVariables;
-	private final LinkedHashSet<String> allVariablesSet;
+	private final Set<String> allVariablesSet;
 	private final ArrayBindingSet defaultArrayBindingSet;
 	private final Predicate<BindingSet>[] hasBinding;
 	private final Function<BindingSet, Binding>[] getBinding;
@@ -53,10 +55,10 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	boolean initialized;
 
 	ArrayBindingBasedQueryEvaluationContext(QueryEvaluationContext context, String[] allVariables) {
+		assert new HashSet<>(Arrays.asList(allVariables)).size() == allVariables.length;
 		this.context = context;
 		this.allVariables = allVariables;
-		this.allVariablesSet = new LinkedHashSet<>();
-		this.allVariablesSet.addAll(Arrays.asList(allVariables));
+		this.allVariablesSet = Set.of(allVariables);
 		this.defaultArrayBindingSet = new ArrayBindingSet(allVariables);
 
 		hasBinding = new Predicate[allVariables.length];

@@ -57,50 +57,24 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.whichBindingsHaveBeenSet = new boolean[names.length];
 	}
 
-	public ArrayBindingSet(BindingSet toCopy, LinkedHashSet<String> names, String[] namesArray) {
+	public ArrayBindingSet(BindingSet toCopy, Set<String> names, String[] namesArray) {
 		assert !(toCopy instanceof ArrayBindingSet);
 
-		Set<String> toCopyBindingNames = toCopy.getBindingNames();
-
-		if (names.containsAll(toCopyBindingNames)) {
-			this.bindingNames = namesArray;
-			this.whichBindingsHaveBeenSet = new boolean[this.bindingNames.length];
-			this.values = new Value[this.bindingNames.length];
-			for (int i = 0; i < this.bindingNames.length; i++) {
-				Binding binding = toCopy.getBinding(this.bindingNames[i]);
-				if (binding != null) {
-					this.values[i] = binding.getValue();
-					this.whichBindingsHaveBeenSet[i] = true;
-				}
-			}
-		} else {
-			LinkedHashSet<String> newNames = new LinkedHashSet<>();
-			newNames.addAll(names);
-			newNames.addAll(toCopyBindingNames);
-			this.bindingNames = newNames.toArray(new String[0]);
-			this.whichBindingsHaveBeenSet = new boolean[this.bindingNames.length];
-			this.values = new Value[this.bindingNames.length];
-			for (int i = 0; i < this.bindingNames.length; i++) {
-				Binding binding = toCopy.getBinding(this.bindingNames[i]);
-				if (binding != null) {
-					this.values[i] = binding.getValue();
-					this.whichBindingsHaveBeenSet[i] = true;
-				}
+		this.bindingNames = namesArray;
+		this.whichBindingsHaveBeenSet = new boolean[this.bindingNames.length];
+		this.values = new Value[this.bindingNames.length];
+		for (int i = 0; i < this.bindingNames.length; i++) {
+			Binding binding = toCopy.getBinding(this.bindingNames[i]);
+			if (binding != null) {
+				this.values[i] = binding.getValue();
+				this.whichBindingsHaveBeenSet[i] = true;
 			}
 		}
+
 	}
 
 	public ArrayBindingSet(ArrayBindingSet toCopy, String... names) {
-
-		if (names == toCopy.bindingNames) {
-			this.bindingNames = names;
-		} else {
-			LinkedHashSet<String> newNames = new LinkedHashSet<>();
-			newNames.addAll(Arrays.asList(names));
-			newNames.addAll(toCopy.getBindingNames());
-			this.bindingNames = newNames.toArray(new String[0]);
-		}
-
+		this.bindingNames = names;
 		this.values = Arrays.copyOf(toCopy.values, toCopy.values.length);
 		this.whichBindingsHaveBeenSet = Arrays.copyOf(toCopy.whichBindingsHaveBeenSet,
 				toCopy.whichBindingsHaveBeenSet.length);
@@ -115,73 +89,79 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	 *         identical bindingNames array. Otherwise returns null.
 	 */
 	public BiConsumer<Value, ArrayBindingSet> getDirectSetBinding(String bindingName) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(bindingName)) {
-				final int idx = i;
-				return (v, a) -> {
-					a.values[idx] = v;
-					a.whichBindingsHaveBeenSet[idx] = true;
-					a.clearCache();
-				};
-			}
+		int index = getIndex(bindingName);
+		if (index == -1) {
+			assert false : "variable not known to ArrayBindingSet : " + bindingName;
+			return null;
 		}
-		assert false : "variable not known to ArrayBindingSet : " + bindingName;
-		return null;
+		return (v, a) -> {
+			a.values[index] = v;
+			a.whichBindingsHaveBeenSet[index] = true;
+			a.clearCache();
+		};
 	}
 
 	public BiConsumer<Value, ArrayBindingSet> getDirectAddBinding(String bindingName) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(bindingName)) {
-				final int idx = i;
-				return (v, a) -> {
-					assert !a.whichBindingsHaveBeenSet[idx] : "variable already bound: " + bindingName;
-					a.values[idx] = v;
-					a.whichBindingsHaveBeenSet[idx] = true;
-					a.clearCache();
-				};
-			}
+		int index = getIndex(bindingName);
+		if (index == -1) {
+			assert false : "variable not known to ArrayBindingSet : " + bindingName;
+			return null;
 		}
-		assert false : "variable not known to ArrayBindingSet : " + bindingName;
-		return null;
+		return (v, a) -> {
+			assert !a.whichBindingsHaveBeenSet[index] : "variable already bound: " + bindingName;
+			a.values[index] = v;
+			a.whichBindingsHaveBeenSet[index] = true;
+			a.clearCache();
+		};
+
 	}
 
-	public Function<ArrayBindingSet, Binding> getDirectGetBinding(String variableName) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(variableName)) {
-				final int idx = i;
-				return (a) -> {
-					Value value = a.values[idx];
-					if (value != null) {
-						return new SimpleBinding(variableName, value);
-					} else {
-						return null;
-					}
-				};
-			}
+	public Function<ArrayBindingSet, Binding> getDirectGetBinding(String bindingName) {
+
+		int index = getIndex(bindingName);
+		if (index == -1) {
+			return null;
 		}
-		return null;
+		return (a) -> {
+			Value value = a.values[index];
+			if (value != null) {
+				return new SimpleBinding(bindingName, value);
+			} else {
+				return null;
+			}
+		};
+
 	}
 
-	public Function<ArrayBindingSet, Value> getDirectGetValue(String variableName) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(variableName)) {
-				final int idx = i;
-				return (a) -> {
-					return a.values[idx];
-				};
-			}
+	public Function<ArrayBindingSet, Value> getDirectGetValue(String bindingName) {
+		int index = getIndex(bindingName);
+		if (index == -1) {
+			return null;
 		}
-		return null;
+		return (a) -> a.values[index];
+
 	}
 
 	public Function<ArrayBindingSet, Boolean> getDirectHasBinding(String bindingName) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(bindingName)) {
-				final int idx = i;
-				return (a) -> a.whichBindingsHaveBeenSet[idx];
+		int index = getIndex(bindingName);
+		if (index == -1) {
+			return null;
+		}
+		return (a) -> a.whichBindingsHaveBeenSet[index];
+	}
+
+	private int getIndex(String bindingName) {
+		for (int i = 0; i < bindingNames.length; i++) {
+			if (bindingNames[i] == bindingName) {
+				return i;
 			}
 		}
-		return null;
+		for (int i = 0; i < bindingNames.length; i++) {
+			if (bindingNames[i].equals(bindingName)) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	@Override
@@ -241,12 +221,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean hasBinding(String bindingName) {
-		for (int i = 0; i < bindingNames.length; i++) {
-			if (bindingNames[i].equals(bindingName)) {
-				return whichBindingsHaveBeenSet[i];
-			}
+		int index = getIndex(bindingName);
+		if (index == -1) {
+			return false;
 		}
-		return false;
+		return whichBindingsHaveBeenSet[index];
 	}
 
 	@Override
@@ -340,40 +319,40 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public void addBinding(Binding binding) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(binding.getName())) {
-				assert !this.whichBindingsHaveBeenSet[i];
-				this.values[i] = binding.getValue();
-				this.whichBindingsHaveBeenSet[i] = true;
-				clearCache();
-				return;
-			}
+		int index = getIndex(binding.getName());
+		if (index == -1) {
+			assert false : "We don't actually support adding a binding.";
+			return;
 		}
-		assert false : "We don't actually support adding a binding.";
+
+		assert !this.whichBindingsHaveBeenSet[index];
+		this.values[index] = binding.getValue();
+		this.whichBindingsHaveBeenSet[index] = true;
+		clearCache();
+
 	}
 
 	@Override
 	public void setBinding(Binding binding) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(binding.getName())) {
-				this.values[i] = binding.getValue();
-				this.whichBindingsHaveBeenSet[i] = true;
-				clearCache();
-				return;
-			}
+		int index = getIndex(binding.getName());
+		if (index == -1) {
+			return;
 		}
+		this.values[index] = binding.getValue();
+		this.whichBindingsHaveBeenSet[index] = true;
+		clearCache();
 	}
 
 	@Override
 	public void setBinding(String name, Value value) {
-		for (int i = 0; i < this.bindingNames.length; i++) {
-			if (bindingNames[i].equals(name)) {
-				this.values[i] = value;
-				this.whichBindingsHaveBeenSet[i] = value != null;
-				clearCache();
-				return;
-			}
+		int index = getIndex(name);
+		if (index == -1) {
+			return;
 		}
+
+		this.values[index] = value;
+		this.whichBindingsHaveBeenSet[index] = value != null;
+		clearCache();
 	}
 
 	@Override
