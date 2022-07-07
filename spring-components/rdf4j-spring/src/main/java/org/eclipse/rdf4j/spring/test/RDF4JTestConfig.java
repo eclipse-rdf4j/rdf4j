@@ -8,6 +8,7 @@
 
 package org.eclipse.rdf4j.spring.test;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.spring.RDF4JConfig;
 import org.eclipse.rdf4j.spring.operationcache.OperationCacheConfig;
 import org.eclipse.rdf4j.spring.operationlog.OperationLogConfig;
@@ -40,6 +41,7 @@ import org.springframework.context.annotation.Import;
  * @author Florian Kleedorfer
  * @since 4.0.0
  */
+@Experimental
 @Configuration
 @Import({
 		RDF4JConfig.class,

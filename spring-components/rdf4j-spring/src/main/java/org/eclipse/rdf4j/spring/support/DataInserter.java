@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.spring.support;
 import java.lang.invoke.MethodHandles;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -28,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
+@Experimental
 @Component
 public class DataInserter {
 

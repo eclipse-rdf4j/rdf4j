@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.spring.dao.exception.RDF4JDaoException;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.GraphQueryEvaluationBuilder;
 import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
  * @since 4.0.0
  * @author Florian Kleedorfer
  */
+@Experimental
 public abstract class RDF4JDao {
 	private final RDF4JTemplate rdf4JTemplate;
 

@@ -8,8 +8,10 @@
 
 package org.eclipse.rdf4j.spring.dao;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
+@Experimental
 public abstract class SimpleRDF4JCRUDDao<ENTITY, ID> extends RDF4JCRUDDao<ENTITY, ENTITY, ID> {
 	public SimpleRDF4JCRUDDao(RDF4JTemplate rdf4JTemplate, Class<ID> idClass) {
 		super(rdf4JTemplate, idClass);
