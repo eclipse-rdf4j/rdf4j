@@ -7,11 +7,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class EvaluationStatisticsTest {
@@ -34,6 +39,36 @@ public class EvaluationStatisticsTest {
 		checker.reset();
 		expr.visit(checker);
 		assertThat(checker.getInconsistentNodes()).isEmpty();
+	}
+
+	@Test
+	public void testCacheCardinalityStatementPattern() {
+		StatementPattern tupleExpr = new StatementPattern(new Var("a"), new Var("b"), new Var("c"));
+		Assertions.assertFalse(tupleExpr.isCardinalitySet());
+
+		double cardinality = new EvaluationStatistics().getCardinality(tupleExpr);
+		Assertions.assertTrue(tupleExpr.isCardinalitySet());
+		Assertions.assertEquals(cardinality, tupleExpr.getCardinality());
+	}
+
+	@Test
+	public void testCacheCardinalityTripleRef() {
+		TripleRef tupleExpr = new TripleRef(new Var("a"), new Var("b"), new Var("c"), new Var("expr"));
+		Assertions.assertFalse(tupleExpr.isCardinalitySet());
+
+		double cardinality = new EvaluationStatistics().getCardinality(tupleExpr);
+		Assertions.assertTrue(tupleExpr.isCardinalitySet());
+		Assertions.assertEquals(cardinality, tupleExpr.getCardinality());
+	}
+
+	@Test
+	public void testCacheCardinalityBindingSetAssignment() {
+		BindingSetAssignment tupleExpr = new BindingSetAssignment();
+		Assertions.assertFalse(tupleExpr.isCardinalitySet());
+
+		double cardinality = new EvaluationStatistics().getCardinality(tupleExpr);
+		Assertions.assertTrue(tupleExpr.isCardinalitySet());
+		Assertions.assertEquals(cardinality, tupleExpr.getCardinality());
 	}
 
 	private class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {

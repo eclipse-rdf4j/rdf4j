@@ -260,4 +260,5 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 
 		return clone;
 	}
+
 }
