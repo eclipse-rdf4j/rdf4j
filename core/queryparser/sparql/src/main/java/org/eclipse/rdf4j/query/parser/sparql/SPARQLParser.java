@@ -15,9 +15,12 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Namespaces;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.IncompatibleOperationException;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -57,6 +60,28 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 
 @SuppressWarnings("deprecation")
 public class SPARQLParser implements QueryParser {
+	private final Map<String, String> customPrefixes;
+
+	/**
+	 * Create a new SPARQLParser.
+	 * 
+	 * @param customPrefixes the default namespaces to apply to this parser. null for no prefixes
+	 */
+	public SPARQLParser(Set<Namespace> customPrefixes) {
+		Objects.requireNonNull(customPrefixes, "customPrefixes can't be null!");
+		if (customPrefixes.isEmpty()) {
+			this.customPrefixes = Collections.emptyMap();
+		} else {
+			this.customPrefixes = Namespaces.asMap(customPrefixes);
+		}
+	}
+
+	/**
+	 * Create a new SPARQLParser without any default prefixes.
+	 */
+	public SPARQLParser() {
+		this(Collections.emptySet());
+	}
 
 	@Override
 	public ParsedUpdate parseUpdate(String updateStr, String baseURI) throws MalformedQueryException {
@@ -108,7 +133,7 @@ public class SPARQLParser implements QueryParser {
 					sharedPrefixDeclarations = prefixDeclList;
 				}
 
-				PrefixDeclProcessor.process(uc);
+				PrefixDeclProcessor.process(uc, customPrefixes);
 				Set<String> usedBNodeIds = BlankNodeVarProcessor.process(uc);
 
 				if (uc.getUpdate() instanceof ASTInsertData || uc.getUpdate() instanceof ASTInsertData) {
@@ -167,7 +192,7 @@ public class SPARQLParser implements QueryParser {
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(queryStr);
 			StringEscapesProcessor.process(qc);
 			BaseDeclProcessor.process(qc, baseURI);
-			Map<String, String> prefixes = PrefixDeclProcessor.process(qc);
+			Map<String, String> prefixes = PrefixDeclProcessor.process(qc, customPrefixes);
 			WildcardProjectionProcessor.process(qc);
 			BlankNodeVarProcessor.process(qc);
 
