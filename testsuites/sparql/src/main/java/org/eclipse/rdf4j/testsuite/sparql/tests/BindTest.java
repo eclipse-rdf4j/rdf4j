@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -17,8 +18,12 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -112,8 +117,12 @@ public class BindTest extends AbstractComplianceTest {
 
 		conn.prepareUpdate(QueryLanguage.SPARQL, "insert data { <urn:test:subj> <urn:test:pred> _:blank }").execute();
 
-		String qb = "SELECT * {\n" + "    ?s1 ?p1 ?blank . " + "    FILTER(isBlank(?blank))"
-				+ "    BIND (iri(?blank) as ?biri)" + "    ?biri ?p2 ?o2 ." + "}";
+		String qb = "SELECT * {\n" +
+				"    ?s1 ?p1 ?blank . " +
+				"    FILTER(isBlank(?blank))" +
+				"    BIND (iri(?blank) as ?biri)" +
+				"    ?biri ?p2 ?o2 ." +
+				"}";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 		try (TupleQueryResult evaluate = tq.evaluate()) {
@@ -126,8 +135,12 @@ public class BindTest extends AbstractComplianceTest {
 
 		conn.prepareUpdate(QueryLanguage.SPARQL, "insert data { <urn:test:subj> <urn:test:pred> _:blank }").execute();
 
-		String qb = "SELECT * {\n" + "    ?s1 ?p1 ?blank . " + "    FILTER(isBlank(?blank))"
-				+ "    BIND (iri(?blank) as ?biri)" + "    ?biri <urn:test:pred>* ?o2 ." + "}";
+		String qb = "SELECT * {\n" +
+				"    ?s1 ?p1 ?blank . " +
+				"    FILTER(isBlank(?blank))" +
+				"    BIND (iri(?blank) as ?biri)" +
+				"    ?biri <urn:test:pred>* ?o2 ." +
+				"}";
 
 		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 		try (TupleQueryResult evaluate = tq.evaluate()) {
@@ -150,6 +163,43 @@ public class BindTest extends AbstractComplianceTest {
 		assertThat(solution.getValue("b1")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
 		assertThat(solution.getValue("b2")).isNull();
 		assertThat(solution.getValue("b3")).isNull();
+
+	}
+
+	@Test
+	public void testGH3696Bind() {
+
+		String ex = "http://example.org/";
+
+		IRI unit = iri(ex, "Unit");
+		IRI unit1 = iri(ex, "Unit1");
+		IRI has = iri(ex, "has");
+		Literal label1 = literal("Unit1");
+		IRI unit2 = iri(ex, "Unit2");
+		Literal label2 = literal("Unit2");
+
+		Model testData = new ModelBuilder()
+				.add(unit1, RDF.TYPE, unit)
+				.add(unit1, RDFS.LABEL, label1)
+				.add(unit1, has, label1)
+				.add(unit2, RDF.TYPE, unit)
+				.add(unit2, RDFS.LABEL, label2)
+				.build();
+
+		conn.add(testData);
+
+		String query = "PREFIX ex: <http://example.org/>" +
+				"SELECT  * {" +
+				"  ?bind rdfs:label ?b1 ;" +
+				"        a ex:Unit ." +
+				"  FILTER (?b1 = 'Unit2') ." +
+				"  BIND(?bind AS ?n0)" +
+				"  ?n0 ex:has ?n1" +
+				" }";
+
+		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+
+		assertThat(result).isEmpty();
 
 	}
 }
