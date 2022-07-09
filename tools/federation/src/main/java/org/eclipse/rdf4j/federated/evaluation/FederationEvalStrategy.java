@@ -573,32 +573,51 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 				leftJoin.getCondition().visit(optionalVarCollector);
 			}
 
-			Set<String> problemVars = optionalVarCollector.getVarNames();
-			problemVars.removeAll(leftJoin.getLeftArg().getBindingNames());
+			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
+			Set<String> problemVars = retainAll(optionalVarCollector.getVarNames(), leftBindingNames);
 
 			QueryEvaluationStep leftPrepared = precompile(leftJoin.getLeftArg(), context);
 			// left join is "well designed"
 			ControlledWorkerScheduler<BindingSet> scheduler = federationContext.getManager().getLeftJoinScheduler();
-			return new QueryEvaluationStep() {
+			return bindings -> {
 
-				@Override
-				public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
+				if (problemVars.containsAll(bindings.getBindingNames())) {
+					var leftIter = leftPrepared.evaluate(bindings);
+					ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(scheduler, FederationEvalStrategy.this,
+							leftIter, leftJoin, bindings, leftJoin.getQueryInfo());
+					executor.execute(join);
+					return join;
+				} else {
 					Set<String> problemVarsClone = new HashSet<>(problemVars);
 					problemVarsClone.retainAll(bindings.getBindingNames());
-					if (problemVarsClone.isEmpty()) {
-						CloseableIteration<BindingSet, QueryEvaluationException> leftIter = leftPrepared
-								.evaluate(bindings);
-						ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(scheduler,
-								FederationEvalStrategy.this, leftIter, leftJoin, bindings, leftJoin.getQueryInfo());
-						executor.execute(join);
-						return join;
-					} else {
-						return new BadlyDesignedLeftJoinIterator(FederationEvalStrategy.this, leftJoin, bindings,
-								problemVarsClone, context);
-					}
+					return new BadlyDesignedLeftJoinIterator(FederationEvalStrategy.this, leftJoin, bindings,
+							problemVarsClone, context);
 				}
 			};
 		}
+	}
+
+	private Set<String> retainAll(Set<String> problemVars, Set<String> leftBindingNames) {
+		if (!leftBindingNames.isEmpty() && !problemVars.isEmpty()) {
+			if (leftBindingNames.size() > problemVars.size()) {
+				for (String problemVar : problemVars) {
+					if (leftBindingNames.contains(problemVar)) {
+						HashSet<String> ret = new HashSet<>(problemVars);
+						ret.removeAll(leftBindingNames);
+						return ret;
+					}
+				}
+			} else {
+				for (String leftBindingName : leftBindingNames) {
+					if (problemVars.contains(leftBindingName)) {
+						HashSet<String> ret = new HashSet<>(problemVars);
+						ret.removeAll(leftBindingNames);
+						return ret;
+					}
+				}
+			}
+		}
+		return problemVars;
 	}
 
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluateNaryUnion(NUnion union, BindingSet bindings)

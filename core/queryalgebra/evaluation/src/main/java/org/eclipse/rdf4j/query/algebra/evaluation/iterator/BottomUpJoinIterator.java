@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -62,8 +63,12 @@ public class BottomUpJoinIterator extends LookAheadIteration<BindingSet, QueryEv
 		leftIter = strategy.evaluate(join.getLeftArg(), bindings);
 		rightIter = strategy.evaluate(join.getRightArg(), bindings);
 
-		joinAttributes = join.getLeftArg().getBindingNames();
-		joinAttributes.retainAll(join.getRightArg().getBindingNames());
+		Set<String> rightBindingNames = join.getRightArg().getBindingNames();
+		joinAttributes = join.getLeftArg()
+				.getBindingNames()
+				.stream()
+				.filter(rightBindingNames::contains)
+				.collect(Collectors.toSet());
 
 		hashTable = null;
 	}

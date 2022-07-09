@@ -231,13 +231,40 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			leftJoin.getCondition().visit(optionalVarCollector);
 		}
 
-		Set<String> problemVars = optionalVarCollector.getVarNames();
-		problemVars.removeAll(leftJoin.getLeftArg().getBindingNames());
+		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
+		Set<String> problemVars = retainAll(optionalVarCollector.getVarNames(), leftBindingNames);
 
 		if (problemVars.isEmpty()) {
 			return true;
 		}
 
+		return checkAgainstParent(leftJoin, problemVars);
+	}
+
+	private Set<String> retainAll(Set<String> problemVars, Set<String> leftBindingNames) {
+		if (!leftBindingNames.isEmpty() && !problemVars.isEmpty()) {
+			if (leftBindingNames.size() > problemVars.size()) {
+				for (String problemVar : problemVars) {
+					if (leftBindingNames.contains(problemVar)) {
+						HashSet<String> ret = new HashSet<>(problemVars);
+						ret.removeAll(leftBindingNames);
+						return ret;
+					}
+				}
+			} else {
+				for (String leftBindingName : leftBindingNames) {
+					if (problemVars.contains(leftBindingName)) {
+						HashSet<String> ret = new HashSet<>(problemVars);
+						ret.removeAll(leftBindingNames);
+						return ret;
+					}
+				}
+			}
+		}
+		return problemVars;
+	}
+
+	private boolean checkAgainstParent(LeftJoin leftJoin, Set<String> problemVars) {
 		// If any of the problematic variables are bound in the parent
 		// expression then the left join is not well designed
 		BindingCollector bindingCollector = new BindingCollector();
@@ -249,9 +276,15 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			node = parent;
 		}
 
-		problemVars.retainAll(bindingCollector.getBindingNames());
+		Set<String> bindingNames = bindingCollector.getBindingNames();
 
-		return problemVars.isEmpty();
+		for (String problemVar : problemVars) {
+			if (bindingNames.contains(problemVar)) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	private static class BindingCollector extends AbstractQueryModelVisitor<RuntimeException> {
