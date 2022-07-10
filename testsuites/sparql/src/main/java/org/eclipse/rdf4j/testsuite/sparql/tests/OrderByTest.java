@@ -63,4 +63,19 @@ public class OrderByTest extends AbstractComplianceTest {
 		}
 	}
 
+	@Test
+	public void testDistinctOptionalOrderByMath() throws Exception {
+
+		conn.add(new StringReader("[] a <test:Class>.\n" +
+				"[] a <test:Class>; <test:nr> 123 ."), "", RDFFormat.TURTLE);
+
+		String query = "select distinct ?o ?nr { ?o a <test:Class> optional { ?o <test:nr> ?nr } } order by (?nr + STRLEN(?o))";
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, query);
+		try (Stream<BindingSet> result = tq.evaluate().stream()) {
+			long count = result.count();
+			assertEquals(2, count);
+		}
+	}
+
 }
