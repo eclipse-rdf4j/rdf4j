@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
@@ -75,11 +76,12 @@ public class TupleExprs {
 
 	/**
 	 * Verifies if the supplied {@link TupleExpr} contains a {@link Extension}. If the supplied TupleExpr is a
-	 * {@link Join} or contains a {@link Join}, extensions inside that Join's arguments will not be taken into account.
+	 * {@link Join} or contains a {@link Join}, a {@link Service} clause or a subquery element, extensions inside that
+	 * element's argument will not be taken into account.
 	 *
 	 * @param t a tuple expression.
-	 * @return <code>true</code> if the TupleExpr contains an Extension (outside of a Join), <code>false</code>
-	 *         otherwise.
+	 * @return <code>true</code> if the TupleExpr contains an Extension (outside of a Join, Service clause, or
+	 *         subquery), <code>false</code> otherwise.
 	 */
 	public static boolean containsExtension(TupleExpr t) {
 		Deque<TupleExpr> queue = new ArrayDeque<>();
@@ -88,9 +90,9 @@ public class TupleExprs {
 			TupleExpr n = queue.removeFirst();
 			if (n instanceof Extension) {
 				return true;
-			} else if (n instanceof Join) {
-				// projections already inside a Join need not be
-				// taken into account
+			} else if (n instanceof Join
+					|| (n instanceof Projection && ((Projection) n).isSubquery())
+					|| (n instanceof Service)) {
 				return false;
 			} else {
 				queue.addAll(getChildren(n));
