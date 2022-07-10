@@ -11,9 +11,10 @@ package org.eclipse.rdf4j.common.iteration;
 /**
  * Base class for {@link CloseableIteration}s offering common functionality. This class keeps track of whether the
  * iteration has been closed and handles multiple calls to {@link #close()} by ignoring all but the first call.
- * 
+ *
  * Instances of this class is not safe to be accessed from multiple threads at the same time.
  */
+@Deprecated(since = "4.1.0")
 public abstract class AbstractCloseableIteration<E, X extends Exception> implements CloseableIteration<E, X> {
 
 	/*-----------*

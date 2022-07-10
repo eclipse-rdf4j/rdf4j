@@ -15,6 +15,7 @@ import java.util.Objects;
 /**
  * An Iteration that can convert an {@link Iterator} to a {@link CloseableIteration}.
  */
+@Deprecated(since = "4.1.0")
 public class CloseableIteratorIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
 	private Iterator<? extends E> iter;

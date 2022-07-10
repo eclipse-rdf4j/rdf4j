@@ -13,6 +13,7 @@ import java.util.NoSuchElementException;
 /**
  * Provides a bag union of the two provided iterations.
  */
+@Deprecated(since = "4.1.0")
 public class DualUnionIteration<E, X extends Exception> implements CloseableIteration<E, X> {
 
 	private CloseableIteration<? extends E, X> iteration1;

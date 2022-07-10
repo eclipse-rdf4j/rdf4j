@@ -154,7 +154,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		}
 		Var var = (Var) o;
 
-if (cachedHashCode != 0 && var.cachedHashCode != 0 && cachedHashCode != var.cachedHashCode) {
+		if (cachedHashCode != 0 && var.cachedHashCode != 0 && cachedHashCode != var.cachedHashCode) {
 			return false;
 		}
 

@@ -22,6 +22,7 @@ import java.util.stream.StreamSupport;
  * This class consists exclusively of static methods that operate on or return Iterations. It is the
  * Iteration-equivalent of <var>java.util.Collections</var>.
  */
+@Deprecated(since = "4.1.0")
 public class Iterations {
 
 	/**
