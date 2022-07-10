@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -69,6 +70,32 @@ public class TupleExprs {
 
 		} while (n != null);
 
+		return false;
+	}
+
+	/**
+	 * Verifies if the supplied {@link TupleExpr} contains a {@link Extension}. If the supplied TupleExpr is a
+	 * {@link Join} or contains a {@link Join}, extensions inside that Join's arguments will not be taken into account.
+	 *
+	 * @param t a tuple expression.
+	 * @return <code>true</code> if the TupleExpr contains an Extension (outside of a Join), <code>false</code>
+	 *         otherwise.
+	 */
+	public static boolean containsExtension(TupleExpr t) {
+		Deque<TupleExpr> queue = new ArrayDeque<>();
+		queue.add(t);
+		while (!queue.isEmpty()) {
+			TupleExpr n = queue.removeFirst();
+			if (n instanceof Extension) {
+				return true;
+			} else if (n instanceof Join) {
+				// projections already inside a Join need not be
+				// taken into account
+				return false;
+			} else {
+				queue.addAll(getChildren(n));
+			}
+		}
 		return false;
 	}
 

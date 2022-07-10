@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -163,43 +162,32 @@ public class BindTest extends AbstractComplianceTest {
 		assertThat(solution.getValue("b1")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
 		assertThat(solution.getValue("b2")).isNull();
 		assertThat(solution.getValue("b3")).isNull();
-
 	}
 
 	@Test
 	public void testGH3696Bind() {
-
-		String ex = "http://example.org/";
-
-		IRI unit = iri(ex, "Unit");
-		IRI unit1 = iri(ex, "Unit1");
-		IRI has = iri(ex, "has");
-		Literal label1 = literal("Unit1");
-		IRI unit2 = iri(ex, "Unit2");
-		Literal label2 = literal("Unit2");
-
-		Model testData = new ModelBuilder()
-				.add(unit1, RDF.TYPE, unit)
-				.add(unit1, RDFS.LABEL, label1)
-				.add(unit1, has, label1)
-				.add(unit2, RDF.TYPE, unit)
-				.add(unit2, RDFS.LABEL, label2)
+		Model testData = new ModelBuilder().setNamespace("ex", "http://example.org/")
+				.subject("ex:unit1")
+				.add(RDF.TYPE, "ex:Unit")
+				.add(RDFS.LABEL, "Unit1")
+				.add("ex:has", "Unit1")
+				.subject("ex:unit2")
+				.add(RDF.TYPE, "ex:Unit")
+				.add(RDFS.LABEL, "Unit2")
 				.build();
-
 		conn.add(testData);
 
-		String query = "PREFIX ex: <http://example.org/>" +
-				"SELECT  * {" +
-				"  ?bind rdfs:label ?b1 ;" +
-				"        a ex:Unit ." +
-				"  FILTER (?b1 = 'Unit2') ." +
-				"  BIND(?bind AS ?n0)" +
-				"  ?n0 ex:has ?n1" +
+		String query = "PREFIX ex: <http://example.org/>\n" +
+				"SELECT  * {\n" +
+				"  ?bind rdfs:label ?b1 ;\n" +
+				"        a ex:Unit .\n" +
+				"  FILTER (?b1 = 'Unit2') .\n" +
+				"  BIND(?bind AS ?n0)\n" +
+				"  ?n0 ex:has ?n1 \n" +
 				" }";
 
 		List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
 
 		assertThat(result).isEmpty();
-
 	}
 }
