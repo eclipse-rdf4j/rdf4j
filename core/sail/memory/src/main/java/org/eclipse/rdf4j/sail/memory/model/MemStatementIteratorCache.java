@@ -10,11 +10,13 @@ package org.eclipse.rdf4j.sail.memory.model;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,10 +36,10 @@ public class MemStatementIteratorCache {
 	public final int CACHE_FREQUENCY_THRESHOLD;
 
 	// a map that tracks the number of times a cacheable iterator has been used
-	private final ConcurrentHashMap<MemStatementIterator<? extends Exception>, Integer> iteratorFrequencyMap = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<MemStatementIterator, Integer> iteratorFrequencyMap = new ConcurrentHashMap<>();
 
 	// a cache for commonly used iterators that are particularly costly
-	private final Cache<MemStatementIterator<? extends Exception>, List<MemStatement>> iteratorCache = CacheBuilder
+	private final Cache<MemStatementIterator, List<MemStatement>> iteratorCache = CacheBuilder
 			.newBuilder()
 			.softValues()
 			.build();
@@ -60,7 +62,7 @@ public class MemStatementIteratorCache {
 		}
 	}
 
-	<X extends Exception> void incrementIteratorFrequencyMap(MemStatementIterator<X> iterator) {
+	void incrementIteratorFrequencyMap(MemStatementIterator iterator) {
 		Integer compute = iteratorFrequencyMap.compute(iterator, (key, value) -> {
 			if (value == null) {
 				return 0;
@@ -72,7 +74,7 @@ public class MemStatementIteratorCache {
 		}
 	}
 
-	<X extends Exception> boolean shouldBeCached(MemStatementIterator<X> iterator) {
+	boolean shouldBeCached(MemStatementIterator iterator) {
 		if (!iteratorFrequencyMap.isEmpty()) {
 			Integer integer = iteratorFrequencyMap.get(iterator);
 			return integer != null && integer > CACHE_FREQUENCY_THRESHOLD;
@@ -81,8 +83,7 @@ public class MemStatementIteratorCache {
 		}
 	}
 
-	<X extends Exception> CloseableIteration<MemStatement, X> getCachedIterator(MemStatementIterator<X> iterator)
-			throws Exception {
+	CachedIteration getCachedIterator(MemStatementIterator iterator) {
 
 		List<MemStatement> cached = iteratorCache.getIfPresent(iterator);
 
@@ -99,7 +100,53 @@ public class MemStatementIteratorCache {
 			iteratorCache.put(iterator, cached);
 		}
 
-		return new CloseableIteratorIteration<>(cached.iterator());
+		return new CachedIteration(cached.iterator());
+	}
+
+	private static class CachedIteration implements CloseableIteration<MemStatement, SailException> {
+
+		private Iterator<MemStatement> iter;
+
+		public CachedIteration(Iterator<MemStatement> iter) {
+			this.iter = iter;
+		}
+
+		@Override
+		public boolean hasNext() throws SailException {
+			if (iter == null) {
+				return false;
+			}
+
+			boolean result = iter.hasNext();
+			if (!result) {
+				close();
+			}
+			return result;
+		}
+
+		@Override
+		public MemStatement next() throws SailException {
+			if (iter == null) {
+				throw new NoSuchElementException("Iteration has been closed");
+			}
+
+			return iter.next();
+		}
+
+		@Override
+		public void remove() throws SailException {
+			if (iter == null) {
+				throw new IllegalStateException("Iteration has been closed");
+			}
+
+			iter.remove();
+		}
+
+		@Override
+		public final void close() throws SailException {
+			iter = null;
+		}
+
 	}
 
 }

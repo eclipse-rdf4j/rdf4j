@@ -10,8 +10,6 @@ package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -102,9 +100,10 @@ public class UnionNode implements PlanNode {
 
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final List<CloseableIteration<? extends ValidationTuple, SailException>> iterators = Arrays.stream(nodes)
+			final CloseableIteration<? extends ValidationTuple, SailException>[] iterators = Arrays
+					.stream(nodes)
 					.map(PlanNode::iterator)
-					.collect(Collectors.toList());
+					.toArray(CloseableIteration[]::new);
 
 			final ValidationTuple[] peekList = new ValidationTuple[nodes.length];
 
@@ -119,7 +118,7 @@ public class UnionNode implements PlanNode {
 
 				for (int i = 0; i < peekList.length; i++) {
 					if (peekList[i] == null) {
-						CloseableIteration<? extends ValidationTuple, SailException> iterator = iterators.get(i);
+						var iterator = iterators[i];
 						if (iterator.hasNext()) {
 							peekList[i] = iterator.next();
 						}
@@ -156,15 +155,17 @@ public class UnionNode implements PlanNode {
 			@Override
 			public void localClose() throws SailException {
 				Throwable thrown = null;
-				for (CloseableIteration<? extends ValidationTuple, SailException> iterator : iterators) {
+				for (int i = 0; i < iterators.length; i++) {
 					try {
-						iterator.close();
+						iterators[i].close();
 					} catch (Throwable t) {
 						if (thrown != null) {
 							thrown.addSuppressed(t);
 						} else {
 							thrown = t;
 						}
+					} finally {
+						iterators[i] = null;
 					}
 				}
 

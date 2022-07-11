@@ -15,6 +15,7 @@ import java.util.NoSuchElementException;
  * super class for Iterations that have no easy way to tell if there are any more results, but still should implement
  * the <var>java.util.Iteration</var> interface.
  */
+@Deprecated(since = "4.1.0")
 public abstract class LookAheadIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
 	/*-----------*
@@ -92,10 +93,6 @@ public abstract class LookAheadIteration<E, X extends Exception> extends Abstrac
 
 	@Override
 	protected void handleClose() throws X {
-		try {
-			super.handleClose();
-		} finally {
-			nextElement = null;
-		}
+		nextElement = null;
 	}
 }
