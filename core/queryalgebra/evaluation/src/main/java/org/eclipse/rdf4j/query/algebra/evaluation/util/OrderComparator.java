@@ -12,14 +12,19 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,16 +57,43 @@ public class OrderComparator implements Comparator<BindingSet> {
 		return order.getElements()
 				.stream()
 				.map(element -> {
-					QueryValueEvaluationStep prepared = strategy.precompile(element.getExpr(), context);
 					boolean ascending = element.isAscending();
+					ValueExpr expr = element.getExpr();
 
-					return (Comparator<BindingSet>) (o1, o2) -> {
-						Value v1 = prepared.evaluate(o1);
-						Value v2 = prepared.evaluate(o2);
+					if (expr instanceof Var) {
+						// Here we optimize for the most common case where the ORDER BY clause uses Var(s) e.g. "ORDER
+						// BY ?a"
 
-						int compare = cmp.compare(v1, v2);
-						return ascending ? compare : -compare;
-					};
+						Function<BindingSet, Value> getValue = context.getValue(((Var) expr).getName());
+
+						return (Comparator<BindingSet>) (o1, o2) -> {
+							Value v1 = getValue.apply(o1);
+							Value v2 = getValue.apply(o2);
+
+							int compare = cmp.compare(v1, v2);
+							return ascending ? compare : -compare;
+						};
+					} else {
+						QueryValueEvaluationStep prepared = strategy.precompile(expr, context);
+
+						return (Comparator<BindingSet>) (o1, o2) -> {
+							Value v1 = null;
+							Value v2 = null;
+
+							try {
+								v1 = prepared.evaluate(o1);
+							} catch (ValueExprEvaluationException ignored) {
+							}
+
+							try {
+								v2 = prepared.evaluate(o2);
+							} catch (ValueExprEvaluationException ignored) {
+							}
+
+							int compare = cmp.compare(v1, v2);
+							return ascending ? compare : -compare;
+						};
+					}
 				})
 				.reduce(Comparator::thenComparing)
 				.orElse((o1, o2) -> 0);
