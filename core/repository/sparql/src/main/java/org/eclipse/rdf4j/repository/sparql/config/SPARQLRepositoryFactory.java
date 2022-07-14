@@ -33,7 +33,7 @@ public class SPARQLRepositoryFactory implements RepositoryFactory {
 
 	@Override
 	public SPARQLRepository getRepository(RepositoryImplConfig config) throws RepositoryConfigException {
-		SPARQLRepository result = null;
+		SPARQLRepository result;
 
 		if (config instanceof SPARQLRepositoryConfig) {
 			SPARQLRepositoryConfig httpConfig = (SPARQLRepositoryConfig) config;

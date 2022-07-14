@@ -45,7 +45,7 @@ public abstract class AbstractBNode implements BNode {
 
 		private static final long serialVersionUID = -617790782100827067L;
 
-		private String id;
+		private final String id;
 
 		GenericBNode(String id) {
 			this.id = id;

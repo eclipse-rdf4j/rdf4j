@@ -15,6 +15,7 @@ import java.util.Objects;
  * A CloseableIteration that converts an iteration over objects of type <var>S</var> (the source type) to an iteration
  * over objects of type <var>T</var> (the target type).
  */
+@Deprecated(since = "4.1.0")
 public abstract class ConvertingIteration<S, T, X extends Exception> extends AbstractCloseableIteration<T, X> {
 
 	/*-----------*

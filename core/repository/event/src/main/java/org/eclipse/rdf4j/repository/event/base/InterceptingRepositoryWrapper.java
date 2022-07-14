@@ -36,9 +36,9 @@ public class InterceptingRepositoryWrapper extends RepositoryWrapper implements 
 
 	private boolean activated;
 
-	private Set<RepositoryInterceptor> interceptors = new CopyOnWriteArraySet<>();
+	private final Set<RepositoryInterceptor> interceptors = new CopyOnWriteArraySet<>();
 
-	private Set<RepositoryConnectionInterceptor> conInterceptors = new CopyOnWriteArraySet<>();
+	private final Set<RepositoryConnectionInterceptor> conInterceptors = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Constructors *

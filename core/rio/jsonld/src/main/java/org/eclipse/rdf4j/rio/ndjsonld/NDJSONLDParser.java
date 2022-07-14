@@ -38,7 +38,7 @@ import com.github.jsonldjava.utils.JsonUtils;
  *
  * @author Desislava Hristova
  */
-public class NDJSONLDParser extends JSONLDParser implements RDFParser {
+public class NDJSONLDParser extends JSONLDParser {
 
 	/**
 	 * Default constructor

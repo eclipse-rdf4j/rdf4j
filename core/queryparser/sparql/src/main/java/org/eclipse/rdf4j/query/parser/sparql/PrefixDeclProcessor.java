@@ -50,11 +50,13 @@ public class PrefixDeclProcessor {
 	 * query, verifies that prefixes are not redefined and replaces any {@link ASTQName} nodes in the query with
 	 * equivalent {@link ASTIRI} nodes.
 	 *
-	 * @param qc The query that needs to be processed.
+	 * @param qc                    The query that needs to be processed.
+	 * @param customDefaultPrefixes Custom prefixes to add, will override SPARQL default prefixes. can't be null.
 	 * @return A map containing the prefixes that are declared in the query (key) and the namespace they map to (value).
 	 * @throws MalformedQueryException If the query contains redefined prefixes or qnames that use undefined prefixes.
 	 */
-	public static Map<String, String> process(ASTOperationContainer qc) throws MalformedQueryException {
+	public static Map<String, String> process(ASTOperationContainer qc, Map<String, String> customDefaultPrefixes)
+			throws MalformedQueryException {
 		List<ASTPrefixDecl> prefixDeclList = qc.getPrefixDeclList();
 
 		// Build a prefix --> IRI map
@@ -71,8 +73,16 @@ public class PrefixDeclProcessor {
 			prefixMap.put(prefix, iri);
 		}
 
+		int preDefaultPrefixes = 0;
+
+		// insert the default prefixes if presents
+		for (Entry<String, String> defaultPrefix : customDefaultPrefixes.entrySet()) {
+			preDefaultPrefixes += insertDefaultPrefix(prefixMap, defaultPrefix.getKey(), defaultPrefix.getValue());
+		}
+
 		// insert some default prefixes (if not explicitly defined in the query)
-		final int defaultPrefixesAdded = insertDefaultPrefix(prefixMap, "rdf", RDF.NAMESPACE)
+		final int defaultPrefixesAdded = preDefaultPrefixes
+				+ insertDefaultPrefix(prefixMap, "rdf", RDF.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "rdfs", RDFS.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "rdf4j", RDF4J.NAMESPACE)
 				+ insertDefaultPrefix(prefixMap, "sesame", SESAME.NAMESPACE)
@@ -121,17 +131,17 @@ public class PrefixDeclProcessor {
 			sb.append("PREFIX");
 			final String prefix = entry.getKey();
 			if (prefix != null) {
-				sb.append(" " + prefix);
+				sb.append(" ").append(prefix);
 			}
 			sb.append(":");
-			sb.append(" <" + entry.getValue() + "> \n");
+			sb.append(" <").append(entry.getValue()).append("> \n");
 		}
 		return sb.toString();
 	}
 
 	private static class QNameProcessor extends AbstractASTVisitor {
 
-		private Map<String, String> prefixMap;
+		private final Map<String, String> prefixMap;
 
 		public QNameProcessor(Map<String, String> prefixMap) {
 			this.prefixMap = prefixMap;
@@ -165,9 +175,9 @@ public class PrefixDeclProcessor {
 		private String processEscapes(String localName) {
 
 			// process escaped special chars.
-			StringBuffer unescaped = new StringBuffer();
+			StringBuilder unescaped = new StringBuilder();
 			Pattern escapedCharPattern = Pattern
-					.compile("\\\\[_~\\.\\-!\\$\\&\\'\\(\\)\\*\\+\\,\\;\\=\\:\\/\\?#\\@\\%]");
+					.compile("\\\\[_~.\\-!$&'()*+,;=:/?#@%]");
 			Matcher m = escapedCharPattern.matcher(localName);
 			boolean result = m.find();
 			while (result) {

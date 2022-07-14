@@ -140,7 +140,7 @@ public class HttpServerUtilTest {
 
 	class ServletRequestStub implements javax.servlet.http.HttpServletRequest {
 
-		private Enumeration<String> testHeaders;
+		private final Enumeration<String> testHeaders;
 
 		public ServletRequestStub(String... testHeaders) {
 			this.testHeaders = Collections.enumeration(Arrays.asList(testHeaders));

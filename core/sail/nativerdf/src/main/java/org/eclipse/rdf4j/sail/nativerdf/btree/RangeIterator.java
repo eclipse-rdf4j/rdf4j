@@ -168,7 +168,6 @@ class RangeIterator implements RecordIterator, NodeListener {
 		tree.btreeLock.readLock().lock();
 		try {
 			while (popStacks()) {
-				;
 			}
 
 			assert parentNodeStack.isEmpty();

@@ -180,7 +180,7 @@ public class RepositoryFederatedService implements FederatedService {
 	private boolean useFreshConnection = true;
 
 	// flag indicating whether the repository shall be closed in #shutdown()
-	protected boolean shutDown = true;
+	protected boolean shutDown;
 
 	private RepositoryConnection managedConn = null;
 
@@ -361,7 +361,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 			conn = useFreshConnection ? freshConnection() : getConnection();
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);
-			TupleQueryResult res = null;
+			TupleQueryResult res;
 			query.setMaxExecutionTime(60); // TODO how to retrieve max query value
 			// from actual setting?
 			res = query.evaluate();

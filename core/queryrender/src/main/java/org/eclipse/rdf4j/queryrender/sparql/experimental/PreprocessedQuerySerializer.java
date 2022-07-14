@@ -152,7 +152,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 		}
 	}
 
-	private Map<Projection, SerializableParsedTupleQuery> queriesByProjection = new HashMap<Projection, SerializableParsedTupleQuery>();
+	private final Map<Projection, SerializableParsedTupleQuery> queriesByProjection = new HashMap<>();
 
 	private AbstractSerializableParsedQuery currentQueryProfile = null;
 
@@ -160,7 +160,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	protected StringBuilder builder;
 
-	private Map<AbstractSerializableParsedQuery, Set<String>> renderedExtensionElements = Maps.newHashMap();
+	private final Map<AbstractSerializableParsedQuery, Set<String>> renderedExtensionElements = Maps.newHashMap();
 
 	private boolean insideFunction = false;
 
@@ -447,7 +447,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	@Override
 	public void meet(BindingSetAssignment node) throws RuntimeException {
 
-		List<String> bindingNames = new ArrayList<String>(node.getBindingNames());
+		List<String> bindingNames = new ArrayList<>(node.getBindingNames());
 
 		builder.append("VALUES (");
 		for (String var : bindingNames) {

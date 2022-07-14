@@ -650,7 +650,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			throw new RepositoryException("No tuple query result parsers have been registered");
 		}
 
-		TupleQueryResult tRes = null;
+		TupleQueryResult tRes;
 		// send the tuple query
 		HttpResponse response = sendTupleQueryViaHttp(method, tqrFormats);
 		try {
@@ -782,7 +782,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			throw new RepositoryException("No tuple RDF parsers have been registered");
 		}
 
-		GraphQueryResult gRes = null;
+		GraphQueryResult gRes;
 		// send the tuple query
 		HttpResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats);
 		try {

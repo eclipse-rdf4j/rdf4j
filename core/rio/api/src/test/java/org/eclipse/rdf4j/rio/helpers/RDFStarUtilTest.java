@@ -27,7 +27,7 @@ import org.junit.Test;
  * @author Pavel Mihaylov
  */
 public class RDFStarUtilTest {
-	private ValueFactory vf = SimpleValueFactory.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Test
 	public void testEncoding() {

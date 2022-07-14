@@ -13,7 +13,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
@@ -96,7 +95,9 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 
 			return result;
 		} catch (Throwable t) {
-			Iterations.closeCloseable(result);
+			if (result != null) {
+				result.close();
+			}
 			throw ExceptionUtil.toQueryEvaluationException(t);
 		}
 	}

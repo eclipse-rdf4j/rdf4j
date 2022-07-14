@@ -15,7 +15,7 @@ import java.io.Serializable;
  * @author Jeen Broekstra
  * @author Peter Ansell
  */
-public class WriterConfig extends RioConfig implements Serializable {
+public class WriterConfig extends RioConfig {
 
 	/**
 	 */

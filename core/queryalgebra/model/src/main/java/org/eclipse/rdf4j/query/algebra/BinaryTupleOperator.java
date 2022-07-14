@@ -8,7 +8,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -110,8 +110,6 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 			setLeftArg((TupleExpr) replacement);
 		} else if (rightArg == current) {
 			setRightArg((TupleExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 
@@ -133,13 +131,20 @@ public abstract class BinaryTupleOperator extends AbstractQueryModelNode impleme
 	@Override
 	public BinaryTupleOperator clone() {
 		BinaryTupleOperator clone = (BinaryTupleOperator) super.clone();
-		clone.setLeftArg(getLeftArg().clone());
-		clone.setRightArg(getRightArg().clone());
+
+		TupleExpr leftArgClone = getLeftArg().clone();
+		leftArgClone.setParentNode(clone);
+		clone.leftArg = leftArgClone;
+
+		TupleExpr rightArgClone = getRightArg().clone();
+		rightArgClone.setParentNode(clone);
+		clone.rightArg = rightArgClone;
+
 		return clone;
 	}
 
 	@Experimental
-	public void setAlgorithm(Iteration<BindingSet, QueryEvaluationException> iteration) {
+	public void setAlgorithm(CloseableIteration<?, ?> iteration) {
 		this.algorithmName = iteration.getClass().getSimpleName();
 	}
 

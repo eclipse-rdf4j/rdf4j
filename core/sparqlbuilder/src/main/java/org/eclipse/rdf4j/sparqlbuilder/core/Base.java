@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
 public class Base implements QueryElement {
 	private static final String BASE = "BASE ";
 
-	private Iri iri;
+	private final Iri iri;
 
 	Base(Iri iri) {
 		this.iri = iri;

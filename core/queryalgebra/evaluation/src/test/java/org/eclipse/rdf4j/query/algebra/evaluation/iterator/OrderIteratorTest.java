@@ -119,15 +119,15 @@ public class OrderIteratorTest extends TestCase {
 
 	private List<BindingSet> list;
 
-	private BindingSet b1 = new BindingSetSize(1);
+	private final BindingSet b1 = new BindingSetSize(1);
 
-	private BindingSet b2 = new BindingSetSize(2);
+	private final BindingSet b2 = new BindingSetSize(2);
 
-	private BindingSet b3 = new BindingSetSize(3);
+	private final BindingSet b3 = new BindingSetSize(3);
 
-	private BindingSet b4 = new BindingSetSize(4);
+	private final BindingSet b4 = new BindingSetSize(4);
 
-	private BindingSet b5 = new BindingSetSize(5);
+	private final BindingSet b5 = new BindingSetSize(5);
 
 	private SizeComparator cmp;
 

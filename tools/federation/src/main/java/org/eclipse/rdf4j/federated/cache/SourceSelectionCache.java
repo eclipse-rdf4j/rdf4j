@@ -31,7 +31,7 @@ public interface SourceSelectionCache {
 		 * No local information available: a remote check needs to be performed to check if a data source can provide
 		 * statements
 		 */
-		POSSIBLY_HAS_STATEMENTS;
+		POSSIBLY_HAS_STATEMENTS
 	}
 
 	/**

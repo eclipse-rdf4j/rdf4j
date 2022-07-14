@@ -11,6 +11,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DelayedIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -26,6 +27,7 @@ public interface QueryEvaluationStep {
 	 * Utility class that removes code duplication and makes a precompiled QueryEvaluationStep available as an iteration
 	 * that may be created and used later.
 	 */
+	@Deprecated(since = "4.1.0", forRemoval = true)
 	class DelayedEvaluationIteration
 			extends DelayedIteration<BindingSet, QueryEvaluationException> {
 		private final QueryEvaluationStep arg;
@@ -37,11 +39,14 @@ public interface QueryEvaluationStep {
 		}
 
 		@Override
-		protected Iteration<? extends BindingSet, ? extends QueryEvaluationException> createIteration()
+		protected CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> createIteration()
 				throws QueryEvaluationException {
 			return arg.evaluate(bs);
 		}
 	}
+
+	EmptyIteration<BindingSet, QueryEvaluationException> EMPTY_ITERATION = new EmptyIteration<>();
+	QueryEvaluationStep EMPTY = bindings -> EMPTY_ITERATION;
 
 	CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings);
 
@@ -53,12 +58,11 @@ public interface QueryEvaluationStep {
 	 * @return a thin wrapper arround the evaluation call.
 	 */
 	static QueryEvaluationStep minimal(EvaluationStrategy strategy, TupleExpr expr) {
-		return new QueryEvaluationStep() {
-			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return strategy.evaluate(expr, bs);
-			}
-		};
+		return bs -> strategy.evaluate(expr, bs);
+	}
+
+	static QueryEvaluationStep empty() {
+		return bs -> new EmptyIteration<>();
 	}
 
 	/**
@@ -71,11 +75,6 @@ public interface QueryEvaluationStep {
 	 */
 	static QueryEvaluationStep wrap(QueryEvaluationStep qes,
 			Function<CloseableIteration<BindingSet, QueryEvaluationException>, CloseableIteration<BindingSet, QueryEvaluationException>> wrap) {
-		return new QueryEvaluationStep() {
-			@Override
-			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return wrap.apply(qes.evaluate(bs));
-			}
-		};
+		return bs -> wrap.apply(qes.evaluate(bs));
 	}
 }

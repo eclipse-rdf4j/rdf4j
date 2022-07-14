@@ -32,11 +32,11 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
 @Deprecated
 public abstract class SPARQLOperation implements Operation {
 
-	private static Executor executor = Executors.newCachedThreadPool();
+	private static final Executor executor = Executors.newCachedThreadPool();
 
 	protected HttpClient client;
 
-	private String url;
+	private final String url;
 
 	protected Dataset dataset = new SimpleDataset();
 

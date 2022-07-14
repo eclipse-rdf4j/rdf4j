@@ -121,6 +121,8 @@ public class SolrIndexTest {
 		index.shutDown();
 
 		FileUtils.deleteDirectory(new File(DATA_DIR));
+		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);
+
 	}
 
 	@Test
@@ -453,7 +455,7 @@ public class SolrIndexTest {
 	}
 
 	static class PropertiesReader {
-		private Properties properties;
+		private final Properties properties;
 
 		public PropertiesReader(String propertyFileName) throws IOException {
 			InputStream is = getClass().getClassLoader()

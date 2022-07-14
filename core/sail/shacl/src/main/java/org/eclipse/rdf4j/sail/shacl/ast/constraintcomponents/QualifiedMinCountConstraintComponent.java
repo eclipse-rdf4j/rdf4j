@@ -152,10 +152,12 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNodeProvider planNodeProvider = () -> {
 
-			PlanNode target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-					stableRandomVariableProvider);
+			PlanNode target;
 
-			if (overrideTargetNode != null) {
+			if (overrideTargetNode == null) {
+				target = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
+						stableRandomVariableProvider);
+			} else {
 				PlanNode planNode = overrideTargetNode.getPlanNode();
 				if (planNode instanceof AllTargetsPlanNode) {
 					return planNode;
@@ -178,8 +180,6 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);
@@ -200,10 +200,11 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 
 		PlanNode invalid = Unique.getInstance(planNode, false);
 
-		PlanNode allTargetsPlan = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-				stableRandomVariableProvider);
-
-		if (overrideTargetNode != null) {
+		PlanNode allTargetsPlan;
+		if (overrideTargetNode == null) {
+			allTargetsPlan = getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
+					stableRandomVariableProvider);
+		} else {
 			allTargetsPlan = getTargetChain()
 					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
 							stableRandomVariableProvider)
@@ -227,8 +228,6 @@ public class QualifiedMinCountConstraintComponent extends AbstractConstraintComp
 							.getTargetQueryFragment(new StatementMatcher.Variable("a"),
 									new StatementMatcher.Variable("c"),
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-					false,
-					null,
 					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 							validationSettings.getDataGraph())
 			);

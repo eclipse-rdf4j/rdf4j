@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 
 /**
  *
@@ -65,7 +65,7 @@ public class ConstructorBuilder {
 		return buildConstructor(bodyExpr, bodyExpr, false, distinct, reduced);
 	}
 
-	private class BasicPatternVerifier extends AbstractQueryModelVisitor<RuntimeException> {
+	private static class BasicPatternVerifier extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private boolean basicPattern = true;
 

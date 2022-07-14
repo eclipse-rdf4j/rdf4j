@@ -194,11 +194,8 @@ public abstract class FedXBaseTest {
 	 * @throws IOException
 	 */
 	protected String readResourceAsString(String resource) throws IOException {
-		InputStream stream = FedXBaseTest.class.getResourceAsStream(resource);
-		try {
+		try (InputStream stream = FedXBaseTest.class.getResourceAsStream(resource)) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
-		} finally {
-			stream.close();
 		}
 	}
 
@@ -215,11 +212,11 @@ public abstract class FedXBaseTest {
 
 		if (tqrFormat != null) {
 			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
-			if (in == null) {
-				throw new IOException("File could not be opened: " + resultFile);
-			}
 
-			try {
+			try (in) {
+				if (in == null) {
+					throw new IOException("File could not be opened: " + resultFile);
+				}
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat);
 
 				TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
@@ -227,8 +224,6 @@ public abstract class FedXBaseTest {
 
 				parser.parseQueryResult(in);
 				return qrBuilder.getQueryResult();
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult(resultFile);
@@ -254,11 +249,8 @@ public abstract class FedXBaseTest {
 			Set<Statement> result = new LinkedHashSet<>();
 			parser.setRDFHandler(new StatementCollector(result));
 
-			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
-			try {
+			try (InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile)) {
 				parser.parse(in, resultFile);
-			} finally {
-				in.close();
 			}
 
 			return result;
@@ -274,11 +266,8 @@ public abstract class FedXBaseTest {
 				.get();
 
 		if (bqrFormat != null) {
-			InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile);
-			try {
+			try (InputStream in = SPARQLBaseTest.class.getResourceAsStream(resultFile)) {
 				return QueryResultIO.parseBoolean(in, bqrFormat);
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult(resultFile);

@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
  */
 public class Bind implements GraphPattern {
 	private static final String AS = " AS ";
-	private Assignable expression;
-	private Variable var;
+	private final Assignable expression;
+	private final Variable var;
 
 	Bind(Assignable exp, Variable var) {
 		this.expression = exp;

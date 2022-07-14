@@ -47,7 +47,7 @@ import com.github.jsonldjava.utils.JsonUtils;
  *
  * @author Peter Ansell
  */
-public class JSONLDWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
+public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 
 	private final Model model = new LinkedHashModel();
 

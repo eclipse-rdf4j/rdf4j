@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
  * @author Jeen Broekstra
  * @see <a href="http://www.w3.org/Submission/CBD/#alternatives">Concise Bounded Description - alternatives</a>
  */
+@Deprecated(since = "4.1.0")
 public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 
 	protected final static String VARNAME_SUBJECT = "subject";
@@ -60,7 +61,7 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private Mode currentMode = Mode.OUTGOING_LINKS;
 
-	private Iteration<BindingSet, QueryEvaluationException> sourceIter;
+	private final Iteration<BindingSet, QueryEvaluationException> sourceIter;
 
 	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter, EvaluationStrategy strategy,
 			Set<String> describeExprNames, BindingSet parentBindings) {

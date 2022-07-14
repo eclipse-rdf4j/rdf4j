@@ -11,6 +11,7 @@ package org.eclipse.rdf4j.common.iteration;
 /**
  * An Iteration that skips the first <var>offset</var> elements from an underlying Iteration.
  */
+@Deprecated(since = "4.1.0")
 public class OffsetIteration<E, X extends Exception> extends FilterIteration<E, X> {
 
 	/*-----------*

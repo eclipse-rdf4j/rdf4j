@@ -27,6 +27,7 @@ public class ExternalFilterTargetIsSubject extends FilterPlanNode {
 	public ExternalFilterTargetIsSubject(SailConnection connection, Resource[] dataGraph, PlanNode parent) {
 		super(parent);
 		this.connection = connection;
+		assert this.connection != null;
 		this.dataGraph = dataGraph;
 	}
 
@@ -67,7 +68,7 @@ public class ExternalFilterTargetIsSubject extends FilterPlanNode {
 					.equals(((MemoryStoreConnection) that.connection).getSail())
 					&& Arrays.equals(dataGraph, that.dataGraph);
 		}
-		return connection.equals(that.connection) && Arrays.equals(dataGraph, that.dataGraph);
+		return Objects.equals(connection, that.connection) && Arrays.equals(dataGraph, that.dataGraph);
 	}
 
 	@Override

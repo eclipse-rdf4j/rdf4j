@@ -29,7 +29,7 @@ public class TestStringCast {
 
 	private StringCast stringCast;
 
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	/**
 	 * @throws java.lang.Exception

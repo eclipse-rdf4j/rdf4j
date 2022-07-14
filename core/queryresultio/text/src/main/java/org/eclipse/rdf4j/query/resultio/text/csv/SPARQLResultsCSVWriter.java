@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
  */
 public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, CharSink {
 
-	private Writer writer;
+	private final Writer writer;
 
 	private List<String> bindingNames;
 

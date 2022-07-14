@@ -167,7 +167,7 @@ class ElasticsearchDataStructure implements DataStructureInterface {
 
 		return new LookAheadIteration<ExtensibleStatement, SailException>() {
 
-			CloseableIteration<SearchHit, RuntimeException> iterator = ElasticsearchHelper
+			final CloseableIteration<SearchHit, RuntimeException> iterator = ElasticsearchHelper
 					.getScrollingIterator(queryBuilder, clientProvider.getClient(), index, scrollTimeout);
 
 			@Override

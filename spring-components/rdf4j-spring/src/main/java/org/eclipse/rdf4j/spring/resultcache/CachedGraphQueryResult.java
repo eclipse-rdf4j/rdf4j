@@ -28,9 +28,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Florian Kleedorfer
  */
 public class CachedGraphQueryResult implements GraphQueryResult {
-	private List<Statement> statements;
+	private final List<Statement> statements;
 	private Iterator<Statement> replayingIterator;
-	private Map<String, String> namespaces;
+	private final Map<String, String> namespaces;
 
 	CachedGraphQueryResult(List<Statement> statements, Map<String, String> namespaces) {
 		this.statements = new ArrayList<>(statements);

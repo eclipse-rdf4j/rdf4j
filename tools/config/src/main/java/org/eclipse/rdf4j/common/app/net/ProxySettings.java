@@ -45,7 +45,7 @@ public class ProxySettings implements Configuration {
 
 	public static final String PROXY_SETTINGS_FILENAME = "proxy.properties";
 
-	private File confDir;
+	private final File confDir;
 
 	private File propsFile;
 

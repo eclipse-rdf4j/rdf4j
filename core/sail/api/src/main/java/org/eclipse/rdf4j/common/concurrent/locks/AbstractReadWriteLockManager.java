@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockCleaner;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockMonitoring;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockTracking;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -253,6 +254,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 			}
 		}
 
+		VarHandle.releaseFence();
 		return new WriteLock(stampedLock, writeStamp);
 	}
 
@@ -322,6 +324,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 			long lockedSum = readersLocked.sum();
 			if (unlockedSum == lockedSum) {
 				// No active readers.
+				VarHandle.releaseFence();
 				return new WriteLock(stampedLock, writeStamp);
 			} else {
 				stampedLock.unlockWrite(writeStamp);
@@ -394,10 +397,6 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 				throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
 			}
 
-			// Make sure that readers in other threads will be able to read the writes that were made by the user within
-			// the write-locked section. The stamped lock only guarantees that writes are visible to other threads if
-			// those threads use a stamped lock read-lock.
-			VarHandle.fullFence();
 			lock.unlockWrite(temp);
 		}
 	}
@@ -422,6 +421,7 @@ public abstract class AbstractReadWriteLockManager implements ReadWriteLockManag
 				throw new IllegalMonitorStateException("Trying to release a lock that is not locked");
 			}
 
+			VarHandle.acquireFence();
 			locked = false;
 			readersUnlocked.increment();
 

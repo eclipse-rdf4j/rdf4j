@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.federated.exception.OptimizationException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
  * Optimizer to flatten the UNION operations.
@@ -25,12 +25,12 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * @author Andreas Schwarte
  *
  */
-public class UnionOptimizer extends AbstractQueryModelVisitor<OptimizationException> implements FedXOptimizer {
+public class UnionOptimizer extends AbstractSimpleQueryModelVisitor<OptimizationException> implements FedXOptimizer {
 
 	protected final QueryInfo queryInfo;
 
 	public UnionOptimizer(QueryInfo queryInfo) {
-		super();
+		super(true);
 		this.queryInfo = queryInfo;
 	}
 

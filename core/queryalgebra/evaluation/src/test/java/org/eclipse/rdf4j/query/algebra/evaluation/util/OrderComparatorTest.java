@@ -109,21 +109,21 @@ public class OrderComparatorTest {
 		}
 	}
 
-	private EvaluationStrategyStub strategy = new EvaluationStrategyStub();
+	private final EvaluationStrategyStub strategy = new EvaluationStrategyStub();
 
-	private Order order = new Order();
+	private final Order order = new Order();
 
-	private OrderElem asc = new OrderElem();
+	private final OrderElem asc = new OrderElem();
 
-	private OrderElem desc = new OrderElem();
+	private final OrderElem desc = new OrderElem();
 
-	private ComparatorStub cmp = new ComparatorStub();
+	private final ComparatorStub cmp = new ComparatorStub();
 
-	private int ZERO = 0;
+	private final int ZERO = 0;
 
-	private int POS = 378;
+	private final int POS = 378;
 
-	private int NEG = -7349;
+	private final int NEG = -7349;
 
 	@Test
 	public void testEquals() throws Exception {

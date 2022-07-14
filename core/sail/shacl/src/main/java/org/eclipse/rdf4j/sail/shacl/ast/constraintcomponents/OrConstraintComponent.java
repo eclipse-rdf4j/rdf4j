@@ -117,7 +117,8 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 		} else {
 			planNodeProvider = new BufferedSplitter(
 					getAllTargetsPlan(connectionsGroup, validationSettings.getDataGraph(), scope,
-							stableRandomVariableProvider));
+							stableRandomVariableProvider),
+					false);
 		}
 
 		PlanNode orPlanNodes = or.stream()

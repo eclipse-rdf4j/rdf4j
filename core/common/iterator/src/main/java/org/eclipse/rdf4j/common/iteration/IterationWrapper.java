@@ -15,6 +15,7 @@ import java.util.NoSuchElementException;
  * provides default methods that forward method calls to the wrapped Iteration. Subclasses of
  * <var>IterationWrapper</var> should override some of these methods and may also provide additional methods and fields.
  */
+@Deprecated(since = "4.1.0")
 public class IterationWrapper<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
 	/*-----------*

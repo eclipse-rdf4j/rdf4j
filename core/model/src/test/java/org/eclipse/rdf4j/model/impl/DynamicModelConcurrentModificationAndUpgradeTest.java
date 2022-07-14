@@ -64,7 +64,7 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 
 		Runnable addAll = () -> {
 			try {
-				model.addAll(new Collection<Statement>() {
+				model.addAll(new Collection<>() {
 					@Override
 					public int size() {
 						return statements.size();
@@ -82,7 +82,7 @@ public class DynamicModelConcurrentModificationAndUpgradeTest {
 
 					@Override
 					public Iterator<Statement> iterator() {
-						return new Iterator<Statement>() {
+						return new Iterator<>() {
 
 							final Iterator<Statement> iterator = statements.iterator();
 

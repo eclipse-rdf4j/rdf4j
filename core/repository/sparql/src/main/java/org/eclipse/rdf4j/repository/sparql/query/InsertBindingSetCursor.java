@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public class InsertBindingSetCursor extends IterationWrapper<BindingSet, QueryEvaluationException> {
 
-	private BindingSet bindings;
+	private final BindingSet bindings;
 
 	public InsertBindingSetCursor(CloseableIteration<BindingSet, QueryEvaluationException> delegate,
 			BindingSet bindings) {

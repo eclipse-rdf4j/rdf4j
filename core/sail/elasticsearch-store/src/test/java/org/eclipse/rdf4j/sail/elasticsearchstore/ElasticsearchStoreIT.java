@@ -55,7 +55,7 @@ public class ElasticsearchStoreIT {
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
 
 	private static ElasticsearchClusterRunner runner;
-	private static File installLocation = Files.newTemporaryFolder();
+	private static final File installLocation = Files.newTemporaryFolder();
 
 	@BeforeClass
 	public static void beforeClass() throws IOException, InterruptedException {

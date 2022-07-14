@@ -38,27 +38,27 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> currentIter;
 
-	private BindingSet bindings;
+	private final BindingSet bindings;
 
-	private Scope scope;
+	private final Scope scope;
 
-	private Var startVar;
+	private final Var startVar;
 
-	private Var endVar;
+	private final Var endVar;
 
 	private final boolean startVarFixed;
 
 	private final boolean endVarFixed;
 
-	private Queue<ValuePair> valueQueue;
+	private final Queue<ValuePair> valueQueue;
 
 	private final Set<ValuePair> reportedValues;
 
-	private final Set<ValuePair> unreportedValues;;
+	private final Set<ValuePair> unreportedValues;
 
-	private TupleExpr pathExpression;
+	private final TupleExpr pathExpression;
 
-	private Var contextVar;
+	private final Var contextVar;
 
 	private ValuePair currentVp;
 
@@ -394,13 +394,13 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 
 	class VarReplacer extends AbstractQueryModelVisitor<QueryEvaluationException> {
 
-		private Var toBeReplaced;
+		private final Var toBeReplaced;
 
-		private Var replacement;
+		private final Var replacement;
 
-		private long index;
+		private final long index;
 
-		private boolean replaceAnons;
+		private final boolean replaceAnons;
 
 		public VarReplacer(Var toBeReplaced, Var replacement, long index, boolean replaceAnons) {
 			this.toBeReplaced = toBeReplaced;

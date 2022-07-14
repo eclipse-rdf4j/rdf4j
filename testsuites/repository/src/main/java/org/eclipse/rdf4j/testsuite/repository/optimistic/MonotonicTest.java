@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -37,15 +38,20 @@ public class MonotonicTest {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+	}
+
 	private Repository repo;
 
 	private RepositoryConnection a;
 
 	private RepositoryConnection b;
 
-	private IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
+	private final IsolationLevel level = IsolationLevels.SNAPSHOT_READ;
 
-	private String NS = "http://rdf.example.org/";
+	private final String NS = "http://rdf.example.org/";
 
 	private ValueFactory lf;
 

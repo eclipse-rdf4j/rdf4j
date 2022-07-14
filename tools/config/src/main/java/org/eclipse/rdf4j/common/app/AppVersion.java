@@ -50,7 +50,7 @@ public class AppVersion implements Comparable<AppVersion> {
 	/**
 	 * The version's build, if any.
 	 */
-	private String build;
+	private final String build;
 
 	/**
 	 * Construct an uninitialized AppVersion.
@@ -370,7 +370,7 @@ public class AppVersion implements Comparable<AppVersion> {
 		final boolean hasBuild = buildSeparator > -1;
 
 		String major = versionString.substring(0, minorSeparator);
-		String minor = null;
+		String minor;
 		String patch = null;
 		String milestone = null;
 		String modifier = null;

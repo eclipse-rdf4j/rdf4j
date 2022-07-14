@@ -23,10 +23,8 @@ public class ValidationReportNode implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public ValidationReportNode(PlanNode parent,
-			Function<ValidationTuple, ValidationResult> validationResultFunction) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-		this.parent = parent;
+	public ValidationReportNode(PlanNode parent, Function<ValidationTuple, ValidationResult> validationResultFunction) {
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.validationResultFunction = validationResultFunction;
 	}
 

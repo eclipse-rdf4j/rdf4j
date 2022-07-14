@@ -100,9 +100,9 @@ public class RepositoryConfigRepository extends AbstractRepository {
 
 			private Model committed = loadModel();
 
-			private Model added = new TreeModel();
+			private final Model added = new TreeModel();
 
-			private Model removed = new TreeModel();
+			private final Model removed = new TreeModel();
 
 			@Override
 			public RepositoryResult<Resource> getContextIDs() throws RepositoryException {

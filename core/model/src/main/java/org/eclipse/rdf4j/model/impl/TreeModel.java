@@ -494,9 +494,9 @@ public class TreeModel extends AbstractModel implements SortedSet<Statement> {
 
 	private class ModelIterator implements Iterator<Statement> {
 
-		private Iterator<Statement> iter;
+		private final Iterator<Statement> iter;
 
-		private TreeSet<Statement> owner;
+		private final TreeSet<Statement> owner;
 
 		private Statement last;
 

@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.paths;
 
-import static org.junit.Assert.assertTrue;
-
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.HashSet;
@@ -29,6 +27,7 @@ import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.RepositoryConnectionShapeSource;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class PathTest {
@@ -160,7 +159,7 @@ public class PathTest {
 
 		}
 
-		assertTrue(Models.isomorphic(actual, expected));
+		Assertions.assertTrue(Models.isomorphic(actual, expected));
 	}
 
 	private DynamicModel convertToPathAndBackToModel(Model expected) {

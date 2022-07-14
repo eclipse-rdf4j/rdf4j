@@ -28,7 +28,7 @@ public class StrAfterTest {
 
 	private StrAfter strAfterFunc;
 
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	/**
 	 * @throws java.lang.Exception

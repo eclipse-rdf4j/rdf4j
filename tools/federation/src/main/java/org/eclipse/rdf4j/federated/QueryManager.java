@@ -60,8 +60,8 @@ public class QueryManager {
 	private static final Logger log = LoggerFactory.getLogger(QueryManager.class);
 
 	private final AtomicBigInteger nextQueryID;
-	private Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<>();
-	private Map<String, String> prefixDeclarations = new HashMap<>();
+	private final Set<QueryInfo> runningQueries = new ConcurrentSkipListSet<>();
+	private final Map<String, String> prefixDeclarations = new HashMap<>();
 
 	private FedXRepository repo;
 	private FederationContext federationContext;
@@ -314,8 +314,7 @@ public class QueryManager {
 		try {
 			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,
 					new SimpleDataset());
-			tupleExpr = strategy
-					.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());
+			tupleExpr = strategy.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());
 			return tupleExpr.toString();
 		} catch (SailException e) {
 			throw new FedXException("Unable to retrieve query plan: " + e.getMessage());

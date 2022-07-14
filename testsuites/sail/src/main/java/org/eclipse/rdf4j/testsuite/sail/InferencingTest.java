@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -40,6 +41,10 @@ public abstract class InferencingTest {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+	}
 	/*-----------*
 	 * Constants *
 	 *-----------*/
@@ -58,7 +63,7 @@ public abstract class InferencingTest {
 		Collection<? extends Statement> entailedStatements = new HashSet<>();
 
 		Sail sail = createSail();
-		try (SailConnection con = sail.getConnection();) {
+		try (SailConnection con = sail.getConnection()) {
 			con.begin();
 
 			// clear the input store
@@ -66,7 +71,7 @@ public abstract class InferencingTest {
 			con.commit();
 
 			// Upload input data
-			try (InputStream stream = getClass().getResourceAsStream(inputData);) {
+			try (InputStream stream = getClass().getResourceAsStream(inputData)) {
 				con.begin();
 				Model m = Rio.parse(stream, inputData, RDFFormat.NTRIPLES);
 				for (Statement st : m) {

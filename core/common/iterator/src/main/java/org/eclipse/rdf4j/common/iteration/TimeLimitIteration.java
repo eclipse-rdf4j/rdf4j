@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Arjohn Kampman
  */
+@Deprecated(since = "4.1.0")
 public abstract class TimeLimitIteration<E, X extends Exception> extends IterationWrapper<E, X> {
 
 	private static final Timer timer = new Timer("TimeLimitIteration", true);
@@ -96,7 +97,7 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 		}
 	}
 
-	private final void checkInterrupted() throws X {
+	private void checkInterrupted() throws X {
 		if (isInterrupted.get()) {
 			try {
 				throwInterruptedException();

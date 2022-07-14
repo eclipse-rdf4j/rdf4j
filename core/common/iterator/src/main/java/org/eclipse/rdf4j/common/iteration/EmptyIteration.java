@@ -9,10 +9,15 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
+import java.util.stream.Stream;
 
 /**
  * An iterator that does not contain any elements.
+ *
+ * @implNote In the future this class will stop extending AbstractCloseableIteration and instead implement
+ *           CloseableIteration directly.
  */
+@Deprecated(since = "4.1.0")
 public final class EmptyIteration<E, X extends Exception> extends AbstractCloseableIteration<E, X> {
 
 	/*--------------*
@@ -30,17 +35,23 @@ public final class EmptyIteration<E, X extends Exception> extends AbstractClosea
 	 *---------*/
 
 	@Override
-	public final boolean hasNext() {
+	public boolean hasNext() {
 		return false;
 	}
 
 	@Override
-	public final E next() {
+	public E next() {
 		throw new NoSuchElementException();
 	}
 
 	@Override
-	public final void remove() {
+	public void remove() {
 		throw new IllegalStateException("Empty iterator does not contain any elements");
 	}
+
+	@Override
+	public Stream<E> stream() {
+		return Stream.empty();
+	}
+
 }

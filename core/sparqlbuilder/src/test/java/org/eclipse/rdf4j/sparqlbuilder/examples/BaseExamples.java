@@ -69,7 +69,7 @@ public class BaseExamples {
 
 	protected Matcher<? super String> stringEqualsIgnoreCaseAndWhitespace(String expected) {
 		final String expectedConverted = toLowerRemoveWhitespace(expected);
-		return new BaseMatcher<String>() {
+		return new BaseMatcher<>() {
 			private String aroundString = null;
 
 			@Override

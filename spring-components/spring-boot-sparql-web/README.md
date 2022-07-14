@@ -9,7 +9,7 @@ spring-boot application
 
 <dependency>
 	<groupId>org.eclipse.rdf4j</groupId>
-	<artifactId>spring-boot-sparql-web</artifactId>
+	<artifactId>rdf4j-spring-boot-sparql-web</artifactId>
 	<version>${rdf4j.version}</version>
 </dependency>
 
@@ -31,15 +31,15 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
 @SpringBootApplication
-@ComponentScan(basePackages = { "org.eclipse.rdf4j", "org.example" })
+@ComponentScan(basePackages = {"org.eclipse.rdf4j", "org.example"})
 @Import(QueryResponder.class)
 public class Server {
 	@Bean
-	public Repository getRepository(){
 		MemoryStore store = ... ;//Configure progamatically your specific store
+	public Repository getRepository() {
 		SailRepository sailRepository = new SailRepository(store);
 		sailRepository.init();
-		retun sailRepository;
+		return sailRepository;
 	}
 
 	public static void main(String[] args) {

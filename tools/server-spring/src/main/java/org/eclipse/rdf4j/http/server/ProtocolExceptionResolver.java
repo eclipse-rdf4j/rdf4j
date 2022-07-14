@@ -31,7 +31,7 @@ import org.springframework.web.servlet.ModelAndView;
  */
 public class ProtocolExceptionResolver implements HandlerExceptionResolver {
 
-	private Logger logger = LoggerFactory.getLogger(this.getClass());
+	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	@Override
 	public ModelAndView resolveException(HttpServletRequest request, HttpServletResponse response, Object handler,

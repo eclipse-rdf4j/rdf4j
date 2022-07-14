@@ -22,9 +22,12 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalPredicateObjectFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Sort;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
@@ -101,9 +104,27 @@ public class TargetClass extends Target {
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
-		return new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE, targetClass,
-				parent,
-				true, ExternalPredicateObjectFilter.FilterOn.activeTarget);
+
+		SailConnection addedStatements = connectionsGroup.getAddedStatements();
+
+		if (addedStatements != null) {
+			BufferedSplitter bufferedSplitter = new BufferedSplitter(parent);
+
+			ExternalPredicateObjectFilter typeFoundInAdded = new ExternalPredicateObjectFilter(
+					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,
+					bufferedSplitter.getPlanNode(), true, ExternalPredicateObjectFilter.FilterOn.activeTarget);
+			ExternalPredicateObjectFilter typeNotFoundInAdded = new ExternalPredicateObjectFilter(
+					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,
+					bufferedSplitter.getPlanNode(), false, ExternalPredicateObjectFilter.FilterOn.activeTarget);
+			ExternalPredicateObjectFilter externalPredicateObjectFilter = new ExternalPredicateObjectFilter(
+					connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE, targetClass, typeNotFoundInAdded, true,
+					ExternalPredicateObjectFilter.FilterOn.activeTarget);
+
+			return new Sort(UnionNode.getInstance(typeFoundInAdded, externalPredicateObjectFilter));
+		} else {
+			return new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE,
+					targetClass, parent, true, ExternalPredicateObjectFilter.FilterOn.activeTarget);
+		}
 
 	}
 

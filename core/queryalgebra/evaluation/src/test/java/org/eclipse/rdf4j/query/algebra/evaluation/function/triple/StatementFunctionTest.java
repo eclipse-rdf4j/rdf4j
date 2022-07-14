@@ -34,7 +34,7 @@ public class StatementFunctionTest {
 
 	private StatementFunction function;
 
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	/**
 	 * @throws java.lang.Exception

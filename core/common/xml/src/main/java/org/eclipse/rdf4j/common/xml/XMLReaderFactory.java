@@ -97,7 +97,7 @@ public class XMLReaderFactory {
 	public static XMLReader createXMLReader(String name) throws SAXException {
 		final Logger logger = LoggerFactory.getLogger(XMLReader.class);
 
-		XMLReader reader = null;
+		XMLReader reader;
 		try {
 			reader = _createXMLReader(name);
 		} catch (ClassNotFoundException e) {

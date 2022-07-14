@@ -38,7 +38,7 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 		next = null;
 		closed = false;
 
-		return new CloseableIteration<ValidationTuple, SailException>() {
+		return new CloseableIteration<>() {
 
 			{
 				parent.init();
@@ -123,7 +123,7 @@ public class UnBufferedPlanNode<T extends PlanNode & MultiStreamPlanNode> implem
 
 	@Override
 	public String toString() {
-		return "UnBufferedPlanNode";
+		return "UnBufferedPlanNode(" + parent.getClass().getSimpleName() + ")";
 	}
 
 	@Override

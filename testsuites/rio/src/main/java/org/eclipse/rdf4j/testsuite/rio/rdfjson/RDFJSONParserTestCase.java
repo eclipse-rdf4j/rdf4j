@@ -45,9 +45,9 @@ public abstract class RDFJSONParserTestCase {
 
 	protected static String BASE_URL = "http://example/base/";
 
-	private static String TEST_FILE_BASE_PATH = "/testcases/rdfjson/";
+	private static final String TEST_FILE_BASE_PATH = "/testcases/rdfjson/";
 
-	private static String MANIFEST_GOOD_URL = "/testcases/rdfjson/manifest.ttl";
+	private static final String MANIFEST_GOOD_URL = "/testcases/rdfjson/manifest.ttl";
 
 	/*--------------------*
 	 * Static initializer *
@@ -163,11 +163,11 @@ public abstract class RDFJSONParserTestCase {
 		 * Variables *
 		 *-----------*/
 
-		private String inputURL;
+		private final String inputURL;
 
 		private String outputURL;
 
-		private String baseURL;
+		private final String baseURL;
 
 		/*--------------*
 		 * Constructors *
@@ -245,9 +245,9 @@ public abstract class RDFJSONParserTestCase {
 		 * Variables *
 		 *-----------*/
 
-		private String inputURL;
+		private final String inputURL;
 
-		private String baseURL;
+		private final String baseURL;
 
 		/*--------------*
 		 * Constructors *

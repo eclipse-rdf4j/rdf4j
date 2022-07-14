@@ -26,8 +26,8 @@ import org.slf4j.LoggerFactory;
  */
 public class TupleQueryEvaluator {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-	private TupleQuery query;
-	private Map<String, Value> bindings;
+	private final TupleQuery query;
+	private final Map<String, Value> bindings;
 
 	private TupleQueryEvaluator(TupleQuery query) {
 		this.query = query;

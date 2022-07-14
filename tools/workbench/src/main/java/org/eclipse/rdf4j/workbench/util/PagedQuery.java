@@ -29,7 +29,8 @@ public class PagedQuery {
 
 	private final boolean inlineLimitAndOffset;
 
-	private int limitSubstitute, offsetSubstitute;
+	private final int limitSubstitute;
+	private final int offsetSubstitute;
 
 	/***
 	 * <p>

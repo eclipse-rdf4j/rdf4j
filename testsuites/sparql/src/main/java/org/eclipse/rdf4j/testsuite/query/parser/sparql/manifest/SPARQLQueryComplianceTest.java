@@ -75,6 +75,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	private final String resultFileURL;
 	private final Dataset dataset;
 	private final boolean ordered;
+	private final boolean laxCardinality;
 
 	private Repository dataRepository;
 
@@ -88,12 +89,13 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	 * @param ordered
 	 */
 	public SPARQLQueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
-			String resultFileURL, Dataset dataset, boolean ordered) {
+			String resultFileURL, Dataset dataset, boolean ordered, boolean laxCardinality) {
 		super(displayName, testURI, name);
 		this.queryFileURL = queryFileURL;
 		this.resultFileURL = resultFileURL;
 		this.dataset = dataset;
 		this.ordered = ordered;
+		this.laxCardinality = laxCardinality;
 	}
 
 	@Before
@@ -161,7 +163,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 	protected abstract Repository newRepository() throws Exception;
 
-	private final Repository createRepository() throws Exception {
+	private Repository createRepository() throws Exception {
 		Repository repo = newRepository();
 		try (RepositoryConnection con = repo.getConnection()) {
 			con.clear();
@@ -170,18 +172,17 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		return repo;
 	}
 
-	private final String readQueryString() throws IOException {
+	private String readQueryString() throws IOException {
 		try (InputStream stream = new URL(queryFileURL).openStream()) {
 			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));
 		}
 	}
 
-	private final TupleQueryResult readExpectedTupleQueryResult() throws Exception {
+	private TupleQueryResult readExpectedTupleQueryResult() throws Exception {
 		Optional<QueryResultFormat> tqrFormat = QueryResultIO.getParserFormatForFileName(resultFileURL);
 
 		if (tqrFormat.isPresent()) {
-			InputStream in = new URL(resultFileURL).openStream();
-			try {
+			try (InputStream in = new URL(resultFileURL).openStream()) {
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(tqrFormat.get());
 				parser.setValueFactory(getDataRepository().getValueFactory());
 
@@ -190,8 +191,6 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 
 				parser.parseQueryResult(in);
 				return qrBuilder.getQueryResult();
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult();
@@ -199,16 +198,13 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		}
 	}
 
-	private final boolean readExpectedBooleanQueryResult() throws Exception {
+	private boolean readExpectedBooleanQueryResult() throws Exception {
 		Optional<QueryResultFormat> bqrFormat = BooleanQueryResultParserRegistry.getInstance()
 				.getFileFormatForFileName(resultFileURL);
 
 		if (bqrFormat.isPresent()) {
-			InputStream in = new URL(resultFileURL).openStream();
-			try {
+			try (InputStream in = new URL(resultFileURL).openStream()) {
 				return QueryResultIO.parseBoolean(in, bqrFormat.get());
-			} finally {
-				in.close();
 			}
 		} else {
 			Set<Statement> resultGraph = readExpectedGraphQueryResult();
@@ -216,7 +212,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		}
 	}
 
-	private final Set<Statement> readExpectedGraphQueryResult() throws Exception {
+	private Set<Statement> readExpectedGraphQueryResult() throws Exception {
 		RDFFormat rdfFormat = Rio.getParserFormatForFileName(resultFileURL)
 				.orElseThrow(Rio.unsupportedFormat(resultFileURL));
 
@@ -227,17 +223,14 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		Set<Statement> result = new LinkedHashSet<>();
 		parser.setRDFHandler(new StatementCollector(result));
 
-		InputStream in = new URL(resultFileURL).openStream();
-		try {
+		try (InputStream in = new URL(resultFileURL).openStream()) {
 			parser.parse(in, resultFileURL);
-		} finally {
-			in.close();
 		}
 
 		return result;
 	}
 
-	private final void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
+	private void compareTupleQueryResults(TupleQueryResult queryResult, TupleQueryResult expectedResult)
 			throws Exception {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
@@ -245,7 +238,6 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		MutableTupleQueryResult expectedResultTable = new MutableTupleQueryResult(expectedResult);
 
 		boolean resultsEqual;
-		boolean laxCardinality = false; // TODO determine if we still need this
 		if (laxCardinality) {
 			resultsEqual = QueryResults.isSubset(queryResultTable, expectedResultTable);
 		} else {
@@ -404,7 +396,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 				query.append(" PREFIX sd: <http://www.w3.org/ns/sparql-service-description#> \n");
 				query.append(" PREFIX ent: <http://www.w3.org/ns/entailment/> \n");
 				query.append(
-						" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered \n");
+						" SELECT DISTINCT ?testURI ?testName ?resultFile ?action ?queryFile ?defaultGraph ?ordered ?laxCardinality \n");
 				query.append(" WHERE { [] rdf:first ?testURI . \n");
 				if (approvedOnly) {
 					query.append(" ?testURI dawgt:approval dawgt:Approved . \n");
@@ -417,6 +409,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 				query.append(" ?action qt:query ?queryFile . \n");
 				query.append(" OPTIONAL { ?action qt:data ?defaultGraph } \n");
 				query.append(" OPTIONAL { ?action sd:entailmentRegime ?regime } \n");
+				query.append(" OPTIONAL { ?testURI mf:resultCardinality ?laxCardinality, mf:LaxCardinality } \n");
 				// skip tests involving CSV result files, these are not query tests
 				query.append(" FILTER(!STRENDS(STR(?resultFile), \"csv\")) \n");
 				// skip tests involving entailment regimes
@@ -469,7 +462,9 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 								bs.getValue("queryFile").stringValue(),
 								bs.getValue("resultFile").stringValue(),
 								dataset,
-								Literals.getBooleanValue(ordered, false) });
+								Literals.getBooleanValue(ordered, false),
+								bs.hasBinding("laxCardinality")
+						});
 					}
 				}
 

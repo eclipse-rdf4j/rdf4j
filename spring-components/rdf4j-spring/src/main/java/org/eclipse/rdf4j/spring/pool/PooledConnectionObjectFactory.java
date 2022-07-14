@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory;
 class PooledConnectionObjectFactory extends BasePooledObjectFactory<RepositoryConnection> {
 	private final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private ObjectPool<RepositoryConnection> pool;
-	private RepositoryConnectionFactory delegate;
+	private final RepositoryConnectionFactory delegate;
 
 	public PooledConnectionObjectFactory(RepositoryConnectionFactory delegate) {
 		this.delegate = delegate;

@@ -73,14 +73,14 @@ public class BindSelect implements PlanNode {
 			List<String> varNames, ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction,
 			boolean includePropertyShapeValues) {
 		this.connection = connection;
+		assert this.connection != null;
 		this.mapper = (bindingSet) -> new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues,
 				dataGraph);
 		this.varNames = varNames;
 		this.scope = scope;
 		this.vars = vars;
 		this.bulkSize = bulkSize;
-		source = PlanNodeHelper.handleSorting(this, source);
-		this.source = source;
+		this.source = PlanNodeHelper.handleSorting(this, source);
 
 		if (query.trim().equals("")) {
 			throw new IllegalStateException();
@@ -368,7 +368,7 @@ public class BindSelect implements PlanNode {
 		} else {
 			return bulkSize == that.bulkSize &&
 					includePropertyShapeValues == that.includePropertyShapeValues &&
-					connection.equals(that.connection) &&
+					Objects.equals(connection, that.connection) &&
 					varNames.equals(that.varNames) &&
 					scope.equals(that.scope) &&
 					query.equals(that.query) &&

@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 /**
  * Basic graph pattern collector.
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class BGPCollector<X extends Exception> extends QueryModelVisitorBase<X> {
 
 	private final QueryModelVisitor<X> visitor;

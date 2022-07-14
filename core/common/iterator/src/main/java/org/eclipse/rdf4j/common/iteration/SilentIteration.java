@@ -4,7 +4,8 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
+ ******************************************************************************/
+
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
@@ -17,6 +18,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Jeen Broekstra
  */
+@Deprecated(since = "4.1.0")
 public class SilentIteration<T, E extends Exception> extends IterationWrapper<T, E> {
 
 	private static final Logger logger = LoggerFactory.getLogger(SilentIteration.class);

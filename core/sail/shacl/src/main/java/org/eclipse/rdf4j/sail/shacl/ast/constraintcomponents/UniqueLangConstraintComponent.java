@@ -34,7 +34,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 
@@ -104,8 +103,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 
 	@Override
 	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
-			ValidationSettings validationSettings,
-			PlanNodeProvider overrideTargetNode, Scope scope) {
+			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope) {
 //		assert !negateChildren : "There are no subplans!";
 //		assert !negatePlan;
 
@@ -134,8 +132,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,
 					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
+					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
+
 			);
 
 			PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);
@@ -180,8 +178,8 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 				false,
 				null,
-				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-						validationSettings.getDataGraph())
+				BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
+
 		);
 
 		PlanNode nonUniqueTargetLang = new NonUniqueTargetLang(relevantTargetsWithPath);

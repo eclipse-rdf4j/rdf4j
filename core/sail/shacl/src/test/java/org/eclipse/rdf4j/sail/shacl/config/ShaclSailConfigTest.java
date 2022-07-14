@@ -23,7 +23,6 @@ import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.TRANSACTIONAL_
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT;
 import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_RESULTS_LIMIT_TOTAL;
-import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Set;
@@ -38,6 +37,7 @@ import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class ShaclSailConfigTest {
@@ -159,21 +159,21 @@ public class ShaclSailConfigTest {
 
 		Model m = new TreeModel();
 		Resource node = shaclSailConfig.export(m);
-		assertTrue(m.contains(node, PARALLEL_VALIDATION, null));
-		assertTrue(m.contains(node, LOG_VALIDATION_PLANS, null));
-		assertTrue(m.contains(node, LOG_VALIDATION_VIOLATIONS, null));
-		assertTrue(m.contains(node, VALIDATION_ENABLED, null));
-		assertTrue(m.contains(node, CACHE_SELECT_NODES, null));
-		assertTrue(m.contains(node, GLOBAL_LOG_VALIDATION_EXECUTION, null));
-		assertTrue(m.contains(node, RDFS_SUB_CLASS_REASONING, null));
-		assertTrue(m.contains(node, PERFORMANCE_LOGGING, null));
-		assertTrue(m.contains(node, SERIALIZABLE_VALIDATION, null));
-		assertTrue(m.contains(node, ECLIPSE_RDF4J_SHACL_EXTENSIONS, null));
-		assertTrue(m.contains(node, DASH_DATA_SHAPES, null));
-		assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_TOTAL, null));
-		assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, null));
-		assertTrue(m.contains(node, TRANSACTIONAL_VALIDATION_LIMIT, null));
-		assertTrue(m.contains(node, SHAPES_GRAPH, null));
+		Assertions.assertTrue(m.contains(node, PARALLEL_VALIDATION, null));
+		Assertions.assertTrue(m.contains(node, LOG_VALIDATION_PLANS, null));
+		Assertions.assertTrue(m.contains(node, LOG_VALIDATION_VIOLATIONS, null));
+		Assertions.assertTrue(m.contains(node, VALIDATION_ENABLED, null));
+		Assertions.assertTrue(m.contains(node, CACHE_SELECT_NODES, null));
+		Assertions.assertTrue(m.contains(node, GLOBAL_LOG_VALIDATION_EXECUTION, null));
+		Assertions.assertTrue(m.contains(node, RDFS_SUB_CLASS_REASONING, null));
+		Assertions.assertTrue(m.contains(node, PERFORMANCE_LOGGING, null));
+		Assertions.assertTrue(m.contains(node, SERIALIZABLE_VALIDATION, null));
+		Assertions.assertTrue(m.contains(node, ECLIPSE_RDF4J_SHACL_EXTENSIONS, null));
+		Assertions.assertTrue(m.contains(node, DASH_DATA_SHAPES, null));
+		Assertions.assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_TOTAL, null));
+		Assertions.assertTrue(m.contains(node, VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, null));
+		Assertions.assertTrue(m.contains(node, TRANSACTIONAL_VALIDATION_LIMIT, null));
+		Assertions.assertTrue(m.contains(node, SHAPES_GRAPH, null));
 
 	}
 

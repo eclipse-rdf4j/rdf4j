@@ -48,7 +48,6 @@ public class RepositoryConnectionShapeSource implements ShapeSource {
 		assert context == null;
 		try (Stream<? extends Statement> stream = connection.getStatements(null, SHACL.SHAPES_GRAPH, null, false)
 				.stream()) {
-
 			return stream
 					.collect(Collectors.groupingBy(Statement::getSubject))
 					.entrySet()

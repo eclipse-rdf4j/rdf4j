@@ -43,7 +43,7 @@ public class For implements InverseMagicProperty {
 		final int from = ((Literal) args[0]).intValue();
 		final int to = ((Literal) args[1]).intValue();
 		return new CloseableIteratorIteration<>(
-				SingleValueToListTransformer.transform(new Iterator<Value>() {
+				SingleValueToListTransformer.transform(new Iterator<>() {
 
 					int value = from;
 

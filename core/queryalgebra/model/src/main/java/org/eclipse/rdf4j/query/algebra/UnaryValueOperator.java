@@ -75,8 +75,6 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
 		if (arg == current) {
 			setArg((ValueExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

@@ -44,17 +44,17 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 	private QueryBindingSet result;
 
-	private Value subj;
+	private final Value subj;
 
-	private Value obj;
+	private final Value obj;
 
-	private BindingSet bindings;
+	private final BindingSet bindings;
 
 	private CloseableIteration<BindingSet, QueryEvaluationException> iter;
 
 	private Set<Value> reportedValues;
 
-	private Var contextVar;
+	private final Var contextVar;
 
 	private final EvaluationStrategy evaluationStrategy;
 
@@ -80,11 +80,14 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 		Var startVar = createAnonVar(ANON_SUBJECT_VAR);
 		Var predicate = createAnonVar(ANON_PREDICATE_VAR);
 		Var endVar = createAnonVar(ANON_OBJECT_VAR);
-		StatementPattern subjects = new StatementPattern(startVar, predicate, endVar);
+
+		StatementPattern subjects;
 		if (contextVar != null) {
-			subjects.setScope(Scope.NAMED_CONTEXTS);
-			subjects.setContextVar(contextVar);
+			subjects = new StatementPattern(Scope.NAMED_CONTEXTS, startVar, predicate, endVar, contextVar);
+		} else {
+			subjects = new StatementPattern(startVar, predicate, endVar);
 		}
+
 		precompile = evaluationStrategy.precompile(subjects, context);
 		setSubject = context.addBinding(subjectVar.getName());
 		setObject = context.addBinding(objVar.getName());

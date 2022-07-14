@@ -1,27 +1,21 @@
 /*******************************************************************************
- * Copyright (c) 2020 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- *******************************************************************************/
-package org.eclipse.rdf4j.sail.memory;
+ ******************************************************************************/
+package org.eclipse.rdf4j.sail.memory.model;
 
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Triple;
-import org.eclipse.rdf4j.sail.memory.model.MemIRI;
-import org.eclipse.rdf4j.sail.memory.model.MemResource;
-import org.eclipse.rdf4j.sail.memory.model.MemStatement;
-import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
-import org.eclipse.rdf4j.sail.memory.model.MemTriple;
-import org.eclipse.rdf4j.sail.memory.model.MemValue;
 
 /**
  * An Iteration that can iterate over a list of {@link Triple} objects.
  *
  * @author Jeen Broekstra
  */
-class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple, X> {
+public class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple, X> {
 
 	/*-----------*
 	 * Variables *
@@ -30,7 +24,7 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	/**
 	 * The lists of statements over which to iterate.
 	 */
-	private final MemStatementList statementList;
+	private final MemStatement[] statementList;
 
 	/**
 	 * The subject of statements to return, or null if any subject is OK.
@@ -51,11 +45,12 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	 * Indicates which snapshot should be iterated over.
 	 */
 	private final int snapshot;
+	private final int statementListSize;
 
 	/**
 	 * The index of the last statement that has been returned.
 	 */
-	private volatile int statementIdx;
+	private int statementIndex;
 
 	/*--------------*
 	 * Constructors *
@@ -72,14 +67,17 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	 * @param object        object of pattern.
 	 */
 	public MemTripleIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, MemValue object,
-			int snapshot) {
-		this.statementList = statementList;
+			int snapshot) throws InterruptedException {
+		this.statementList = statementList.getStatements();
+		this.statementListSize = statementList.getGuaranteedLastIndexInUse() + 1;
+		assert this.statementListSize <= this.statementList.length;
+
 		this.subject = subject;
 		this.predicate = predicate;
 		this.object = object;
 		this.snapshot = snapshot;
 
-		this.statementIdx = -1;
+		this.statementIndex = -1;
 	}
 
 	/*---------*
@@ -92,19 +90,23 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 	 */
 	@Override
 	protected MemTriple getNextElement() {
-		statementIdx++;
+		statementIndex++;
 
-		for (; statementIdx < statementList.size(); statementIdx++) {
-			MemStatement st = statementList.get(statementIdx);
-			if (isInSnapshot(st)) {
-				if (st.getSubject() instanceof MemTriple) {
-					MemTriple triple = (MemTriple) st.getSubject();
-					if (matchesPattern(triple)) {
+		for (; statementIndex < statementListSize; statementIndex++) {
+			MemStatement statement = statementList[statementIndex];
+			if (statement == null) {
+				continue;
+			}
+
+			if (isInSnapshot(statement)) {
+				if (statement.getSubject().isTriple() && statement.getSubject() instanceof MemTriple) {
+					MemTriple triple = (MemTriple) statement.getSubject();
+					if (triple.matchesSPO(subject, predicate, object)) {
 						return triple;
 					}
-				} else if (st.getObject() instanceof MemTriple) {
-					MemTriple triple = (MemTriple) st.getObject();
-					if (matchesPattern(triple)) {
+				} else if (statement.getObject().isTriple() && statement.getObject() instanceof MemTriple) {
+					MemTriple triple = (MemTriple) statement.getObject();
+					if (triple.matchesSPO(subject, predicate, object)) {
 						return triple;
 					}
 				}
@@ -113,19 +115,6 @@ class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripl
 
 		// No more matching statements.
 		return null;
-	}
-
-	private boolean matchesPattern(MemTriple triple) {
-		if (!(subject == null || subject.equals(triple.getSubject()))) {
-			return false;
-		}
-		if (!(predicate == null || predicate.equals(triple.getPredicate()))) {
-			return false;
-		}
-		if (!(object == null || object.equals(triple.getObject()))) {
-			return false;
-		}
-		return true;
 	}
 
 	private boolean isInSnapshot(MemStatement st) {

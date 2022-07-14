@@ -10,10 +10,10 @@ package org.eclipse.rdf4j.query.algebra;
 // reference to a Triple
 public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueExpr {
 
-	private String exprVarName;
-	private org.eclipse.rdf4j.query.algebra.Var subjectVar;
-	private org.eclipse.rdf4j.query.algebra.Var predicateVar;
-	private org.eclipse.rdf4j.query.algebra.Var objectVar;
+	private final String exprVarName;
+	private final org.eclipse.rdf4j.query.algebra.Var subjectVar;
+	private final org.eclipse.rdf4j.query.algebra.Var predicateVar;
+	private final org.eclipse.rdf4j.query.algebra.Var objectVar;
 
 	public ValueExprTripleRef(String extName,
 			org.eclipse.rdf4j.query.algebra.Var s,
@@ -52,7 +52,6 @@ public class ValueExprTripleRef extends AbstractQueryModelNode implements ValueE
 		if (objectVar != null) {
 			objectVar.visit(visitor);
 		}
-		super.visitChildren(visitor);
 	}
 
 	@Override

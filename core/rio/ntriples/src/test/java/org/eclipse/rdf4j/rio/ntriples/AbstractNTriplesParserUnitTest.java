@@ -40,9 +40,9 @@ import org.junit.Test;
  */
 public abstract class AbstractNTriplesParserUnitTest {
 
-	private static String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
+	private static final String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
 
-	private static String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
+	private static final String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
 
 	@Test
 	public void testNTriplesFile() throws Exception {

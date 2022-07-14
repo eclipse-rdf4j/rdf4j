@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicateObjectList;
  * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes"> blank node syntax</a>
  */
 class BNodeTriplePattern implements TriplePattern {
-	private PropertiesBlankNode bnode;
+	private final PropertiesBlankNode bnode;
 
 	BNodeTriplePattern(PropertiesBlankNode subject) {
 		this.bnode = subject;

@@ -17,8 +17,8 @@ import java.util.Arrays;
  * @author Florian Kleedorfer
  */
 public class PseudoOperation {
-	private String operation;
-	private int valuesHash;
+	private final String operation;
+	private final int valuesHash;
 
 	private PseudoOperation(String operation, int valuesHash) {
 		this.operation = operation;

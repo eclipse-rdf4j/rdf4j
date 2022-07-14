@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 
-public class NodeShape extends Shape implements ConstraintComponent, Identifiable {
+public class NodeShape extends Shape {
 
 	public NodeShape() {
 	}
@@ -206,11 +206,14 @@ public class NodeShape extends Shape implements ConstraintComponent, Identifiabl
 				.reduce(UnionNode::getInstanceDedupe)
 				.orElse(EmptyNode.getInstance());
 
-		planNode = UnionNode.getInstanceDedupe(planNode,
-				getTargetChain()
-						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
-								stableRandomVariableProvider)
-						.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null));
+		if (connectionsGroup.getStats().hasRemoved()) {
+			PlanNode planNodeEffectiveTarget = getTargetChain()
+					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
+					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);
+
+			planNode = UnionNode.getInstanceDedupe(planNode, planNodeEffectiveTarget);
+		}
 
 		if (scope == Scope.propertyShape) {
 			planNode = Unique.getInstance(new ShiftToPropertyShape(planNode), true);

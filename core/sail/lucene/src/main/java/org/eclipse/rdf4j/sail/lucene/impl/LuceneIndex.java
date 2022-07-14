@@ -7,6 +7,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene.impl;
 
+import static org.eclipse.rdf4j.sail.lucene.LuceneSail.FUZZY_PREFIX_LENGTH_KEY;
+
 import java.io.IOException;
 import java.io.StringReader;
 import java.lang.reflect.UndeclaredThrowableException;
@@ -24,6 +26,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -136,6 +139,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	private volatile Similarity similarity;
 
+	private volatile int fuzzyPrefixLength;
+
 	/**
 	 * The IndexWriter that can be used to alter the index' contents. Created lazily.
 	 */
@@ -192,6 +197,10 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		// Map<Object,Object>
 		// even though it is effectively Map<String,String>
 		this.geoStrategyMapper = createSpatialStrategyMapper((Map<String, String>) (Map<?, ?>) parameters);
+
+		if (parameters.containsKey(FUZZY_PREFIX_LENGTH_KEY)) {
+			this.fuzzyPrefixLength = NumberUtils.toInt(parameters.getProperty(FUZZY_PREFIX_LENGTH_KEY), 0);
+		}
 
 		postInit();
 	}
@@ -619,7 +628,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	@SuppressWarnings("unused")
 	private void logIndexStats() {
 		try {
-			IndexReader reader = null;
+			IndexReader reader;
 			try {
 				reader = getIndexReader();
 
@@ -913,19 +922,20 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	private QueryParser getQueryParser(IRI propertyURI) {
+		String fieldName;
 		// check out which query parser to use, based on the given property URI
-		if (propertyURI == null)
-		// if we have no property given, we create a default query parser
-		// which
-		// has the TEXT_FIELD_NAME as the default field
-		{
-			return new QueryParser(SearchFields.TEXT_FIELD_NAME, this.queryAnalyzer);
-		} else
-		// otherwise we create a query parser that has the given property as
-		// the default field
-		{
-			return new QueryParser(SearchFields.getPropertyField(propertyURI), this.queryAnalyzer);
+		if (propertyURI == null) {
+			// if we have no property given, we create a default query parser which has the TEXT_FIELD_NAME as the
+			// default field
+			fieldName = SearchFields.TEXT_FIELD_NAME;
+		} else {
+			// otherwise we create a query parser that has the given property as the default field
+			fieldName = SearchFields.getPropertyField(propertyURI);
 		}
+
+		QueryParser queryParser = new QueryParser(fieldName, queryAnalyzer);
+		queryParser.setFuzzyPrefixLength(fuzzyPrefixLength);
+		return queryParser;
 	}
 
 	/**

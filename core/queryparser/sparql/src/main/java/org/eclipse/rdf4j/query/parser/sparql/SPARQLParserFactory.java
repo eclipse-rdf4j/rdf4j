@@ -7,6 +7,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import java.util.Objects;
+import java.util.Set;
+
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.parser.QueryParser;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
@@ -34,5 +38,17 @@ public class SPARQLParserFactory implements QueryParserFactory {
 	@Override
 	public QueryParser getParser() {
 		return singleton;
+	}
+
+	/**
+	 * @param customPrefixes the default prefixes
+	 * @return a parser with predefined custom default prefixes.
+	 */
+	public QueryParser getParser(Set<Namespace> customPrefixes) {
+		Objects.requireNonNull(customPrefixes, "customPrefixes can't be null!");
+		if (customPrefixes.isEmpty()) {
+			return singleton;
+		}
+		return new SPARQLParser(customPrefixes);
 	}
 }

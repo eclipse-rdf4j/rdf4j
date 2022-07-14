@@ -25,8 +25,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingAssigner;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 
 /**
  * An {@link EvaluationStrategyFactory} which allows the evaluation of {@link PrecompiledQueryNode} without prior
@@ -148,7 +148,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 			TupleExpr actualQuery = preparedQuery.getQuery();
 
 			if (bindings != null) {
-				new BindingAssigner().optimize(actualQuery, dataset, bindings);
+				new BindingAssignerOptimizer().optimize(actualQuery, dataset, bindings);
 			}
 
 			return actualQuery;

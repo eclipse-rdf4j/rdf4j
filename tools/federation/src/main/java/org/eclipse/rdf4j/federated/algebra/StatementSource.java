@@ -23,7 +23,7 @@ public class StatementSource extends AbstractQueryModelNode {
 	public enum StatementSourceType {
 		LOCAL,
 		REMOTE,
-		REMOTE_POSSIBLY;
+		REMOTE_POSSIBLY
 	}
 
 	protected String id;
@@ -39,6 +39,11 @@ public class StatementSource extends AbstractQueryModelNode {
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {
 		visitor.meetOther(this);
+	}
+
+	@Override
+	public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+		// no-op
 	}
 
 	@Override

@@ -20,11 +20,11 @@ import org.eclipse.rdf4j.rio.ParseErrorListener;
  */
 public class ParseErrorCollector implements ParseErrorListener {
 
-	private List<String> warnings = new ArrayList<>();
+	private final List<String> warnings = new ArrayList<>();
 
-	private List<String> errors = new ArrayList<>();
+	private final List<String> errors = new ArrayList<>();
 
-	private List<String> fatalErrors = new ArrayList<>();
+	private final List<String> fatalErrors = new ArrayList<>();
 
 	@Override
 	public void warning(String msg, long lineNo, long colNo) {

@@ -32,9 +32,8 @@ public abstract class TupleServlet extends TransformationServlet {
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-		RepositoryConnection con = repository.getConnection();
-		con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
-		try {
+		try (RepositoryConnection con = repository.getConnection()) {
+			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
 				builder.prefix(ns.getPrefix(), ns.getName());
 			}
@@ -45,8 +44,6 @@ public abstract class TupleServlet extends TransformationServlet {
 			builder.link(List.of("info"));
 			this.service(req, resp, builder, con);
 			builder.end();
-		} finally {
-			con.close();
 		}
 	}
 

@@ -82,19 +82,12 @@ public class ResourceUtil {
 	 * @throws IOException when something goes wrong trying to read the resource
 	 */
 	public static String getString(String resourceName) throws IOException {
-		String result = null;
-
-		InputStream in = ResourceUtil.getInputStream(resourceName);
-
-		if (in != null) {
-			try {
-				result = IOUtil.readString(in);
-			} finally {
-				in.close();
+		try (InputStream in = ResourceUtil.getInputStream(resourceName)) {
+			if (in == null) {
+				return null;
 			}
+			return IOUtil.readString(in);
 		}
-
-		return result;
 	}
 
 	/**

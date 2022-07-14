@@ -52,7 +52,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
  * @author Andreas Schwarte
  *
  */
-public class SparqlTripleSource extends TripleSourceBase implements TripleSource {
+public class SparqlTripleSource extends TripleSourceBase {
 
 	private boolean useASKQueries = true;
 
@@ -192,7 +192,7 @@ public class SparqlTripleSource extends TripleSourceBase implements TripleSource
 			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj,
 					queryInfo.getIncludeInferred(), contexts);
 
-			resultHolder.set(new ExceptionConvertingIteration<Statement, QueryEvaluationException>(repoResult) {
+			resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
 				@Override
 				protected QueryEvaluationException convert(Exception ex) {
 					if (ex instanceof QueryEvaluationException) {

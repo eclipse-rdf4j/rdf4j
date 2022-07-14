@@ -99,7 +99,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	}
 
 	public void done() {
-		; // no-op
+		// no-op
 	}
 
 	public void toss(Exception e) {

@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  *
  * @author Jeen Broekstra
  */
+@Deprecated(forRemoval = true, since = "4.1.0")
 public class UnionScopeChangeOptimizer implements QueryOptimizer {
 
 	@Override

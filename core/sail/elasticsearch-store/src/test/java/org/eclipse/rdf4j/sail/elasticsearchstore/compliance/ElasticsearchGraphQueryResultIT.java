@@ -23,7 +23,7 @@ import org.junit.BeforeClass;
 
 public class ElasticsearchGraphQueryResultIT extends GraphQueryResultTest {
 
-	private static File installLocation = Files.newTemporaryFolder();
+	private static final File installLocation = Files.newTemporaryFolder();
 	private static ElasticsearchClusterRunner runner;
 	private static SingletonClientProvider clientPool;
 

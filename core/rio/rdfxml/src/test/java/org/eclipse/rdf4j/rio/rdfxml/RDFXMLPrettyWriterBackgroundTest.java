@@ -37,7 +37,7 @@ import org.junit.Test;
 
 public class RDFXMLPrettyWriterBackgroundTest extends AbstractRDFXMLWriterTest {
 
-	private static ValueFactory vf = SimpleValueFactory.getInstance();
+	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	public RDFXMLPrettyWriterBackgroundTest() {
 		super(new RDFXMLPrettyWriterFactory(), new RDFXMLParserFactory());

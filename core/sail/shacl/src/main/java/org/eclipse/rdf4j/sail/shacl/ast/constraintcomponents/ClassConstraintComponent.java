@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
@@ -126,15 +125,23 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
 					false,
 					null,
-					(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
-							validationSettings.getDataGraph())
+					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
 			);
 
+			PlanNode falseNode = joined;
+			if (connectionsGroup.getAddedStatements() != null) {
+				// filter by type against the added statements
+				falseNode = new ExternalPredicateObjectFilter(
+						connectionsGroup.getAddedStatements(),
+						validationSettings.getDataGraph(), RDF.TYPE, Collections.singleton(clazz),
+						falseNode, false, ExternalPredicateObjectFilter.FilterOn.value);
+			}
+
 			// filter by type against the base sail
-			PlanNode falseNode = new ExternalPredicateObjectFilter(
+			falseNode = new ExternalPredicateObjectFilter(
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(), RDF.TYPE, Collections.singleton(clazz),
-					joined, false, ExternalPredicateObjectFilter.FilterOn.value);
+					falseNode, false, ExternalPredicateObjectFilter.FilterOn.value);
 
 			return falseNode;
 

@@ -31,12 +31,12 @@ public class ExtensibleSailStore implements SailStore {
 	private static final Logger logger = LoggerFactory.getLogger(ExtensibleSailStore.class);
 	public static final int EVALUATION_STATISTICS_STALENESS_CHECK_INTERVAL = 1000 * 60;
 
-	private ExtensibleSailSource sailSource;
-	private ExtensibleSailSource sailSourceInferred;
+	private final ExtensibleSailSource sailSource;
+	private final ExtensibleSailSource sailSourceInferred;
 	private final EvaluationStatisticsEnum evaluationStatisticsEnum;
 	private ExtensibleEvaluationStatistics evaluationStatistics;
 	private Thread evaluationStatisticsMaintainerThread;
-	private DataStructureInterface dataStructure;
+	private final DataStructureInterface dataStructure;
 	private volatile boolean closed;
 
 	public ExtensibleSailStore(DataStructureInterface dataStructure,

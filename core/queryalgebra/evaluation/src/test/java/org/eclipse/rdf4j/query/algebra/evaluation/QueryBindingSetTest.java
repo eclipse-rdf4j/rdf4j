@@ -32,7 +32,7 @@ public class QueryBindingSetTest {
 	private final MapBindingSet mbs = new MapBindingSet();
 	private final QueryBindingSet qbs = new QueryBindingSet();
 
-	private ValueFactory vf = SimpleValueFactory.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Before
 	public void setup() {

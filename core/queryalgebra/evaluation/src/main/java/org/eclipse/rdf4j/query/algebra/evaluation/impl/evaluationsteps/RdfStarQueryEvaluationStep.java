@@ -9,7 +9,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -63,7 +62,7 @@ public class RdfStarQueryEvaluationStep implements QueryEvaluationStep {
 		// the evaluation of the TripleRef should be suitably forwarded down the sail and filter/construct
 		// the correct solution out of the results of that call
 		if (extValue != null && !(extValue instanceof Resource)) {
-			return new EmptyIteration<>();
+			return EMPTY_ITERATION;
 		}
 
 		// in case the
@@ -90,7 +89,7 @@ public class RdfStarQueryEvaluationStep implements QueryEvaluationStep {
 			}
 		};
 
-		return new ConvertingIteration<Triple, BindingSet, QueryEvaluationException>(filterIter) {
+		return new ConvertingIteration<>(filterIter) {
 			@Override
 			protected BindingSet convert(Triple triple) throws QueryEvaluationException {
 				MutableBindingSet result = context.createBindingSet(bindings);

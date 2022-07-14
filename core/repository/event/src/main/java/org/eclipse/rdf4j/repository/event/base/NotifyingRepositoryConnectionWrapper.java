@@ -49,7 +49,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 
 	private boolean reportDeltas = false;
 
-	private Set<RepositoryConnectionListener> listeners = new CopyOnWriteArraySet<>();
+	private final Set<RepositoryConnectionListener> listeners = new CopyOnWriteArraySet<>();
 
 	/*--------------*
 	 * Constructors *
@@ -249,7 +249,7 @@ public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWr
 	@Override
 	@Deprecated
 	public void setAutoCommit(boolean autoCommit) throws RepositoryException {
-		boolean wasAutoCommit = isAutoCommit();
+		boolean wasAutoCommit = !isActive();
 		getDelegate().setAutoCommit(autoCommit);
 
 		if (activated && wasAutoCommit != autoCommit) {

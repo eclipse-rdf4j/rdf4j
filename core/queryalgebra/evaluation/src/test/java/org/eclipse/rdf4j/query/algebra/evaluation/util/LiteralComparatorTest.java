@@ -28,37 +28,37 @@ import org.junit.Test;
  */
 public class LiteralComparatorTest {
 
-	private ValueFactory vf = SimpleValueFactory.getInstance();
+	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	private Literal one = vf.createLiteral(1);
+	private final Literal one = vf.createLiteral(1);
 
-	private Literal ten = vf.createLiteral(10);
+	private final Literal ten = vf.createLiteral(10);
 
-	private Literal a = vf.createLiteral("a");
+	private final Literal a = vf.createLiteral("a");
 
-	private Literal b = vf.createLiteral("b");
+	private final Literal b = vf.createLiteral("b");
 
-	private Literal la = vf.createLiteral("a", "en");
+	private final Literal la = vf.createLiteral("a", "en");
 
-	private Literal lb = vf.createLiteral("b", "en");
+	private final Literal lb = vf.createLiteral("b", "en");
 
-	private Literal lf = vf.createLiteral("a", "fr");
+	private final Literal lf = vf.createLiteral("a", "fr");
 
-	private Literal f = vf.createLiteral(false);
+	private final Literal f = vf.createLiteral(false);
 
-	private Literal t = vf.createLiteral(true);
+	private final Literal t = vf.createLiteral(true);
 
 	private Literal date1;
 
 	private Literal date2;
 
-	private Literal simple1 = vf.createLiteral("http://script.example/Latin");
+	private final Literal simple1 = vf.createLiteral("http://script.example/Latin");
 
-	private Literal simple2 = vf.createLiteral("http://script.example/Кириллица");
+	private final Literal simple2 = vf.createLiteral("http://script.example/Кириллица");
 
-	private Literal typed1 = vf.createLiteral("http://script.example/Latin", XSD.STRING);
+	private final Literal typed1 = vf.createLiteral("http://script.example/Latin", XSD.STRING);
 
-	private ValueComparator cmp = new ValueComparator();
+	private final ValueComparator cmp = new ValueComparator();
 
 	@Test
 	public void testNumeric() throws Exception {

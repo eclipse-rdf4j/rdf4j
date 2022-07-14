@@ -43,8 +43,8 @@ public class TokenMgrError extends Error {
 	/**
 	 * Replaces unprintable characters by their escaped (or unicode escaped) equivalents in the given string
 	 */
-	protected static final String addEscapes(String str) {
-		StringBuffer retval = new StringBuffer();
+	protected static String addEscapes(String str) {
+		StringBuilder retval = new StringBuilder();
 		char ch;
 		for (int i = 0; i < str.length(); i++) {
 			switch (str.charAt(i)) {
@@ -75,11 +75,10 @@ public class TokenMgrError extends Error {
 			default:
 				if ((ch = str.charAt(i)) < 0x20 || ch > 0x7e) {
 					String s = "0000" + Integer.toString(ch, 16);
-					retval.append("\\u" + s.substring(s.length() - 4, s.length()));
+					retval.append("\\u").append(s.substring(s.length() - 4));
 				} else {
 					retval.append(ch);
 				}
-				continue;
 			}
 		}
 		return retval.toString();
@@ -87,19 +86,21 @@ public class TokenMgrError extends Error {
 
 	/**
 	 * Returns a detailed message for the Error when it is thrown by the token manager to indicate a lexical error.
-	 * Parameters : EOFSeen : indicates if EOF caused the lexical error curLexState : lexical state in which this error
+	 * Parameters : EOFSeen : indicates if EOF caused the lexical error lexState : lexical state in which this error
 	 * occurred errorLine : line number when the error occurred errorColumn : column number when the error occurred
 	 * errorAfter : prefix that was seen before this error occurred curchar : the offending character Note: You can
 	 * customize the lexical error message by modifying this method.
 	 */
 	protected static String LexicalErr(boolean EOFSeen, int lexState, int errorLine, int errorColumn, String errorAfter,
 			int curChar) {
-		char curChar1 = (char) curChar;
-		return ("Lexical error at line " +
-				errorLine + ", column " +
-				errorColumn + ".  Encountered: " +
-				(EOFSeen ? "<EOF> " : ("\"" + addEscapes(String.valueOf(curChar1)) + "\"") + " (" + curChar + "), ") +
-				"after : \"" + addEscapes(errorAfter) + "\"");
+		return ("Lexical error at line " + //
+				errorLine + ", column " + //
+				errorColumn + ".  Encountered: " + //
+				(EOFSeen ? "<EOF>" : ("'" + addEscapes(String.valueOf(curChar)) + "' (" + (int) curChar + "),")) + //
+				(errorAfter == null || errorAfter.length() == 0 ? ""
+						: " after prefix \"" + addEscapes(errorAfter) + "\""))
+				+ //
+				(lexState == 0 ? "" : " (in lexical state " + lexState + ")");
 	}
 
 	/**
@@ -135,4 +136,4 @@ public class TokenMgrError extends Error {
 		this(LexicalErr(EOFSeen, lexState, errorLine, errorColumn, errorAfter, curChar), reason);
 	}
 }
-/* JavaCC - OriginalChecksum=ead8b4a3990e418858a084258153191c (do not edit this line) */
+/* JavaCC - OriginalChecksum=89301ff983112d9f487092d57b0433b4 (do not edit this line) */

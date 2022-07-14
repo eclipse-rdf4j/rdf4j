@@ -44,7 +44,7 @@ public class RandTest {
 
 	private Rand rand;
 
-	private ValueFactory f = SimpleValueFactory.getInstance();
+	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	/**
 	 * @throws java.lang.Exception

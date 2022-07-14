@@ -85,7 +85,7 @@ public class RDFLoader {
 							"Could not find RDF format for file: " + file.getName()));
 		}
 
-		try (InputStream in = new FileInputStream(file);) {
+		try (InputStream in = new FileInputStream(file)) {
 			load(in, baseURI, dataFormat, rdfHandler);
 		}
 	}
@@ -123,7 +123,7 @@ public class RDFLoader {
 				(PrivilegedAction<Integer>) () -> Integer.valueOf(System.getProperty("http.maxRedirects", "20")));
 
 		int redirects = 0;
-		boolean redirected = false;
+		boolean redirected;
 
 		URL requestURL = url;
 		do {
@@ -248,7 +248,7 @@ public class RDFLoader {
 	private void loadZip(InputStream in, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
 			throws IOException, RDFParseException, RDFHandlerException {
 
-		try (ZipInputStream zipIn = new ZipInputStream(in);) {
+		try (ZipInputStream zipIn = new ZipInputStream(in)) {
 			for (ZipEntry entry = zipIn.getNextEntry(); entry != null; entry = zipIn.getNextEntry()) {
 				if (entry.isDirectory()) {
 					continue;

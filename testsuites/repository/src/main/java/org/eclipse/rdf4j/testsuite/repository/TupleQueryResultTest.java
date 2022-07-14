@@ -8,9 +8,6 @@
 package org.eclipse.rdf4j.testsuite.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -19,6 +16,7 @@ import java.util.List;
 import java.util.Random;
 
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -32,21 +30,17 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.eclipse.rdf4j.sail.SailException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class TupleQueryResultTest {
 
 	private final Logger logger = LoggerFactory.getLogger(TupleQueryResultTest.class);
-
-	@BeforeClass
-	public static void setUpClass() throws Exception {
-		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
-	}
 
 	private Repository rep;
 
@@ -58,8 +52,9 @@ public abstract class TupleQueryResultTest {
 
 	private final Random random = new Random(43252333);
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 		rep = createRepository();
 		con = rep.getConnection();
 
@@ -67,12 +62,16 @@ public abstract class TupleQueryResultTest {
 		addData();
 	}
 
-	@After
+	@AfterEach
 	public void tearDown() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+
 		try {
 			con.close();
 			con = null;
 		} finally {
+			System.gc();
+			Thread.sleep(1);
 			rep.shutDown();
 			rep = null;
 		}
@@ -119,68 +118,54 @@ public abstract class TupleQueryResultTest {
 	}
 
 	private void addData() throws IOException, UnsupportedRDFormatException, RDFParseException, RepositoryException {
-		InputStream defaultGraph = TupleQueryResultTest.class.getResourceAsStream("/testcases/default-graph-1.ttl");
-		try {
+		try (InputStream defaultGraph = TupleQueryResultTest.class
+				.getResourceAsStream("/testcases/default-graph-1.ttl")) {
 			con.add(defaultGraph, "", RDFFormat.TURTLE);
-		} finally {
-			defaultGraph.close();
 		}
 	}
 
 	@Test
-	public void testGetBindingNames() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate();
-		try {
+	public void testGetBindingNames() {
+		try (TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate()) {
 			List<String> headers = result.getBindingNames();
 
 			assertThat(headers.get(0)).isEqualTo("P").as("first header element");
 			assertThat(headers.get(1)).isEqualTo("D").as("second header element");
-		} finally {
-			result.close();
 		}
 	}
 
 	@Test
-	public void testIterator() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate();
+	public void testIterator() {
 
-		try {
+		try (TupleQueryResult result = con.prepareTupleQuery(multipleResultQuery).evaluate()) {
 			int count = 0;
 			while (result.hasNext()) {
 				result.next();
 				count++;
 			}
 
-			assertTrue("query should have multiple results.", count > 1);
-		} finally {
-			result.close();
+			Assertions.assertTrue(count > 1, "query should have multiple results.");
 		}
 	}
 
 	@Test
-	public void testIsEmpty() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery(emptyResultQuery).evaluate();
+	public void testIsEmpty() {
 
-		try {
-			assertFalse("Query result should be empty", result.hasNext());
-		} finally {
-			result.close();
+		try (TupleQueryResult result = con.prepareTupleQuery(emptyResultQuery).evaluate()) {
+			Assertions.assertFalse(result.hasNext(), "Query result should be empty");
 		}
 	}
 
 	@Test
-	public void testCountMatchesAllSelect() throws Exception {
-		TupleQueryResult result = con.prepareTupleQuery("SELECT * WHERE {?s ?p ?o}").evaluate();
-		long size = con.size();
-		try {
+	public void testCountMatchesAllSelect() {
+		try (TupleQueryResult result = con.prepareTupleQuery("SELECT * WHERE {?s ?p ?o}").evaluate()) {
+			long size = con.size();
 			for (int i = 0; i < size; i++) {
-				assertTrue(result.hasNext());
+				Assertions.assertTrue(result.hasNext());
 				BindingSet next = result.next();
-				assertNotNull(next);
+				Assertions.assertNotNull(next);
 			}
-			assertFalse("Query result should be empty", result.hasNext());
-		} finally {
-			result.close();
+			Assertions.assertFalse(result.hasNext(), "Query result should be empty");
 		}
 	}
 
@@ -210,8 +195,8 @@ public abstract class TupleQueryResultTest {
 		con.commit();
 
 		for (int evaluateCount = 0; evaluateCount < 1000; evaluateCount++) {
-			try (ByteArrayOutputStream stream = new ByteArrayOutputStream();
-					RepositoryConnection nextCon = rep.getConnection();) {
+			try (ByteArrayOutputStream stream = new ByteArrayOutputStream(191226);
+					RepositoryConnection nextCon = rep.getConnection()) {
 				TupleQueryResultWriter sparqlWriter = QueryResultIO.createTupleWriter(TupleQueryResultFormat.SPARQL,
 						stream);
 				TupleQuery tupleQuery = nextCon.prepareTupleQuery(QueryLanguage.SPARQL,
@@ -250,13 +235,56 @@ public abstract class TupleQueryResultTest {
 		logger.info("Open lots of TupleQueryResults without closing them");
 		for (int i = 0; i < 100; i++) {
 			try (RepositoryConnection repCon = rep.getConnection()) {
+				evaluateQueryWithoutClosing(repCon);
+			}
+		}
+	}
+
+	@Test
+	public void testNotClosingResultWithoutDebug() {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+
+		con.begin();
+		con.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+		con.commit();
+
+		for (int i = 0; i < 100; i++) {
+			try (RepositoryConnection repCon = rep.getConnection()) {
+				evaluateQueryWithoutClosing(repCon);
+			}
+		}
+
+	}
+
+	private void evaluateQueryWithoutClosing(RepositoryConnection repCon) {
+		String queryString = "select * where {?s ?p ?o}";
+		TupleQuery tupleQuery = repCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
+
+		// see if open results hangs test
+		// DO NOT CLOSE THIS
+		TupleQueryResult evaluate = tupleQuery.evaluate();
+		Assertions.assertNotNull(evaluate);
+	}
+
+	@Test
+	public void testNotClosingResultThrowsException() {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+
+		con.begin();
+		con.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+		con.commit();
+
+		Assertions.assertThrows(SailException.class, () -> {
+			TupleQueryResult evaluate = null;
+			try (RepositoryConnection repCon = rep.getConnection()) {
 				String queryString = "select * where {?s ?p ?o}";
 				TupleQuery tupleQuery = repCon.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 
-				// see if open results hangs test
-				// DO NOT CLOSE THIS
-				tupleQuery.evaluate();
+				evaluate = tupleQuery.evaluate();
+			} finally {
+				evaluate.close();
 			}
-		}
+		});
+
 	}
 }

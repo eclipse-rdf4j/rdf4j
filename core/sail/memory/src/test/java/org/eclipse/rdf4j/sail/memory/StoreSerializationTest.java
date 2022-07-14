@@ -7,6 +7,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.io.File;
 import java.nio.file.Files;
 
@@ -26,46 +29,33 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import junit.framework.TestCase;
-
-public class StoreSerializationTest extends TestCase {
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+public class StoreSerializationTest {
 
 	private File dataDir;
 
-	/*---------*
-	 * Methods *
-	 *---------*/
-
-	@Override
+	@BeforeEach
 	protected void setUp() throws Exception {
-		super.setUp();
 		dataDir = Files.createTempDirectory("memorystore").toFile();
 	}
 
-	@Override
+	@AfterEach
 	protected void tearDown() throws Exception {
-		super.tearDown();
 		FileUtil.deleteDir(dataDir);
 	}
 
-	public void testShortLiterals() throws Exception {
+	@Test
+	public void testShortLiterals() {
 		MemoryStore store = new MemoryStore(dataDir);
 		store.init();
 
 		ValueFactory factory = store.getValueFactory();
 		IRI foo = factory.createIRI("http://www.foo.example/foo");
 
-		StringBuilder sb = new StringBuilder(4);
-		for (int i = 0; i < 4; i++) {
-			sb.append('a');
-		}
-
-		Literal longLiteral = factory.createLiteral(sb.toString());
+		Literal longLiteral = factory.createLiteral("a".repeat(4));
 
 		SailConnection con = store.getConnection();
 		con.begin();
@@ -89,7 +79,8 @@ public class StoreSerializationTest extends TestCase {
 		store.shutDown();
 	}
 
-	public void testSerialization() throws Exception {
+	@Test
+	public void testSerialization() {
 		MemoryStore store = new MemoryStore(dataDir);
 		store.init();
 
@@ -146,19 +137,15 @@ public class StoreSerializationTest extends TestCase {
 		store.shutDown();
 	}
 
-	public void testLongLiterals() throws Exception {
+	@Test
+	public void testLongLiterals() {
 		MemoryStore store = new MemoryStore(dataDir);
 		store.init();
 
 		ValueFactory factory = store.getValueFactory();
 		IRI foo = factory.createIRI("http://www.foo.example/foo");
 
-		StringBuilder sb = new StringBuilder(66000);
-		for (int i = 0; i < 66000; i++) {
-			sb.append('a');
-		}
-
-		Literal longLiteral = factory.createLiteral(sb.toString());
+		Literal longLiteral = factory.createLiteral("a".repeat(66000));
 
 		SailConnection con = store.getConnection();
 		con.begin();

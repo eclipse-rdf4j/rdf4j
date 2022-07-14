@@ -49,7 +49,7 @@ public class ErrorType {
 	/**
 	 * The error type's label.
 	 */
-	private String label;
+	private final String label;
 
 	private ErrorType(String label) {
 		this.label = label;

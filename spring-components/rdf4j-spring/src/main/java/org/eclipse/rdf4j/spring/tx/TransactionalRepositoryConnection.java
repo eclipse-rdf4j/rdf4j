@@ -63,7 +63,6 @@ public class TransactionalRepositoryConnection extends RepositoryConnectionWrapp
 	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
 			throws IOException, RDFParseException, RepositoryException {
 		throwExceptionIfReadonly();
-		;
 		super.add(file, baseURI, dataFormat, contexts);
 	}
 

@@ -50,7 +50,7 @@ public class WriteTest extends SPARQLBaseTest {
 		ep1.setWritable(true);
 		Endpoint ep2 = iter.next();
 
-		List<Statement> stmts = null;
+		List<Statement> stmts;
 		Statement st = simpleStatement();
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {

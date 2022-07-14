@@ -116,7 +116,7 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 
 	@Override
 	public String getParameter(String name) {
-		String result = null;
+		String result;
 		if (parameters != null && parameters.containsKey(name)) {
 			result = parameters.get(name);
 		} else {

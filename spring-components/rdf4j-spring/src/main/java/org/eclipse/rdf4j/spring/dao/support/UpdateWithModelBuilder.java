@@ -38,8 +38,8 @@ public class UpdateWithModelBuilder {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
-	private RepositoryConnection con;
-	private ModelBuilder modelBuilder;
+	private final RepositoryConnection con;
+	private final ModelBuilder modelBuilder;
 
 	public UpdateWithModelBuilder(RepositoryConnection con) {
 		this.con = con;

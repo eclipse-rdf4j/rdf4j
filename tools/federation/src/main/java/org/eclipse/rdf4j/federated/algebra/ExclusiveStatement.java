@@ -61,7 +61,7 @@ public class ExclusiveStatement extends FedXStatementPattern implements Exclusiv
 			 * getStatements(subj, pred, obj) instead of evaluating a prepared query.
 			 */
 
-			CloseableIteration<BindingSet, QueryEvaluationException> res = null;
+			CloseableIteration<BindingSet, QueryEvaluationException> res;
 			if (t.usePreparedQuery(this, queryInfo)) {
 
 				AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated

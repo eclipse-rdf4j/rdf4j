@@ -100,8 +100,6 @@ public abstract class BinaryValueOperator extends AbstractQueryModelNode impleme
 			setLeftArg((ValueExpr) replacement);
 		} else if (rightArg == current) {
 			setRightArg((ValueExpr) replacement);
-		} else {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
  */
 public class SPARQLEmbeddedServer {
 
-	private static Logger logger = LoggerFactory.getLogger(SPARQLEmbeddedServer.class);
+	private static final Logger logger = LoggerFactory.getLogger(SPARQLEmbeddedServer.class);
 
 	private static final String HOST = "localhost";
 
@@ -116,7 +116,7 @@ public class SPARQLEmbeddedServer {
 	}
 
 	static class PropertiesReader {
-		private Properties properties;
+		private final Properties properties;
 
 		public PropertiesReader(String propertyFileName) throws IOException {
 			InputStream is = getClass().getClassLoader()

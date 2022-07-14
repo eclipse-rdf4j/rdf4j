@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.testsuite.repository.optimistic.MonotonicTest;
 import org.eclipse.rdf4j.testsuite.repository.optimistic.RemoveIsolationTest;
 import org.eclipse.rdf4j.testsuite.repository.optimistic.SerializableTest;
 import org.eclipse.rdf4j.testsuite.repository.optimistic.SnapshotTest;
+import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
@@ -42,6 +43,11 @@ public abstract class OptimisticIsolationTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	private static RepositoryFactory factory;

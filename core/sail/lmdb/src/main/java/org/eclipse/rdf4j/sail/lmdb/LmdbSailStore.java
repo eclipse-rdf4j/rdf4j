@@ -65,7 +65,7 @@ class LmdbSailStore implements SailStore {
 	private volatile boolean asyncTransactionFinished;
 	private volatile boolean nextTransactionAsync;
 
-	private boolean enableMultiThreading = true;
+	private final boolean enableMultiThreading = true;
 
 	/**
 	 * A fast non-blocking circular buffer backed by an array.

@@ -147,11 +147,8 @@ public abstract class SPARQLComplianceTest {
 			rdfParser.setRDFHandler(rdfInserter);
 
 			URL graphURL = new URL(graphURI.toString());
-			InputStream in = graphURL.openStream();
-			try {
+			try (InputStream in = graphURL.openStream()) {
 				rdfParser.parse(in, graphURI.toString());
-			} finally {
-				in.close();
 			}
 
 			con.commit();

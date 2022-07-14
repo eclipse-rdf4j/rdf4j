@@ -8,7 +8,6 @@
 package org.eclipse.rdf4j.sail.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -18,6 +17,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.TripleSourceIterationWrapper;
 
 public class SailTripleSource implements TripleSource {
 
@@ -37,34 +37,17 @@ public class SailTripleSource implements TripleSource {
 	public CloseableIteration<? extends Statement, QueryEvaluationException> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement, SailException> iter = null;
-		CloseableIteration<? extends Statement, QueryEvaluationException> result = null;
-
-		boolean allGood = false;
 		try {
 			iter = conn.getStatements(subj, pred, obj, includeInferred, contexts);
-			result = new ExceptionConvertingIteration<Statement, QueryEvaluationException>(iter) {
-
-				@Override
-				protected QueryEvaluationException convert(Exception e) {
-					return new QueryEvaluationException(e);
-				}
-			};
-			allGood = true;
-			return result;
-		} catch (SailException e) {
-			throw new QueryEvaluationException(e);
-		} finally {
-			if (!allGood) {
-				try {
-					if (result != null) {
-						result.close();
-					}
-				} finally {
-					if (iter != null) {
-						iter.close();
-					}
-				}
+			return new TripleSourceIterationWrapper(iter);
+		} catch (Throwable t) {
+			if (iter != null) {
+				iter.close();
 			}
+			if (t instanceof SailException) {
+				throw new QueryEvaluationException(t);
+			}
+			throw t;
 		}
 	}
 

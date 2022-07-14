@@ -39,7 +39,7 @@ public class LuceneSailBuffer {
 
 		private static final long serialVersionUID = -2976244503679342649L;
 
-		private Statement delegate;
+		private final Statement delegate;
 
 		public ContextAwareStatementImpl(Statement delegate) {
 			if (delegate == null) {
@@ -194,9 +194,9 @@ public class LuceneSailBuffer {
 
 	}
 
-	private ArrayList<Operation> operations = new ArrayList<>();
+	private final ArrayList<Operation> operations = new ArrayList<>();
 
-	private boolean useType;
+	private final boolean useType;
 
 	public LuceneSailBuffer() {
 		this(false);

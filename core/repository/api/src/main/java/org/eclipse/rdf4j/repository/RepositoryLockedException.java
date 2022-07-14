@@ -16,9 +16,9 @@ public class RepositoryLockedException extends RepositoryException {
 
 	private static final long serialVersionUID = -1544864578935422866L;
 
-	private String lockedBy;
+	private final String lockedBy;
 
-	private String requestedBy;
+	private final String requestedBy;
 
 	public RepositoryLockedException(String lockedBy, String requestedBy, String msg, Throwable t) {
 		super(msg, t);

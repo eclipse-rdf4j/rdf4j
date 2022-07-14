@@ -49,13 +49,13 @@ public abstract class AbstractNQuadsParserUnitTest {
 	 * Constants *
 	 *-----------*/
 
-	private static String NQUADS_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
+	private static final String NQUADS_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
 
-	private static String NQUADS_TEST_FILE = "/testcases/nquads/test1.nq";
+	private static final String NQUADS_TEST_FILE = "/testcases/nquads/test1.nq";
 
-	private static String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
+	private static final String NTRIPLES_TEST_URL = "http://www.w3.org/2000/10/rdf-tests/rdfcore/ntriples/test.nt";
 
-	private static String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
+	private static final String NTRIPLES_TEST_FILE = "/testcases/ntriples/test.nt";
 
 	private RDFParser parser;
 

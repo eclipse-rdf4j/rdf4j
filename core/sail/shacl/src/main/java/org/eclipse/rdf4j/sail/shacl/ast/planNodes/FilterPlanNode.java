@@ -34,8 +34,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 	abstract boolean checkTuple(ValidationTuple t);
 
 	public FilterPlanNode(PlanNode parent) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-		this.parent = parent;
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 	}
 
 	public PlanNode getTrueNode(Class<? extends PushablePlanNode> type) {
@@ -74,7 +73,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 
 	private CloseableIteration<ValidationTuple, SailException> iteratorInternal() {
 
-		return new CloseableIteration<ValidationTuple, SailException>() {
+		return new CloseableIteration<>() {
 
 			CloseableIteration<? extends ValidationTuple, SailException> parentIterator;
 
@@ -109,8 +108,7 @@ public abstract class FilterPlanNode implements MultiStreamPlanNode, PlanNode {
 							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(FilterPlanNode.this.depth(),
 										FilterPlanNode.this.getClass().getSimpleName() + ":IgnoredAsFalse.next()", temp,
-										FilterPlanNode.this,
-										getId(), null);
+										FilterPlanNode.this, getId(), null);
 							}
 						}
 					}

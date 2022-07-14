@@ -16,8 +16,6 @@ public class NoopMonitoringImpl implements Monitoring {
 	public NoopMonitoringImpl() {
 	}
 
-	;
-
 	@Override
 	public void monitorRemoteRequest(Endpoint e) {
 	}

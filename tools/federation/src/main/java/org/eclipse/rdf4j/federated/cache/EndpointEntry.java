@@ -17,7 +17,7 @@ public class EndpointEntry implements Serializable {
 	private static final long serialVersionUID = -5572059274543728740L;
 
 	protected final String endpointID;
-	protected boolean doesProvideStatements = false;
+	protected boolean doesProvideStatements;
 	protected boolean hasLocalStatements = false;
 
 	public EndpointEntry(String endpointID, boolean canProvideStatements) {

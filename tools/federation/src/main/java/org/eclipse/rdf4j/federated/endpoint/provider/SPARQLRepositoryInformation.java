@@ -68,7 +68,6 @@ public class SPARQLRepositoryInformation extends RepositoryInformation {
 		// location
 		Model location = graph.filter(repNode, Vocabulary.SD.ENDPOINT, null);
 		String repoLocation = location.iterator().next().getObject().stringValue();
-		;
 		setProperty("location", repoLocation);
 
 		// id: the name of the location

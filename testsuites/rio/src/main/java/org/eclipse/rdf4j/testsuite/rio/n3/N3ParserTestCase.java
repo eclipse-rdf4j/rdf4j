@@ -43,9 +43,9 @@ public abstract class N3ParserTestCase {
 	 * Constants *
 	 *-----------*/
 
-	private static String BASE_URL = "http://www.w3.org/2000/10/swap/test/";
+	private static final String BASE_URL = "http://www.w3.org/2000/10/swap/test/";
 
-	private static String MANIFEST_URL = "http://www.w3.org/2000/10/swap/test/n3parser.tests";
+	private static final String MANIFEST_URL = "http://www.w3.org/2000/10/swap/test/n3parser.tests";
 
 	/*--------------------*
 	 * Static initializer *
@@ -102,9 +102,9 @@ public abstract class N3ParserTestCase {
 		 * Variables *
 		 *-----------*/
 
-		private URL inputURL;
+		private final URL inputURL;
 
-		private URL outputURL;
+		private final URL outputURL;
 
 		/*--------------*
 		 * Constructors *
@@ -180,7 +180,7 @@ public abstract class N3ParserTestCase {
 		 * Variables *
 		 *-----------*/
 
-		private URL inputURL;
+		private final URL inputURL;
 
 		/*--------------*
 		 * Constructors *

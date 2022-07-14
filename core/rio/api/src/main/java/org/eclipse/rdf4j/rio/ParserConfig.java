@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
  * @author Jeen Broekstra
  * @author Peter Ansell
  */
-public class ParserConfig extends RioConfig implements Serializable {
+public class ParserConfig extends RioConfig {
 
 	/**
 	 */

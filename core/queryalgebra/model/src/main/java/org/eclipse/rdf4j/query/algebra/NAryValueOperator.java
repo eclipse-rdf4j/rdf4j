@@ -71,20 +71,11 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
-
-		boolean replaced = false;
-
 		for (int i = 0; i < args.size(); i++) {
 			ValueExpr arg = args.get(i);
 			if (arg == current) {
-				args.remove(i);
-				args.add(i, (ValueExpr) replacement);
-				replaced = true;
+				args.set(i, (ValueExpr) replacement);
 			}
-		}
-
-		if (!replaced) {
-			super.replaceChildNode(current, replacement);
 		}
 	}
 

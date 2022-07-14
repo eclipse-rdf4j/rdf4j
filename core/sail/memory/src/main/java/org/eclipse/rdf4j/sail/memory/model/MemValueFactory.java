@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
-import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 
 /**
  * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
@@ -42,38 +42,47 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * Registry containing the set of MemURI objects as used by a MemoryStore. This registry enables the reuse of
 	 * objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<MemIRI> iriRegistry = new WeakObjectRegistry<>();
+	private final WeakObjectRegistry<IRI, MemIRI> iriRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemTriple objects as used by a MemoryStore. This registry enables the reuse of
 	 * objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<MemTriple> tripleRegistry = new WeakObjectRegistry<>();
+	private final WeakObjectRegistry<Triple, MemTriple> tripleRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemBNode objects as used by a MemoryStore. This registry enables the reuse of
 	 * objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<MemBNode> bnodeRegistry = new WeakObjectRegistry<>();
+	private final WeakObjectRegistry<BNode, MemBNode> bnodeRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of MemLiteral objects as used by a MemoryStore. This registry enables the reuse of
 	 * objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<MemLiteral> literalRegistry = new WeakObjectRegistry<>();
+	private final WeakObjectRegistry<Literal, MemLiteral> literalRegistry = new WeakObjectRegistry<>();
 
 	/**
 	 * Registry containing the set of namespce strings as used by MemURI objects in a MemoryStore. This registry enables
 	 * the reuse of objects, minimizing the number of objects in main memory.
 	 */
-	private final WeakObjectRegistry<String> namespaceRegistry = new WeakObjectRegistry<>();
+	private final WeakObjectRegistry<String, String> namespaceRegistry = new WeakObjectRegistry<>();
 
-	/*---------*
-	 * Methods *
-	 *---------*/
+	/**
+	 * A cache of the most common IRIs to improve lookup performance when users use our vocabularies (eg.
+	 * {@link RDF#TYPE}).
+	 */
+
+//	private final Cache<Value, MemLiteral> literalCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
+//	private final Cache<Value, MemIRI> iriCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
+//	private final Cache<Value, MemBNode> bNodeCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
+//	private final Cache<Value, MemTriple> tripleCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
+	public MemValueFactory() {
+	}
 
 	public void clear() {
 		iriRegistry.clear();
+		tripleRegistry.clear();
 		bnodeRegistry.clear();
 		literalRegistry.clear();
 		namespaceRegistry.clear();
@@ -88,12 +97,16 @@ public class MemValueFactory extends AbstractValueFactory {
 	 *         exists or if <var>value</var> is equal to <var>null</var>.
 	 */
 	public MemValue getMemValue(Value value) {
-		if (value instanceof Resource) {
-			return getMemResource((Resource) value);
-		} else if (value instanceof Literal) {
-			return getMemLiteral((Literal) value);
-		} else if (value == null) {
+		if (value == null) {
 			return null;
+		} else if (value.isIRI()) {
+			return getMemURI((IRI) value);
+		} else if (value.isBNode()) {
+			return getMemBNode((BNode) value);
+		} else if (value.isTriple()) {
+			return getMemTriple((Triple) value);
+		} else if (value.isLiteral()) {
+			return getMemLiteral((Literal) value);
 		} else {
 			throw new IllegalArgumentException("value is not a Resource or Literal: " + value);
 		}
@@ -103,14 +116,14 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See getMemValue() for description.
 	 */
 	public MemResource getMemResource(Resource resource) {
-		if (resource instanceof IRI) {
-			return getMemURI((IRI) resource);
-		} else if (resource instanceof BNode) {
-			return getMemBNode((BNode) resource);
-		} else if (resource instanceof Triple) {
-			return getMemTriple((Triple) resource);
-		} else if (resource == null) {
+		if (resource == null) {
 			return null;
+		} else if (resource.isIRI()) {
+			return getMemURI((IRI) resource);
+		} else if (resource.isBNode()) {
+			return getMemBNode((BNode) resource);
+		} else if (resource.isTriple()) {
+			return getMemTriple((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
 		}
@@ -120,7 +133,9 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See getMemValue() for description.
 	 */
 	public MemIRI getMemURI(IRI uri) {
-		if (isOwnMemValue(uri)) {
+		if (uri == null) {
+			return null;
+		} else if (isOwnMemIRI(uri)) {
 			return (MemIRI) uri;
 		} else {
 			return iriRegistry.get(uri);
@@ -131,7 +146,9 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See getMemValue() for description.
 	 */
 	public MemBNode getMemBNode(BNode bnode) {
-		if (isOwnMemValue(bnode)) {
+		if (bnode == null) {
+			return null;
+		} else if (isOwnMemBnode(bnode)) {
 			return (MemBNode) bnode;
 		} else {
 			return bnodeRegistry.get(bnode);
@@ -142,10 +159,22 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See getMemValue() for description.
 	 */
 	public MemLiteral getMemLiteral(Literal literal) {
-		if (isOwnMemValue(literal)) {
+		if (literal == null) {
+			return null;
+		} else if (isOwnMemLiteral(literal)) {
 			return (MemLiteral) literal;
 		} else {
 			return literalRegistry.get(literal);
+		}
+	}
+
+	private MemTriple getMemTriple(Triple triple) {
+		if (triple == null) {
+			return null;
+		} else if (isOwnMemTriple(triple)) {
+			return (MemTriple) triple;
+		} else {
+			return tripleRegistry.get(triple);
 		}
 	}
 
@@ -153,8 +182,21 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * Checks whether the supplied value is an instance of <var>MemValue</var> and whether it has been created by this
 	 * MemValueFactory.
 	 */
-	private boolean isOwnMemValue(Value value) {
-		return value instanceof MemValue && ((MemValue) value).getCreator() == this;
+
+	private boolean isOwnMemBnode(BNode value) {
+		return value instanceof MemBNode && ((MemBNode) value).getCreator() == this;
+	}
+
+	private boolean isOwnMemLiteral(Literal value) {
+		return value instanceof MemLiteral && ((MemLiteral) value).getCreator() == this;
+	}
+
+	private boolean isOwnMemTriple(Triple value) {
+		return value instanceof MemTriple && ((MemTriple) value).getCreator() == this;
+	}
+
+	private boolean isOwnMemIRI(IRI value) {
+		return value instanceof MemIRI && ((MemIRI) value).getCreator() == this;
 	}
 
 	/**
@@ -232,9 +274,9 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * @return The existing or created MemValue.
 	 */
 	public MemValue getOrCreateMemValue(Value value) {
-		if (value instanceof Resource) {
+		if (value.isResource()) {
 			return getOrCreateMemResource((Resource) value);
-		} else if (value instanceof Literal) {
+		} else if (value.isLiteral()) {
 			return getOrCreateMemLiteral((Literal) value);
 		} else {
 			throw new IllegalArgumentException("value is not a Resource or Literal: " + value);
@@ -245,11 +287,11 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
 	public MemResource getOrCreateMemResource(Resource resource) {
-		if (resource instanceof IRI) {
+		if (resource.isIRI()) {
 			return getOrCreateMemURI((IRI) resource);
-		} else if (resource instanceof BNode) {
+		} else if (resource.isBNode()) {
 			return getOrCreateMemBNode((BNode) resource);
-		} else if (resource instanceof Triple) {
+		} else if (resource.isTriple()) {
 			return getOrCreateMemTriple((Triple) resource);
 		} else {
 			throw new IllegalArgumentException("resource is not a URI or BNode: " + resource);
@@ -260,6 +302,10 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
 	public MemIRI getOrCreateMemURI(IRI uri) {
+		if (isOwnMemIRI(uri)) {
+			return (MemIRI) uri;
+		}
+
 		return iriRegistry.getOrAdd(uri, () -> {
 
 			String namespace = uri.getNamespace();
@@ -269,13 +315,15 @@ public class MemValueFactory extends AbstractValueFactory {
 			// Create a MemURI and add it to the registry
 			return new MemIRI(this, sharedNamespace, uri.getLocalName());
 		});
-
 	}
 
 	/**
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
 	public MemBNode getOrCreateMemBNode(BNode bnode) {
+		if (isOwnMemBnode(bnode)) {
+			return (MemBNode) bnode;
+		}
 		return bnodeRegistry.getOrAdd(bnode, () -> new MemBNode(this, bnode.getID()));
 	}
 
@@ -283,6 +331,10 @@ public class MemValueFactory extends AbstractValueFactory {
 	 * See {@link #getOrCreateMemValue(Value)} for description.
 	 */
 	public MemLiteral getOrCreateMemLiteral(Literal literal) {
+		if (isOwnMemLiteral(literal)) {
+			return (MemLiteral) literal;
+		}
+
 		return literalRegistry.getOrAdd(literal, () -> {
 			String label = literal.getLabel();
 			CoreDatatype coreDatatype = literal.getCoreDatatype();
@@ -318,6 +370,29 @@ public class MemValueFactory extends AbstractValueFactory {
 				}
 			}
 		});
+	}
+
+	/**
+	 * See {@link #getOrCreateMemValue(Value)} for description.
+	 */
+	private MemTriple getOrCreateMemTriple(Triple triple) {
+		MemTriple memTriple = getMemTriple(triple);
+
+		if (memTriple == null) {
+			// Create a MemTriple and add it to the registry
+			MemTriple newMemTriple = new MemTriple(this, getOrCreateMemResource(triple.getSubject()),
+					getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
+			boolean wasNew = tripleRegistry.add(newMemTriple);
+
+			if (!wasNew) {
+				return tripleRegistry.getOrAdd(triple, () -> newMemTriple);
+			} else {
+				return newMemTriple;
+			}
+		} else {
+			return memTriple;
+		}
+
 	}
 
 	@Override
@@ -394,37 +469,6 @@ public class MemValueFactory extends AbstractValueFactory {
 
 	private Literal getSharedLiteral(MemLiteral newLiteral) {
 		return literalRegistry.getOrAdd(newLiteral, () -> newLiteral);
-	}
-
-	/**
-	 * See {@link #getOrCreateMemValue(Value)} for description.
-	 */
-	private MemTriple getOrCreateMemTriple(Triple triple) {
-		MemTriple memTriple = getMemTriple(triple);
-
-		if (memTriple == null) {
-			// Create a MemTriple and add it to the registry
-			MemTriple newMemTriple = new MemTriple(this, getOrCreateMemResource(triple.getSubject()),
-					getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));
-			boolean wasNew = tripleRegistry.add(newMemTriple);
-
-			if (!wasNew) {
-				return tripleRegistry.getOrAdd(triple, () -> newMemTriple);
-			} else {
-				return newMemTriple;
-			}
-		} else {
-			return memTriple;
-		}
-
-	}
-
-	private MemTriple getMemTriple(Triple triple) {
-		if (isOwnMemValue(triple)) {
-			return (MemTriple) triple;
-		} else {
-			return tripleRegistry.get(triple);
-		}
 	}
 
 }

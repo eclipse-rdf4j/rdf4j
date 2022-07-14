@@ -31,8 +31,7 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
 public class XoneConstraintComponent extends AbstractConstraintComponent {
 	List<Shape> xone;
 
-	public XoneConstraintComponent(Resource id, ShapeSource shapeSource,
-			Cache cache, ShaclSail shaclSail) {
+	public XoneConstraintComponent(Resource id, ShapeSource shapeSource, Cache cache, ShaclSail shaclSail) {
 		super(id);
 		xone = ShaclAstLists.toList(shapeSource, id, Resource.class)
 				.stream()

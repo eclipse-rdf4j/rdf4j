@@ -26,9 +26,7 @@ public class GroupByCountFilter implements PlanNode {
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public GroupByCountFilter(PlanNode parent, Function<Long, Boolean> filter) {
-		parent = PlanNodeHelper.handleSorting(this, parent);
-
-		this.parent = parent;
+		this.parent = PlanNodeHelper.handleSorting(this, parent);
 		this.filter = filter;
 	}
 

@@ -290,9 +290,9 @@ public class LinkedHashModel extends AbstractModel {
 
 	private class ModelIterator implements Iterator<ModelStatement> {
 
-		private Iterator<ModelStatement> iter;
+		private final Iterator<ModelStatement> iter;
 
-		private Set<ModelStatement> owner;
+		private final Set<ModelStatement> owner;
 
 		private ModelStatement last;
 
@@ -347,7 +347,7 @@ public class LinkedHashModel extends AbstractModel {
 
 		Set<ModelStatement> contexts = new LinkedHashSet<>();
 
-		private V value;
+		private final V value;
 
 		public ModelNode(V value) {
 			this.value = value;

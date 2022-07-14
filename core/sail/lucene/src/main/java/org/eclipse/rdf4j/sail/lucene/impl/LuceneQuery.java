@@ -53,7 +53,7 @@ public class LuceneQuery implements SearchQuery {
 		} else {
 			docs = index.search(query);
 		}
-		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<ScoreDoc, DocumentScore>() {
+		return Iterables.transform(Arrays.asList(docs.scoreDocs), new Function<>() {
 
 			@Override
 			public DocumentScore apply(ScoreDoc doc) {

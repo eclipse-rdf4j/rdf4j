@@ -43,7 +43,7 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
  *
  * @author Arjohn Kampman
  */
-public class TriXWriter extends AbstractRDFWriter implements RDFWriter, CharSink {
+public class TriXWriter extends AbstractRDFWriter implements CharSink {
 
 	private final XMLWriter xmlWriter;
 
@@ -196,7 +196,7 @@ public class TriXWriter extends AbstractRDFWriter implements RDFWriter, CharSink
 		}
 	}
 
-	private static final boolean contextsEquals(Resource context1, Resource context2) {
+	private static boolean contextsEquals(Resource context1, Resource context2) {
 		if (context1 == null) {
 			return context2 == null;
 		} else {

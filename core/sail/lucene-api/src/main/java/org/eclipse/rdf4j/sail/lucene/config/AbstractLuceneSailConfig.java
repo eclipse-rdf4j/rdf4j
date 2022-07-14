@@ -30,7 +30,7 @@ public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImp
 
 	private String indexDir;
 
-	private Properties parameters = new Properties();
+	private final Properties parameters = new Properties();
 
 	/*--------------*
 	 * Constructors *

@@ -8,8 +8,6 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
-import static org.junit.Assert.assertEquals;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -20,6 +18,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.mock.MockConsumePlanNode;
 import org.eclipse.rdf4j.sail.shacl.mock.MockInputPlanNode;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class UniqueTest {
@@ -84,7 +83,7 @@ public class UniqueTest {
 
 		List<ValidationTuple> tuples = new MockConsumePlanNode(unique).asList();
 
-		assertEquals(2, tuples.size());
+		Assertions.assertEquals(2, tuples.size());
 
 	}
 
@@ -101,7 +100,7 @@ public class UniqueTest {
 		tuples.sort(ValidationTuple::compareFullTarget);
 		expected.sort(ValidationTuple::compareFullTarget);
 
-		assertEquals(expected, tuples);
+		Assertions.assertEquals(expected, tuples);
 	}
 
 }

@@ -1,0 +1,6996 @@
+From c1c9292696966e23affe940838cd32f61783c7a6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ha=CC=8Avard=20Ottestad?= <hmottestad@gmail.com>
+Date: Thu, 9 Jun 2022 07:57:57 +0200
+Subject: [PATCH] GH-3978 code cleanup and optimization of SyntaxTreeBuilder
+
+---
+ .../parser/sparql/ast/SyntaxTreeBuilder.java  | 3393 +++++------------
+ 1 file changed, 1025 insertions(+), 2368 deletions(-)
+
+diff --git a/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilder.java b/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilder.java
+index 7a9145d2c2..4653184cae 100644
+--- a/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilder.java
++++ b/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilder.java
+@@ -75,22 +75,24 @@ public class SyntaxTreeBuilder
+ 			if (!previousTokenDtSep && !tok.image.equals("^^") && !tok.image.startsWith("@")) {
+ 				sb.append(" ");
+ 			}
+-			if (tok.kind == LBRACE)
++			if (tok.kind == LBRACE) {
+ 				nesting++;
++			}
+ 			if (tok.kind == RBRACE) {
+ 				nesting--;
+-				if (nesting == 0)
++				if (nesting == 0) {
+ 					break;
++				}
+ 			}
+ 			sb.append(tok.image);
+ 			previousTokenDtSep = tok.image.equals("^^");
+ 
+-			tok = getNextToken();
++			getNextToken();
+ 		}
+ 		return sb.toString();
+ 	}
+ 
+-//
++	//
+ // grammar
+ //
+ 	final public ASTUpdateSequence UpdateSequence() throws ParseException {/* @bgen(jjtree) UpdateSequence */
+@@ -99,52 +101,39 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			UpdateContainer();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SEMICOLON: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SEMICOLON) {
+ 				jj_consume_token(SEMICOLON);
+ 				UpdateSequence();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[0] = jj_gen;
+-				;
+ 			}
+ 			jj_consume_token(0);
+ 			jjtree.closeNodeScope(jjtn000, true);
+ 			jjtc000 = false;
+ 			{
+-				if ("" != null)
+-					return jjtn000;
++				return jjtn000;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+ 				jjtree.closeNodeScope(jjtn000, true);
+ 			}
+ 		}
+-		throw new Error("Missing return statement in function");
+ 	}
+ 
+ 	final public ASTUpdateContainer UpdateContainer() throws ParseException {/* @bgen(jjtree) UpdateContainer */
+@@ -169,43 +158,33 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[1] = jj_gen;
+-				;
+ 			}
+ 			jjtree.closeNodeScope(jjtn000, true);
+ 			jjtc000 = false;
+ 			{
+-				if ("" != null)
+-					return jjtn000;
++				return jjtn000;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+ 				jjtree.closeNodeScope(jjtn000, true);
+ 			}
+ 		}
+-		throw new Error("Missing return statement in function");
+ 	}
+ 
+ 	final public ASTQueryContainer QueryContainer() throws ParseException {/* @bgen(jjtree) QueryContainer */
+@@ -219,38 +198,29 @@ public class SyntaxTreeBuilder
+ 			jjtree.closeNodeScope(jjtn000, true);
+ 			jjtc000 = false;
+ 			{
+-				if ("" != null)
+-					return jjtn000;
++				return jjtn000;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+ 				jjtree.closeNodeScope(jjtn000, true);
+ 			}
+ 		}
+-		throw new Error("Missing return statement in function");
+ 	}
+ 
+ 	final public void Prolog() throws ParseException {
+@@ -258,7 +228,6 @@ public class SyntaxTreeBuilder
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 			case BASE:
+ 			case PREFIX: {
+-				;
+ 				break;
+ 			}
+ 			default:
+@@ -325,19 +294,16 @@ public class SyntaxTreeBuilder
+ 			}
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -377,15 +343,10 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			Select();
+-			label_2: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case FROM: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != FROM) {
+ 					jj_la1[5] = jj_gen;
+-					break label_2;
++					break;
+ 				}
+ 				DatasetClause();
+ 			}
+@@ -399,30 +360,22 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[6] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -447,30 +400,22 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[7] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -508,7 +453,6 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[9] = jj_gen;
+-				;
+ 			}
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 			case STAR: {
+@@ -527,7 +471,6 @@ public class SyntaxTreeBuilder
+ 					case LPAREN:
+ 					case VAR1:
+ 					case VAR2: {
+-						;
+ 						break;
+ 					}
+ 					default:
+@@ -551,19 +494,16 @@ public class SyntaxTreeBuilder
+ 			}
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -597,27 +537,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -632,15 +565,10 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			Construct();
+-			label_4: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case FROM: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != FROM) {
+ 					jj_la1[13] = jj_gen;
+-					break label_4;
++					break;
+ 				}
+ 				DatasetClause();
+ 			}
+@@ -654,30 +582,22 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[14] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -692,33 +612,24 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(CONSTRUCT);
+-			if (jj_2_1(2)) {
++			if (jj_2_1()) {
+ 				ConstructClause();
+-			} else {
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -761,7 +672,6 @@ public class SyntaxTreeBuilder
+ 		}
+ 		default:
+ 			jj_la1[15] = jj_gen;
+-			;
+ 		}
+ 		jj_consume_token(RBRACE);
+ 	}
+@@ -772,15 +682,10 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			Describe();
+-			label_5: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case FROM: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != FROM) {
+ 					jj_la1[16] = jj_gen;
+-					break label_5;
++					break;
+ 				}
+ 				DatasetClause();
+ 			}
+@@ -792,7 +697,6 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[17] = jj_gen;
+-				;
+ 			}
+ 			SolutionModifier();
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+@@ -803,30 +707,22 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[18] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -881,7 +777,6 @@ public class SyntaxTreeBuilder
+ 					case VAR1:
+ 					case VAR2:
+ 					case TRIPLE_OPEN: {
+-						;
+ 						break;
+ 					}
+ 					default:
+@@ -905,19 +800,16 @@ public class SyntaxTreeBuilder
+ 			}
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -932,15 +824,10 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(ASK);
+-			label_7: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case FROM: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != FROM) {
+ 					jj_la1[22] = jj_gen;
+-					break label_7;
++					break;
+ 				}
+ 				DatasetClause();
+ 			}
+@@ -954,30 +841,22 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[23] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -997,15 +876,11 @@ public class SyntaxTreeBuilder
+ 			case Q_IRI_REF:
+ 			case PNAME_NS:
+ 			case PNAME_LN: {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case NAMED: {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == NAMED) {
+ 					jj_consume_token(NAMED);
+ 					jjtn000.setNamed(true);
+-					break;
+-				}
+-				default:
++				} else {
+ 					jj_la1[24] = jj_gen;
+-					;
+ 				}
+ 				IRIref();
+ 				break;
+@@ -1020,27 +895,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1054,38 +922,27 @@ public class SyntaxTreeBuilder
+ 		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case WHERE: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == WHERE) {
+ 				jj_consume_token(WHERE);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[26] = jj_gen;
+-				;
+ 			}
+ 			GroupGraphPattern();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1111,7 +968,6 @@ public class SyntaxTreeBuilder
+ 					switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 					case VAR1:
+ 					case VAR2: {
+-						;
+ 						break;
+ 					}
+ 					default:
+@@ -1125,7 +981,6 @@ public class SyntaxTreeBuilder
+ 					switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 					case LPAREN:
+ 					case NIL: {
+-						;
+ 						break;
+ 					}
+ 					default:
+@@ -1143,27 +998,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1180,27 +1028,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(VALUES);
+ 			DataBlock();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1253,7 +1094,6 @@ public class SyntaxTreeBuilder
+ 			case STRING_LITERAL_LONG1:
+ 			case STRING_LITERAL_LONG2:
+ 			case TRIPLE_OPEN: {
+-				;
+ 				break;
+ 			}
+ 			default:
+@@ -1277,7 +1117,6 @@ public class SyntaxTreeBuilder
+ 				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 				case VAR1:
+ 				case VAR2: {
+-					;
+ 					break;
+ 				}
+ 				default:
+@@ -1299,7 +1138,6 @@ public class SyntaxTreeBuilder
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 			case LPAREN:
+ 			case NIL: {
+-				;
+ 				break;
+ 			}
+ 			default:
+@@ -1318,27 +1156,20 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			BindingValue();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1377,7 +1208,6 @@ public class SyntaxTreeBuilder
+ 					case STRING_LITERAL_LONG1:
+ 					case STRING_LITERAL_LONG2:
+ 					case TRIPLE_OPEN: {
+-						;
+ 						break;
+ 					}
+ 					default:
+@@ -1399,27 +1229,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1478,27 +1301,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1508,32 +1324,20 @@ public class SyntaxTreeBuilder
+ 	}
+ 
+ 	final public void SolutionModifier() throws ParseException {
+-		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-		case GROUP: {
++		if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == GROUP) {
+ 			GroupClause();
+-			break;
+-		}
+-		default:
++		} else {
+ 			jj_la1[38] = jj_gen;
+-			;
+ 		}
+-		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-		case HAVING: {
++		if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == HAVING) {
+ 			HavingClause();
+-			break;
+-		}
+-		default:
++		} else {
+ 			jj_la1[39] = jj_gen;
+-			;
+ 		}
+-		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-		case ORDER: {
++		if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == ORDER) {
+ 			OrderClause();
+-			break;
+-		}
+-		default:
++		} else {
+ 			jj_la1[40] = jj_gen;
+-			;
+ 		}
+ 		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 		case LIMIT:
+@@ -1543,7 +1347,6 @@ public class SyntaxTreeBuilder
+ 		}
+ 		default:
+ 			jj_la1[41] = jj_gen;
+-			;
+ 		}
+ 	}
+ 
+@@ -1616,7 +1419,6 @@ public class SyntaxTreeBuilder
+ 				case PNAME_LN:
+ 				case VAR1:
+ 				case VAR2: {
+-					;
+ 					break;
+ 				}
+ 				default:
+@@ -1625,27 +1427,20 @@ public class SyntaxTreeBuilder
+ 				}
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1725,7 +1520,6 @@ public class SyntaxTreeBuilder
+ 				case PNAME_LN:
+ 				case VAR1:
+ 				case VAR2: {
+-					;
+ 					break;
+ 				}
+ 				default:
+@@ -1734,27 +1528,20 @@ public class SyntaxTreeBuilder
+ 				}
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1834,15 +1621,11 @@ public class SyntaxTreeBuilder
+ 			case LPAREN: {
+ 				jj_consume_token(LPAREN);
+ 				Expression();
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case AS: {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == AS) {
+ 					jj_consume_token(AS);
+ 					Var();
+-					break;
+-				}
+-				default:
++				} else {
+ 					jj_la1[44] = jj_gen;
+-					;
+ 				}
+ 				jj_consume_token(RPAREN);
+ 				break;
+@@ -1858,27 +1641,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1895,27 +1671,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(HAVING);
+ 			Constraint();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -1955,7 +1724,6 @@ public class SyntaxTreeBuilder
+ 				}
+ 				default:
+ 					jj_la1[47] = jj_gen;
+-					;
+ 				}
+ 				BrackettedExpression();
+ 				break;
+@@ -2033,27 +1801,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -2066,27 +1827,19 @@ public class SyntaxTreeBuilder
+ 		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 		case LIMIT: {
+ 			Limit();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case OFFSET: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == OFFSET) {
+ 				Offset();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[49] = jj_gen;
+-				;
+ 			}
+ 			break;
+ 		}
+ 		case OFFSET: {
+ 			Offset();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case LIMIT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == LIMIT) {
+ 				Limit();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[50] = jj_gen;
+-				;
+ 			}
+ 			break;
+ 		}
+@@ -2133,19 +1886,16 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	final public Token GroupGraphPattern() throws ParseException {/* @bgen(jjtree) GraphPatternGroup */
++	final public Token GroupGraphPattern() throws ParseException, Error {/* @bgen(jjtree) GraphPatternGroup */
+ 		ASTGraphPatternGroup jjtn000 = new ASTGraphPatternGroup(JJTGRAPHPATTERNGROUP);
+ 		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+ 		Token endOfPatternToken;
+ 		try {
+ 			jj_consume_token(LBRACE);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SELECT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SELECT) {
+ 				SubSelect();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[52] = jj_gen;
+ 				GraphPattern();
+ 			}
+@@ -2153,38 +1903,29 @@ public class SyntaxTreeBuilder
+ 			jjtree.closeNodeScope(jjtn000, true);
+ 			jjtc000 = false;
+ 			{
+-				if ("" != null)
+-					return endOfPatternToken;
++				return endOfPatternToken;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+ 				jjtree.closeNodeScope(jjtn000, true);
+ 			}
+ 		}
+-		throw new Error("Missing return statement in function");
+ 	}
+ 
+ 	final public void GraphPattern() throws ParseException {
+@@ -2222,7 +1963,6 @@ public class SyntaxTreeBuilder
+ 		}
+ 		default:
+ 			jj_la1[53] = jj_gen;
+-			;
+ 		}
+ 		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 		case LBRACE:
+@@ -2232,21 +1972,16 @@ public class SyntaxTreeBuilder
+ 		case SERVICE:
+ 		case VALUES: {
+ 			GraphPatternNotTriples();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case DOT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DOT) {
+ 				jj_consume_token(DOT);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[54] = jj_gen;
+-				;
+ 			}
+ 			GraphPattern();
+ 			break;
+ 		}
+ 		default:
+ 			jj_la1[55] = jj_gen;
+-			;
+ 		}
+ 	}
+ 
+@@ -2287,7 +2022,6 @@ public class SyntaxTreeBuilder
+ 					switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 					case FILTER:
+ 					case BIND: {
+-						;
+ 						break;
+ 					}
+ 					default:
+@@ -2295,14 +2029,10 @@ public class SyntaxTreeBuilder
+ 						break label_16;
+ 					}
+ 					FilterOrBind();
+-					switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-					case DOT: {
++					if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DOT) {
+ 						jj_consume_token(DOT);
+-						break;
+-					}
+-					default:
++					} else {
+ 						jj_la1[57] = jj_gen;
+-						;
+ 					}
+ 					switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 					case LPAREN:
+@@ -2336,7 +2066,6 @@ public class SyntaxTreeBuilder
+ 					}
+ 					default:
+ 						jj_la1[58] = jj_gen;
+-						;
+ 					}
+ 				}
+ 				break;
+@@ -2345,14 +2074,10 @@ public class SyntaxTreeBuilder
+ 			case BIND: {
+ 				label_17: while (true) {
+ 					FilterOrBind();
+-					switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-					case DOT: {
++					if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DOT) {
+ 						jj_consume_token(DOT);
+-						break;
+-					}
+-					default:
++					} else {
+ 						jj_la1[59] = jj_gen;
+-						;
+ 					}
+ 					switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 					case LPAREN:
+@@ -2386,12 +2111,10 @@ public class SyntaxTreeBuilder
+ 					}
+ 					default:
+ 						jj_la1[60] = jj_gen;
+-						;
+ 					}
+ 					switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 					case FILTER:
+ 					case BIND: {
+-						;
+ 						break;
+ 					}
+ 					default:
+@@ -2407,27 +2130,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -2455,45 +2171,27 @@ public class SyntaxTreeBuilder
+ 
+ 	final public void TriplesBlock() throws ParseException {
+ 		TriplesSameSubjectPath();
+-		label_18: while (true) {
+-			if (jj_2_2(2)) {
+-				;
+-			} else {
+-				break label_18;
+-			}
++		while (jj_2_2()) {
+ 			jj_consume_token(DOT);
+ 			TriplesSameSubjectPath();
+ 		}
+-		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-		case DOT: {
++		if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DOT) {
+ 			jj_consume_token(DOT);
+-			break;
+-		}
+-		default:
++		} else {
+ 			jj_la1[64] = jj_gen;
+-			;
+ 		}
+ 	}
+ 
+ 	final public void TriplesTemplate() throws ParseException {
+ 		TriplesSameSubject();
+-		label_19: while (true) {
+-			if (jj_2_3(2)) {
+-				;
+-			} else {
+-				break label_19;
+-			}
++		while (jj_2_3()) {
+ 			jj_consume_token(DOT);
+ 			TriplesSameSubject();
+ 		}
+-		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-		case DOT: {
++		if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DOT) {
+ 			jj_consume_token(DOT);
+-			break;
+-		}
+-		default:
++		} else {
+ 			jj_la1[65] = jj_gen;
+-			;
+ 		}
+ 	}
+ 
+@@ -2537,38 +2235,28 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			jj_consume_token(OPTIONAL);
+ 			jj_consume_token(LBRACE);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SELECT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SELECT) {
+ 				SubSelect();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[67] = jj_gen;
+ 				GraphPattern();
+ 			}
+ 			jj_consume_token(RBRACE);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -2586,27 +2274,20 @@ public class SyntaxTreeBuilder
+ 			VarOrIRIref();
+ 			GroupGraphPattern();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -2617,8 +2298,7 @@ public class SyntaxTreeBuilder
+ 
+ 	final public void GroupOrUnionGraphPattern() throws ParseException {
+ 		GroupGraphPattern();
+-		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-		case UNION: {
++		if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == UNION) {
+ 			jj_consume_token(UNION);
+ 			ASTUnionGraphPattern jjtn001 = new ASTUnionGraphPattern(JJTUNIONGRAPHPATTERN);
+ 			boolean jjtc001 = true;
+@@ -2626,38 +2306,28 @@ public class SyntaxTreeBuilder
+ 			try {
+ 				GroupOrUnionGraphPattern();
+ 			} catch (Throwable jjte001) {
+-				if (jjtc001) {
+-					jjtree.clearNodeScope(jjtn001);
+-					jjtc001 = false;
+-				} else {
+-					jjtree.popNode();
+-				}
++				jjtree.clearNodeScope(jjtn001);
++				jjtc001 = false;
+ 				if (jjte001 instanceof RuntimeException) {
+ 					{
+-						if (true)
+-							throw (RuntimeException) jjte001;
++						throw (RuntimeException) jjte001;
+ 					}
+ 				}
+ 				if (jjte001 instanceof ParseException) {
+ 					{
+-						if (true)
+-							throw (ParseException) jjte001;
++						throw (ParseException) jjte001;
+ 					}
+ 				}
+ 				{
+-					if (true)
+-						throw (Error) jjte001;
++					throw (Error) jjte001;
+ 				}
+ 			} finally {
+ 				if (jjtc001) {
+ 					jjtree.closeNodeScope(jjtn001, 2);
+ 				}
+ 			}
+-			break;
+-		}
+-		default:
++		} else {
+ 			jj_la1[68] = jj_gen;
+-			;
+ 		}
+ 	}
+ 
+@@ -2669,27 +2339,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(MINUS_SETOPER);
+ 			GroupGraphPattern();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -2707,15 +2370,11 @@ public class SyntaxTreeBuilder
+ 			t = jj_consume_token(SERVICE);
+ 			jjtn000.setBeginTokenLinePos(t.beginLine);
+ 			jjtn000.setBeginTokenColumnPos(t.beginColumn);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SILENT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SILENT) {
+ 				jj_consume_token(SILENT);
+ 				jjtn000.setSilent(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[69] = jj_gen;
+-				;
+ 			}
+ 			VarOrIRIref();
+ 			t = GroupGraphPattern();
+@@ -2732,19 +2391,16 @@ public class SyntaxTreeBuilder
+ 			}
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -2836,27 +2492,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -2873,27 +2522,20 @@ public class SyntaxTreeBuilder
+ 			IRIref();
+ 			ArgList();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -2911,15 +2553,10 @@ public class SyntaxTreeBuilder
+ 		case LPAREN: {
+ 			jj_consume_token(LPAREN);
+ 			Expression();
+-			label_20: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case COMMA: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != COMMA) {
+ 					jj_la1[71] = jj_gen;
+-					break label_20;
++					break;
+ 				}
+ 				jj_consume_token(COMMA);
+ 				Expression();
+@@ -2983,7 +2620,6 @@ public class SyntaxTreeBuilder
+ 				}
+ 				default:
+ 					jj_la1[73] = jj_gen;
+-					;
+ 				}
+ 				break;
+ 			}
+@@ -2993,27 +2629,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3029,8 +2658,7 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			Verb();
+ 			ObjectList();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SEMICOLON: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SEMICOLON) {
+ 				jj_consume_token(SEMICOLON);
+ 				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 				case IS_A:
+@@ -3044,36 +2672,25 @@ public class SyntaxTreeBuilder
+ 				}
+ 				default:
+ 					jj_la1[75] = jj_gen;
+-					;
+ 				}
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[76] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3088,41 +2705,29 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			Object();
+-			label_21: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case COMMA: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != COMMA) {
+ 					jj_la1[77] = jj_gen;
+-					break label_21;
++					break;
+ 				}
+ 				jj_consume_token(COMMA);
+ 				Object();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3183,7 +2788,6 @@ public class SyntaxTreeBuilder
+ 				}
+ 				default:
+ 					jj_la1[78] = jj_gen;
+-					;
+ 				}
+ 				break;
+ 			}
+@@ -3193,27 +2797,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3249,8 +2846,7 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 			ObjectListPath();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SEMICOLON: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SEMICOLON) {
+ 				jj_consume_token(SEMICOLON);
+ 				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 				case LPAREN:
+@@ -3267,36 +2863,25 @@ public class SyntaxTreeBuilder
+ 				}
+ 				default:
+ 					jj_la1[81] = jj_gen;
+-					;
+ 				}
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[82] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3311,41 +2896,29 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			ObjectPath();
+-			label_22: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case COMMA: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != COMMA) {
+ 					jj_la1[83] = jj_gen;
+-					break label_22;
++					break;
+ 				}
+ 				jj_consume_token(COMMA);
+ 				ObjectPath();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3368,41 +2941,29 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			PathSequence();
+-			label_23: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case PIPE: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != PIPE) {
+ 					jj_la1[84] = jj_gen;
+-					break label_23;
++					break;
+ 				}
+ 				jj_consume_token(PIPE);
+ 				PathSequence();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3417,41 +2978,29 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			PathElt();
+-			label_24: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case SLASH: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != SLASH) {
+ 					jj_la1[85] = jj_gen;
+-					break label_24;
++					break;
+ 				}
+ 				jj_consume_token(SLASH);
+ 				PathElt();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3465,15 +3014,11 @@ public class SyntaxTreeBuilder
+ 		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case INVERSE: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == INVERSE) {
+ 				jj_consume_token(INVERSE);
+ 				jjtn000.setInverse(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[86] = jj_gen;
+-				;
+ 			}
+ 			PathPrimary();
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+@@ -3485,30 +3030,22 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[87] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3578,15 +3115,10 @@ public class SyntaxTreeBuilder
+ 			case PNAME_NS:
+ 			case PNAME_LN: {
+ 				PathOneInPropertySet();
+-				label_25: while (true) {
+-					switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-					case PIPE: {
+-						;
+-						break;
+-					}
+-					default:
++				while (true) {
++					if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != PIPE) {
+ 						jj_la1[89] = jj_gen;
+-						break label_25;
++						break;
+ 					}
+ 					jj_consume_token(PIPE);
+ 					PathOneInPropertySet();
+@@ -3595,7 +3127,6 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[90] = jj_gen;
+-				;
+ 			}
+ 			jj_consume_token(RPAREN);
+ 			break;
+@@ -3674,27 +3205,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3707,8 +3231,6 @@ public class SyntaxTreeBuilder
+ 		ASTPathMod jjtn000 = new ASTPathMod(JJTPATHMOD);
+ 		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+-		Token min;
+-		Token max;
+ 		try {
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 			case STAR: {
+@@ -3835,27 +3357,20 @@ public class SyntaxTreeBuilder
+ 			PropertyList();
+ 			jj_consume_token(RBRACK);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3873,27 +3388,20 @@ public class SyntaxTreeBuilder
+ 			PropertyListPath();
+ 			jj_consume_token(RBRACK);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -3937,7 +3445,6 @@ public class SyntaxTreeBuilder
+ 				case STRING_LITERAL_LONG1:
+ 				case STRING_LITERAL_LONG2:
+ 				case TRIPLE_OPEN: {
+-					;
+ 					break;
+ 				}
+ 				default:
+@@ -3947,27 +3454,20 @@ public class SyntaxTreeBuilder
+ 			}
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -4011,7 +3511,6 @@ public class SyntaxTreeBuilder
+ 				case STRING_LITERAL_LONG1:
+ 				case STRING_LITERAL_LONG2:
+ 				case TRIPLE_OPEN: {
+-					;
+ 					break;
+ 				}
+ 				default:
+@@ -4021,27 +3520,20 @@ public class SyntaxTreeBuilder
+ 			}
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -4222,7 +3714,6 @@ public class SyntaxTreeBuilder
+ 	}
+ 
+ 	final public void GraphTerm() throws ParseException {
+-		boolean positive = true;
+ 		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 		case Q_IRI_REF:
+ 		case PNAME_NS:
+@@ -4383,27 +3874,20 @@ public class SyntaxTreeBuilder
+ 			}
+ 			jj_consume_token(TRIPLE_CLOSE);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -4477,27 +3961,20 @@ public class SyntaxTreeBuilder
+ 			}
+ 			jj_consume_token(TRIPLE_CLOSE);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -4608,8 +4085,7 @@ public class SyntaxTreeBuilder
+ 
+ 	final public void ConditionalOrExpression() throws ParseException {
+ 		ConditionalAndExpression();
+-		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-		case OR: {
++		if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == OR) {
+ 			jj_consume_token(OR);
+ 			ASTOr jjtn001 = new ASTOr(JJTOR);
+ 			boolean jjtc001 = true;
+@@ -4617,45 +4093,34 @@ public class SyntaxTreeBuilder
+ 			try {
+ 				ConditionalOrExpression();
+ 			} catch (Throwable jjte001) {
+-				if (jjtc001) {
+-					jjtree.clearNodeScope(jjtn001);
+-					jjtc001 = false;
+-				} else {
+-					jjtree.popNode();
+-				}
++				jjtree.clearNodeScope(jjtn001);
++				jjtc001 = false;
+ 				if (jjte001 instanceof RuntimeException) {
+ 					{
+-						if (true)
+-							throw (RuntimeException) jjte001;
++						throw (RuntimeException) jjte001;
+ 					}
+ 				}
+ 				if (jjte001 instanceof ParseException) {
+ 					{
+-						if (true)
+-							throw (ParseException) jjte001;
++						throw (ParseException) jjte001;
+ 					}
+ 				}
+ 				{
+-					if (true)
+-						throw (Error) jjte001;
++					throw (Error) jjte001;
+ 				}
+ 			} finally {
+ 				if (jjtc001) {
+ 					jjtree.closeNodeScope(jjtn001, 2);
+ 				}
+ 			}
+-			break;
+-		}
+-		default:
++		} else {
+ 			jj_la1[112] = jj_gen;
+-			;
+ 		}
+ 	}
+ 
+ 	final public void ConditionalAndExpression() throws ParseException {
+ 		ValueLogical();
+-		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-		case AND: {
++		if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == AND) {
+ 			jj_consume_token(AND);
+ 			ASTAnd jjtn001 = new ASTAnd(JJTAND);
+ 			boolean jjtc001 = true;
+@@ -4663,38 +4128,28 @@ public class SyntaxTreeBuilder
+ 			try {
+ 				ConditionalAndExpression();
+ 			} catch (Throwable jjte001) {
+-				if (jjtc001) {
+-					jjtree.clearNodeScope(jjtn001);
+-					jjtc001 = false;
+-				} else {
+-					jjtree.popNode();
+-				}
++				jjtree.clearNodeScope(jjtn001);
++				jjtc001 = false;
+ 				if (jjte001 instanceof RuntimeException) {
+ 					{
+-						if (true)
+-							throw (RuntimeException) jjte001;
++						throw (RuntimeException) jjte001;
+ 					}
+ 				}
+ 				if (jjte001 instanceof ParseException) {
+ 					{
+-						if (true)
+-							throw (ParseException) jjte001;
++						throw (ParseException) jjte001;
+ 					}
+ 				}
+ 				{
+-					if (true)
+-						throw (Error) jjte001;
++					throw (Error) jjte001;
+ 				}
+ 			} finally {
+ 				if (jjtc001) {
+ 					jjtree.closeNodeScope(jjtn001, 2);
+ 				}
+ 			}
+-			break;
+-		}
+-		default:
++		} else {
+ 			jj_la1[113] = jj_gen;
+-			;
+ 		}
+ 	}
+ 
+@@ -4823,27 +4278,20 @@ public class SyntaxTreeBuilder
+ 				try {
+ 					In();
+ 				} catch (Throwable jjte007) {
+-					if (jjtc007) {
+-						jjtree.clearNodeScope(jjtn007);
+-						jjtc007 = false;
+-					} else {
+-						jjtree.popNode();
+-					}
++					jjtree.clearNodeScope(jjtn007);
++					jjtc007 = false;
+ 					if (jjte007 instanceof RuntimeException) {
+ 						{
+-							if (true)
+-								throw (RuntimeException) jjte007;
++							throw (RuntimeException) jjte007;
+ 						}
+ 					}
+ 					if (jjte007 instanceof ParseException) {
+ 						{
+-							if (true)
+-								throw (ParseException) jjte007;
++							throw (ParseException) jjte007;
+ 						}
+ 					}
+ 					{
+-						if (true)
+-							throw (Error) jjte007;
++						throw (Error) jjte007;
+ 					}
+ 				} finally {
+ 					if (jjtc007) {
+@@ -4859,27 +4307,20 @@ public class SyntaxTreeBuilder
+ 				try {
+ 					NotIn();
+ 				} catch (Throwable jjte008) {
+-					if (jjtc008) {
+-						jjtree.clearNodeScope(jjtn008);
+-						jjtc008 = false;
+-					} else {
+-						jjtree.popNode();
+-					}
++					jjtree.clearNodeScope(jjtn008);
++					jjtc008 = false;
+ 					if (jjte008 instanceof RuntimeException) {
+ 						{
+-							if (true)
+-								throw (RuntimeException) jjte008;
++							throw (RuntimeException) jjte008;
+ 						}
+ 					}
+ 					if (jjte008 instanceof ParseException) {
+ 						{
+-							if (true)
+-								throw (ParseException) jjte008;
++							throw (ParseException) jjte008;
+ 						}
+ 					}
+ 					{
+-						if (true)
+-							throw (Error) jjte008;
++						throw (Error) jjte008;
+ 					}
+ 				} finally {
+ 					if (jjtc008) {
+@@ -4897,7 +4338,6 @@ public class SyntaxTreeBuilder
+ 		}
+ 		default:
+ 			jj_la1[115] = jj_gen;
+-			;
+ 		}
+ 	}
+ 
+@@ -4917,7 +4357,6 @@ public class SyntaxTreeBuilder
+ 			case DECIMAL_NEGATIVE:
+ 			case DOUBLE_POSITIVE:
+ 			case DOUBLE_NEGATIVE: {
+-				;
+ 				break;
+ 			}
+ 			default:
+@@ -5009,7 +4448,6 @@ public class SyntaxTreeBuilder
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 			case STAR:
+ 			case SLASH: {
+-				;
+ 				break;
+ 			}
+ 			default:
+@@ -5069,27 +4507,20 @@ public class SyntaxTreeBuilder
+ 			try {
+ 				PrimaryExpression();
+ 			} catch (Throwable jjte001) {
+-				if (jjtc001) {
+-					jjtree.clearNodeScope(jjtn001);
+-					jjtc001 = false;
+-				} else {
+-					jjtree.popNode();
+-				}
++				jjtree.clearNodeScope(jjtn001);
++				jjtc001 = false;
+ 				if (jjte001 instanceof RuntimeException) {
+ 					{
+-						if (true)
+-							throw (RuntimeException) jjte001;
++						throw (RuntimeException) jjte001;
+ 					}
+ 				}
+ 				if (jjte001 instanceof ParseException) {
+ 					{
+-						if (true)
+-							throw (ParseException) jjte001;
++						throw (ParseException) jjte001;
+ 					}
+ 				}
+ 				{
+-					if (true)
+-						throw (Error) jjte001;
++					throw (Error) jjte001;
+ 				}
+ 			} finally {
+ 				if (jjtc001) {
+@@ -5180,14 +4611,10 @@ public class SyntaxTreeBuilder
+ 		case STRING_LITERAL2:
+ 		case STRING_LITERAL_LONG1:
+ 		case STRING_LITERAL_LONG2: {
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case PLUS: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == PLUS) {
+ 				jj_consume_token(PLUS);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[120] = jj_gen;
+-				;
+ 			}
+ 			PrimaryExpression();
+ 			break;
+@@ -5297,7 +4724,7 @@ public class SyntaxTreeBuilder
+ 		}
+ 		default:
+ 			jj_la1[122] = jj_gen;
+-			if (jj_2_4(2)) {
++			if (jj_2_4()) {
+ 				FunctionCall();
+ 			} else {
+ 				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+@@ -5399,15 +4826,11 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			jj_consume_token(COUNT);
+ 			jj_consume_token(LPAREN);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case DISTINCT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DISTINCT) {
+ 				jj_consume_token(DISTINCT);
+ 				jjtn000.setDistinct(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[125] = jj_gen;
+-				;
+ 			}
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 			case STAR: {
+@@ -5510,28 +4933,19 @@ public class SyntaxTreeBuilder
+ 			}
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+-				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
+-				}
++
++				throw (RuntimeException) jjte000;
++
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+-				{
+-					if (true)
+-						throw (ParseException) jjte000;
+-				}
+-			}
+-			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (ParseException) jjte000;
+ 			}
++
++			throw (Error) jjte000;
++
+ 		} finally {
+ 			if (jjtc000) {
+ 				jjtree.closeNodeScope(jjtn000, true);
+@@ -5546,40 +4960,29 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			jj_consume_token(SUM);
+ 			jj_consume_token(LPAREN);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case DISTINCT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DISTINCT) {
+ 				jj_consume_token(DISTINCT);
+ 				jjtn000.setDistinct(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[127] = jj_gen;
+-				;
+ 			}
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -5595,40 +4998,29 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			jj_consume_token(MIN);
+ 			jj_consume_token(LPAREN);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case DISTINCT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DISTINCT) {
+ 				jj_consume_token(DISTINCT);
+ 				jjtn000.setDistinct(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[128] = jj_gen;
+-				;
+ 			}
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -5644,40 +5036,29 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			jj_consume_token(MAX);
+ 			jj_consume_token(LPAREN);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case DISTINCT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DISTINCT) {
+ 				jj_consume_token(DISTINCT);
+ 				jjtn000.setDistinct(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[129] = jj_gen;
+-				;
+ 			}
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -5693,40 +5074,29 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			jj_consume_token(AVG);
+ 			jj_consume_token(LPAREN);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case DISTINCT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DISTINCT) {
+ 				jj_consume_token(DISTINCT);
+ 				jjtn000.setDistinct(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[130] = jj_gen;
+-				;
+ 			}
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -5742,40 +5112,29 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			jj_consume_token(SAMPLE);
+ 			jj_consume_token(LPAREN);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case DISTINCT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DISTINCT) {
+ 				jj_consume_token(DISTINCT);
+ 				jjtn000.setDistinct(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[131] = jj_gen;
+-				;
+ 			}
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -5791,52 +5150,37 @@ public class SyntaxTreeBuilder
+ 		try {
+ 			jj_consume_token(GROUP_CONCAT);
+ 			jj_consume_token(LPAREN);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case DISTINCT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DISTINCT) {
+ 				jj_consume_token(DISTINCT);
+ 				jjtn000.setDistinct(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[132] = jj_gen;
+-				;
+ 			}
+ 			Expression();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SEMICOLON: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SEMICOLON) {
+ 				jj_consume_token(SEMICOLON);
+ 				jj_consume_token(SEPARATOR);
+ 				jj_consume_token(EQ);
+ 				Expression();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[133] = jj_gen;
+-				;
+ 			}
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6189,27 +5533,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6228,27 +5565,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6267,27 +5597,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6306,27 +5629,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6345,27 +5661,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6384,27 +5693,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6415,15 +5717,12 @@ public class SyntaxTreeBuilder
+ 
+ 	final public void Now() throws ParseException {/* @bgen(jjtree) Now */
+ 		ASTNow jjtn000 = new ASTNow(JJTNOW);
+-		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(NOW);
+ 			jj_consume_token(NIL);
+ 		} finally {
+-			if (jjtc000) {
+-				jjtree.closeNodeScope(jjtn000, true);
+-			}
++			jjtree.closeNodeScope(jjtn000, true);
+ 		}
+ 	}
+ 
+@@ -6437,27 +5736,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6476,27 +5768,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6515,27 +5800,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6554,27 +5832,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6593,27 +5864,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6632,27 +5896,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6671,27 +5928,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6710,27 +5960,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6741,15 +5984,12 @@ public class SyntaxTreeBuilder
+ 
+ 	final public void Rand() throws ParseException {/* @bgen(jjtree) Rand */
+ 		ASTRand jjtn000 = new ASTRand(JJTRAND);
+-		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(RAND);
+ 			jj_consume_token(NIL);
+ 		} finally {
+-			if (jjtc000) {
+-				jjtree.closeNodeScope(jjtn000, true);
+-			}
++			jjtree.closeNodeScope(jjtn000, true);
+ 		}
+ 	}
+ 
+@@ -6763,27 +6003,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6802,27 +6035,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6841,27 +6067,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6880,27 +6099,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6919,39 +6131,28 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(COMMA);
+ 			Expression();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case COMMA: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == COMMA) {
+ 				jj_consume_token(COMMA);
+ 				Expression();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[140] = jj_gen;
+-				;
+ 			}
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -6970,27 +6171,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7009,27 +6203,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7048,27 +6235,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7089,27 +6269,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7130,27 +6303,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7171,27 +6337,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7212,27 +6371,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7253,39 +6405,28 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(COMMA);
+ 			Expression();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case COMMA: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == COMMA) {
+ 				jj_consume_token(COMMA);
+ 				Expression();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[141] = jj_gen;
+-				;
+ 			}
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7302,27 +6443,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(CONCAT);
+ 			ArgList();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7343,27 +6477,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7382,27 +6509,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7425,27 +6545,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7462,27 +6575,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(IN);
+ 			ArgList();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7500,27 +6606,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(IN);
+ 			ArgList();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7537,42 +6636,30 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(COALESCE);
+ 			jj_consume_token(LPAREN);
+ 			Expression();
+-			label_30: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case COMMA: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != COMMA) {
+ 					jj_la1[142] = jj_gen;
+-					break label_30;
++					break;
+ 				}
+ 				jj_consume_token(COMMA);
+ 				Expression();
+ 			}
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7591,27 +6678,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7630,27 +6710,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7671,27 +6744,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7710,27 +6776,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7749,27 +6808,20 @@ public class SyntaxTreeBuilder
+ 			Var();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7790,27 +6842,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7829,27 +6874,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7868,27 +6906,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7907,27 +6938,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7946,27 +6970,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -7998,27 +7015,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8037,27 +7047,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8078,27 +7081,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8119,27 +7115,20 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8150,29 +7139,23 @@ public class SyntaxTreeBuilder
+ 
+ 	final public void UUID() throws ParseException {/* @bgen(jjtree) UUID */
+ 		ASTUUID jjtn000 = new ASTUUID(JJTUUID);
+-		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(UUID);
+ 			jj_consume_token(NIL);
+ 		} finally {
+-			if (jjtc000) {
+-				jjtree.closeNodeScope(jjtn000, true);
+-			}
++			jjtree.closeNodeScope(jjtn000, true);
+ 		}
+ 	}
+ 
+ 	final public void STRUUID() throws ParseException {/* @bgen(jjtree) STRUUID */
+ 		ASTSTRUUID jjtn000 = new ASTSTRUUID(JJTSTRUUID);
+-		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(STRUUID);
+ 			jj_consume_token(NIL);
+ 		} finally {
+-			if (jjtc000) {
+-				jjtree.closeNodeScope(jjtn000, true);
+-			}
++			jjtree.closeNodeScope(jjtn000, true);
+ 		}
+ 	}
+ 
+@@ -8188,27 +7171,20 @@ public class SyntaxTreeBuilder
+ 			Var();
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8227,39 +7203,28 @@ public class SyntaxTreeBuilder
+ 			Expression();
+ 			jj_consume_token(COMMA);
+ 			Expression();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case COMMA: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == COMMA) {
+ 				jj_consume_token(COMMA);
+ 				Expression();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[144] = jj_gen;
+-				;
+ 			}
+ 			jj_consume_token(RPAREN);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8276,27 +7241,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(EXISTS);
+ 			GroupGraphPattern();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8314,27 +7272,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(EXISTS);
+ 			GroupGraphPattern();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8373,30 +7324,22 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[146] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8553,27 +7496,21 @@ public class SyntaxTreeBuilder
+ 		switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 		case TRUE: {
+ 			ASTTrue jjtn001 = new ASTTrue(JJTTRUE);
+-			boolean jjtc001 = true;
+ 			jjtree.openNodeScope(jjtn001);
+ 			try {
+ 				jj_consume_token(TRUE);
+ 			} finally {
+-				if (jjtc001) {
+-					jjtree.closeNodeScope(jjtn001, true);
+-				}
++				jjtree.closeNodeScope(jjtn001, true);
+ 			}
+ 			break;
+ 		}
+ 		case FALSE: {
+ 			ASTFalse jjtn002 = new ASTFalse(JJTFALSE);
+-			boolean jjtc002 = true;
+ 			jjtree.openNodeScope(jjtn002);
+ 			try {
+ 				jj_consume_token(FALSE);
+ 			} finally {
+-				if (jjtc002) {
+-					jjtree.closeNodeScope(jjtn002, true);
+-				}
++				jjtree.closeNodeScope(jjtn002, true);
+ 			}
+ 			break;
+ 		}
+@@ -8740,7 +7677,7 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-/// SPARQL 1.1 Update productions
++	/// SPARQL 1.1 Update productions
+ 	final public void GraphRefAll() throws ParseException {/* @bgen(jjtree) GraphRefAll */
+ 		ASTGraphRefAll jjtn000 = new ASTGraphRefAll(JJTGRAPHREFALL);
+ 		boolean jjtc000 = true;
+@@ -8783,19 +7720,16 @@ public class SyntaxTreeBuilder
+ 			}
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8818,14 +7752,10 @@ public class SyntaxTreeBuilder
+ 			case Q_IRI_REF:
+ 			case PNAME_NS:
+ 			case PNAME_LN: {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case GRAPH: {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == GRAPH) {
+ 					jj_consume_token(GRAPH);
+-					break;
+-				}
+-				default:
++				} else {
+ 					jj_la1[159] = jj_gen;
+-					;
+ 				}
+ 				IRIref();
+ 				break;
+@@ -8836,27 +7766,20 @@ public class SyntaxTreeBuilder
+ 				throw new ParseException();
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -8872,16 +7795,13 @@ public class SyntaxTreeBuilder
+ 
+ 	final public void UnparsedQuadDataBlock() throws ParseException {/* @bgen(jjtree) UnparsedQuadDataBlock */
+ 		ASTUnparsedQuadDataBlock jjtn000 = new ASTUnparsedQuadDataBlock(JJTUNPARSEDQUADDATABLOCK);
+-		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(LBRACE);
+ 			jjtn000.setDataBlock(readToMatchingBrace());
+ 			jj_consume_token(RBRACE);
+ 		} finally {
+-			if (jjtc000) {
+-				jjtree.closeNodeScope(jjtn000, true);
+-			}
++			jjtree.closeNodeScope(jjtn000, true);
+ 		}
+ 	}
+ 
+@@ -8924,27 +7844,17 @@ public class SyntaxTreeBuilder
+ 		}
+ 		default:
+ 			jj_la1[161] = jj_gen;
+-			;
+ 		}
+-		label_31: while (true) {
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case GRAPH: {
+-				;
+-				break;
+-			}
+-			default:
++		while (true) {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != GRAPH) {
+ 				jj_la1[162] = jj_gen;
+-				break label_31;
++				break;
+ 			}
+ 			QuadsNotTriples();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case DOT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DOT) {
+ 				jj_consume_token(DOT);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[163] = jj_gen;
+-				;
+ 			}
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 			case LPAREN:
+@@ -8978,7 +7888,6 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[164] = jj_gen;
+-				;
+ 			}
+ 		}
+ 	}
+@@ -9023,31 +7932,23 @@ public class SyntaxTreeBuilder
+ 			}
+ 			default:
+ 				jj_la1[165] = jj_gen;
+-				;
+ 			}
+ 			jj_consume_token(RBRACE);
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9088,11 +7989,11 @@ public class SyntaxTreeBuilder
+ 		}
+ 		default:
+ 			jj_la1[166] = jj_gen;
+-			if (jj_2_5(2)) {
++			if (jj_2_5()) {
+ 				InsertData();
+-			} else if (jj_2_6(2)) {
++			} else if (jj_2_6()) {
+ 				DeleteData();
+-			} else if (jj_2_7(2)) {
++			} else if (jj_2_7()) {
+ 				DeleteWhere();
+ 			} else {
+ 				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+@@ -9117,49 +8018,34 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(LOAD);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SILENT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SILENT) {
+ 				jj_consume_token(SILENT);
+ 				jjtn000.setSilent(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[168] = jj_gen;
+-				;
+ 			}
+ 			IRIref();
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case INTO: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == INTO) {
+ 				jj_consume_token(INTO);
+ 				GraphRef();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[169] = jj_gen;
+-				;
+ 			}
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9174,39 +8060,28 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(CLEAR);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SILENT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SILENT) {
+ 				jj_consume_token(SILENT);
+ 				jjtn000.setSilent(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[170] = jj_gen;
+-				;
+ 			}
+ 			GraphRefAll();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9221,39 +8096,28 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(DROP);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SILENT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SILENT) {
+ 				jj_consume_token(SILENT);
+ 				jjtn000.setSilent(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[171] = jj_gen;
+-				;
+ 			}
+ 			GraphRefAll();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9268,41 +8132,30 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(ADD);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SILENT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SILENT) {
+ 				jj_consume_token(SILENT);
+ 				jjtn000.setSilent(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[172] = jj_gen;
+-				;
+ 			}
+ 			GraphOrDefault();
+ 			jj_consume_token(TO);
+ 			GraphOrDefault();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9317,41 +8170,30 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(MOVE);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SILENT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SILENT) {
+ 				jj_consume_token(SILENT);
+ 				jjtn000.setSilent(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[173] = jj_gen;
+-				;
+ 			}
+ 			GraphOrDefault();
+ 			jj_consume_token(TO);
+ 			GraphOrDefault();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9366,41 +8208,30 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(COPY);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SILENT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SILENT) {
+ 				jj_consume_token(SILENT);
+ 				jjtn000.setSilent(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[174] = jj_gen;
+-				;
+ 			}
+ 			GraphOrDefault();
+ 			jj_consume_token(TO);
+ 			GraphOrDefault();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9415,39 +8246,28 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(CREATE);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case SILENT: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SILENT) {
+ 				jj_consume_token(SILENT);
+ 				jjtn000.setSilent(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[175] = jj_gen;
+-				;
+ 			}
+ 			GraphRef();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9460,32 +8280,25 @@ public class SyntaxTreeBuilder
+ 		ASTInsertData jjtn000 = new ASTInsertData(JJTINSERTDATA);
+ 		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+-		try {
+-			jj_consume_token(INSERT);
+-			jj_consume_token(DATA);
+-			UnparsedQuadDataBlock();
+-		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++		try {
++			jj_consume_token(INSERT);
++			jj_consume_token(DATA);
++			UnparsedQuadDataBlock();
++		} catch (Throwable jjte000) {
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9503,27 +8316,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(DATA);
+ 			UnparsedQuadDataBlock();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9541,27 +8347,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(WHERE);
+ 			QuadData();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9578,27 +8377,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(DELETE);
+ 			QuadData();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9615,27 +8407,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(INSERT);
+ 			QuadData();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9650,39 +8435,28 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(USING);
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case NAMED: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == NAMED) {
+ 				jj_consume_token(NAMED);
+ 				jjtn000.setNamed(true);
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[176] = jj_gen;
+-				;
+ 			}
+ 			IRIref();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9699,27 +8473,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(WITH);
+ 			IRIref();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9739,27 +8506,20 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(WHERE);
+ 			GroupGraphPattern();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9773,26 +8533,18 @@ public class SyntaxTreeBuilder
+ 		boolean jjtc000 = true;
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+-			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-			case WITH: {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == WITH) {
+ 				WithClause();
+-				break;
+-			}
+-			default:
++			} else {
+ 				jj_la1[177] = jj_gen;
+-				;
+ 			}
+ 			switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+ 			case DELETE: {
+ 				DeleteClause();
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case INSERT: {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == INSERT) {
+ 					InsertClause();
+-					break;
+-				}
+-				default:
++				} else {
+ 					jj_la1[178] = jj_gen;
+-					;
+ 				}
+ 				break;
+ 			}
+@@ -9805,41 +8557,29 @@ public class SyntaxTreeBuilder
+ 				jj_consume_token(-1);
+ 				throw new ParseException();
+ 			}
+-			label_32: while (true) {
+-				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+-				case USING: {
+-					;
+-					break;
+-				}
+-				default:
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != USING) {
+ 					jj_la1[180] = jj_gen;
+-					break label_32;
++					break;
+ 				}
+ 				UsingClause();
+ 			}
+ 			ModifyWhereClause();
+ 		} catch (Throwable jjte000) {
+-			if (jjtc000) {
+-				jjtree.clearNodeScope(jjtn000);
+-				jjtc000 = false;
+-			} else {
+-				jjtree.popNode();
+-			}
++			jjtree.clearNodeScope(jjtn000);
++			jjtc000 = false;
+ 			if (jjte000 instanceof RuntimeException) {
+ 				{
+-					if (true)
+-						throw (RuntimeException) jjte000;
++					throw (RuntimeException) jjte000;
+ 				}
+ 			}
+ 			if (jjte000 instanceof ParseException) {
+ 				{
+-					if (true)
+-						throw (ParseException) jjte000;
++					throw (ParseException) jjte000;
+ 				}
+ 			}
+ 			{
+-				if (true)
+-					throw (Error) jjte000;
++				throw (Error) jjte000;
+ 			}
+ 		} finally {
+ 			if (jjtc000) {
+@@ -9848,94 +8588,92 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	private boolean jj_2_1(int xla) {
+-		jj_la = xla;
++	private boolean jj_2_1() {
++		jj_la = 2;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+ 			return (!jj_3_1());
+ 		} catch (LookaheadSuccess ls) {
+ 			return true;
+ 		} finally {
+-			jj_save(0, xla);
++			jj_save(0);
+ 		}
+ 	}
+ 
+-	private boolean jj_2_2(int xla) {
+-		jj_la = xla;
++	private boolean jj_2_2() {
++		jj_la = 2;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+ 			return (!jj_3_2());
+ 		} catch (LookaheadSuccess ls) {
+ 			return true;
+ 		} finally {
+-			jj_save(1, xla);
++			jj_save(1);
+ 		}
+ 	}
+ 
+-	private boolean jj_2_3(int xla) {
+-		jj_la = xla;
++	private boolean jj_2_3() {
++		jj_la = 2;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+ 			return (!jj_3_3());
+ 		} catch (LookaheadSuccess ls) {
+ 			return true;
+ 		} finally {
+-			jj_save(2, xla);
++			jj_save(2);
+ 		}
+ 	}
+ 
+-	private boolean jj_2_4(int xla) {
+-		jj_la = xla;
++	private boolean jj_2_4() {
++		jj_la = 2;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+ 			return (!jj_3_4());
+ 		} catch (LookaheadSuccess ls) {
+ 			return true;
+ 		} finally {
+-			jj_save(3, xla);
++			jj_save(3);
+ 		}
+ 	}
+ 
+-	private boolean jj_2_5(int xla) {
+-		jj_la = xla;
++	private boolean jj_2_5() {
++		jj_la = 2;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+ 			return (!jj_3_5());
+ 		} catch (LookaheadSuccess ls) {
+ 			return true;
+ 		} finally {
+-			jj_save(4, xla);
++			jj_save(4);
+ 		}
+ 	}
+ 
+-	private boolean jj_2_6(int xla) {
+-		jj_la = xla;
++	private boolean jj_2_6() {
++		jj_la = 2;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+ 			return (!jj_3_6());
+ 		} catch (LookaheadSuccess ls) {
+ 			return true;
+ 		} finally {
+-			jj_save(5, xla);
++			jj_save(5);
+ 		}
+ 	}
+ 
+-	private boolean jj_2_7(int xla) {
+-		jj_la = xla;
++	private boolean jj_2_7() {
++		jj_la = 2;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+ 			return (!jj_3_7());
+ 		} catch (LookaheadSuccess ls) {
+ 			return true;
+ 		} finally {
+-			jj_save(6, xla);
++			jj_save(6);
+ 		}
+ 	}
+ 
+ 	private boolean jj_3R_BooleanLiteral_1708_9_85() {
+-		if (jj_scan_token(FALSE))
+-			return true;
+-		return false;
++		return jj_scan_token(FALSE);
+ 	}
+ 
+ 	private boolean jj_3R_BooleanLiteral_1706_9_77() {
+@@ -9943,34 +8681,25 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_BooleanLiteral_1706_9_84()) {
+ 			jj_scanpos = xsp;
+-			if (jj_3R_BooleanLiteral_1708_9_85())
+-				return true;
++			return jj_3R_BooleanLiteral_1708_9_85();
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_BooleanLiteral_1706_9_84() {
+-		if (jj_scan_token(TRUE))
+-			return true;
+-		return false;
++		return jj_scan_token(TRUE);
+ 	}
+ 
+ 	private boolean jj_3R_TriplesNodePath_940_9_57() {
+-		if (jj_3R_BlankNodePropertyListPath_952_9_65())
+-			return true;
+-		return false;
++		return jj_3R_BlankNodePropertyListPath_952_9_65();
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralNegative_1694_17_100() {
+-		if (jj_scan_token(DOUBLE_NEGATIVE))
+-			return true;
+-		return false;
++		return jj_scan_token(DOUBLE_NEGATIVE);
+ 	}
+ 
+ 	private boolean jj_3R_TriplesNodePath_938_9_56() {
+-		if (jj_3R_CollectionPath_964_9_64())
+-			return true;
+-		return false;
++		return jj_3R_CollectionPath_964_9_64();
+ 	}
+ 
+ 	private boolean jj_3R_TriplesNodePath_938_9_49() {
+@@ -9978,34 +8707,25 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_TriplesNodePath_938_9_56()) {
+ 			jj_scanpos = xsp;
+-			if (jj_3R_TriplesNodePath_940_9_57())
+-				return true;
++			return jj_3R_TriplesNodePath_940_9_57();
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralNegative_1693_17_99() {
+-		if (jj_scan_token(DECIMAL_NEGATIVE))
+-			return true;
+-		return false;
++		return jj_scan_token(DECIMAL_NEGATIVE);
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralNegative_1692_17_98() {
+-		if (jj_scan_token(INTEGER_NEGATIVE))
+-			return true;
+-		return false;
++		return jj_scan_token(INTEGER_NEGATIVE);
+ 	}
+ 
+ 	private boolean jj_3R_TriplesNode_932_9_59() {
+-		if (jj_3R_BlankNodePropertyList_946_9_67())
+-			return true;
+-		return false;
++		return jj_3R_BlankNodePropertyList_946_9_67();
+ 	}
+ 
+ 	private boolean jj_3R_TriplesNode_930_9_58() {
+-		if (jj_3R_Collection_958_9_66())
+-			return true;
+-		return false;
++		return jj_3R_Collection_958_9_66();
+ 	}
+ 
+ 	private boolean jj_3R_TriplesNode_930_9_50() {
+@@ -10013,8 +8733,7 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_TriplesNode_930_9_58()) {
+ 			jj_scanpos = xsp;
+-			if (jj_3R_TriplesNode_932_9_59())
+-				return true;
++			return jj_3R_TriplesNode_932_9_59();
+ 		}
+ 		return false;
+ 	}
+@@ -10026,29 +8745,22 @@ public class SyntaxTreeBuilder
+ 			jj_scanpos = xsp;
+ 			if (jj_3R_NumericLiteralNegative_1693_17_99()) {
+ 				jj_scanpos = xsp;
+-				if (jj_3R_NumericLiteralNegative_1694_17_100())
+-					return true;
++				return jj_3R_NumericLiteralNegative_1694_17_100();
+ 			}
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralPositive_1679_17_97() {
+-		if (jj_scan_token(DOUBLE_POSITIVE))
+-			return true;
+-		return false;
++		return jj_scan_token(DOUBLE_POSITIVE);
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralPositive_1678_17_96() {
+-		if (jj_scan_token(DECIMAL_POSITIVE))
+-			return true;
+-		return false;
++		return jj_scan_token(DECIMAL_POSITIVE);
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralPositive_1677_17_95() {
+-		if (jj_scan_token(INTEGER_POSITIVE))
+-			return true;
+-		return false;
++		return jj_scan_token(INTEGER_POSITIVE);
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralPositive_1676_9_90() {
+@@ -10058,81 +8770,65 @@ public class SyntaxTreeBuilder
+ 			jj_scanpos = xsp;
+ 			if (jj_3R_NumericLiteralPositive_1678_17_96()) {
+ 				jj_scanpos = xsp;
+-				if (jj_3R_NumericLiteralPositive_1679_17_97())
+-					return true;
++				return jj_3R_NumericLiteralPositive_1679_17_97();
+ 			}
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_DeleteWhere_1871_5_39() {
+-		if (jj_scan_token(DELETE))
++		if (jj_scan_token(DELETE)) {
+ 			return true;
+-		if (jj_scan_token(WHERE))
+-			return true;
+-		return false;
++		}
++		return jj_scan_token(WHERE);
+ 	}
+ 
+ 	private boolean jj_3_3() {
+-		if (jj_scan_token(DOT))
+-			return true;
+-		if (jj_3R_TriplesSameSubject_784_9_35())
++		if (jj_scan_token(DOT)) {
+ 			return true;
+-		return false;
++		}
++		return jj_3R_TriplesSameSubject_784_9_35();
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralUnsigned_1664_17_94() {
+-		if (jj_scan_token(DOUBLE))
+-			return true;
+-		return false;
++		return jj_scan_token(DOUBLE);
+ 	}
+ 
+ 	private boolean jj_3_2() {
+-		if (jj_scan_token(DOT))
++		if (jj_scan_token(DOT)) {
+ 			return true;
+-		if (jj_3R_TriplesSameSubjectPath_804_5_34())
+-			return true;
+-		return false;
++		}
++		return jj_3R_TriplesSameSubjectPath_804_5_34();
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralUnsigned_1663_17_93() {
+-		if (jj_scan_token(DECIMAL))
+-			return true;
+-		return false;
++		return jj_scan_token(DECIMAL);
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralUnsigned_1662_17_92() {
+-		if (jj_scan_token(INTEGER))
+-			return true;
+-		return false;
++		return jj_scan_token(INTEGER);
+ 	}
+ 
+ 	private boolean jj_3R_DeleteData_1865_5_38() {
+-		if (jj_scan_token(DELETE))
+-			return true;
+-		if (jj_scan_token(DATA))
++		if (jj_scan_token(DELETE)) {
+ 			return true;
+-		return false;
++		}
++		return jj_scan_token(DATA);
+ 	}
+ 
+ 	private boolean jj_3R_InsertData_1859_5_37() {
+-		if (jj_scan_token(INSERT))
++		if (jj_scan_token(INSERT)) {
+ 			return true;
+-		if (jj_scan_token(DATA))
+-			return true;
+-		return false;
++		}
++		return jj_scan_token(DATA);
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteral_1654_17_83() {
+-		if (jj_3R_NumericLiteralNegative_1691_9_91())
+-			return true;
+-		return false;
++		return jj_3R_NumericLiteralNegative_1691_9_91();
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteral_1653_17_82() {
+-		if (jj_3R_NumericLiteralPositive_1676_9_90())
+-			return true;
+-		return false;
++		return jj_3R_NumericLiteralPositive_1676_9_90();
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteralUnsigned_1661_9_89() {
+@@ -10142,17 +8838,14 @@ public class SyntaxTreeBuilder
+ 			jj_scanpos = xsp;
+ 			if (jj_3R_NumericLiteralUnsigned_1663_17_93()) {
+ 				jj_scanpos = xsp;
+-				if (jj_3R_NumericLiteralUnsigned_1664_17_94())
+-					return true;
++				return jj_3R_NumericLiteralUnsigned_1664_17_94();
+ 			}
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteral_1652_17_81() {
+-		if (jj_3R_NumericLiteralUnsigned_1661_9_89())
+-			return true;
+-		return false;
++		return jj_3R_NumericLiteralUnsigned_1661_9_89();
+ 	}
+ 
+ 	private boolean jj_3R_NumericLiteral_1651_9_76() {
+@@ -10162,107 +8855,78 @@ public class SyntaxTreeBuilder
+ 			jj_scanpos = xsp;
+ 			if (jj_3R_NumericLiteral_1653_17_82()) {
+ 				jj_scanpos = xsp;
+-				if (jj_3R_NumericLiteral_1654_17_83())
+-					return true;
++				return jj_3R_NumericLiteral_1654_17_83();
+ 			}
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_TriplesBlock_689_9_47() {
+-		if (jj_3R_TriplesSameSubjectPath_804_5_34())
+-			return true;
+-		return false;
++		return jj_3R_TriplesSameSubjectPath_804_5_34();
+ 	}
+ 
+ 	private boolean jj_3R_RDFLiteral_1640_9_75() {
+-		if (jj_3R_String_1713_9_80())
+-			return true;
+-		return false;
++		return jj_3R_String_1713_9_80();
+ 	}
+ 
+ 	private boolean jj_3R_ConstructClause_475_16_40() {
+-		if (jj_3R_TriplesBlock_689_9_47())
+-			return true;
+-		return false;
++		return jj_3R_TriplesBlock_689_9_47();
+ 	}
+ 
+ 	private boolean jj_3_1() {
+-		if (jj_3R_ConstructClause_475_5_33())
+-			return true;
+-		return false;
++		return jj_3R_ConstructClause_475_5_33();
+ 	}
+ 
+ 	private boolean jj_3_7() {
+-		if (jj_3R_DeleteWhere_1871_5_39())
+-			return true;
+-		return false;
++		return jj_3R_DeleteWhere_1871_5_39();
+ 	}
+ 
+ 	private boolean jj_3R_ConstructClause_475_5_33() {
+-		if (jj_scan_token(LBRACE))
++		if (jj_scan_token(LBRACE)) {
+ 			return true;
++		}
+ 		Token xsp;
+ 		xsp = jj_scanpos;
+-		if (jj_3R_ConstructClause_475_16_40())
++		if (jj_3R_ConstructClause_475_16_40()) {
+ 			jj_scanpos = xsp;
+-		if (jj_scan_token(RBRACE))
+-			return true;
+-		return false;
++		}
++		return jj_scan_token(RBRACE);
+ 	}
+ 
+ 	private boolean jj_3_6() {
+-		if (jj_3R_DeleteData_1865_5_38())
+-			return true;
+-		return false;
++		return jj_3R_DeleteData_1865_5_38();
+ 	}
+ 
+ 	private boolean jj_3_5() {
+-		if (jj_3R_InsertData_1859_5_37())
+-			return true;
+-		return false;
++		return jj_3R_InsertData_1859_5_37();
+ 	}
+ 
+ 	private boolean jj_3R_TripleRef_1029_9_79() {
+-		if (jj_scan_token(TRIPLE_OPEN))
+-			return true;
+-		return false;
++		return jj_scan_token(TRIPLE_OPEN);
+ 	}
+ 
+ 	private boolean jj_3R_GraphTerm_1023_9_74() {
+-		if (jj_3R_TripleRef_1029_9_79())
+-			return true;
+-		return false;
++		return jj_3R_TripleRef_1029_9_79();
+ 	}
+ 
+ 	private boolean jj_3R_GraphTerm_1021_9_73() {
+-		if (jj_scan_token(NIL))
+-			return true;
+-		return false;
++		return jj_scan_token(NIL);
+ 	}
+ 
+ 	private boolean jj_3R_GraphTerm_1019_9_72() {
+-		if (jj_3R_BlankNode_1738_9_78())
+-			return true;
+-		return false;
++		return jj_3R_BlankNode_1738_9_78();
+ 	}
+ 
+ 	private boolean jj_3R_GraphTerm_1017_9_71() {
+-		if (jj_3R_BooleanLiteral_1706_9_77())
+-			return true;
+-		return false;
++		return jj_3R_BooleanLiteral_1706_9_77();
+ 	}
+ 
+ 	private boolean jj_3R_GraphTerm_1015_9_70() {
+-		if (jj_3R_NumericLiteral_1651_9_76())
+-			return true;
+-		return false;
++		return jj_3R_NumericLiteral_1651_9_76();
+ 	}
+ 
+ 	private boolean jj_3R_GraphTerm_1013_9_69() {
+-		if (jj_3R_RDFLiteral_1640_9_75())
+-			return true;
+-		return false;
++		return jj_3R_RDFLiteral_1640_9_75();
+ 	}
+ 
+ 	private boolean jj_3R_GraphTerm_1011_9_63() {
+@@ -10280,8 +8944,7 @@ public class SyntaxTreeBuilder
+ 							jj_scanpos = xsp;
+ 							if (jj_3R_GraphTerm_1021_9_73()) {
+ 								jj_scanpos = xsp;
+-								if (jj_3R_GraphTerm_1023_9_74())
+-									return true;
++								return jj_3R_GraphTerm_1023_9_74();
+ 							}
+ 						}
+ 					}
+@@ -10292,9 +8955,7 @@ public class SyntaxTreeBuilder
+ 	}
+ 
+ 	private boolean jj_3R_GraphTerm_1011_9_68() {
+-		if (jj_3R_IRIref_1723_9_45())
+-			return true;
+-		return false;
++		return jj_3R_IRIref_1723_9_45();
+ 	}
+ 
+ 	private boolean jj_3R_Var_1002_9_62() {
+@@ -10302,16 +8963,13 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_scan_token(148)) {
+ 			jj_scanpos = xsp;
+-			if (jj_scan_token(149))
+-				return true;
++			return jj_scan_token(149);
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_TriplesSameSubjectPath_806_5_42() {
+-		if (jj_3R_TriplesNodePath_938_9_49())
+-			return true;
+-		return false;
++		return jj_3R_TriplesNodePath_938_9_49();
+ 	}
+ 
+ 	private boolean jj_3R_TriplesSameSubjectPath_804_5_34() {
+@@ -10319,28 +8977,21 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_TriplesSameSubjectPath_804_5_41()) {
+ 			jj_scanpos = xsp;
+-			if (jj_3R_TriplesSameSubjectPath_806_5_42())
+-				return true;
++			return jj_3R_TriplesSameSubjectPath_806_5_42();
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_TriplesSameSubjectPath_804_5_41() {
+-		if (jj_3R_VarOrTerm_986_9_48())
+-			return true;
+-		return false;
++		return jj_3R_VarOrTerm_986_9_48();
+ 	}
+ 
+ 	private boolean jj_3R_VarOrTerm_988_9_55() {
+-		if (jj_3R_GraphTerm_1011_9_63())
+-			return true;
+-		return false;
++		return jj_3R_GraphTerm_1011_9_63();
+ 	}
+ 
+ 	private boolean jj_3R_VarOrTerm_986_9_54() {
+-		if (jj_3R_Var_1002_9_62())
+-			return true;
+-		return false;
++		return jj_3R_Var_1002_9_62();
+ 	}
+ 
+ 	private boolean jj_3R_VarOrTerm_986_9_48() {
+@@ -10348,28 +8999,21 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_VarOrTerm_986_9_54()) {
+ 			jj_scanpos = xsp;
+-			if (jj_3R_VarOrTerm_988_9_55())
+-				return true;
++			return jj_3R_VarOrTerm_988_9_55();
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_IRI_1746_9_60() {
+-		if (jj_scan_token(Q_IRI_REF))
+-			return true;
+-		return false;
++		return jj_scan_token(Q_IRI_REF);
+ 	}
+ 
+ 	private boolean jj_3R_TriplesSameSubject_786_9_44() {
+-		if (jj_3R_TriplesNode_930_9_50())
+-			return true;
+-		return false;
++		return jj_3R_TriplesNode_930_9_50();
+ 	}
+ 
+ 	private boolean jj_3R_TriplesSameSubject_784_9_43() {
+-		if (jj_3R_VarOrTerm_986_9_48())
+-			return true;
+-		return false;
++		return jj_3R_VarOrTerm_986_9_48();
+ 	}
+ 
+ 	private boolean jj_3R_TriplesSameSubject_784_9_35() {
+@@ -10377,8 +9021,7 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_TriplesSameSubject_784_9_43()) {
+ 			jj_scanpos = xsp;
+-			if (jj_3R_TriplesSameSubject_786_9_44())
+-				return true;
++			return jj_3R_TriplesSameSubject_786_9_44();
+ 		}
+ 		return false;
+ 	}
+@@ -10388,22 +9031,17 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_BlankNode_1738_9_86()) {
+ 			jj_scanpos = xsp;
+-			if (jj_scan_token(31))
+-				return true;
++			return jj_scan_token(31);
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_BlankNode_1738_9_86() {
+-		if (jj_scan_token(BLANK_NODE_LABEL))
+-			return true;
+-		return false;
++		return jj_scan_token(BLANK_NODE_LABEL);
+ 	}
+ 
+ 	private boolean jj_3R_ArgList_778_9_53() {
+-		if (jj_scan_token(LPAREN))
+-			return true;
+-		return false;
++		return jj_scan_token(LPAREN);
+ 	}
+ 
+ 	private boolean jj_3R_ArgList_776_9_46() {
+@@ -10411,8 +9049,7 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_scan_token(30)) {
+ 			jj_scanpos = xsp;
+-			if (jj_3R_ArgList_778_9_53())
+-				return true;
++			return jj_3R_ArgList_778_9_53();
+ 		}
+ 		return false;
+ 	}
+@@ -10422,36 +9059,28 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_scan_token(146)) {
+ 			jj_scanpos = xsp;
+-			if (jj_scan_token(145))
+-				return true;
++			return jj_scan_token(145);
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_CollectionPath_964_9_64() {
+-		if (jj_scan_token(LPAREN))
+-			return true;
+-		return false;
++		return jj_scan_token(LPAREN);
+ 	}
+ 
+ 	private boolean jj_3R_FunctionCall_770_9_36() {
+-		if (jj_3R_IRIref_1723_9_45())
+-			return true;
+-		if (jj_3R_ArgList_776_9_46())
++		if (jj_3R_IRIref_1723_9_45()) {
+ 			return true;
+-		return false;
++		}
++		return jj_3R_ArgList_776_9_46();
+ 	}
+ 
+ 	private boolean jj_3R_IRIref_1725_9_52() {
+-		if (jj_3R_PrefixedName_1731_9_61())
+-			return true;
+-		return false;
++		return jj_3R_PrefixedName_1731_9_61();
+ 	}
+ 
+ 	private boolean jj_3R_IRIref_1723_9_51() {
+-		if (jj_3R_IRI_1746_9_60())
+-			return true;
+-		return false;
++		return jj_3R_IRI_1746_9_60();
+ 	}
+ 
+ 	private boolean jj_3R_IRIref_1723_9_45() {
+@@ -10459,22 +9088,17 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_IRIref_1723_9_51()) {
+ 			jj_scanpos = xsp;
+-			if (jj_3R_IRIref_1725_9_52())
+-				return true;
++			return jj_3R_IRIref_1725_9_52();
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3R_Collection_958_9_66() {
+-		if (jj_scan_token(LPAREN))
+-			return true;
+-		return false;
++		return jj_scan_token(LPAREN);
+ 	}
+ 
+ 	private boolean jj_3R_BlankNodePropertyListPath_952_9_65() {
+-		if (jj_scan_token(LBRACK))
+-			return true;
+-		return false;
++		return jj_scan_token(LBRACK);
+ 	}
+ 
+ 	private boolean jj_3R_String_1716_9_88() {
+@@ -10482,8 +9106,7 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_scan_token(166)) {
+ 			jj_scanpos = xsp;
+-			if (jj_scan_token(167))
+-				return true;
++			return jj_scan_token(167);
+ 		}
+ 		return false;
+ 	}
+@@ -10493,8 +9116,7 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_String_1713_9_87()) {
+ 			jj_scanpos = xsp;
+-			if (jj_3R_String_1716_9_88())
+-				return true;
++			return jj_3R_String_1716_9_88();
+ 		}
+ 		return false;
+ 	}
+@@ -10504,29 +9126,30 @@ public class SyntaxTreeBuilder
+ 		xsp = jj_scanpos;
+ 		if (jj_scan_token(164)) {
+ 			jj_scanpos = xsp;
+-			if (jj_scan_token(165))
+-				return true;
++			return jj_scan_token(165);
+ 		}
+ 		return false;
+ 	}
+ 
+ 	private boolean jj_3_4() {
+-		if (jj_3R_FunctionCall_770_9_36())
+-			return true;
+-		return false;
++		return jj_3R_FunctionCall_770_9_36();
+ 	}
+ 
+ 	private boolean jj_3R_BlankNodePropertyList_946_9_67() {
+-		if (jj_scan_token(LBRACK))
+-			return true;
+-		return false;
++		return jj_scan_token(LBRACK);
+ 	}
+ 
+-	/** Generated Token Manager. */
++	/**
++	 * Generated Token Manager.
++	 */
+ 	public SyntaxTreeBuilderTokenManager token_source;
+-	/** Current token. */
++	/**
++	 * Current token.
++	 */
+ 	public Token token;
+-	/** Next token. */
++	/**
++	 * Next token.
++	 */
+ 	public Token jj_nt;
+ 	private int jj_ntk;
+ 	private Token jj_scanpos, jj_lastpos;
+@@ -10539,6 +9162,7 @@ public class SyntaxTreeBuilder
+ 	static private int[] jj_la1_3;
+ 	static private int[] jj_la1_4;
+ 	static private int[] jj_la1_5;
++
+ 	static {
+ 		jj_la1_init_0();
+ 		jj_la1_init_1();
+@@ -10645,62 +9269,79 @@ public class SyntaxTreeBuilder
+ 	private boolean jj_rescan = false;
+ 	private int jj_gc = 0;
+ 
+-	/** Constructor with user supplied CharStream. */
++	/**
++	 * Constructor with user supplied CharStream.
++	 */
+ 	public SyntaxTreeBuilder(CharStream stream) {
+ 		token_source = new SyntaxTreeBuilderTokenManager(stream);
+ 		token = new Token();
+ 		jj_ntk = -1;
+ 		jj_gen = 0;
+-		for (int i = 0; i < 181; i++)
++		for (int i = 0; i < 181; i++) {
+ 			jj_la1[i] = -1;
+-		for (int i = 0; i < jj_2_rtns.length; i++)
++		}
++		for (int i = 0; i < jj_2_rtns.length; i++) {
+ 			jj_2_rtns[i] = new JJCalls();
++		}
+ 	}
+ 
+-	/** Reinitialise. */
++	/**
++	 * Reinitialise.
++	 */
+ 	public void ReInit(CharStream stream) {
+ 		token_source.ReInit(stream);
+ 		token = new Token();
+ 		jj_ntk = -1;
+ 		jjtree.reset();
+ 		jj_gen = 0;
+-		for (int i = 0; i < 181; i++)
++		for (int i = 0; i < 181; i++) {
+ 			jj_la1[i] = -1;
+-		for (int i = 0; i < jj_2_rtns.length; i++)
++		}
++		for (int i = 0; i < jj_2_rtns.length; i++) {
+ 			jj_2_rtns[i] = new JJCalls();
++		}
+ 	}
+ 
+-	/** Constructor with generated Token Manager. */
++	/**
++	 * Constructor with generated Token Manager.
++	 */
+ 	public SyntaxTreeBuilder(SyntaxTreeBuilderTokenManager tm) {
+ 		token_source = tm;
+ 		token = new Token();
+ 		jj_ntk = -1;
+ 		jj_gen = 0;
+-		for (int i = 0; i < 181; i++)
++		for (int i = 0; i < 181; i++) {
+ 			jj_la1[i] = -1;
+-		for (int i = 0; i < jj_2_rtns.length; i++)
++		}
++		for (int i = 0; i < jj_2_rtns.length; i++) {
+ 			jj_2_rtns[i] = new JJCalls();
++		}
+ 	}
+ 
+-	/** Reinitialise. */
++	/**
++	 * Reinitialise.
++	 */
+ 	public void ReInit(SyntaxTreeBuilderTokenManager tm) {
+ 		token_source = tm;
+ 		token = new Token();
+ 		jj_ntk = -1;
+ 		jjtree.reset();
+ 		jj_gen = 0;
+-		for (int i = 0; i < 181; i++)
++		for (int i = 0; i < 181; i++) {
+ 			jj_la1[i] = -1;
+-		for (int i = 0; i < jj_2_rtns.length; i++)
++		}
++		for (int i = 0; i < jj_2_rtns.length; i++) {
+ 			jj_2_rtns[i] = new JJCalls();
++		}
+ 	}
+ 
+ 	private Token jj_consume_token(int kind) throws ParseException {
+ 		Token oldToken;
+-		if ((oldToken = token).next != null)
++		if ((oldToken = token).next != null) {
+ 			token = token.next;
+-		else
++		} else {
+ 			token = token.next = token_source.getNextToken();
++		}
+ 		jj_ntk = -1;
+ 		if (token.kind == kind) {
+ 			jj_gen++;
+@@ -10709,8 +9350,9 @@ public class SyntaxTreeBuilder
+ 				for (int i = 0; i < jj_2_rtns.length; i++) {
+ 					JJCalls c = jj_2_rtns[i];
+ 					while (c != null) {
+-						if (c.gen < jj_gen)
++						if (c.gen < jj_gen) {
+ 							c.first = null;
++						}
+ 						c = c.next;
+ 					}
+ 				}
+@@ -10722,7 +9364,6 @@ public class SyntaxTreeBuilder
+ 		throw generateParseException();
+ 	}
+ 
+-	@SuppressWarnings("serial")
+ 	static private final class LookaheadSuccess extends java.lang.Error {
+ 		@Override
+ 		public Throwable fillInStackTrace() {
+@@ -10750,50 +9391,60 @@ public class SyntaxTreeBuilder
+ 				i++;
+ 				tok = tok.next;
+ 			}
+-			if (tok != null)
++			if (tok != null) {
+ 				jj_add_error_token(kind, i);
++			}
+ 		}
+-		if (jj_scanpos.kind != kind)
++		if (jj_scanpos.kind != kind) {
+ 			return true;
+-		if (jj_la == 0 && jj_scanpos == jj_lastpos)
++		}
++		if (jj_la == 0 && jj_scanpos == jj_lastpos) {
+ 			throw jj_ls;
++		}
+ 		return false;
+ 	}
+ 
+-	/** Get the next Token. */
++	/**
++	 * Get the next Token.
++	 */
+ 	final public Token getNextToken() {
+-		if (token.next != null)
++		if (token.next != null) {
+ 			token = token.next;
+-		else
++		} else {
+ 			token = token.next = token_source.getNextToken();
++		}
+ 		jj_ntk = -1;
+ 		jj_gen++;
+ 		return token;
+ 	}
+ 
+-	/** Get the specific Token. */
++	/**
++	 * Get the specific Token.
++	 */
+ 	final public Token getToken(int index) {
+ 		Token t = token;
+ 		for (int i = 0; i < index; i++) {
+-			if (t.next != null)
++			if (t.next != null) {
+ 				t = t.next;
+-			else
++			} else {
+ 				t = t.next = token_source.getNextToken();
++			}
+ 		}
+ 		return t;
+ 	}
+ 
+ 	private int jj_ntk_f() {
+-		if ((jj_nt = token.next) == null)
++		if ((jj_nt = token.next) == null) {
+ 			return (jj_ntk = (token.next = token_source.getNextToken()).kind);
+-		else
++		} else {
+ 			return (jj_ntk = jj_nt.kind);
++		}
+ 	}
+ 
+-	private java.util.List<int[]> jj_expentries = new java.util.ArrayList<int[]>();
++	private final java.util.List<int[]> jj_expentries = new java.util.ArrayList<>();
+ 	private int[] jj_expentry;
+ 	private int jj_kind = -1;
+-	private int[] jj_lasttokens = new int[100];
++	private final int[] jj_lasttokens = new int[100];
+ 	private int jj_endpos;
+ 
+ 	private void jj_add_error_token(int kind, int pos) {
+@@ -10806,9 +9457,7 @@ public class SyntaxTreeBuilder
+ 		} else if (jj_endpos != 0) {
+ 			jj_expentry = new int[jj_endpos];
+ 
+-			for (int i = 0; i < jj_endpos; i++) {
+-				jj_expentry[i] = jj_lasttokens[i];
+-			}
++			System.arraycopy(jj_lasttokens, 0, jj_expentry, 0, jj_endpos);
+ 
+ 			for (int[] oldentry : jj_expentries) {
+ 				if (oldentry.length == jj_expentry.length) {
+@@ -10834,7 +9483,9 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	/** Generate ParseException. */
++	/**
++	 * Generate ParseException.
++	 */
+ 	public ParseException generateParseException() {
+ 		jj_expentries.clear();
+ 		boolean[] la1tokens = new boolean[188];
+@@ -10885,16 +9536,22 @@ public class SyntaxTreeBuilder
+ 
+ 	private boolean trace_enabled;
+ 
+-	/** Trace enabled. */
++	/**
++	 * Trace enabled.
++	 */
+ 	final public boolean trace_enabled() {
+ 		return trace_enabled;
+ 	}
+ 
+-	/** Enable tracing. */
++	/**
++	 * Enable tracing.
++	 */
+ 	final public void enable_tracing() {
+ 	}
+ 
+-	/** Disable tracing. */
++	/**
++	 * Disable tracing.
++	 */
+ 	final public void disable_tracing() {
+ 	}
+ 
+@@ -10935,13 +9592,13 @@ public class SyntaxTreeBuilder
+ 					p = p.next;
+ 				} while (p != null);
+ 
+-			} catch (LookaheadSuccess ls) {
++			} catch (LookaheadSuccess ignored) {
+ 			}
+ 		}
+ 		jj_rescan = false;
+ 	}
+ 
+-	private void jj_save(int index, int xla) {
++	private void jj_save(int index) {
+ 		JJCalls p = jj_2_rtns[index];
+ 		while (p.gen > jj_gen) {
+ 			if (p.next == null) {
+@@ -10951,9 +9608,9 @@ public class SyntaxTreeBuilder
+ 			p = p.next;
+ 		}
+ 
+-		p.gen = jj_gen + xla - jj_la;
++		p.gen = jj_gen + 2 - jj_la;
+ 		p.first = token;
+-		p.arg = xla;
++		p.arg = 2;
+ 	}
+ 
+ 	static final class JJCalls {
+-- 
+2.31.0
+

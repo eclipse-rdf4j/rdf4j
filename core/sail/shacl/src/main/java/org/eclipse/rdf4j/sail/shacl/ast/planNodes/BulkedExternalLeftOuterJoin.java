@@ -36,21 +36,17 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 	private final Dataset dataset;
 	private final Resource[] dataGraph;
 	private ParsedQuery parsedQuery;
-	private final boolean skipBasedOnPreviousConnection;
-	private final SailConnection previousStateConnection;
 	private final String query;
 	private boolean printed = false;
 
 	public BulkedExternalLeftOuterJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph,
 			String query,
-			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
 			Function<BindingSet, ValidationTuple> mapper) {
 		leftNode = PlanNodeHelper.handleSorting(this, leftNode);
 		this.leftNode = leftNode;
 		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);
 		this.connection = connection;
-		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;
-		this.previousStateConnection = previousStateConnection;
+		assert this.connection != null;
 		this.mapper = mapper;
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 		this.dataGraph = dataGraph;
@@ -84,9 +80,7 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 					parsedQuery = parseQuery(query);
 				}
 
-				runQuery(left, right, connection, parsedQuery, dataset, dataGraph, skipBasedOnPreviousConnection,
-						previousStateConnection,
-						mapper);
+				runQuery(left, right, connection, parsedQuery, dataset, dataGraph, false, null, mapper);
 
 			}
 
@@ -173,14 +167,6 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 					.append("\n");
 		}
 
-		if (skipBasedOnPreviousConnection) {
-			stringBuilder
-					.append(System.identityHashCode(previousStateConnection) + " -> " + getId()
-							+ " [label=\"skip if not present\"]")
-					.append("\n");
-
-		}
-
 		stringBuilder.append(leftNode.getId() + " -> " + getId() + " [label=\"left\"]").append("\n");
 
 	}
@@ -214,15 +200,14 @@ public class BulkedExternalLeftOuterJoin extends AbstractBulkJoinPlanNode {
 			return false;
 		}
 		BulkedExternalLeftOuterJoin that = (BulkedExternalLeftOuterJoin) o;
-		return skipBasedOnPreviousConnection == that.skipBasedOnPreviousConnection && connection.equals(that.connection)
+		return Objects.equals(connection, that.connection)
 				&& leftNode.equals(that.leftNode)
 				&& Objects.equals(dataset, that.dataset)
-				&& Objects.equals(previousStateConnection, that.previousStateConnection) && query.equals(that.query);
+				&& query.equals(that.query);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(super.hashCode(), connection, dataset, leftNode, skipBasedOnPreviousConnection,
-				previousStateConnection, query);
+		return Objects.hash(super.hashCode(), connection, dataset, leftNode, query);
 	}
 }

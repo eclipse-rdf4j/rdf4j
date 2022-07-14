@@ -22,7 +22,7 @@ public enum EndpointType {
 	RemoteRepository(List.of("RemoteRepository")),
 	Other(List.of("Other"));
 
-	private List<String> formatNames;
+	private final List<String> formatNames;
 
 	EndpointType(List<String> formatNames) {
 		this.formatNames = formatNames;

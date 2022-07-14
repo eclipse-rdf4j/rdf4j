@@ -66,22 +66,20 @@ public class BackwardChainingShapeSource implements ShapeSource {
 		Stream<Resource> inferred = connection.getStatements(null, RDF.TYPE, RDFS.CLASS, true, context)
 				.stream()
 				.map(Statement::getSubject)
-				.filter(this::isNodeShapeOrPropertyShape
-				);
+				.filter(this::isNodeShapeOrPropertyShape);
 
 		return Stream
 				.of(getSubjects(Predicates.TARGET_NODE), getSubjects(Predicates.TARGET_CLASS),
 						getSubjects(Predicates.TARGET_SUBJECTS_OF), getSubjects(Predicates.TARGET_OBJECTS_OF),
-						getSubjects(Predicates.TARGET_PROP), getSubjects(Predicates.RSX_targetShape),
-						inferred)
+						getSubjects(Predicates.TARGET_PROP), getSubjects(Predicates.RSX_targetShape), inferred)
 				.reduce(Stream::concat)
 				.get()
 				.distinct();
 	}
 
 	private boolean isNodeShapeOrPropertyShape(Resource id) {
-		return connection.hasStatement(id, RDF.TYPE, SHACL.NODE_SHAPE, true, context) ||
-				connection.hasStatement(id, RDF.TYPE, SHACL.PROPERTY_SHAPE, true, context);
+		return connection.hasStatement(id, RDF.TYPE, SHACL.NODE_SHAPE, true, context)
+				|| connection.hasStatement(id, RDF.TYPE, SHACL.PROPERTY_SHAPE, true, context);
 	}
 
 	public Stream<Resource> getSubjects(Predicates predicate) {

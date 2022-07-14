@@ -364,7 +364,7 @@ public class RDFFormat extends FileFormat {
 	 *
 	 * @see <a href="http://www.w3.org/ns/formats/">Unique URIs for File Formats</a>
 	 */
-	private IRI standardURI;
+	private final IRI standardURI;
 
 	/*--------------*
 	 * Constructors *

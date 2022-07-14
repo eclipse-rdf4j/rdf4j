@@ -146,7 +146,7 @@ public class InstanceofBenchmark {
 
 		public static class CustomIRI extends SimpleIRI {
 
-			int counter = 0;
+			int counter;
 			static int staticCounter = 0;
 
 			public CustomIRI() {

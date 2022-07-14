@@ -32,6 +32,7 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TotalHitCountCollector;
 import org.apache.lucene.store.RAMDirectory;
+import org.eclipse.rdf4j.common.concurrent.locks.Properties;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -113,6 +114,7 @@ public class LuceneIndexTest {
 	@After
 	public void tearDown() throws Exception {
 		index.shutDown();
+		Properties.setLockTrackingEnabled(false);
 	}
 
 	@Test

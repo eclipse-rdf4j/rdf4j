@@ -66,10 +66,7 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		PlanNode target = getTargetChain()
-				.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)
-				.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, true, null);
-
+		PlanNode target;
 		if (overrideTargetNode != null) {
 			target = getTargetChain()
 					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
@@ -80,6 +77,11 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 		} else {
 			// we can assume that we are not doing bulk validation, so it is worth checking our added statements before
 			// we go to the base sail
+
+			target = getTargetChain()
+					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
+							stableRandomVariableProvider)
+					.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, true, null);
 
 			PlanNode addedByPath = getTargetChain().getPath()
 					.get()
@@ -95,8 +97,6 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 						.get()
 						.getTargetQueryFragment(new StatementMatcher.Variable("a"), new StatementMatcher.Variable("c"),
 								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),
-				false,
-				null,
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 						validationSettings.getDataGraph())
 		);

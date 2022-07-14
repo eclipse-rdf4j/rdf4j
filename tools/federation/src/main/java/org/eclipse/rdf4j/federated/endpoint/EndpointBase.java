@@ -39,7 +39,7 @@ public abstract class EndpointBase implements Endpoint {
 	protected final RepositoryInformation repoInfo; // the repository information
 	protected final String endpoint; // the endpoint, e.g. for SPARQL the URL
 	protected EndpointClassification endpointClassification; // the endpoint classification
-	protected boolean writable = false; // can this endpoint be used for write operation
+	protected boolean writable; // can this endpoint be used for write operation
 
 	private ManagedRepositoryConnection dependentConn = null; // if configured, contains the managed connection
 	protected boolean initialized = false; // true, iff the contained repository is initialized

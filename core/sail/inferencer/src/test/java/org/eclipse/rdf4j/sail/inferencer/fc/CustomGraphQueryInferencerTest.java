@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailException;
+import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -43,6 +44,11 @@ public abstract class CustomGraphQueryInferencerTest {
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
+	}
+
+	@AfterClass
+	public static void afterClass() throws Exception {
+		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
 	protected static class Expectation {
@@ -76,18 +82,17 @@ public abstract class CustomGraphQueryInferencerTest {
 
 	private String delete;
 
-	private String resourceFolder;
+	private final String resourceFolder;
 
-	private Expectation testData;
+	private final Expectation testData;
 
-	private QueryLanguage language;
+	private final QueryLanguage language;
 
 	protected void runTest(final CustomGraphQueryInferencer inferencer) throws RepositoryException, RDFParseException,
 			IOException, MalformedQueryException, UpdateExecutionException {
 		// Initialize
 		Repository sail = new SailRepository(inferencer);
-		RepositoryConnection connection = sail.getConnection();
-		try {
+		try (RepositoryConnection connection = sail.getConnection()) {
 			connection.begin();
 			connection.clear();
 			connection.add(new StringReader(initial), BASE, RDFFormat.TURTLE);
@@ -123,8 +128,6 @@ public abstract class CustomGraphQueryInferencerTest {
 			// in order to properly clear out any inferred statements.
 			connection.clear();
 			connection.commit();
-		} finally {
-			connection.close();
 		}
 		sail.shutDown();
 	}

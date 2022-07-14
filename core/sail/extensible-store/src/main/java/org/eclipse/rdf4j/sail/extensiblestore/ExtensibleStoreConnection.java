@@ -29,6 +29,7 @@ public class ExtensibleStoreConnection<E extends ExtensibleStore> extends SailSo
 		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.sail = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
+		useConnectionLock = false;
 	}
 
 	public E getSail() {

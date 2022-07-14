@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfSubject;
  */
 public class Variable implements Projectable, RdfSubject, RdfPredicate, RdfObject, Operand, Orderable, Groupable,
 		GraphName, Assignable {
-	private String varName;
+	private final String varName;
 
 	Variable(String varName) {
 		this.varName = varName;

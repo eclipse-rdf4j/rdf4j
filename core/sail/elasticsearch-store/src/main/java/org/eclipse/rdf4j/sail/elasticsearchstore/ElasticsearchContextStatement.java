@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleContextStat
  */
 class ElasticsearchContextStatement extends ExtensibleContextStatement implements ElasticsearchId {
 
-	private String elasticsearchId;
+	private final String elasticsearchId;
 
 	ElasticsearchContextStatement(String elasticsearchId, Resource subject, IRI predicate, Value object,
 			Resource context, boolean inferred) {

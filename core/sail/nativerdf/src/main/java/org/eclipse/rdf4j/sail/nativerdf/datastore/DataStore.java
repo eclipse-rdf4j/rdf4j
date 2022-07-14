@@ -80,7 +80,7 @@ public class DataStore implements Closeable {
 	public int getID(byte[] queryData) throws IOException {
 		assert queryData != null : "queryData must not be null";
 
-		int id = -1;
+		int id;
 
 		// Value not in cache or cache not used, fetch from file
 		int hash = getDataHash(queryData);
