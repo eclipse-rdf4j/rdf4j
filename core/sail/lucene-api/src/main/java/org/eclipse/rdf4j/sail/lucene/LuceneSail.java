@@ -589,78 +589,82 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * Starts a reindexation process of the whole sail. Basically, this will delete and add all data again, a
 	 * long-lasting process.
 	 *
-	 * @throws IOException
+	 * @throws SailException If the Sail could not be reindex
 	 */
-	public void reindex() throws Exception {
-		// clear
-		logger.info("Reindexing sail: clearing...");
-		luceneIndex.clear();
-		logger.info("Reindexing sail: adding...");
-
-		luceneIndex.begin();
+	public void reindex() throws SailException {
 		try {
-			// iterate
-			SailRepository repo = new SailRepository(new NotifyingSailWrapper(getBaseSail()) {
+			// clear
+			logger.info("Reindexing sail: clearing...");
+			luceneIndex.clear();
+			logger.info("Reindexing sail: adding...");
 
-				@Override
-				public void init() {
-					// don't re-initialize the Sail when we initialize the repo
-				}
+			try {
+				luceneIndex.begin();
+				// iterate
+				SailRepository repo = new SailRepository(new NotifyingSailWrapper(getBaseSail()) {
 
-				@Override
-				public void shutDown() {
-					// don't shutdown the underlying sail
-					// when we shutdown the repo.
-				}
-			});
-			try (SailRepositoryConnection connection = repo.getConnection()) {
-				TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, reindexQuery);
-				try (TupleQueryResult res = query.evaluate()) {
-					Resource current = null;
-					ValueFactory vf = getValueFactory();
-					List<Statement> statements = new ArrayList<>();
-					while (res.hasNext()) {
-						BindingSet set = res.next();
-						Resource r = (Resource) set.getValue("s");
-						IRI p = (IRI) set.getValue("p");
-						Value o = set.getValue("o");
-						Resource c = (Resource) set.getValue("c");
-						if (current == null) {
-							current = r;
-						} else if (!current.equals(r)) {
+					@Override
+					public void init() {
+						// don't re-initialize the Sail when we initialize the repo
+					}
+
+					@Override
+					public void shutDown() {
+						// don't shutdown the underlying sail
+						// when we shutdown the repo.
+					}
+				});
+				try (SailRepositoryConnection connection = repo.getConnection()) {
+					TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, reindexQuery);
+					try (TupleQueryResult res = query.evaluate()) {
+						Resource current = null;
+						ValueFactory vf = getValueFactory();
+						List<Statement> statements = new ArrayList<>();
+						while (res.hasNext()) {
+							BindingSet set = res.next();
+							Resource r = (Resource) set.getValue("s");
+							IRI p = (IRI) set.getValue("p");
+							Value o = set.getValue("o");
+							Resource c = (Resource) set.getValue("c");
+							if (current == null) {
+								current = r;
+							} else if (!current.equals(r)) {
+								if (logger.isDebugEnabled()) {
+									logger.debug("reindexing resource " + current);
+								}
+								// commit
+								luceneIndex.addDocuments(current, statements);
+
+								// re-init
+								current = r;
+								statements.clear();
+							}
+							statements.add(vf.createStatement(r, p, o, c));
+						}
+
+						// make sure to index statements for last resource
+						if (current != null && !statements.isEmpty()) {
 							if (logger.isDebugEnabled()) {
 								logger.debug("reindexing resource " + current);
 							}
 							// commit
 							luceneIndex.addDocuments(current, statements);
-
-							// re-init
-							current = r;
-							statements.clear();
 						}
-						statements.add(vf.createStatement(r, p, o, c));
 					}
-
-					// make sure to index statements for last resource
-					if (current != null && !statements.isEmpty()) {
-						if (logger.isDebugEnabled()) {
-							logger.debug("reindexing resource " + current);
-						}
-						// commit
-						luceneIndex.addDocuments(current, statements);
-					}
+				} finally {
+					repo.shutDown();
 				}
-			} finally {
-				repo.shutDown();
-			}
-			// commit the changes
-			luceneIndex.commit();
+				// commit the changes
+				luceneIndex.commit();
 
-			logger.info("Reindexing sail: done.");
+				logger.info("Reindexing sail: done.");
+			} catch (Exception e) {
+				logger.error("Rolling back", e);
+				luceneIndex.rollback();
+				throw e;
+			}
 		} catch (Exception e) {
-			logger.error("Rolling back", e);
-			luceneIndex.rollback();
-			throw e;
+			throw new SailException("Could not reindex LuceneSail: " + e.getMessage(), e);
 		}
 	}
 
