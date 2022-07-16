@@ -84,10 +84,10 @@ public class TupleExprs {
 	 *         subquery), <code>false</code> otherwise.
 	 */
 	public static boolean containsExtension(TupleExpr t) {
-		Deque<TupleExpr> queue = new ArrayDeque<>();
-		queue.add(t);
-		while (!queue.isEmpty()) {
-			TupleExpr n = queue.removeFirst();
+		TupleExpr n = t;
+		Deque<TupleExpr> queue = null;
+
+		do {
 			if (n instanceof Extension) {
 				return true;
 			} else if (n instanceof Join
@@ -95,9 +95,19 @@ public class TupleExprs {
 					|| (n instanceof Service)) {
 				return false;
 			} else {
-				queue.addAll(getChildren(n));
+				List<TupleExpr> children = getChildren(n);
+				if (!children.isEmpty()) {
+					if (queue == null) {
+						queue = new ArrayDeque<>();
+					}
+					queue.addAll(children);
+				}
 			}
-		}
+
+			n = queue != null ? queue.poll() : null;
+
+		} while (n != null);
+
 		return false;
 	}
 
