@@ -283,7 +283,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> extensions = List.of();
 			for (TupleExpr expr : expressions) {
-				if (expr instanceof Extension) {
+				if (TupleExprs.containsExtension(expr)) {
 					if (extensions.isEmpty()) {
 						extensions = List.of(expr);
 					} else {
