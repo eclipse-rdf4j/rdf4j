@@ -7,8 +7,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * A query optimizer that optimize disjunctive constraints on tuple expressions. Currently, this optimizer {@link Union
@@ -19,6 +28,63 @@ import org.eclipse.rdf4j.query.algebra.Union;
  * @author James Leigh
  */
 @Deprecated(forRemoval = true, since = "4.1.0")
-public class DisjunctiveConstraintOptimizer
-		extends org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer {
+public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		tupleExpr.visit(new OrSameTermOptimizer());
+	}
+
+	protected static class OrSameTermOptimizer extends AbstractQueryModelVisitor<RuntimeException> {
+
+		@Override
+		public void meet(Filter filter) {
+			if (filter.getCondition() instanceof Or && containsSameTerm(filter.getCondition())) {
+				Or orNode = (Or) filter.getCondition();
+				TupleExpr filterArg = filter.getArg();
+
+				ValueExpr leftConstraint = orNode.getLeftArg();
+				ValueExpr rightConstraint = orNode.getRightArg();
+
+				// remove filter
+				filter.replaceWith(filterArg);
+
+				// Push UNION down below other filters to avoid cloning them
+				TupleExpr node = findNotFilter(filterArg);
+
+				Filter leftFilter = new Filter(node.clone(), leftConstraint);
+				Filter rightFilter = new Filter(node.clone(), rightConstraint);
+				Union union = new Union(leftFilter, rightFilter);
+				node.replaceWith(union);
+
+				filter.getParentNode().visit(this);
+			} else {
+				super.meet(filter);
+			}
+		}
+
+		private TupleExpr findNotFilter(TupleExpr node) {
+			if (node instanceof Filter) {
+				return findNotFilter(((Filter) node).getArg());
+			}
+			return node;
+		}
+
+		private boolean containsSameTerm(ValueExpr node) {
+			if (node instanceof SameTerm) {
+				return true;
+			}
+			if (node instanceof Or) {
+				Or or = (Or) node;
+				boolean left = containsSameTerm(or.getLeftArg());
+				return left || containsSameTerm(or.getRightArg());
+			}
+			if (node instanceof And) {
+				And and = (And) node;
+				boolean left = containsSameTerm(and.getLeftArg());
+				return left || containsSameTerm(and.getRightArg());
+			}
+			return false;
+		}
+	}
 }
