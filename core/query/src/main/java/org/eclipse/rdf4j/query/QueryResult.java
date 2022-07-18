@@ -9,6 +9,7 @@ package org.eclipse.rdf4j.query;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
@@ -19,7 +20,8 @@ import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
  * @author Jeen Broekstra
  * @author Arjohn Kampman
  */
-public interface QueryResult<T> extends CloseableIteration<T, QueryEvaluationException>, Iterable<T> {
+public interface QueryResult<T>
+		extends AutoCloseable, CloseableIteration<T, QueryEvaluationException>, Iterable<T> {
 
 	@Override
 	default Iterator<T> iterator() {
@@ -43,4 +45,16 @@ public interface QueryResult<T> extends CloseableIteration<T, QueryEvaluationExc
 	 * @throws QueryEvaluationException if an error occurs while executing the query.
 	 */
 	T next() throws QueryEvaluationException;
+
+	/**
+	 *
+	 * Convert the result elements to a Java {@link Stream}. Note that the consumer should take care to close the stream
+	 * (by calling Stream#close() or using try-with-resource) if it is not fully consumed.
+	 *
+	 * @return stream a {@link Stream} of query result elements.
+	 */
+	default Stream<T> stream() {
+		return QueryResults.stream(this);
+	}
+
 }

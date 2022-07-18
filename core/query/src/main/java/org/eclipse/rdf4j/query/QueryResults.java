@@ -86,6 +86,32 @@ public class QueryResults extends Iterations {
 	}
 
 	/**
+	 * Get a List containing all elements obtained from the specified {@link QueryResult}.
+	 *
+	 * @param queryResult the {@link QueryResult} to get the elements from
+	 * @return a List containing all elements obtained from the specified query result.
+	 */
+	public static <T> List<T> asList(QueryResult<T> queryResult) throws QueryEvaluationException {
+		// stream.collect is slightly slower than addAll for lists
+		List<T> list = new ArrayList<>();
+
+		// addAll closes the iteration
+		return addAll(queryResult, list);
+	}
+
+	/**
+	 * Get a Set containing all elements obtained from the specified {@link QueryResult}.
+	 *
+	 * @param queryResult the {@link QueryResult} to get the elements from
+	 * @return a Set containing all elements obtained from the specified query result.
+	 */
+	public static <T> Set<T> asSet(QueryResult<T> queryResult) throws QueryEvaluationException {
+		try (Stream<T> stream = queryResult.stream()) {
+			return stream.collect(Collectors.toSet());
+		}
+	}
+
+	/**
 	 * Returns a list of values of a particular variable out of the QueryResult.
 	 *
 	 * @param result
