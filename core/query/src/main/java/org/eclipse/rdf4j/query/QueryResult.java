@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.query;
 
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
@@ -25,4 +26,21 @@ public interface QueryResult<T> extends CloseableIteration<T, QueryEvaluationExc
 		return new CloseableIterationIterator<>(this);
 	}
 
+	/**
+	 * Returns {@code true} if the query result has more elements. (In other words, returns {@code true} if
+	 * {@link #next} would return an element rather than throwing a {@link NoSuchElementException}.)
+	 *
+	 * @return {@code true} if the iteration has more elements.
+	 * @throws QueryEvaluationException if an error occurs while executing the query.
+	 */
+	boolean hasNext() throws QueryEvaluationException;
+
+	/**
+	 * Returns the next element in the query result.
+	 *
+	 * @return the next element in the query result.
+	 * @throws NoSuchElementException   if the iteration has no more elements or if it has been closed.
+	 * @throws QueryEvaluationException if an error occurs while executing the query.
+	 */
+	T next() throws QueryEvaluationException;
 }
