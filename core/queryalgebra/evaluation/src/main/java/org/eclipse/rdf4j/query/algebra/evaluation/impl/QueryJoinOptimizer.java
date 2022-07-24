@@ -17,7 +17,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -117,7 +116,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				List<TupleExpr> priorityArgs = new ArrayList<>(joinArgs.size());
 
 				// get all extensions (BIND clause)
-				List<Extension> orderedExtensions = getExtensions(joinArgs);
+				List<TupleExpr> orderedExtensions = getExtensions(joinArgs);
 				joinArgs.removeAll(orderedExtensions);
 				priorityArgs.addAll(orderedExtensions);
 
@@ -237,11 +236,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return varFreqMap;
 		}
 
-		protected List<Extension> getExtensions(List<TupleExpr> expressions) {
-			List<Extension> extensions = new ArrayList<>();
+		protected List<TupleExpr> getExtensions(List<TupleExpr> expressions) {
+			List<TupleExpr> extensions = new ArrayList<>();
 			for (TupleExpr expr : expressions) {
-				if (expr instanceof Extension) {
-					extensions.add((Extension) expr);
+				if (TupleExprs.containsExtension(expr)) {
+					extensions.add(expr);
 				}
 			}
 			return extensions;

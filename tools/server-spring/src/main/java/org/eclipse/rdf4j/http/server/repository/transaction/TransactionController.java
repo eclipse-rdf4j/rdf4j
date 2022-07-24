@@ -385,8 +385,13 @@ public class TransactionController extends AbstractController implements Disposa
 				throw new ClientHTTPException(SC_BAD_REQUEST, "Unsupported query type: " + query.getClass().getName());
 			}
 		} catch (QueryInterruptedException | InterruptedException | ExecutionException e) {
-			logger.info("Query interrupted", e);
-			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "Query execution interrupted");
+			if (e.getCause() != null && e.getCause() instanceof MalformedQueryException) {
+				ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getCause().getMessage());
+				throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());
+			} else {
+				logger.info("Query interrupted", e);
+				throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, "Query execution interrupted");
+			}
 		} catch (QueryEvaluationException e) {
 			logger.info("Query evaluation error", e);
 			if (e.getCause() != null && e.getCause() instanceof HTTPException) {

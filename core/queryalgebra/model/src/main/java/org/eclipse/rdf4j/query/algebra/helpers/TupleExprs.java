@@ -17,12 +17,14 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
@@ -54,6 +56,43 @@ public class TupleExprs {
 			} else if (n instanceof Join) {
 				// projections already inside a Join need not be
 				// taken into account
+				return false;
+			} else {
+				List<TupleExpr> children = getChildren(n);
+				if (!children.isEmpty()) {
+					if (queue == null) {
+						queue = new ArrayDeque<>();
+					}
+					queue.addAll(children);
+				}
+			}
+
+			n = queue != null ? queue.poll() : null;
+
+		} while (n != null);
+
+		return false;
+	}
+
+	/**
+	 * Verifies if the supplied {@link TupleExpr} contains a {@link Extension}. If the supplied TupleExpr is a
+	 * {@link Join} or contains a {@link Join}, a {@link Service} clause or a subquery element, extensions inside that
+	 * element's argument will not be taken into account.
+	 *
+	 * @param t a tuple expression.
+	 * @return <code>true</code> if the TupleExpr contains an Extension (outside of a Join, Service clause, or
+	 *         subquery), <code>false</code> otherwise.
+	 */
+	public static boolean containsExtension(TupleExpr t) {
+		TupleExpr n = t;
+		Deque<TupleExpr> queue = null;
+
+		do {
+			if (n instanceof Extension) {
+				return true;
+			} else if (n instanceof Join
+					|| (n instanceof Projection && ((Projection) n).isSubquery())
+					|| (n instanceof Service)) {
 				return false;
 			} else {
 				List<TupleExpr> children = getChildren(n);
