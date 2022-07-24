@@ -8,15 +8,8 @@
 
 package org.eclipse.rdf4j.model.vocabulary;
 
-import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.lang.reflect.Field;
-
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractNamespace;
 import org.eclipse.rdf4j.model.base.InternedIRI;
 

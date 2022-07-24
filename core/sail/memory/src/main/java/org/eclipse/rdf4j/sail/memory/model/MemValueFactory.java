@@ -7,13 +7,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.memory.model;
 
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -27,13 +25,12 @@ import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
-import org.eclipse.rdf4j.model.base.CoreDatatypeHelper;
+import org.eclipse.rdf4j.model.base.InternedIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
-import org.eclipse.rdf4j.model.vocabulary.Vocabularies;
 
 /**
  * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
@@ -386,7 +383,7 @@ public class MemValueFactory extends AbstractValueFactory {
 	}
 
 	private boolean isVocabularyIRI(IRI iri) {
-		return iri instanceof Vocabularies.VocabularyIRI || iri instanceof CoreDatatypeHelper.DatatypeIRI;
+		return iri instanceof InternedIRI;
 	}
 
 	/**
