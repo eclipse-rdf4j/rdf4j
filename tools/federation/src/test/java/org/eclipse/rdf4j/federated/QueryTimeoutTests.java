@@ -40,7 +40,7 @@ public class QueryTimeoutTests extends SPARQLBaseTest {
 		repoSettings(3).setLatencySimulator(latencySimulator(4000));
 
 		Assertions.assertThrows(QueryInterruptedException.class, () -> {
-			execute("/tests/medium/query05.rq", "/tests/medium/query05.srx", false);
+			execute("/tests/medium/query05.rq", "/tests/medium/query05.srx", false, true);
 		});
 
 	}

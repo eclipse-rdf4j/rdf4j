@@ -68,4 +68,8 @@ public class GraphToBindingSetConversionIteration
 		return result;
 	}
 
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		graph.close();
+	}
 }

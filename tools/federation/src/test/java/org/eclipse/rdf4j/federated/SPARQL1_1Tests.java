@@ -18,7 +18,7 @@ public class SPARQL1_1Tests extends SPARQLBaseTest {
 
 		/* test select query with sum */
 		prepareTest(Arrays.asList("/tests/sparql1_1/data01endpoint1.ttl", "/tests/sparql1_1/data01endpoint2.ttl"));
-		execute("/tests/sparql1_1/query01.rq", "/tests/sparql1_1/query01.srx", false);
+		execute("/tests/sparql1_1/query01.rq", "/tests/sparql1_1/query01.srx", false, true);
 	}
 
 	@Test
@@ -26,6 +26,6 @@ public class SPARQL1_1Tests extends SPARQLBaseTest {
 
 		/* test select query with concat */
 		prepareTest(Arrays.asList("/tests/sparql1_1/data01endpoint1.ttl", "/tests/sparql1_1/data01endpoint2.ttl"));
-		execute("/tests/sparql1_1/query02.rq", "/tests/sparql1_1/query02.srx", false);
+		execute("/tests/sparql1_1/query02.rq", "/tests/sparql1_1/query02.srx", false, true);
 	}
 }

@@ -79,9 +79,10 @@ public abstract class FedXBaseTest {
 	 * @param queryFile
 	 * @param expectedResultFile
 	 * @param checkOrder
+	 * @param doubleCheckClose   double check that closing works as intended even if no results are retrieved
 	 * @throws Exception
 	 */
-	protected void execute(String queryFile, String expectedResultFile, boolean checkOrder)
+	protected void execute(String queryFile, String expectedResultFile, boolean checkOrder, boolean doubleCheckClose)
 			throws Exception {
 
 		String queryString = readQueryString(queryFile);
@@ -91,19 +92,22 @@ public abstract class FedXBaseTest {
 		if (query instanceof TupleQuery) {
 			// Some query results will automatically close themselves when they are exhausted. To properly test that
 			// query results are closed correctly we need to evaluate the query without retrieving any elements.
-			((TupleQuery) query).evaluate().close();
+			if (doubleCheckClose) {
+				((TupleQuery) query).evaluate().close();
+			}
 
 			try (TupleQueryResult queryResult = ((TupleQuery) query).evaluate()) {
-
-				TupleQueryResult expectedResult = readExpectedTupleQueryResult(expectedResultFile);
-
-				compareTupleQueryResults(queryResult, expectedResult, checkOrder);
+				try (TupleQueryResult expectedResult = readExpectedTupleQueryResult(expectedResultFile)) {
+					compareTupleQueryResults(queryResult, expectedResult, checkOrder);
+				}
 			}
 
 		} else if (query instanceof GraphQuery) {
 			// Some query results will automatically close themselves when they are exhausted. To properly test that
 			// query results are closed correctly we need to evaluate the query without retrieving any elements.
-			((GraphQuery) query).evaluate().close();
+			if (doubleCheckClose) {
+				((GraphQuery) query).evaluate().close();
+			}
 
 			try (GraphQueryResult gqr = ((GraphQuery) query).evaluate()) {
 				Set<Statement> queryResult = Iterations.asSet(gqr);
@@ -276,6 +280,7 @@ public abstract class FedXBaseTest {
 			boolean checkOrder) {
 		// Create MutableTupleQueryResult to be able to re-iterate over the
 		// results
+
 		MutableTupleQueryResult queryResultTable = new MutableTupleQueryResult(queryResult);
 		MutableTupleQueryResult expectedResultTable = new MutableTupleQueryResult(expectedResult);
 

@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -94,7 +93,7 @@ public class ConsumingIteration implements CloseableIteration<BindingSet, QueryE
 
 	@Override
 	public void close() throws QueryEvaluationException {
-		Iterations.closeCloseable(innerIter);
+		innerIter.close();
 	}
 
 }

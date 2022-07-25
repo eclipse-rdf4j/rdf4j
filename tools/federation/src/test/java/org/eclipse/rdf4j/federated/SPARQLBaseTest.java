@@ -41,21 +41,6 @@ public abstract class SPARQLBaseTest extends SPARQLServerBaseTest {
 
 	}
 
-	/**
-	 * Execute a testcase, both queryFile and expectedResultFile must be files
-	 *
-	 * @param queryFile
-	 * @param expectedResultFile
-	 * @param checkOrder
-	 * @throws Exception
-	 */
-	protected void execute(String queryFile, String expectedResultFile, boolean checkOrder) throws Exception {
-
-		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
-			super.execute(queryFile, expectedResultFile, checkOrder);
-		}
-	}
-
 	protected Set<Statement> getStatements(Resource subj, IRI pred, Value obj) throws Exception {
 
 		Set<Statement> res = new HashSet<>();
