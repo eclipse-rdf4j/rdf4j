@@ -81,7 +81,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 		// we need to make sure that subject or object are added to the binding set
 		// Note: FedX uses prepared SELECT queries to evaluate a statement pattern and
 		// thus does not add bound values to the result bindingset
-		return new ConvertingIteration<BindingSet, BindingSet, QueryEvaluationException>(res) {
+		return new ConvertingIteration<>(res) {
 
 			@Override
 			protected BindingSet convert(BindingSet sourceObject) throws QueryEvaluationException {
@@ -95,5 +95,14 @@ public class FederatedDescribeIteration extends DescribeIteration {
 				return bs;
 			}
 		};
+	}
+
+	@Override
+	protected void handleClose() throws QueryEvaluationException {
+		try {
+			super.handleClose();
+		} finally {
+			queryInfo.close();
+		}
 	}
 }

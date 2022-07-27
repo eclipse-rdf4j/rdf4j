@@ -39,49 +39,49 @@ public class BasicTests extends SPARQLBaseTest {
 	@Test
 	public void test1() throws Exception {
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query01.rq", "/tests/basic/query01.srx", false);
+		execute("/tests/basic/query01.rq", "/tests/basic/query01.srx", false, true);
 	}
 
 	@Test
 	public void test2() throws Exception {
 		/* test a basic Construct query retrieving all triples */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query02.rq", "/tests/basic/query02.ttl", false);
+		execute("/tests/basic/query02.rq", "/tests/basic/query02.ttl", false, true);
 	}
 
 	@Test
 	public void testBooleanTrueSingleSource() throws Exception {
 		/* test a basic boolean query (result true) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query03.rq", "/tests/basic/query03.srx", false);
+		execute("/tests/basic/query03.rq", "/tests/basic/query03.srx", false, true);
 	}
 
 	@Test
 	public void testBooleanTrueMultipleSource() throws Exception {
 		/* test a basic boolean query (result true) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query03a.rq", "/tests/basic/query03.srx", false);
+		execute("/tests/basic/query03a.rq", "/tests/basic/query03.srx", false, true);
 	}
 
 	@Test
 	public void testBooleanFalse() throws Exception {
 		/* test a basic boolean query (result false) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query04.rq", "/tests/basic/query04.srx", false);
+		execute("/tests/basic/query04.rq", "/tests/basic/query04.srx", false, true);
 	}
 
 	@Test
 	public void testSingleSourceSelect() throws Exception {
 		/* test a single source select query */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query_singleSource01.rq", "/tests/basic/query_singleSource01.srx", false);
+		execute("/tests/basic/query_singleSource01.rq", "/tests/basic/query_singleSource01.srx", false, true);
 	}
 
 	@Test
 	public void testSingleSourceConstruct() throws Exception {
 		/* test a single source construct */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query_singleSource02.rq", "/tests/basic/query_singleSource02.ttl", false);
+		execute("/tests/basic/query_singleSource02.rq", "/tests/basic/query_singleSource02.ttl", false, true);
 	}
 
 	@Test
@@ -95,28 +95,28 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testValuesClause() throws Exception {
 		/* test query with values clause */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query_values.rq", "/tests/basic/query_values.srx", false);
+		execute("/tests/basic/query_values.rq", "/tests/basic/query_values.srx", false, true);
 	}
 
 	@Test
 	public void testQuotes() throws Exception {
 		/* test query with new line in literal */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint3.ttl"));
-		execute("/tests/basic/query_quotes.rq", "/tests/basic/query_quotes.srx", false);
+		execute("/tests/basic/query_quotes.rq", "/tests/basic/query_quotes.srx", false, true);
 	}
 
 	@Test
 	public void testQuotesDatatype() throws Exception {
 		/* test query with new line in triple quotes and datatype */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint3.ttl"));
-		execute("/tests/basic/query_quotes_datatype.rq", "/tests/basic/query_quotes_datatype.srx", false);
+		execute("/tests/basic/query_quotes_datatype.rq", "/tests/basic/query_quotes_datatype.srx", false, true);
 	}
 
 	@Test
 	public void testLanguageTag() throws Exception {
 		/* test query with a language tag */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint4.ttl"));
-		execute("/tests/basic/query_lang.rq", "/tests/basic/query_lang.srx", false);
+		execute("/tests/basic/query_lang.rq", "/tests/basic/query_lang.srx", false, true);
 	}
 
 	@Test
@@ -124,7 +124,7 @@ public class BasicTests extends SPARQLBaseTest {
 
 		/* test query with bind clause */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query_bind.rq", "/tests/basic/query_bind.srx", false);
+		execute("/tests/basic/query_bind.rq", "/tests/basic/query_bind.srx", false, true);
 	}
 
 	@Test
@@ -137,39 +137,44 @@ public class BasicTests extends SPARQLBaseTest {
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 			TupleQuery tq = conn
 					.prepareTupleQuery("SELECT ?person WHERE { ?person a <http://xmlns.com/foaf/0.1/Person> }");
-			TupleQueryResult result = tq.evaluate();
 
-			TupleQueryResult expected = tupleQueryResultBuilder(List.of("person"))
-					.add(List.of(vf.createIRI(ns1, "Person_1")))
-					.add(List.of(vf.createIRI(ns1, "Person_2")))
-					.add(List.of(vf.createIRI(ns1, "Person_3")))
-					.add(List.of(vf.createIRI(ns1, "Person_4")))
-					.add(List.of(vf.createIRI(ns1, "Person_5")))
-					.add(List.of(vf.createIRI(ns2, "Person_6")))
-					.add(List.of(vf.createIRI(ns2, "Person_7")))
-					.add(List.of(vf.createIRI(ns2, "Person_8")))
-					.add(List.of(vf.createIRI(ns2, "Person_9")))
-					.add(List.of(vf.createIRI(ns2, "Person_10")))
-					.build();
+			try (TupleQueryResult result = tq.evaluate()) {
 
-			compareTupleQueryResults(result, expected, false);
+				try (TupleQueryResult expected = tupleQueryResultBuilder(List.of("person"))
+						.add(List.of(vf.createIRI(ns1, "Person_1")))
+						.add(List.of(vf.createIRI(ns1, "Person_2")))
+						.add(List.of(vf.createIRI(ns1, "Person_3")))
+						.add(List.of(vf.createIRI(ns1, "Person_4")))
+						.add(List.of(vf.createIRI(ns1, "Person_5")))
+						.add(List.of(vf.createIRI(ns2, "Person_6")))
+						.add(List.of(vf.createIRI(ns2, "Person_7")))
+						.add(List.of(vf.createIRI(ns2, "Person_8")))
+						.add(List.of(vf.createIRI(ns2, "Person_9")))
+						.add(List.of(vf.createIRI(ns2, "Person_10")))
+						.build()) {
+
+					compareTupleQueryResults(result, expected, false);
+				}
+			}
 
 			// evaluate against ep 1 and ep 3 only
 			FedXDataset fedxDataset = new FedXDataset(tq.getDataset());
 			fedxDataset.addEndpoint(endpoints.get(0).getId());
 			fedxDataset.addEndpoint(endpoints.get(2).getId());
 			tq.setDataset(fedxDataset);
-			result = tq.evaluate();
+			try (TupleQueryResult result = tq.evaluate()) {
 
-			expected = tupleQueryResultBuilder(List.of("person"))
-					.add(List.of(vf.createIRI(ns1, "Person_1")))
-					.add(List.of(vf.createIRI(ns1, "Person_2")))
-					.add(List.of(vf.createIRI(ns1, "Person_3")))
-					.add(List.of(vf.createIRI(ns1, "Person_4")))
-					.add(List.of(vf.createIRI(ns1, "Person_5")))
-					.build();
+				try (TupleQueryResult expected = tupleQueryResultBuilder(List.of("person"))
+						.add(List.of(vf.createIRI(ns1, "Person_1")))
+						.add(List.of(vf.createIRI(ns1, "Person_2")))
+						.add(List.of(vf.createIRI(ns1, "Person_3")))
+						.add(List.of(vf.createIRI(ns1, "Person_4")))
+						.add(List.of(vf.createIRI(ns1, "Person_5")))
+						.build()) {
 
-			compareTupleQueryResults(result, expected, false);
+					compareTupleQueryResults(result, expected, false);
+				}
+			}
 		}
 
 	}
@@ -458,7 +463,7 @@ public class BasicTests extends SPARQLBaseTest {
 
 		/* test DESCRIBE query for a single resource (data in two members) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query_describe1.rq", "/tests/basic/query_describe1.ttl", false);
+		execute("/tests/basic/query_describe1.rq", "/tests/basic/query_describe1.ttl", false, true);
 	}
 
 	@Test
@@ -466,6 +471,6 @@ public class BasicTests extends SPARQLBaseTest {
 
 		/* test DESCRIBE query for multiple resources (data in two members) */
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query_describe2.rq", "/tests/basic/query_describe2.ttl", false);
+		execute("/tests/basic/query_describe2.rq", "/tests/basic/query_describe2.ttl", false, true);
 	}
 }

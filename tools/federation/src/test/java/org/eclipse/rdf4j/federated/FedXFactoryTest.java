@@ -46,7 +46,7 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 		repo.init();
 		federationContext = repo.getFederationContext();
 		try (RepositoryConnection conn = repo.getConnection()) {
-			execute(conn, "/tests/medium/query01.rq", "/tests/medium/query01.srx", false);
+			execute("/tests/medium/query01.rq", "/tests/medium/query01.srx", false, true);
 		}
 
 		repo.shutDown();
@@ -75,7 +75,7 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 
 		federationContext = repo.getFederationContext();
 		try (RepositoryConnection conn = repo.getConnection()) {
-			execute(conn, "/tests/medium/query01.rq", "/tests/medium/query01.srx", false);
+			execute("/tests/medium/query01.rq", "/tests/medium/query01.srx", false, true);
 		}
 
 		repo.shutDown();
@@ -102,7 +102,7 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 		repo.init();
 		federationContext = repo.getFederationContext();
 		try (RepositoryConnection conn = repo.getConnection()) {
-			execute(conn, "/tests/medium/query01.rq", "/tests/medium/query01.srx", false);
+			execute("/tests/medium/query01.rq", "/tests/medium/query01.srx", false, true);
 		}
 
 		repo.shutDown();

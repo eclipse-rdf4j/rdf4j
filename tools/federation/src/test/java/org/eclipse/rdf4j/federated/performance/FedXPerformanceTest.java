@@ -73,7 +73,7 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 		// warm-up
 		for (String query : queries) {
 			long start = System.currentTimeMillis();
-			execute(basePackage + query + ".rq", basePackage + query + ".srx", false);
+			execute(basePackage + query + ".rq", basePackage + query + ".srx", false, true);
 			long duration = System.currentTimeMillis() - start;
 			System.out.println("Warmup " + query + " (Duration: " + duration + ")");
 		}
@@ -89,7 +89,7 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 				SingleQueryRun queryRun = new SingleQueryRun(query);
 				run.addRun(queryRun);
 				long start = System.currentTimeMillis();
-				execute(basePackage + query + ".rq", basePackage + query + ".srx", false);
+				execute(basePackage + query + ".rq", basePackage + query + ".srx", false, true);
 				long duration = System.currentTimeMillis() - start;
 				queryRun.duration = duration;
 			}
@@ -125,7 +125,7 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 				basePackage + "data4.ttl"));
 
 		String query = "query12";
-		execute(basePackage + query + ".rq", basePackage + query + ".srx", false);
+		execute(basePackage + query + ".rq", basePackage + query + ".srx", false, true);
 	}
 
 	static class Run {

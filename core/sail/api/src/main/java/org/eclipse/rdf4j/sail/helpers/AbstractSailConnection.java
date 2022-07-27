@@ -955,30 +955,26 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 		if (debugEnabled) {
 
-			List<SailException> toThrowExceptions = new ArrayList<>();
-
 			var activeIterationsCopy = new IdentityHashMap<>(activeIterationsDebug);
 			activeIterationsDebug.clear();
 
-			for (var entry : activeIterationsCopy.entrySet()) {
-				var ci = entry.getKey();
-				Throwable creatorTrace = entry.getValue();
-
-				try {
-					if (creatorTrace != null) {
-						logger.warn("Forced closing of unclosed iteration that was created in:", creatorTrace);
+			if (!activeIterationsCopy.isEmpty()) {
+				for (var entry : activeIterationsCopy.entrySet()) {
+					try {
+						logger.warn("Unclosed iteration", entry.getValue());
+						entry.getKey().close();
+					} catch (Exception ignored) {
+						logger.warn("Exception occurred while closing unclosed iterations.", ignored);
 					}
-					ci.close();
-				} catch (SailException e) {
-					toThrowExceptions.add(e);
-				} catch (Exception e) {
-					toThrowExceptions.add(new SailException(e));
 				}
+
+				var entry = activeIterationsCopy.entrySet().stream().findAny().orElseThrow();
+
+				throw new SailException(
+						"Connection closed before all iterations were closed: " + entry.getKey().toString(),
+						entry.getValue());
 			}
 
-			if (!toThrowExceptions.isEmpty()) {
-				throw toThrowExceptions.get(0);
-			}
 		}
 	}
 

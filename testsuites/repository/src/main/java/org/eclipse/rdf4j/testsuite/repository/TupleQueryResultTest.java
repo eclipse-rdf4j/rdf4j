@@ -8,6 +8,7 @@
 package org.eclipse.rdf4j.testsuite.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -144,7 +145,7 @@ public abstract class TupleQueryResultTest {
 				count++;
 			}
 
-			Assertions.assertTrue(count > 1, "query should have multiple results.");
+			assertTrue(count > 1, "query should have multiple results.");
 		}
 	}
 
@@ -161,7 +162,7 @@ public abstract class TupleQueryResultTest {
 		try (TupleQueryResult result = con.prepareTupleQuery("SELECT * WHERE {?s ?p ?o}").evaluate()) {
 			long size = con.size();
 			for (int i = 0; i < size; i++) {
-				Assertions.assertTrue(result.hasNext());
+				assertTrue(result.hasNext());
 				BindingSet next = result.next();
 				Assertions.assertNotNull(next);
 			}
@@ -236,6 +237,10 @@ public abstract class TupleQueryResultTest {
 		for (int i = 0; i < 100; i++) {
 			try (RepositoryConnection repCon = rep.getConnection()) {
 				evaluateQueryWithoutClosing(repCon);
+			} catch (SailException e) {
+				assertTrue(e.toString()
+						.startsWith(
+								"org.eclipse.rdf4j.sail.SailException: Connection closed before all iterations were closed: org.eclipse.rdf4j.sail.helpers.SailBaseIteration@"));
 			}
 		}
 	}

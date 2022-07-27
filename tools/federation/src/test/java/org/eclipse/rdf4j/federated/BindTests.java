@@ -24,7 +24,7 @@ public class BindTests extends SPARQLBaseTest {
 
 		List<BindingSet> res = runQuery(
 				"SELECT * WHERE { BIND(20 AS ?age) . ?person foaf:age ?age }");
-		assertContainsAll(res, "person", Sets.newHashSet(fullIri("http://namespace1.org/Person_1")));
+		assertContainsAll(res, "person", Sets.newHashSet(iri("http://namespace1.org/", "Person_1")));
 	}
 
 	@Test

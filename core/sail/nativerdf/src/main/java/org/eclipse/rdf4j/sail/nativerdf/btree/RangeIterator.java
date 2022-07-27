@@ -15,9 +15,6 @@ import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 
 class RangeIterator implements RecordIterator, NodeListener {
 
-	/**
-	 *
-	 */
 	private final BTree tree;
 
 	private final byte[] searchKey;
@@ -45,6 +42,8 @@ class RangeIterator implements RecordIterator, NodeListener {
 	private final LinkedList<Integer> parentIndexStack = new LinkedList<>();
 
 	private volatile int currentIdx;
+
+	private volatile boolean closed = false;
 
 	public RangeIterator(BTree tree, byte[] searchKey, byte[] searchMask, byte[] minValue, byte[] maxValue) {
 		this.tree = tree;
@@ -164,16 +163,23 @@ class RangeIterator implements RecordIterator, NodeListener {
 	}
 
 	@Override
-	public synchronized void close() throws IOException {
-		tree.btreeLock.readLock().lock();
-		try {
-			while (popStacks()) {
-			}
+	public void close() throws IOException {
+		if (!closed) {
+			synchronized (this) {
+				if (!closed) {
+					closed = true;
+					tree.btreeLock.readLock().lock();
+					try {
+						while (popStacks()) {
+						}
 
-			assert parentNodeStack.isEmpty();
-			assert parentIndexStack.isEmpty();
-		} finally {
-			tree.btreeLock.readLock().unlock();
+						assert parentNodeStack.isEmpty();
+						assert parentIndexStack.isEmpty();
+					} finally {
+						tree.btreeLock.readLock().unlock();
+					}
+				}
+			}
 		}
 	}
 
@@ -185,7 +191,7 @@ class RangeIterator implements RecordIterator, NodeListener {
 		currentIdx = 0;
 	}
 
-	private boolean popStacks() throws IOException {
+	private synchronized boolean popStacks() throws IOException {
 		Node nextCurrentNode = currentNode;
 		if (nextCurrentNode == null) {
 			// There's nothing to pop

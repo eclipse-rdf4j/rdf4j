@@ -26,7 +26,7 @@ public class TaskWrapperIntegrationTest extends SPARQLBaseTest {
 	@Test
 	public void testTaskWrapper() throws Exception {
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
-		execute("/tests/basic/query01.rq", "/tests/basic/query01.srx", false);
+		execute("/tests/basic/query01.rq", "/tests/basic/query01.srx", false, true);
 		Assertions.assertTrue(taskWrapper.taskCount.get() > 0);
 	}
 
@@ -35,7 +35,7 @@ public class TaskWrapperIntegrationTest extends SPARQLBaseTest {
 		/* test union query (2 relevant endpoint) */
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
-		execute("/tests/medium/query04.rq", "/tests/medium/query04.srx", false);
+		execute("/tests/medium/query04.rq", "/tests/medium/query04.srx", false, true);
 		Assertions.assertTrue(taskWrapper.taskCount.get() > 0);
 	}
 

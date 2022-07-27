@@ -72,24 +72,30 @@ public class SailTripleSource extends TripleSourceBase {
 			RepositoryResult<Statement> repoResult = conn.getStatements((Resource) subjValue, (IRI) predValue, objValue,
 					queryInfo.getIncludeInferred(), FedXUtil.toContexts(stmt, queryInfo.getDataset()));
 
-			// XXX implementation remark and TODO taken from Sesame
-			// The same variable might have been used multiple times in this
-			// StatementPattern, verify value equality in those cases.
+			try {
+				// XXX implementation remark and TODO taken from Sesame
+				// The same variable might have been used multiple times in this
+				// StatementPattern, verify value equality in those cases.
 
-			// an iterator that converts the statements to var bindings
-			resultHolder.set(new StatementConversionIteration(repoResult, bindings, stmt));
+				// an iterator that converts the statements to var bindings
+				resultHolder.set(new StatementConversionIteration(repoResult, bindings, stmt));
 
-			// if filter is set, apply it
-			if (filterExpr != null) {
-				FilteringIteration filteredRes = new FilteringIteration(filterExpr, resultHolder.get(),
-						queryInfo.getStrategy());
-				if (!filteredRes.hasNext()) {
-					filteredRes.close();
-					resultHolder.set(new EmptyIteration<>());
-					return;
+				// if filter is set, apply it
+				if (filterExpr != null) {
+					FilteringIteration filteredRes = new FilteringIteration(filterExpr, resultHolder.get(),
+							queryInfo.getStrategy());
+					if (!filteredRes.hasNext()) {
+						filteredRes.close();
+						resultHolder.set(new EmptyIteration<>());
+						return;
+					}
+					resultHolder.set(filteredRes);
 				}
-				resultHolder.set(filteredRes);
+			} catch (Throwable t) {
+				repoResult.close();
+				throw t;
 			}
+
 		});
 	}
 

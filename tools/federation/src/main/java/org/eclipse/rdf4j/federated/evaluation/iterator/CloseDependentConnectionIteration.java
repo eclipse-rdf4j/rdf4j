@@ -18,20 +18,16 @@ import org.slf4j.LoggerFactory;
  * A wrapping iteration that attempts to close the dependent {@link RepositoryConnection} after consumption.
  *
  * @author Andreas Schwarte
- *
  */
-public class CloseDependentConnectionIteration<T>
-		extends AbstractCloseableIteration<T, QueryEvaluationException> {
+public class CloseDependentConnectionIteration<T> extends AbstractCloseableIteration<T, QueryEvaluationException> {
 
-	private static final Logger log = LoggerFactory.getLogger(CloseDependentConnectionIteration.class);
+	private static final Logger logger = LoggerFactory.getLogger(CloseDependentConnectionIteration.class);
 
 	protected final CloseableIteration<T, QueryEvaluationException> inner;
 	protected final RepositoryConnection dependentConn;
 
-	public CloseDependentConnectionIteration(
-			CloseableIteration<T, QueryEvaluationException> inner,
+	public CloseDependentConnectionIteration(CloseableIteration<T, QueryEvaluationException> inner,
 			RepositoryConnection dependentConn) {
-		super();
 		this.inner = inner;
 		this.dependentConn = dependentConn;
 	}
@@ -41,15 +37,11 @@ public class CloseDependentConnectionIteration<T>
 		try {
 			boolean res = inner.hasNext();
 			if (!res) {
-				try {
-					dependentConn.close();
-				} catch (Throwable ignore) {
-					log.trace("Failed to close dependent connection:", ignore);
-				}
+				close();
 			}
 			return res;
 		} catch (Throwable t) {
-			dependentConn.close();
+			close();
 			throw t;
 		}
 	}
@@ -59,14 +51,19 @@ public class CloseDependentConnectionIteration<T>
 		try {
 			return inner.next();
 		} catch (Throwable t) {
-			dependentConn.close();
+			close();
 			throw t;
 		}
 	}
 
 	@Override
 	public void remove() throws QueryEvaluationException {
-		inner.remove();
+		try {
+			inner.remove();
+		} catch (Throwable t) {
+			close();
+			throw t;
+		}
 	}
 
 	@Override
@@ -74,11 +71,7 @@ public class CloseDependentConnectionIteration<T>
 		try {
 			inner.close();
 		} finally {
-			try {
-				super.handleClose();
-			} finally {
-				dependentConn.close();
-			}
+			dependentConn.close();
 		}
 	}
 

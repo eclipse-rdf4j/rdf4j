@@ -31,11 +31,10 @@ import org.slf4j.LoggerFactory;
 /**
  * Structure to maintain query information during evaluation, is attached to algebra nodes. Each instance is uniquely
  * attached to the query.
- *
+ * <p>
  * The queryId can be used to abort tasks belonging to a particular evaluation.
  *
  * @author Andreas Schwarte
- *
  */
 public class QueryInfo {
 
@@ -64,7 +63,6 @@ public class QueryInfo {
 	protected Set<ParallelTask<?>> scheduledSubtasks = ConcurrentHashMap.newKeySet();
 
 	/**
-	 *
 	 * @param query
 	 * @param queryType
 	 * @param maxExecutionTime  the maximum explicit query time in seconds, if 0 use
@@ -129,7 +127,6 @@ public class QueryInfo {
 	}
 
 	/**
-	 *
 	 * @return the {@link FederationEvalStrategy} active in the current query context
 	 */
 	public FederationEvalStrategy getStrategy() {
@@ -137,7 +134,6 @@ public class QueryInfo {
 	}
 
 	/**
-	 *
 	 * @return the {@link FederationContext} in which this query is executed
 	 */
 	public FederationContext getFederationContext() {
@@ -145,7 +141,6 @@ public class QueryInfo {
 	}
 
 	/**
-	 *
 	 * @return the maximum remaining time in ms until the query runs into a timeout. If negative, timeout has been
 	 *         reached
 	 */
@@ -201,7 +196,6 @@ public class QueryInfo {
 	/**
 	 * Mark the query as aborted and abort all scheduled (future) tasks known at this point in time. Also do not accept
 	 * any new scheduled tasks
-	 *
 	 */
 	public synchronized void abort() {
 		if (done) {
@@ -215,7 +209,6 @@ public class QueryInfo {
 	/**
 	 * Close this query. If exists, all scheduled (future) tasks known at this point in time are aborted. Also do not
 	 * accept any new scheduled tasks
-	 *
 	 */
 	public synchronized void close() {
 
@@ -232,11 +225,27 @@ public class QueryInfo {
 	 */
 	protected void abortScheduledTasks() {
 
+		Throwable throwable = null;
+
 		for (ParallelTask<?> task : scheduledSubtasks) {
-			task.cancel();
+			try {
+				task.cancel();
+			} catch (Throwable t) {
+				if (throwable != null) {
+					t.addSuppressed(throwable);
+				}
+				throwable = t;
+			}
 		}
 
 		scheduledSubtasks.clear();
+
+		if (throwable != null) {
+			if (throwable instanceof RuntimeException) {
+				throw ((RuntimeException) throwable);
+			}
+			throw ((Error) throwable);
+		}
 	}
 
 	@Override
@@ -260,13 +269,9 @@ public class QueryInfo {
 		}
 		QueryInfo other = (QueryInfo) obj;
 		if (queryID == null) {
-			if (other.queryID != null) {
-				return false;
-			}
-		} else if (!queryID.equals(other.queryID)) {
-			return false;
-		}
-		return true;
+			return other.queryID == null;
+		} else
+			return queryID.equals(other.queryID);
 	}
 
 }
