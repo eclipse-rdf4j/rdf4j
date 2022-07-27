@@ -36,14 +36,14 @@ public class OptionalTests extends SPARQLBaseTest {
 	public void test1() throws Exception {
 
 		prepareTest(Arrays.asList("/tests/data/optional1.ttl", "/tests/data/optional2.ttl"));
-		execute("/tests/basic/query_optional01.rq", "/tests/basic/query_optional01.srx", false);
+		execute("/tests/basic/query_optional01.rq", "/tests/basic/query_optional01.srx", false, true);
 	}
 
 	@Test
 	public void test2() throws Exception {
 
 		prepareTest(Arrays.asList("/tests/data/optional1.ttl", "/tests/data/optional2.ttl"));
-		execute("/tests/basic/query_optional02.rq", "/tests/basic/query_optional02.srx", false);
+		execute("/tests/basic/query_optional02.rq", "/tests/basic/query_optional02.srx", false, true);
 	}
 
 	@Test

@@ -76,8 +76,15 @@ public class QueryResultIteration extends AbstractCloseableIteration<BindingSet,
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
-		inner.close();
-		abortQuery();
+		try {
+			inner.close();
+		} finally {
+			try {
+				abortQuery();
+			} finally {
+				queryInfo.close();
+			}
+		}
 	}
 
 	/**

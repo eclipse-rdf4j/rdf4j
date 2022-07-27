@@ -27,7 +27,7 @@ public class PrefixTests extends SPARQLBaseTest {
 		qm.addPrefixDeclaration("foaf", "http://xmlns.com/foaf/0.1/");
 		qm.addPrefixDeclaration("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
 
-		execute("/tests/prefix/query.rq", "/tests/prefix/query.srx", false);
+		execute("/tests/prefix/query.rq", "/tests/prefix/query.srx", false, true);
 
 		qm.addPrefixDeclaration("foaf", null);
 		qm.addPrefixDeclaration("rdf", null);
@@ -41,7 +41,7 @@ public class PrefixTests extends SPARQLBaseTest {
 		try {
 			prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 					"/tests/data/data4.ttl"));
-			execute("/tests/prefix/query.rq", "/tests/prefix/query.srx", false);
+			execute("/tests/prefix/query.rq", "/tests/prefix/query.srx", false, true);
 		} catch (MalformedQueryException m) {
 			// this exception is expected
 			return;
@@ -58,7 +58,7 @@ public class PrefixTests extends SPARQLBaseTest {
 		QueryManager qm = federationContext().getQueryManager();
 		qm.addPrefixDeclaration("foaf", "http://xmlns.com/foaf/0.1/");
 
-		execute("/tests/prefix/query2.rq", "/tests/prefix/query2.srx", false);
+		execute("/tests/prefix/query2.rq", "/tests/prefix/query2.srx", false, true);
 
 		qm.addPrefixDeclaration("foaf", null);
 		qm.addPrefixDeclaration("rdf", null);

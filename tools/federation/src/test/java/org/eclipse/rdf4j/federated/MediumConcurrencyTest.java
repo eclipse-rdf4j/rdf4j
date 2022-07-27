@@ -18,10 +18,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.query.Query;
-import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -75,7 +71,7 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 			});
 			Assertions.assertEquals("OK", message);
 		} catch (Throwable t) {
-			futures.stream().forEach(future -> future.cancel(true));
+			futures.forEach(future -> future.cancel(true));
 			throw t;
 		}
 
@@ -110,7 +106,7 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	protected Future<String> submit(final String query, final int queryId) {
 		return executor.submit(() -> {
 			log.info("Executing query " + queryId + ": " + query);
-			execute("/tests/medium/" + query + ".rq", "/tests/medium/" + query + ".srx", false);
+			execute("/tests/medium/" + query + ".rq", "/tests/medium/" + query + ".srx", false, true);
 			// uncomment to simulate canceling case
 			// executeReadPartial("/tests/medium/" + query + ".rq");
 
@@ -118,31 +114,4 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 		});
 	}
 
-	/**
-	 * Execute a testcase, both queryFile and expectedResultFile must be files
-	 *
-	 * @param queryFile
-	 * @param expectedResultFile
-	 * @param checkOrder
-	 * @throws Exception
-	 */
-	protected void executeReadPartial(String queryFile)
-			throws Exception {
-
-		String queryString = readQueryString(queryFile);
-
-		Query query = queryManager().prepareQuery(queryString);
-
-		if (query instanceof TupleQuery) {
-			try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
-				try (TupleQueryResult queryResult = ((TupleQuery) query).evaluate()) {
-					// explicitly consume only 1 binding set before closing
-					queryResult.next();
-				}
-			}
-
-		} else {
-			throw new IllegalStateException();
-		}
-	}
 }

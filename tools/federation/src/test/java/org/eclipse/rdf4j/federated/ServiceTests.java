@@ -52,7 +52,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query01.rq", "/tests/service/query01.qp");
-		execute("/tests/service/query01.rq", "/tests/service/query01.srx", false);
+		execute("/tests/service/query01.rq", "/tests/service/query01.srx", false, true);
 	}
 
 	@Test
@@ -63,7 +63,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query01a.rq", "/tests/service/query01.qp");
-		execute("/tests/service/query01a.rq", "/tests/service/query01.srx", false);
+		execute("/tests/service/query01a.rq", "/tests/service/query01.srx", false, true);
 	}
 
 	@Test
@@ -76,7 +76,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query02.rq", "/tests/service/query02.qp");
-		execute("/tests/service/query02.rq", "/tests/service/query02.srx", false);
+		execute("/tests/service/query02.rq", "/tests/service/query02.srx", false, true);
 	}
 
 	@Test
@@ -92,7 +92,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query02a.rq", "/tests/service/query02a.qp");
-		execute("/tests/service/query02a.rq", "/tests/service/query02.srx", false);
+		execute("/tests/service/query02a.rq", "/tests/service/query02.srx", false, true);
 	}
 
 	@Test
@@ -108,7 +108,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
-		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false);
+		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false, true);
 	}
 
 	@Test
@@ -122,7 +122,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query04.rq", "/tests/service/query04.qp");
-		execute("/tests/service/query04.rq", "/tests/service/query04.srx", false);
+		execute("/tests/service/query04.rq", "/tests/service/query04.srx", false, true);
 	}
 
 	@Test
@@ -133,7 +133,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query04a.rq", "/tests/service/query04.qp");
-		execute("/tests/service/query04a.rq", "/tests/service/query04a.srx", false);
+		execute("/tests/service/query04a.rq", "/tests/service/query04a.srx", false, true);
 	}
 
 	@Test
@@ -144,7 +144,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		/* two services, one becomes exclusive group, the other is evaluated as service (filter) */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
-		execute("/tests/service/query05.rq", "/tests/service/query05.srx", false);
+		execute("/tests/service/query05.rq", "/tests/service/query05.srx", false, true);
 	}
 
 	@Test
@@ -156,7 +156,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		 */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
-		execute("/tests/service/query06.rq", "/tests/service/query06.srx", false);
+		execute("/tests/service/query06.rq", "/tests/service/query06.srx", false, true);
 	}
 
 	@Test
@@ -168,7 +168,7 @@ public class ServiceTests extends SPARQLBaseTest {
 		/* two services, both evaluated as SERVICE (FILTER), uses name of federation member in SERVICE */
 		prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl", "/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
-		execute("/tests/service/query07.rq", "/tests/service/query07.srx", false);
+		execute("/tests/service/query07.rq", "/tests/service/query07.srx", false, true);
 	}
 
 	@Test
@@ -183,7 +183,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 
 		evaluateQueryPlan("/tests/service/query08.rq", "/tests/service/query08.qp");
-		execute("/tests/service/query08.rq", "/tests/service/query08.srx", false);
+		execute("/tests/service/query08.rq", "/tests/service/query08.srx", false, true);
 	}
 
 	@Test
@@ -213,7 +213,7 @@ public class ServiceTests extends SPARQLBaseTest {
 				"/tests/data/data4.ttl"));
 		Endpoint endpoint1 = federationContext().getEndpointManager().getEndpointByName("http://endpoint1");
 		fedxRule.removeEndpoint(endpoint1);
-		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false);
+		execute("/tests/service/query03.rq", "/tests/service/query03.srx", false, false);
 
 		Assertions.assertEquals(1,
 				((TestSparqlFederatedService) serviceResolver

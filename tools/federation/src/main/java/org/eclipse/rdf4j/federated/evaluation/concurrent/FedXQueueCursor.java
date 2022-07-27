@@ -14,6 +14,7 @@ import java.util.concurrent.BlockingQueue;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.QueueCursor;
+import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,10 +22,8 @@ import org.slf4j.LoggerFactory;
  * Specialized variants of {@link QueueCursor} which avoids converting any exception if it is already of
  * type{@link QueryEvaluationException}.
  *
- *
- * @author Andreas Schwarte
- *
  * @param <T>
+ * @author Andreas Schwarte
  */
 public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryEvaluationException>> {
 
@@ -61,25 +60,36 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 	public void handleClose() throws QueryEvaluationException {
 
 		try {
+			Throwable throwable = null;
+
 			// consume all remaining elements from the queue and make sure to close them
 			// Note: unfortunately we cannot access "afterLast" of the super class
 			// => thus have to make a check whether the polled object is actually a
 			// closable iteration
-			Object take = queueRef.poll();
-			while (take != null) {
-				if (take instanceof CloseableIteration) {
-					@SuppressWarnings("unchecked")
-					CloseableIteration<T, QueryEvaluationException> closable = (CloseableIteration<T, QueryEvaluationException>) take;
-					try {
-						log.trace("Attempting to close non consumed inner iteration.");
-						closable.close();
-					} catch (Throwable t) {
-						log.trace("Failed to close inner iteration: ", t);
+			while (!queueRef.isEmpty()) {
+				try {
+					Object take = queueRef.poll();
+					if (take instanceof CloseableIteration) {
+						((CloseableIteration<?, ?>) take).close();
 					}
+				} catch (Throwable t) {
+					if (throwable != null) {
+						t.addSuppressed(throwable);
+					}
+					throwable = t;
 				}
-				take = queueRef.poll();
 			}
 			done(); // re-add after-last
+
+			if (throwable != null) {
+				if (throwable instanceof RuntimeException) {
+					throw ((RuntimeException) throwable);
+				}
+				if (throwable instanceof Error) {
+					throw ((Error) throwable);
+				}
+				throw new SailException(throwable);
+			}
 		} finally {
 			super.handleClose();
 		}

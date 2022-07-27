@@ -18,6 +18,6 @@ public class SubSelectTests extends SPARQLBaseTest {
 
 		/* test select query retrieving all persons (2 endpoints) */
 		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data4.ttl"));
-		execute("/tests/subselects/query01.rq", "/tests/subselects/query01.srx", false);
+		execute("/tests/subselects/query01.rq", "/tests/subselects/query01.srx", false, true);
 	}
 }
