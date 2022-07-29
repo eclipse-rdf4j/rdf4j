@@ -29,7 +29,7 @@ IRI nameProp = iri("http://example.org/name");
 Literal bobsName = literal("Bob");
 Literal bobsAge = literal(42);
 
-Statement st = statement(bob, name, bobsName);
+Statement st = statement(bob, nameProp, bobsName, null);
 ```
 
 ### Using a `ValueFactory`
