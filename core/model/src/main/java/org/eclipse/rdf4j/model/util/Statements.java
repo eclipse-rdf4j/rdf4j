@@ -152,7 +152,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple}
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple}
 	 *
 	 * @param triple an RDF-star triple to convert to a {@link Statement}.
 	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and no context.
@@ -164,7 +164,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple}
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple}
 	 *
 	 * @param triple an RDF-star triple to convert to a {@link Statement}.
 	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and no context.
@@ -175,7 +175,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
 	 *
 	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
 	 * @param context the context to assign to the {@link Statement}.
@@ -188,7 +188,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
 	 *
 	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
 	 * @param context the context to assign to the {@link Statement}.
@@ -202,7 +202,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
 	 *
 	 * @param vf      the {@link ValueFactory} to use for creating the {@link Statement} object.
 	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
@@ -217,7 +217,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
 	 *
 	 * @param vf      the {@link ValueFactory} to use for creating the {@link Statement} object.
 	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
