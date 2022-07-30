@@ -4,6 +4,8 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
@@ -901,7 +903,7 @@ public class TestSparqlStarParser {
 		      Var (name=_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9, anonymous)
 		      Var (name=_const_6a634a7_uri, value=urn:p, anonymous)
 		      Var (name=_const_31_lit_5fc8fb17_0, value="1"^^<http://www.w3.org/2001/XMLSchema#integer>, anonymous)
-	
+
 		   Extension
 		      ExtensionElem (_anon_24e6f014_3e16_49f9_ad0f_ef6d8045bbe9)
 		         ValueExprTripleRef

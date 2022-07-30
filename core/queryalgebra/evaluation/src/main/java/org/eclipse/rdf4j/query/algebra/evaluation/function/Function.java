@@ -4,6 +4,8 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function;
 
@@ -54,7 +56,7 @@ public interface Function {
 
 	/**
 	 * UUID() and STRUUID() must return a different result for each invocation.
-	 * 
+	 *
 	 * @see https://www.w3.org/TR/sparql11-query/#func-uuid
 	 * @see https://www.w3.org/TR/sparql11-query/#func-struuid
 	 * @see https://www.w3.org/TR/sparql11-query/#func-numerics

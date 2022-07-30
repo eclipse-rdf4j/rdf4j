@@ -4,6 +4,8 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.readonly.sparql;
 
@@ -16,7 +18,7 @@ import org.eclipse.rdf4j.repository.Repository;
 public interface SparqlQueryEvaluator {
 	/**
 	 * Evaluates/Execute the passed query against the passed repository usimg the passed arguments.
-	 * 
+	 *
 	 * @param result          in/out parameter for returning the contentType and the result stream.
 	 * @param repository      the repository against which the query is to be executed
 	 * @param query           The query to be evaluated

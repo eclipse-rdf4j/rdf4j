@@ -3,22 +3,42 @@
 So you want to help out making Eclipse RDF4J better. That's great, we welcome your contributions! 
 Before you dive in, here are some things you need to know.
 
-**Table of Contents**  
+## Terms of Use
 
-- [Legal stuff](#legal-stuff)
-- [Creating your contribution](#creating-your-contribution)
-- [Code formatting](#code-formatting)
-- [Workflow](#workflow) 
-	
-## Legal stuff
+This repository is subject to the Terms of Use of the Eclipse Foundation
 
-Eclipse RDF4J is a project governed by the [Eclipse Foundation](http://www.eclipse.org/), which has strict [policies and guidelines](https://wiki.eclipse.org/Development_Resources#Policies_and_Guidelines) regarding contributions and intellectual property rights.
+* http://www.eclipse.org/legal/termsofuse.php
 
-### Sign the Eclipse Contributor Agreement
-You must digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this as follows: 
+## Eclipse Development Process
 
-* If you haven't done so already, [register an Eclipse account](https://accounts.eclipse.org/user/register). **Important**: Use the same email address that you will use on Git commits as the author address. 
-* Open the [ECA form](https://accounts.eclipse.org/user/eca) and complete it. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info. 
+This Eclipse Foundation open project is governed by the Eclipse Foundation
+Development Process and operates under the terms of the Eclipse IP Policy.
+
+* https://eclipse.org/projects/dev_process
+* https://www.eclipse.org/org/documents/Eclipse_IP_Policy.pdf
+
+## Eclipse Contributor Agreement
+
+In order to be able to contribute to Eclipse Foundation projects you must
+electronically sign the Eclipse Contributor Agreement (ECA).
+
+* http://www.eclipse.org/legal/ECA.php
+
+The ECA provides the Eclipse Foundation with a permanent record that you agree
+that each of your contributions will comply with the commitments documented in
+the Developer Certificate of Origin (DCO). Having an ECA on file associated with
+the email address matching the "Author" field of your contribution's Git commits
+fulfills the DCO's requirement that you sign-off on your contributions.
+
+For more information, please see the Eclipse Committer Handbook:
+https://www.eclipse.org/projects/handbook/#resources-commit
+
+### Signing the Eclipse Contributor Agreement
+You must digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.eclipse.org/legal/ECA.php). You can do this as follows:
+
+* If you haven't done so already, [register an Eclipse account](https://accounts.eclipse.org/user/register). **Important**: Use the same email address that you will use on Git commits as the author address.
+* Open the [ECA form](https://accounts.eclipse.org/user/eca) and complete it. See the [ECA FAQ](https://www.eclipse.org/legal/ecafaq.php) for more info.
+
 
 ## Creating your contribution
 
@@ -27,8 +47,8 @@ Once the legalities are out of the way you can dig in. Here's how:
 1. Create an issue in the [issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix. Alternatively, comment on an existing issue to indicate you're keen to help solve it.
 2. Fork the repository on GitHub.
 3. Create a new branch for your changes starting from the `main` branch. Name your branch like this: `GH-1234-short-description-here` where 1234 is the Github issue number. See [Workflow](#workflow) for details.
-4. Make your changes. Apply the [RDF4J code formatting guidelines](#code-formatting)
-5. Make sure you include tests. We use JUnit 4 with AssertJ and Mockito. Have a look around for existing tests to get some idea, and of course feel free to ask advice.
+4. Make your changes. Apply the [RDF4J code formatting guidelines](#code-formatting) by running `mvn process-resources`.
+5. Make sure you include tests. We use JUnit 5 with AssertJ and Mockito. Have a look around for existing tests to get some idea, and of course feel free to ask advice.
 6. Make sure the test suite passes after your changes: you can run `mvn verify` to run tests locally.
 7. Commit your changes into the branch. Make sure the commit author name and e-mail correspond to what you used to sign the ECA. Use meaningful commit messages. Reference the issue number in the commit message (for example "GH-276: added null check").
 8. Push your changes to your branch in your forked repository.
@@ -51,10 +71,13 @@ Eclipse RDF4J follows the [Eclipse Coding Conventions for Java](https://wiki.ecl
 ```
 /*******************************************************************************
  * Copyright (c) ${year} Eclipse RDF4J contributors.
+ *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
  ```
 
