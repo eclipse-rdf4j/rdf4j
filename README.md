@@ -9,6 +9,12 @@ This is the main code repository for the Eclipse RDF4J project.
 
 Visit the [project website](https://rdf4j.org/) for news, documentation, and downloadable releases. For support questions, comments, and any ideas for improvements you'd like to discuss, please use our [discussion forum](https://github.com/eclipse/rdf4j/discussions). If you have found a bug or have a very specific feature/improvement request, you can also use our [issue tracker](https://github.com/eclipse/rdf4j/issues) to report it.
 
+## Terms of Use
+
+This repository is subject to the Terms of Use of the Eclipse Foundation
+
+* http://www.eclipse.org/legal/termsofuse.php
+
 ## Installation and usage
 
 For installation and usage instructions of the RDF4J Workbench and Server applications, see [RDF4J Server and Workbench](https://rdf4j.org/documentation/tools/server-workbench). 
