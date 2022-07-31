@@ -1,9 +1,12 @@
 /*******************************************************************************
- Copyright (c) 2018 Eclipse RDF4J contributors.
- All rights reserved. This program and the accompanying materials
- are made available under the terms of the Eclipse Distribution License v1.0
- which accompanies this distribution, and is available at
- http://www.eclipse.org/org/documents/edl-v10.php.
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
 package org.eclipse.rdf4j.sparqlbuilder.core;
@@ -32,15 +35,15 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 	 * Replaces all occurrences of all declared namespaces with their prefix labels in the specified query string.
 	 *
 	 * For example, if the <code>foaf:</code> prefix is declared with {@link PrefixDeclarations}, the query
-	 * 
+	 *
 	 * <pre>
 	 * SELECT ?name WHERE {
 	 *   ?x &lt;http://xmlns.com/foaf/0.1/name&gt; ?name .
 	 * }
 	 * </pre>
-	 * 
+	 *
 	 * is transformed to
-	 * 
+	 *
 	 * <pre>
 	 * SELECT ?name WHERE {
 	 *   ?x foaf:name ?name .
@@ -55,7 +58,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 	 * <li>Only replace if the continuation of the match is a
 	 * <a href="https://www.w3.org/TR/sparql11-query/#rPN_LOCAL">local name</a> (</li>
 	 * </ul>
-	 * 
+	 *
 	 * @param queryString the query string
 	 * @return the query string, namespaces replaced with prefix label
 	 */
@@ -181,7 +184,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 
 	/**
 	 * Returns the longest prefix that is found starting at position <code>pos</code> in the <code>queryString</code>
-	 * 
+	 *
 	 * @param queryString the query string
 	 * @param pos         the position at which to start looking
 	 * @return the longest prefixIri that matches fully (no tie-break for duplicates)

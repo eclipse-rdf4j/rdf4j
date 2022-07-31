@@ -1,9 +1,12 @@
 /*******************************************************************************
  * Copyright (c) 2019 Eclipse RDF4J contributors.
+ *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation;
 
@@ -17,11 +20,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyF
 
 /**
  * Factory class for retrieving the {@link FederationEvalStrategy} to be used.
- * 
+ *
  * <p>
  * Default strategies:
  * </p>
- * 
+ *
  * <ul>
  * <li>local federation: {@link SailFederationEvalStrategy}</li>
  * <li>endpoint federation: {@link SparqlFederationEvalStrategy}</li>
@@ -31,7 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyF
  * <p>
  * Customized strategies can be supplied to the federation using
  * {@link FedXFactory#withFederationEvaluationStrategyFactory(FederationEvaluationStrategyFactory)}
- * 
+ *
  * @author Andreas Schwarte
  */
 public class FederationEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
@@ -57,7 +60,7 @@ public class FederationEvaluationStrategyFactory extends StrictEvaluationStrateg
 
 	/**
 	 * Create the {@link FederationEvalStrategy} to be used.
-	 * 
+	 *
 	 * Note: all parameters may be <code>null</code>
 	 */
 	@Override

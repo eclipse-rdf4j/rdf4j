@@ -1,9 +1,12 @@
 /*******************************************************************************
  * Copyright (c) 2022 Eclipse RDF4J contributors.
+ *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
@@ -36,7 +39,7 @@ public enum TypeBacktraceMode {
 	 * is enabled by default.
 	 *
 	 * the future state of the Lucene index in the <a href="#backtrace_example">above example</a> would be:
-	 * 
+	 *
 	 * <pre>
 	 * my:subj1 "demo 1"
 	 * </pre>
@@ -47,7 +50,7 @@ public enum TypeBacktraceMode {
 	 * change the type and values of your subjects in multiple queries.
 	 *
 	 * the future state of the Lucene index in the <a href="#backtrace_example">above example</a> would be:
-	 * 
+	 *
 	 * <pre>
 	 * my:subj2 "demo 2"
 	 * </pre>

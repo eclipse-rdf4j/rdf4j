@@ -1,9 +1,12 @@
 /*******************************************************************************
  * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 package org.eclipse.rdf4j.model.util;
 
@@ -152,7 +155,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple}
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple}
 	 *
 	 * @param triple an RDF-star triple to convert to a {@link Statement}.
 	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and no context.
@@ -164,7 +167,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple}
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple}
 	 *
 	 * @param triple an RDF-star triple to convert to a {@link Statement}.
 	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and no context.
@@ -175,7 +178,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
 	 *
 	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
 	 * @param context the context to assign to the {@link Statement}.
@@ -188,7 +191,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
 	 *
 	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
 	 * @param context the context to assign to the {@link Statement}.
@@ -202,7 +205,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
 	 *
 	 * @param vf      the {@link ValueFactory} to use for creating the {@link Statement} object.
 	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
@@ -217,7 +220,7 @@ public class Statements {
 	}
 
 	/**
-	 * Create a {@link Statement} from the supplied { @link Triple RDF-star triple} and context.
+	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
 	 *
 	 * @param vf      the {@link ValueFactory} to use for creating the {@link Statement} object.
 	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
