@@ -4,6 +4,8 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.experimental;
 
@@ -29,7 +31,7 @@ import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
- * 
+ *
  * @apiNote This feature is in an experimental state: its existence, signature or behavior may change without warning
  *          from one release to the next.
  */

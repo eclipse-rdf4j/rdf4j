@@ -4,6 +4,8 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
 /**
@@ -43,7 +45,7 @@
  * <p>
  * For More information on configuration, see {@link org.eclipse.rdf4j.spring.resultcache.ResultCacheProperties
  * ResultCacheProperties}
- * 
+ *
  * @since 4.0.0
  * @author Florian Kleedorfer
  */

@@ -4,6 +4,8 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.config;
 
@@ -44,7 +46,7 @@ public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
 
 	/**
 	 * Configuration setting for enabling/disabling direct result pass-through. Optional.
-	 * 
+	 *
 	 * @see SPARQLProtocolSession#isPassThroughEnabled()
 	 */
 	public static final IRI PASS_THROUGH_ENABLED = vf

@@ -4,6 +4,8 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.write;
 
@@ -38,7 +40,7 @@ public interface WriteStrategy extends AutoCloseable {
 
 	/**
 	 * Assign {@link TransactionSetting}s to be used for the next transaction.
-	 * 
+	 *
 	 * @param transactionSettings one or more {@link TransactionSetting}s
 	 * @throws RepositoryException
 	 */

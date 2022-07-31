@@ -4,6 +4,8 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
 package org.eclipse.rdf4j.common.text;
@@ -29,7 +31,7 @@ public class StringUtil {
 	 * @param news The String is the new content.
 	 * @param text The String in which the substitution is done.
 	 * @return The result String containing the substitutions; if no substitutions were made, the result is 'text'.
-	 * 
+	 *
 	 * @deprecated use {@link String#replace(CharSequence, CharSequence) instead}.
 	 */
 	@Deprecated
