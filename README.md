@@ -39,7 +39,7 @@ Modern IDEs like Eclipse, IntelliJ IDEA, or Netbeans can of course also be used 
 We welcome contributions! Whether you have a new feature you want to add, or a bug you want to fix, or a bit of documentation you want to improve, it's all very welcome. Have a look in our [issue tracker](https://github.com/eclipse/rdf4j/issues) for any open problems, in particular the ones marked as [good first issue](https://github.com/eclipse/rdf4j/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) or as [help wanted](https://github.com/eclipse/rdf4j/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22). Or feel free to add your own new issue if what you have in mind is not there yet.
 
 To get started on your contribution, please first read our [Contributor
-guidelines](https://github.com/eclipse/rdf4j/blob/main/.github/CONTRIBUTING.md).
+guidelines](https://github.com/eclipse/rdf4j/blob/main/CONTRIBUTING.md).
 
 The short version:
 
@@ -49,12 +49,12 @@ The short version:
 2. Create an issue in the [issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix - or if you're picking up an existing issue, comment on that issue that you intend to provide a solution for it.
 3. Fork the GitHub repository.
 4. Create a new branch (starting from main) for your changes. Name your branch like this: `GH-1234-short-description-here` where 1234 is the Github issue number.
-5. Make your changes on this branch. Apply the [RDF4J code formatting guidelines](https://github.com/eclipse/rdf4j/blob/main/.github/CONTRIBUTING.md#code-formatting). Don't forget to include unit tests.
+5. Make your changes on this branch. Apply the [RDF4J code formatting guidelines](https://github.com/eclipse/rdf4j/blob/main/CONTRIBUTING.md#code-formatting). Don't forget to include unit tests.
 7. Run `mvn verify` from the project root to make sure all tests succeed (both your own new ones, and existing).
 8. Commit your changes into the branch. Make sure the commit author name and e-mail correspond to what you used to sign the ECA. Use meaningful commit messages. Reference the issue number in each commit message (for example "GH-276: added null check").
 9. Once your fix is complete, put it up for review by opening a Pull Request against the main branch in the central Github repository. If you have a lot of commits on your PR, make sure to [squash your commits](https://rdf4j.org/documentation/developer/squashing).
 
 These steps are explained in more detail in the [Contributor
-guidelines](https://github.com/eclipse/rdf4j/blob/main/.github/CONTRIBUTING.md).
+guidelines](https://github.com/eclipse/rdf4j/blob/main/CONTRIBUTING.md).
 
 You can find more detailed information about our development and release processes in the [Developer Workflow and Project Management](https://rdf4j.org/documentation/developer/) documentation.
