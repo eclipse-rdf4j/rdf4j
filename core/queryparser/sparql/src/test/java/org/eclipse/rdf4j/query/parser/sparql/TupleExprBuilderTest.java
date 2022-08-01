@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdateSequence;
@@ -216,7 +217,7 @@ public class TupleExprBuilderTest {
 	public void testServiceGraphPatternChopping() throws Exception {
 
 		// just for construction
-		Service service = new Service(null, new SingletonSet(), "", null, null, false);
+		Service service = new Service(new Var(null, null, false, false), new SingletonSet(), "", null, null, false);
 
 		service.setExpressionString("SERVICE <a> { ?s ?p ?o }");
 		assertEquals("?s ?p ?o", service.getServiceExpressionString());

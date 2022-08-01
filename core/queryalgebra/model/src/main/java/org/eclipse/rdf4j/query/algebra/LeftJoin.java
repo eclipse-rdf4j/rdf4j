@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -102,7 +103,7 @@ public class LeftJoin extends BinaryTupleOperator {
 	public boolean equals(Object other) {
 		if (other instanceof LeftJoin && super.equals(other)) {
 			ValueExpr oCond = ((LeftJoin) other).getCondition();
-			return nullEquals(condition, oCond);
+			return Objects.equals(condition, oCond);
 		}
 
 		return false;
