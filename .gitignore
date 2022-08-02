@@ -29,7 +29,7 @@ dependency-reduced-pom.xml
 *.iws
 
 # Hugo
-.hugo_build.lock 
+.hugo_build.lock
 
 # Mac nonsense
 .DS_Store
@@ -37,6 +37,8 @@ dependency-reduced-pom.xml
 # NetBean (generated) files
 **/nb-configuration.xml
 **/nbactions*.xml
+
+# Other
 *.jfr
 compliance/repository/overlays
 **/webapp/META-INF/context.xml
@@ -47,3 +49,4 @@ formatter-maven-cache.properties
 compliance/*/overlays
 docker/ignore
 /core/queryparser/sparql/JavaCC/javacc/
+.mvn/
