@@ -46,6 +46,9 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T, Qu
 		} catch (QueryEvaluationException e) {
 			throw e;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw new QueryEvaluationException(e);
 		}
 	}
@@ -70,6 +73,9 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T, Qu
 		} catch (IllegalStateException | QueryEvaluationException e) {
 			throw e;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw new QueryEvaluationException(e);
 		}
 	}
@@ -92,6 +98,9 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T, Qu
 		} catch (UnsupportedOperationException | IllegalStateException | QueryEvaluationException e) {
 			throw e;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw new QueryEvaluationException(e);
 		}
 	}

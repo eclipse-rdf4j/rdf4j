@@ -239,6 +239,9 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 				taskControl.done();
 			} catch (Throwable t) {
+				if (t instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
 
 				log.debug("Exception encountered while evaluating task (" + t.getClass().getSimpleName() + "): "
 						+ t.getMessage());

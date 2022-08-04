@@ -652,6 +652,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					try {
 						tupleExpr.visit(this);
 					} catch (Exception e) {
+						if (e instanceof InterruptedException) {
+							Thread.currentThread().interrupt();
+						}
 						throw new IllegalStateException(e);
 					}
 					if (vars == null) {

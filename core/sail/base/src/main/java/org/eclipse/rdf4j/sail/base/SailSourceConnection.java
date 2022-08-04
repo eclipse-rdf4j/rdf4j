@@ -359,6 +359,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 					evaluate.next();
 				}
 			} catch (Exception e) {
+				if (e instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
 				if (!timedOut.get()) {
 					throw e;
 				}

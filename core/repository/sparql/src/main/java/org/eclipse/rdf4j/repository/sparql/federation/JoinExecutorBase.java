@@ -69,6 +69,9 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 		try {
 			handleBindings();
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			toss(e);
 		} finally {
 			finished = true;

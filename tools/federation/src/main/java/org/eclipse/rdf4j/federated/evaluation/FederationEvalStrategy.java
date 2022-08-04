@@ -919,6 +919,9 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			return result;
 
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw new QueryEvaluationException(e);
 		}
 	}
@@ -953,6 +956,9 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 			return result;
 
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw new QueryEvaluationException(e);
 		}
 	}

@@ -252,6 +252,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			if (iteration != null) {
 				iteration.close();
 			}
+			if (t instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw new QueryEvaluationException(t);
 		}
 	}
@@ -283,6 +286,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		} catch (Throwable t) {
 			if (iteration != null) {
 				iteration.close();
+			}
+			if (t instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
 			}
 			throw new QueryEvaluationException(t);
 		}

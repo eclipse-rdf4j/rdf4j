@@ -186,6 +186,9 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 						rightIter.close();
 						rightIter = null;
 					} catch (Throwable ignore) {
+						if (ignore instanceof InterruptedException) {
+							Thread.currentThread().interrupt();
+						}
 						log.trace("Failed to send interrupt signal:", ignore);
 					}
 				}

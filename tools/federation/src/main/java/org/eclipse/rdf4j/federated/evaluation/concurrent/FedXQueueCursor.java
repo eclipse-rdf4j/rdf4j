@@ -79,6 +79,9 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 						((CloseableIteration<?, ?>) take).close();
 					}
 				} catch (Throwable t) {
+					if (t instanceof InterruptedException) {
+						Thread.currentThread().interrupt();
+					}
 					if (throwable != null) {
 						t.addSuppressed(throwable);
 					}

@@ -101,6 +101,9 @@ public class SparqlFederationEvalStrategy extends FederationEvalStrategy {
 			if (result != null) {
 				result.close();
 			}
+			if (t instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw ExceptionUtil.toQueryEvaluationException(t);
 		}
 	}

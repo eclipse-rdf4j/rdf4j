@@ -71,6 +71,9 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 			}
 			return result;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw convert(e);
 		}
 	}
@@ -95,6 +98,9 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 		} catch (IllegalStateException e) {
 			throw e;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw convert(e);
 		}
 	}
@@ -117,6 +123,9 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 		} catch (UnsupportedOperationException | IllegalStateException e) {
 			throw e;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw convert(e);
 		}
 	}
@@ -132,6 +141,9 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 			try {
 				Iterations.closeCloseable(iter);
 			} catch (Exception e) {
+				if (e instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
 				throw convert(e);
 			}
 		}

@@ -54,6 +54,9 @@ public class ServiceOptimizer extends AbstractSimpleQueryModelVisitor<Optimizati
 		} catch (RuntimeException e) {
 			throw e;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw new FedXRuntimeException(e);
 		}
 
