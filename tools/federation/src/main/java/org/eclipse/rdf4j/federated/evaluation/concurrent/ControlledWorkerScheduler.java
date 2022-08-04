@@ -215,6 +215,10 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 				return;
 			}
 
+			if (Thread.currentThread().isInterrupted()) {
+				return;
+			}
+
 			ParallelExecutor<T> taskControl = task.getControl();
 
 			CloseableIteration<T, QueryEvaluationException> res = null;
@@ -271,6 +275,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 		try {
 			executor.awaitTermination(30, TimeUnit.SECONDS);
 		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 			throw new FedXRuntimeException(e);
 		}
 

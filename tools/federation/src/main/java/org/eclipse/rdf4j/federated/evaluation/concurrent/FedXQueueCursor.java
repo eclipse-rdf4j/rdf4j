@@ -56,6 +56,9 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 		if (e instanceof QueryEvaluationException) {
 			return (QueryEvaluationException) e;
 		}
+		if (e instanceof InterruptedException) {
+			Thread.currentThread().interrupt();
+		}
 		return super.convert(e);
 	}
 
