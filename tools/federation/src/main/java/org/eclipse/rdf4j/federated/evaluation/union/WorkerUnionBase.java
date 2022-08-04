@@ -15,12 +15,12 @@ import java.util.List;
 
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Base class for worker unions providing convenience functions to add tasks.
  *
  * @author Andreas Schwarte
- *
  * @see SynchronousWorkerUnion
  * @see ControlledWorkerUnion
  */
@@ -42,5 +42,16 @@ public abstract class WorkerUnionBase<T> extends UnionExecutorBase<T> {
 			throw new RuntimeException("Controlling instance of task must be the same as this ControlledWorkerUnion.");
 		}
 		tasks.add(task);
+	}
+
+	@Override
+	public void handleClose() throws QueryEvaluationException {
+		try {
+			for (ParallelTask<T> task : tasks) {
+				task.close();
+			}
+		} finally {
+			super.handleClose();
+		}
 	}
 }
