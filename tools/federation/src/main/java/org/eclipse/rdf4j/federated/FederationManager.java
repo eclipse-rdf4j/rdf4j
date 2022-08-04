@@ -275,35 +275,60 @@ public class FederationManager {
 	 */
 	public synchronized void shutDown() throws FedXException {
 
-		log.info("Shutting down federation and all underlying repositories ...");
-		// Abort all running queries
-		federationContext.getQueryManager().shutdown();
-		executor.shutdown();
 		try {
-			executor.awaitTermination(30, TimeUnit.SECONDS);
-		} catch (InterruptedException e) {
-			log.warn("Failed to shutdown executor:" + e.getMessage());
-			log.debug("Details:", e);
+			log.info("Shutting down federation and all underlying repositories ...");
+			// Abort all running queries
+			federationContext.getQueryManager().shutdown();
+			executor.shutdown();
+			try {
+				executor.awaitTermination(30, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {
+				log.warn("Failed to shutdown executor:" + e.getMessage());
+				log.debug("Details:", e);
+				Thread.currentThread().interrupt();
+			} finally {
+				executor.shutdownNow();
+			}
+		} finally {
+			try {
+				try {
+					joinScheduler.shutdown();
+				} catch (Exception e) {
+					log.warn("Failed to shutdown join scheduler: " + e.getMessage());
+					log.debug("Details: ", e);
+				} finally {
+					joinScheduler.abort();
+				}
+			} finally {
+				try {
+					try {
+						unionScheduler.shutdown();
+					} catch (Exception e) {
+						log.warn("Failed to shutdown union scheduler: " + e.getMessage());
+						log.debug("Details: ", e);
+					} finally {
+						unionScheduler.abort();
+					}
+				} finally {
+					try {
+						try {
+							leftJoinScheduler.shutdown();
+						} catch (Exception e) {
+							log.warn("Failed to shutdown left join scheduler: " + e.getMessage());
+							log.debug("Details: ", e);
+						} finally {
+							leftJoinScheduler.abort();
+						}
+					} finally {
+						federationContext.getFederatedServiceResolver().shutDown();
+					}
+
+				}
+
+			}
+
 		}
-		try {
-			joinScheduler.shutdown();
-		} catch (Exception e) {
-			log.warn("Failed to shutdown join scheduler: " + e.getMessage());
-			log.debug("Details: ", e);
-		}
-		try {
-			unionScheduler.shutdown();
-		} catch (Exception e) {
-			log.warn("Failed to shutdown union scheduler: " + e.getMessage());
-			log.debug("Details: ", e);
-		}
-		try {
-			leftJoinScheduler.shutdown();
-		} catch (Exception e) {
-			log.warn("Failed to shutdown left join scheduler: " + e.getMessage());
-			log.debug("Details: ", e);
-		}
-		federationContext.getFederatedServiceResolver().shutDown();
+
 	}
 
 	/**

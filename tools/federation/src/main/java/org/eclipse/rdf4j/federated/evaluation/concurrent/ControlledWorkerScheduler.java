@@ -32,9 +32,7 @@ import org.slf4j.LoggerFactory;
  * pool with a fixed number of worker threads. Once notified a worker picks the next task from the queue and executes
  * it. The results is then returned to the controlling instance retrieved from the task.
  *
- *
  * @author Andreas Schwarte
- *
  * @see ControlledWorkerUnion
  * @see ControlledWorkerJoin
  * @see ControlledWorkerBoundJoin
@@ -80,7 +78,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	 */
 	@Override
 	public void schedule(ParallelTask<T> task) {
-
+		assert !task.getControl().isFinished();
 		Runnable runnable = new WorkerRunnable(task);
 
 		// Note: for specific use-cases the runnable may be wrapped (e.g. to allow injection of thread-contexts). By
@@ -139,13 +137,16 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 	@Override
 	public void abort() {
-		log.info("Aborting workers of " + name + ".");
+		if (!executor.isTerminated()) {
+			log.info("Aborting workers of " + name + ".");
 
-		executor.shutdownNow();
-		try {
-			executor.awaitTermination(30, TimeUnit.SECONDS);
-		} catch (InterruptedException e) {
-			throw new FedXRuntimeException(e);
+			executor.shutdownNow();
+			try {
+				executor.awaitTermination(30, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new FedXRuntimeException(e);
+			}
 		}
 	}
 
@@ -185,7 +186,6 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	 * Determine if there are still task running or queued for the specified control.
 	 *
 	 * @param control
-	 *
 	 * @return true, if there are unfinished tasks, false otherwise
 	 */
 	public boolean isRunning(ParallelExecutor<T> control) {
@@ -228,8 +228,9 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 			CloseableIteration<T, QueryEvaluationException> res = null;
 			try {
 				if (log.isTraceEnabled()) {
-					log.trace("Performing task " + task.toString() + " in " + Thread.currentThread().getName());
+					log.trace("Performing task " + task + " in " + Thread.currentThread().getName());
 				}
+
 				res = task.performTask();
 				taskControl.addResult(res);
 				if (aborted) {
