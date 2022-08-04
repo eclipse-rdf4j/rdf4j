@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
@@ -230,7 +231,7 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		if (other instanceof ArbitraryLengthPath) {
 			ArbitraryLengthPath o = (ArbitraryLengthPath) other;
 			return subjectVar.equals(o.getSubjectVar()) && pathExpression.equals(o.getPathExpression())
-					&& objectVar.equals(o.getObjectVar()) && nullEquals(contextVar, o.getContextVar())
+					&& objectVar.equals(o.getObjectVar()) && Objects.equals(contextVar, o.getContextVar())
 					&& scope.equals(o.getScope());
 		}
 		return false;

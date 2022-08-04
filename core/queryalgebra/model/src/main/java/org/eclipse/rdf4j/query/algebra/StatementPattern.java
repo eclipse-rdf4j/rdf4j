@@ -381,7 +381,7 @@ public class StatementPattern extends AbstractQueryModelNode implements TupleExp
 		if (other instanceof StatementPattern) {
 			StatementPattern o = (StatementPattern) other;
 			return subjectVar.equals(o.getSubjectVar()) && predicateVar.equals(o.getPredicateVar())
-					&& objectVar.equals(o.getObjectVar()) && nullEquals(contextVar, o.getContextVar())
+					&& objectVar.equals(o.getObjectVar()) && Objects.equals(contextVar, o.getContextVar())
 					&& scope.equals(o.getScope());
 		}
 		return false;

@@ -43,8 +43,11 @@ public class ParentReferenceCleaner implements QueryOptimizer {
 		protected void meetNode(QueryModelNode node) throws RuntimeException {
 			QueryModelNode expectedParent = ancestors.peekLast();
 			if (node.getParentNode() != expectedParent) {
-				logger.debug("unexpected parent for node {}: {} (expected {})", node, node.getParentNode(),
-						expectedParent);
+				String message = "unexpected parent for node " + node + ": " + node.getParentNode() + " (expected "
+						+ expectedParent + ")";
+				assert node.getParentNode() == expectedParent : message;
+				logger.debug(message);
+
 				node.setParentNode(expectedParent);
 			}
 

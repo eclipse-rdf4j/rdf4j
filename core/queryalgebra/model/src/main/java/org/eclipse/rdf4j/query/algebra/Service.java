@@ -81,6 +81,7 @@ public class Service extends UnaryTupleOperator {
 
 	public void setServiceRef(Var serviceRef) {
 		this.serviceRef = serviceRef;
+		this.serviceRef.setParentNode(this);
 	}
 
 	/**

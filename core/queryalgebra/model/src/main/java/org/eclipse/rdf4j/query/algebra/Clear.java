@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Objects;
+
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 
 /**
@@ -55,7 +57,7 @@ public class Clear extends AbstractQueryModelNode implements UpdateExpr {
 	public boolean equals(Object other) {
 		if (other instanceof Clear) {
 			Clear o = (Clear) other;
-			return silent == o.silent && nullEquals(graph, o.graph) && nullEquals(scope, o.scope);
+			return silent == o.silent && Objects.equals(graph, o.graph) && Objects.equals(scope, o.scope);
 		}
 		return false;
 	}

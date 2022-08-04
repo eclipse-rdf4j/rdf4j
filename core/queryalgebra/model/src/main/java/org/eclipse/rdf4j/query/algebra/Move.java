@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Objects;
+
 /**
  * @author jeen
  */
@@ -58,8 +60,8 @@ public class Move extends AbstractQueryModelNode implements UpdateExpr {
 	public boolean equals(Object other) {
 		if (other instanceof Move) {
 			Move o = (Move) other;
-			return silent == o.silent && nullEquals(sourceGraph, o.sourceGraph)
-					&& nullEquals(destinationGraph, o.destinationGraph);
+			return silent == o.silent && Objects.equals(sourceGraph, o.sourceGraph)
+					&& Objects.equals(destinationGraph, o.destinationGraph);
 		}
 		return false;
 	}

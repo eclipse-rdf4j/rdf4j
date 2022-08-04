@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.apache.commons.lang3.StringUtils;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.text.StringUtil;
@@ -288,67 +289,72 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 			List<BindingSet> unexpectedBindings = new ArrayList<>(queryBindings);
 			unexpectedBindings.removeAll(expectedBindings);
 
-			StringBuilder message = new StringBuilder(128);
-			message.append("\n============ ");
-			message.append(getName());
-			message.append(" =======================\n");
+			StringBuilder message = new StringBuilder();
+			String header = "=================================== " + getName() + " ===================================";
+			String footer = StringUtils.leftPad("", header.length(), "=");
+			message.append("\n").append(header).append("\n");
+
+			message.append("# Query:\n\n");
+			message.append(readQueryString().trim()).append("\n");
+			message.append(footer).append("\n");
+
+			message.append("# Expected bindings:\n\n");
+			for (BindingSet bs : expectedBindings) {
+				printBindingSet(bs, message);
+			}
+			message.append(footer).append("\n");
+
+			message.append("# Actual bindings:\n\n");
+			for (BindingSet bs : queryBindings) {
+				printBindingSet(bs, message);
+			}
+			message.append(footer).append("\n");
 
 			if (!missingBindings.isEmpty()) {
 
-				message.append("Missing bindings: \n");
+				message.append("# Missing bindings: \n\n");
 				for (BindingSet bs : missingBindings) {
 					printBindingSet(bs, message);
 				}
-
-				message.append("=============");
-				StringUtil.appendN('=', getName().length(), message);
-				message.append("========================\n");
+				message.append(footer).append("\n");
 			}
 
 			if (!unexpectedBindings.isEmpty()) {
-				message.append("Unexpected bindings: \n");
+				message.append("# Unexpected bindings: \n\n");
 				for (BindingSet bs : unexpectedBindings) {
 					printBindingSet(bs, message);
 				}
-
-				message.append("=============");
-				StringUtil.appendN('=', getName().length(), message);
-				message.append("========================\n");
+				message.append(footer).append("\n");
 			}
 
 			if (ordered && missingBindings.isEmpty() && unexpectedBindings.isEmpty()) {
-				message.append("Results are not in expected order.\n");
-				message.append(" =======================\n");
-				message.append("query result: \n");
+				message.append("# Results are not in expected order.\n");
+				message.append(footer).append("\n");
+				message.append("# query result: \n\n");
 				for (BindingSet bs : queryBindings) {
 					printBindingSet(bs, message);
 				}
-				message.append(" =======================\n");
-				message.append("expected result: \n");
+				message.append(footer).append("\n");
+				message.append("# expected result: \n\n");
 				for (BindingSet bs : expectedBindings) {
 					printBindingSet(bs, message);
 				}
-				message.append(" =======================\n");
-
-				System.out.print(message.toString());
+				message.append(footer).append("\n");
 			} else if (missingBindings.isEmpty() && unexpectedBindings.isEmpty()) {
-				message.append("unexpected duplicate in result.\n");
-				message.append(" =======================\n");
-				message.append("query result: \n");
+				message.append("# unexpected duplicate in result.\n");
+				message.append(footer).append("\n");
+				message.append("# query result: \n\n");
 				for (BindingSet bs : queryBindings) {
 					printBindingSet(bs, message);
 				}
-				message.append(" =======================\n");
-				message.append("expected result: \n");
+				message.append(footer).append("\n");
+				message.append("# expected result: \n\n");
 				for (BindingSet bs : expectedBindings) {
 					printBindingSet(bs, message);
 				}
-				message.append(" =======================\n");
-
-				System.out.print(message.toString());
+				message.append(footer).append("\n");
 			}
 
-			logger.error(message.toString());
 			fail(message.toString());
 		}
 	}

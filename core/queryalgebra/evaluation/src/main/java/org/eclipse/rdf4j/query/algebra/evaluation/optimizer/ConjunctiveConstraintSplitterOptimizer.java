@@ -58,7 +58,7 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 				filterArg = newFilter;
 			}
 
-			filter.setCondition(conjunctiveConstraints.get(0));
+			filter.setCondition(conjunctiveConstraints.get(0).clone());
 			filter.setArg(filterArg);
 		}
 

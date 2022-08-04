@@ -54,9 +54,10 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 	}
 
 	public void setElements(List<ProjectionElem> elements) {
+		elements.forEach(projectionElem -> projectionElem.setParentNode(this));
+
 		this.elementsList = Collections.unmodifiableList(elements);
 		this.elements = this.elementsList.toArray(new ProjectionElem[0]);
-
 	}
 
 	public void addElements(ProjectionElem... elements) {
@@ -73,9 +74,6 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 			setElements(elements);
 		} else {
 			ArrayList<ProjectionElem> currentElementsList = new ArrayList<>(elementsList);
-			for (ProjectionElem projectionElem : elements) {
-				projectionElem.setParentNode(this);
-			}
 			currentElementsList.addAll(elements);
 			setElements(currentElementsList);
 		}

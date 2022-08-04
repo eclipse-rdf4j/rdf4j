@@ -21,7 +21,7 @@ public class Projection extends UnaryTupleOperator {
 	 * Variables *
 	 *-----------*/
 
-	private ProjectionElemList projElemList = new ProjectionElemList();
+	private ProjectionElemList projElemList;
 
 	private Var projectionContext = null;
 
@@ -32,14 +32,16 @@ public class Projection extends UnaryTupleOperator {
 	 *--------------*/
 
 	public Projection() {
+		projElemList = new ProjectionElemList();
 	}
 
 	public Projection(TupleExpr arg) {
 		super(arg);
+		projElemList = new ProjectionElemList();
 	}
 
 	public Projection(TupleExpr arg, ProjectionElemList elements) {
-		this(arg);
+		super(arg);
 		setProjectionElemList(elements);
 	}
 

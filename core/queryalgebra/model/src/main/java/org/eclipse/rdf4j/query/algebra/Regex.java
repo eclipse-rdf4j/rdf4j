@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Objects;
+
 /**
  * Compares the string representation of a value expression to a pattern.
  */
@@ -81,7 +83,7 @@ public class Regex extends BinaryValueOperator {
 	public boolean equals(Object other) {
 		if (other instanceof Regex && super.equals(other)) {
 			Regex o = (Regex) other;
-			return nullEquals(flagsArg, o.getFlagsArg());
+			return Objects.equals(flagsArg, o.getFlagsArg());
 		}
 		return false;
 	}
