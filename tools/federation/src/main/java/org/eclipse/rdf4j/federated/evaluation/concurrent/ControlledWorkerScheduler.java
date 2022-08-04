@@ -221,6 +221,10 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 
 			ParallelExecutor<T> taskControl = task.getControl();
 
+			if (taskControl.isFinished()) {
+				return;
+			}
+
 			CloseableIteration<T, QueryEvaluationException> res = null;
 			try {
 				if (log.isTraceEnabled()) {
