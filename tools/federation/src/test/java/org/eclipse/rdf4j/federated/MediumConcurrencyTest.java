@@ -18,13 +18,11 @@ import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class MediumConcurrencyTest extends SPARQLBaseTest {
@@ -79,31 +77,6 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 		}
 
 		log.info("Done");
-	}
-
-	@Test
-	@Disabled // just a test for showing the phaser
-	public void testPhaser() throws Exception {
-
-		final Phaser p1 = new Phaser(1);
-		final Random rand = new Random(325656342);
-
-		for (int i = 0; i < 10; i++) {
-			final int tid = i;
-			executor.submit(() -> {
-				p1.register();
-				try {
-					Thread.sleep(rand.nextInt(10) * 1000);
-				} catch (InterruptedException e) {
-					throw new RuntimeException(e);
-				}
-				System.out.println("Task " + tid + " done");
-				p1.arriveAndDeregister();
-			});
-		}
-		System.out.println("Waiting for tasks to finish");
-		p1.awaitAdvanceInterruptibly(p1.arrive(), 15, TimeUnit.SECONDS);
-		System.out.println("Done");
 	}
 
 	protected Future<String> submit(final String query, final int queryId) {

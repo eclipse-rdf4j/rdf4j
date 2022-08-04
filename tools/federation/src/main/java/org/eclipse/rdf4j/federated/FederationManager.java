@@ -202,7 +202,7 @@ public class FederationManager {
 		federationContext.getEndpointManager().addEndpoint(e);
 
 		if (updateStrategy == null || updateStrategy.length == 0
-				|| (updateStrategy.length == 1 && updateStrategy[0] == true)) {
+				|| (updateStrategy.length == 1 && updateStrategy[0])) {
 			updateFederationType();
 		}
 	}
@@ -240,7 +240,7 @@ public class FederationManager {
 		federationContext.getEndpointManager().removeEndpoint(e);
 
 		if (updateStrategy == null || updateStrategy.length == 0
-				|| (updateStrategy.length == 1 && updateStrategy[0] == true)) {
+				|| (updateStrategy.length == 1 && updateStrategy[0])) {
 			updateFederationType();
 		}
 	}
