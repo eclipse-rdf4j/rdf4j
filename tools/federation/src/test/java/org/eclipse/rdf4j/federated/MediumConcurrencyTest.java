@@ -41,9 +41,10 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 	}
 
 	@AfterAll
-	public static void afterClass() {
+	public static void afterClass() throws InterruptedException {
 		if (executor != null) {
 			executor.shutdownNow();
+			executor.awaitTermination(30, TimeUnit.SECONDS);
 		}
 	}
 

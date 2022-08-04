@@ -20,9 +20,9 @@ import org.slf4j.LoggerFactory;
 
 public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 
-	private static final Logger _log = LoggerFactory.getLogger(ParallelExecutorBase.class);
+	private static final Logger logger = LoggerFactory.getLogger(ParallelExecutorBase.class);
 
-	public Future<?> scheduledFuture;
+	protected Future<?> scheduledFuture;
 	private CloseableIteration<T, QueryEvaluationException> closableIter;
 	private volatile boolean cancelled = false;
 	private volatile boolean closed = false;
@@ -42,9 +42,23 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 		if (cancelled) {
 			throw new QueryEvaluationException("Evaluation has been cancelled");
 		}
-		closableIter = performTaskInternal();
+		try {
+			closableIter = performTaskInternal();
+		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			if (cancelled || closed) {
+				logger.trace(
+						"Exception was thrown while performing task, but it was ignored because the task was either cancelled or closed.",
+						e);
+				return new EmptyIteration<>();
+			}
 
-		if (cancelled) {
+			throw e;
+		}
+
+		if (cancelled || closed) {
 			// proactively close when this task has been cancelled in the meantime
 			closableIter.close();
 		}
@@ -73,12 +87,12 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 
 				if (scheduledFuture != null) {
 					if (scheduledFuture.isDone()) {
-						_log.trace("Task is already done: " + this);
+						logger.trace("Task is already done: {}", this);
 					} else {
-						_log.debug("Attempting to cancel task " + this);
+						logger.debug("Attempting to cancel task {}", this);
 						boolean successfullyCanceled = scheduledFuture.cancel(true);
 						if (!successfullyCanceled) {
-							_log.debug("Task " + this + " could not be cancelled properly.");
+							logger.debug("Task {} could not be cancelled properly.", this);
 						}
 					}
 				}
