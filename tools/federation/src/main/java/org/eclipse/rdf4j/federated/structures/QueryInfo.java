@@ -220,7 +220,7 @@ public class QueryInfo {
 		}
 		done = true;
 
-		abortScheduledTasks();
+		closeScheduledTasks();
 	}
 
 	/**
@@ -233,6 +233,31 @@ public class QueryInfo {
 		for (ParallelTask<?> task : scheduledSubtasks) {
 			try {
 				task.cancel();
+			} catch (Throwable t) {
+				if (throwable != null) {
+					t.addSuppressed(throwable);
+				}
+				throwable = t;
+			}
+		}
+
+		scheduledSubtasks.clear();
+
+		if (throwable != null) {
+			if (throwable instanceof RuntimeException) {
+				throw ((RuntimeException) throwable);
+			}
+			throw ((Error) throwable);
+		}
+	}
+
+	private void closeScheduledTasks() {
+
+		Throwable throwable = null;
+
+		for (ParallelTask<?> task : scheduledSubtasks) {
+			try {
+				task.close();
 			} catch (Throwable t) {
 				if (throwable != null) {
 					t.addSuppressed(throwable);

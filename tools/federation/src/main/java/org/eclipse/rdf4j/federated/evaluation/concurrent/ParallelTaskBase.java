@@ -45,15 +45,29 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 		try {
 			closableIter = performTaskInternal();
 		} catch (Exception e) {
-			if (e instanceof InterruptedException) {
+			if (Thread.interrupted() || e instanceof InterruptedException) {
 				Thread.currentThread().interrupt();
-			}
-			if (cancelled || closed) {
+				if (closed) {
+					logger.trace(
+							"Exception was thrown while performing task, but it was ignored because the task was closed.",
+							e);
+					return new EmptyIteration<>();
+				} else if (cancelled) {
+					throw new QueryEvaluationException("Evaluation has been cancelled", e);
+				} else {
+					throw new QueryEvaluationException("Evaluation has been interrupted", e);
+				}
+			} else if (closed) {
+				assert Thread.currentThread()
+						.isInterrupted() : "Exception was thrown and task was closed, but the current thread is not interrupted which means that the exception was either something bad or some code forgot to re-interrupt the current thread: "
+								+ e;
 				logger.trace(
-						"Exception was thrown while performing task, but it was ignored because the task was either cancelled or closed.",
+						"Exception was thrown while performing task, but it was ignored because the task was closed.",
 						e);
 				return new EmptyIteration<>();
 			}
+
+			assert !cancelled && !closed;
 
 			throw e;
 		}
