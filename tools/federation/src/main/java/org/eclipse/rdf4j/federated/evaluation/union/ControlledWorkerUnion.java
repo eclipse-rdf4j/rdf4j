@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
  * Execution of union tasks with {@link ControlledWorkerScheduler}. Tasks can be added using the provided functions.
@@ -22,7 +23,6 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
  * Results are then contained in this iteration.
  *
  * @author Andreas Schwarte
- *
  */
 public class ControlledWorkerUnion<T> extends WorkerUnionBase<T> {
 
@@ -61,4 +61,15 @@ public class ControlledWorkerUnion<T> extends WorkerUnionBase<T> {
 		super.toss(e);
 		phaser.arriveAndDeregister();
 	}
+
+	@Override
+	public void handleClose() throws QueryEvaluationException {
+		try {
+			super.handleClose();
+		} finally {
+			// signal the phaser to close (if currently being blocked)
+			phaser.forceTermination();
+		}
+	}
+
 }
