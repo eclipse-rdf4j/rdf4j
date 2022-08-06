@@ -79,4 +79,9 @@ public class ExistingPalindromeFunction implements Function {
 		// return a new boolean literal that is true if the input argument is a palindrome and exists as a label
 		return tripleSource.getValueFactory().createLiteral(palindrome && existing);
 	}
+
+	@Override
+	public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+		throw new UnsupportedOperationException();
+	}
 }
