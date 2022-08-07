@@ -1841,18 +1841,17 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
-		if (leftVal instanceof Literal && rightVal instanceof Literal) {
-			return MathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());
-		}
-
-		throw new ValueExprEvaluationException("Both arguments must be numeric literals");
+		return mathOperationApplier(node, leftVal, rightVal, getQueryEvaluationMode());
 	}
 
-	private Value mathOperationApplier(MathExpr node, Value leftVal, Value rightVal, boolean strict) {
+	private Value mathOperationApplier(MathExpr node, Value leftVal, Value rightVal,
+			QueryEvaluationMode queryEvaluationMode) {
 		if (leftVal instanceof Literal && rightVal instanceof Literal) {
-			if (strict) {
+			switch (queryEvaluationMode) {
+			case MINIMAL_COMPLIANT:
 				return MathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());
-			} else {
+			case STANDARD:
+			default:
 				return XMLDatatypeMathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());
 			}
 		}
@@ -1861,9 +1860,8 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 	}
 
 	protected QueryValueEvaluationStep prepare(MathExpr node, QueryEvaluationContext context) {
-		boolean strict = QueryEvaluationMode.MINIMAL_COMPLIANT == getQueryEvaluationMode();
 		return supplyBinaryValueEvaluation(node,
-				(leftVal, rightVal) -> mathOperationApplier(node, leftVal, rightVal, strict),
+				(leftVal, rightVal) -> mathOperationApplier(node, leftVal, rightVal, getQueryEvaluationMode()),
 				context);
 	}
 
