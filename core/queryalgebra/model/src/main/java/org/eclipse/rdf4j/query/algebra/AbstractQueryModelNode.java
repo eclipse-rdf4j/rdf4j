@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
@@ -127,6 +128,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 			AbstractQueryModelNode clone = (AbstractQueryModelNode) super.clone();
 			clone.setVariableScopeChange(this.isVariableScopeChange());
 			clone.cardinality = CARDINALITY_NOT_SET;
+			clone.parent = null;
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -148,7 +150,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	}
 
 	protected boolean nullEquals(Object o1, Object o2) {
-		return o1 == o2 || o1 != null && o1.equals(o2);
+		return Objects.equals(o1, o2);
 	}
 
 	@Override
@@ -192,7 +194,6 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	}
 
 	/**
-	 *
 	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
 	 */
 	static String toHumanReadbleNumber(double number) {

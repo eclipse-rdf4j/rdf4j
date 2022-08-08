@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Objects;
+
 /**
  * @author jeen
  */
@@ -62,8 +64,8 @@ public class Modify extends AbstractQueryModelNode implements UpdateExpr {
 	public boolean equals(Object other) {
 		if (other instanceof Modify) {
 			Modify o = (Modify) other;
-			return nullEquals(deleteExpr, o.deleteExpr) && nullEquals(insertExpr, o.insertExpr)
-					&& nullEquals(whereExpr, o.whereExpr);
+			return Objects.equals(deleteExpr, o.deleteExpr) && Objects.equals(insertExpr, o.insertExpr)
+					&& Objects.equals(whereExpr, o.whereExpr);
 		}
 		return false;
 	}

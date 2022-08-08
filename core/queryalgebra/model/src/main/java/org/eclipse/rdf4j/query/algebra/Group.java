@@ -94,12 +94,14 @@ public class Group extends UnaryTupleOperator {
 	}
 
 	public void addGroupElement(GroupElem groupElem) {
+		groupElem.setParentNode(this);
 		groupElements.add(groupElem);
 	}
 
 	public void setGroupElements(Iterable<GroupElem> elements) {
 		this.groupElements.clear();
 		Iterables.addAll(groupElements, elements);
+		groupElements.forEach(groupElem -> groupElem.setParentNode(this));
 	}
 
 	public Set<String> getAggregateBindingNames() {

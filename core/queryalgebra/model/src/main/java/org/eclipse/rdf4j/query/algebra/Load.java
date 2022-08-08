@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Objects;
+
 /**
  * @author jeen
  */
@@ -53,7 +55,7 @@ public class Load extends AbstractQueryModelNode implements UpdateExpr {
 	public boolean equals(Object other) {
 		if (other instanceof Load) {
 			Load o = (Load) other;
-			return silent == o.silent && nullEquals(source, o.source) && nullEquals(graph, o.graph);
+			return silent == o.silent && Objects.equals(source, o.source) && Objects.equals(graph, o.graph);
 		}
 		return false;
 	}

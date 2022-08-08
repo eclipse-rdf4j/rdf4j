@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
@@ -222,7 +223,7 @@ public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr 
 		if (other instanceof ZeroLengthPath) {
 			ZeroLengthPath o = (ZeroLengthPath) other;
 			return subjectVar.equals(o.getSubjectVar()) && objectVar.equals(o.getObjectVar())
-					&& nullEquals(contextVar, o.getContextVar()) && scope.equals(o.getScope());
+					&& Objects.equals(contextVar, o.getContextVar()) && scope.equals(o.getScope());
 		}
 		return false;
 	}

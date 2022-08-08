@@ -81,9 +81,10 @@ The real proof of the pudding is in the `evaluate()` method: this is where the f
 ```java
 package org.eclipse.rdf4j.examples.function;
 
+import static org.eclipse.rdf4j.model.util.Values.literal;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
@@ -114,7 +115,7 @@ public class PalindromeFunction implements Function {
      *         if more than one argument is supplied or if the supplied argument
      *         is not a literal.
      */
-    public Value evaluate(ValueFactory valueFactory, Value... args)
+    public Value evaluate(TripleSource tripleSource, Value... args)
 	throws ValueExprEvaluationException
 	{
 	    // our palindrome function expects only a single argument, so throw an error
@@ -144,14 +145,14 @@ public class PalindromeFunction implements Function {
 
 	    // a function is always expected to return a Value object, so we
 	    // return our boolean result as a Literal
-	    return valueFactory.createLiteral(palindrome);
+	    return literal(palindrome);
 	}
 }
 ```
 
 You are completely free to implement your function logic: in the above example, we have created a function that only returns `true` or `false`, but since the actual return type of an RDF4J function is {{< javadoc "Value" "model/Value.html" >}}, you can create functions that return string literals, numbers, dates, or even IRIs or blank nodes.
 
-In addition, since RDF4J release 3.3, the `evaluate` method also accepts a `TripleSource` as input parameter, which you can use to inspect the underlying database, and query it for further information (for a simple/silly example see the {{< example "Existing Palindrome function" "function/ExstingPalindromeFunction.java" >}}).
+In addition, the `evaluate` method accepts a `TripleSource` as input parameter, which you can use to inspect the underlying database, and query it for further information (for a simple/silly example see the {{< example "Existing Palindrome function" "function/ExstingPalindromeFunction.java" >}}, which in addition to checking that the argument is a palindrome, also checks if that palindrome already exists in the database).
 
 There are two important things to keep in mind though:
 

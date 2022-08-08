@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -43,7 +44,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 	@Test
 	public void merge() {
-		String expectedQuery = "SELECT * WHERE {?s ?p ?o . FILTER(?o > 2 && ?o <4) }";
+		String expectedQuery = "SELECT * WHERE {?s ?p ?o . FILTER( ?o <4 && ?o > 2) }";
 		String query = "SELECT * WHERE {?s ?p ?o . FILTER(?o > 2) . FILTER(?o <4) }";
 
 		testOptimizer(expectedQuery, query);
@@ -75,17 +76,23 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Var p = new Var("p");
 		Var o = new Var("o");
 		Var o2 = new Var("o2");
+		ValueConstant one = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(1));
 		ValueConstant two = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(2));
 		ValueConstant four = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(4));
-		Compare oSmallerThanTwo = new Compare(o, two, CompareOp.GT);
-		Filter spo = new Filter(new StatementPattern(s, p, o), oSmallerThanTwo);
-		Compare o2SmallerThanFour = new Compare(o2, four, CompareOp.LT);
-		Filter spo2 = new Filter(new StatementPattern(s, p, o2), o2SmallerThanFour);
+		ValueConstant five = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(5));
+
+		And firstAnd = new And(new Compare(o, five, CompareOp.LT), new Compare(o, two, CompareOp.GT));
+		Filter spo = new Filter(new StatementPattern(s, p, o), firstAnd);
+
+		And secondAnd = new And(new And(new Compare(o2, two, CompareOp.NE), new Compare(o2, one, CompareOp.GT)),
+				new Compare(o2, four, CompareOp.LT));
+		Filter spo2 = new Filter(new StatementPattern(s, p, o2), secondAnd);
+
 		TupleExpr expected = new QueryRoot(
 				new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
 						new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2"))));
 
-		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2  . FILTER(?o > '2'^^xsd:int && ?o2 < '4'^^xsd:int) }";
+		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2  . FILTER(?o2 != '2'^^xsd:int && ?o2 > '1'^^xsd:int && ?o < '5'^^xsd:int && ?o > '2'^^xsd:int && ?o2 < '4'^^xsd:int) }";
 
 		testOptimizer(expected, query);
 	}
@@ -97,7 +104,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		opt.optimize(pq.getTupleExpr(), null, null);
 
 		ParsedQuery expectedParsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery, null);
-		assertEquals(pq.getTupleExpr(), expectedParsedQuery.getTupleExpr());
+		assertEquals(expectedParsedQuery.getTupleExpr(), pq.getTupleExpr());
 	}
 
 	void testOptimizer(TupleExpr expectedQuery, String actualQuery)
@@ -106,6 +113,6 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		FilterOptimizer opt = getOptimizer();
 		opt.optimize(pq.getTupleExpr(), null, null);
 
-		assertEquals(pq.getTupleExpr(), expectedQuery);
+		assertEquals(expectedQuery, pq.getTupleExpr());
 	}
 }
