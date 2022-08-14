@@ -100,6 +100,9 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 					try {
 						Iterations.closeCloseable(argIter.next());
 					} catch (Throwable e) {
+						if (e instanceof InterruptedException) {
+							Thread.currentThread().interrupt();
+						}
 						collectedExceptions.add(e);
 					}
 				}

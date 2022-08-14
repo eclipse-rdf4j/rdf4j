@@ -117,10 +117,14 @@ public class StatementSourcePattern extends FedXStatementPattern {
 			}
 
 		} catch (RepositoryException | MalformedQueryException e) {
-			union.close();
+			if (union != null) {
+				union.close();
+			}
 			throw new QueryEvaluationException(e);
 		} catch (Throwable t) {
-			union.close();
+			if (union != null) {
+				union.close();
+			}
 			throw t;
 		}
 	}

@@ -87,6 +87,9 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		} catch (RuntimeException e) {
 			throw e;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw new RuntimeException(e);
 		}
 

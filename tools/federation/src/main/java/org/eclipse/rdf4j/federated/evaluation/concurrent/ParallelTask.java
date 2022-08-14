@@ -44,4 +44,11 @@ public interface ParallelTask<T> {
 	 * Optional implementation to cancel this task on a best effort basis
 	 */
 	void cancel();
+
+	/**
+	 * Optional implementation to close this task on a best effort basis.
+	 */
+	default void close() {
+
+	}
 }

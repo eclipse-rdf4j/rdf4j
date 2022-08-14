@@ -144,6 +144,9 @@ public class Iterations {
 			} catch (RuntimeException e) {
 				throw e;
 			} catch (Exception e) {
+				if (e instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
 				throw new RuntimeException(e);
 			}
 		});
@@ -166,6 +169,9 @@ public class Iterations {
 					} catch (RuntimeException e) {
 						throw e;
 					} catch (Exception e) {
+						if (e instanceof InterruptedException) {
+							Thread.currentThread().interrupt();
+						}
 						throw new RuntimeException(e);
 					}
 				});

@@ -322,6 +322,9 @@ public class FedXConnection extends AbstractSailConnection {
 		} catch (RuntimeException e) {
 			throw e;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			throw new SailException(e);
 		}
 	}

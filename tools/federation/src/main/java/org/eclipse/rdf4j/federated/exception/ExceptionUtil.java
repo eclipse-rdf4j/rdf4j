@@ -60,6 +60,10 @@ public class ExceptionUtil {
 	public static QueryEvaluationException traceExceptionSource(Endpoint endpoint, Throwable ex,
 			String additionalInfo) {
 
+		if (ex instanceof InterruptedException) {
+			Thread.currentThread().interrupt();
+		}
+
 		String eID;
 
 		if (endpoint == null) {
@@ -192,6 +196,10 @@ public class ExceptionUtil {
 		if (res instanceof QueryEvaluationException) {
 			return (QueryEvaluationException) res;
 		}
+		if (t instanceof InterruptedException) {
+			Thread.currentThread().interrupt();
+		}
+
 		return new QueryEvaluationException(res);
 	}
 }

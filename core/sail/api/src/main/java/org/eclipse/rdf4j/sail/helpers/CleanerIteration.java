@@ -67,6 +67,9 @@ final class CleanerIteration<E, X extends Exception> implements CloseableIterati
 							"Forced closing of unclosed iteration. Set the system property 'org.eclipse.rdf4j.repository.debug' to 'true' to get stack traces.");
 					iteration.close();
 				} catch (Exception e) {
+					if (e instanceof InterruptedException) {
+						Thread.currentThread().interrupt();
+					}
 					throw new RuntimeException(e);
 				}
 			}
