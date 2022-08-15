@@ -108,6 +108,9 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 				try {
 					close();
 				} catch (Exception e) {
+					if (e instanceof InterruptedException) {
+						Thread.currentThread().interrupt();
+					}
 					logger.warn("TimeLimitIteration timed out and failed to close successfully: ", e);
 				}
 			}
@@ -134,6 +137,9 @@ public abstract class TimeLimitIteration<E, X extends Exception> extends Iterati
 		try {
 			close();
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			logger.warn("TimeLimitIteration timed out and failed to close successfully: ", e);
 		}
 	}

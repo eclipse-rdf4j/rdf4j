@@ -33,6 +33,9 @@ public class SilentIteration<T, E extends Exception> extends IterationWrapper<T,
 		try {
 			return super.hasNext();
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			if (logger.isTraceEnabled()) {
 				logger.trace("Suppressed error in SILENT iteration: " + e.getMessage(), e);
 			}
@@ -48,6 +51,9 @@ public class SilentIteration<T, E extends Exception> extends IterationWrapper<T,
 			// pass through
 			throw e;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			if (logger.isTraceEnabled()) {
 				logger.trace("Converted error in SILENT iteration: " + e.getMessage(), e);
 			}
@@ -60,6 +66,9 @@ public class SilentIteration<T, E extends Exception> extends IterationWrapper<T,
 		try {
 			super.handleClose();
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			if (logger.isTraceEnabled()) {
 				logger.trace("Suppressed error in SILENT iteration: " + e.getMessage(), e);
 			}

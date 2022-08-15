@@ -62,6 +62,9 @@ public class BackgroundResultExecutor implements AutoCloseable {
 				try {
 					onclose.close();
 				} catch (Exception e) {
+					if (e instanceof InterruptedException) {
+						Thread.currentThread().interrupt();
+					}
 					logger.error(e.toString(), e);
 				}
 			}

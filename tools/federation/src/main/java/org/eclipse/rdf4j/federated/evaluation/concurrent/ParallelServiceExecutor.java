@@ -130,6 +130,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet, Quer
 					throw new QueryInterruptedException("Timeout during service evaluation");
 				}
 			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
 				log.debug("Error while evaluating service expression. Thread got interrupted.");
 				error = e;
 			}

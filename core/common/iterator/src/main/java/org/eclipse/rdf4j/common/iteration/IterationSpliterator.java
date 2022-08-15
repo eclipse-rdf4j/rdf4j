@@ -55,6 +55,9 @@ public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T>
 			}
 			return false;
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			if (e instanceof RuntimeException) {
 				throw (RuntimeException) e;
 			}
@@ -77,6 +80,9 @@ public class IterationSpliterator<T> extends Spliterators.AbstractSpliterator<T>
 				action.accept(iteration.next());
 			}
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			if (e instanceof RuntimeException) {
 				throw (RuntimeException) e;
 			}

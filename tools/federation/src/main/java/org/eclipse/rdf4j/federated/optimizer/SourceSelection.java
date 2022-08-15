@@ -223,6 +223,7 @@ public class SourceSelection {
 					throw new OptimizationException("Source selection has run into a timeout");
 				}
 			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
 				log.debug("Error during source selection. Thread got interrupted.");
 				errors.add(e);
 			}

@@ -966,8 +966,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 					try {
 						logger.warn("Unclosed iteration", entry.getValue());
 						entry.getKey().close();
-					} catch (Exception ignored) {
-						logger.warn("Exception occurred while closing unclosed iterations.", ignored);
+					} catch (Exception e) {
+						if (e instanceof InterruptedException) {
+							Thread.currentThread().interrupt();
+						}
+						logger.warn("Exception occurred while closing unclosed iterations.", e);
 					}
 				}
 

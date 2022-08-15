@@ -47,9 +47,15 @@ class CloseableIterationSpliterator<T, E extends Exception> extends Spliterators
 				return false;
 			}
 		} catch (Throwable e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			try {
 				iteration.close();
 			} catch (Exception ex) {
+				if (e instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
 				throw new RuntimeException(ex);
 			}
 			if (e instanceof Error) {
@@ -70,6 +76,9 @@ class CloseableIterationSpliterator<T, E extends Exception> extends Spliterators
 				action.accept(iteration.next());
 			}
 		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
 			if (e instanceof RuntimeException) {
 				throw (RuntimeException) e;
 			}
