@@ -24,7 +24,8 @@ public class EmptyStatementPattern extends StatementPattern implements EmptyResu
 	private static final long serialVersionUID = 1026901522434201643L;
 
 	public EmptyStatementPattern(StatementPattern node) {
-		super(node.getSubjectVar(), node.getPredicateVar(), node.getObjectVar(), node.getContextVar());
+		super(node.getSubjectVar().clone(), node.getPredicateVar().clone(), node.getObjectVar().clone(),
+				node.getContextVar() != null ? node.getContextVar().clone() : null);
 	}
 
 	@Override

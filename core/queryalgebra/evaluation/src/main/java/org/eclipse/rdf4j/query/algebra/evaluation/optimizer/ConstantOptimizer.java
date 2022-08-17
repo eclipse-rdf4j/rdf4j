@@ -146,14 +146,14 @@ public class ConstantOptimizer implements QueryOptimizer {
 					if (leftIsTrue) {
 						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
 					} else {
-						or.replaceWith(or.getRightArg());
+						or.replaceWith(or.getRightArg().clone());
 					}
 				} else if (isConstant(or.getRightArg())) {
 					boolean rightIsTrue = strategy.isTrue(or.getRightArg(), EmptyBindingSet.getInstance());
 					if (rightIsTrue) {
 						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
 					} else {
-						or.replaceWith(or.getLeftArg());
+						or.replaceWith(or.getLeftArg().clone());
 					}
 				}
 			} catch (ValueExprEvaluationException e) {
@@ -176,14 +176,14 @@ public class ConstantOptimizer implements QueryOptimizer {
 				} else if (isConstant(and.getLeftArg())) {
 					boolean leftIsTrue = strategy.isTrue(and.getLeftArg(), EmptyBindingSet.getInstance());
 					if (leftIsTrue) {
-						and.replaceWith(and.getRightArg());
+						and.replaceWith(and.getRightArg().clone());
 					} else {
 						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));
 					}
 				} else if (isConstant(and.getRightArg())) {
 					boolean rightIsTrue = strategy.isTrue(and.getRightArg(), EmptyBindingSet.getInstance());
 					if (rightIsTrue) {
-						and.replaceWith(and.getLeftArg());
+						and.replaceWith(and.getLeftArg().clone());
 					} else {
 						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));
 					}
@@ -310,7 +310,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 					if (strategy.isTrue(node.getCondition(), EmptyBindingSet.getInstance())) {
 						node.replaceWith(node.getResult());
 					} else {
-						node.replaceWith(node.getAlternative());
+						node.replaceWith(node.getAlternative().clone());
 					}
 				} catch (ValueExprEvaluationException e) {
 					logger.debug("Failed to evaluate UnaryValueOperator with a constant argument", e);

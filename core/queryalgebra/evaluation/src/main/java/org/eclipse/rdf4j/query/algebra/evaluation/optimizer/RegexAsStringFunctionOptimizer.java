@@ -84,7 +84,8 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 
 		private void containsCandidate(Regex node, String potential) {
 			if (plain(potential)) {
-				node.replaceWith(new FunctionCall(FN.CONTAINS.stringValue(), node.getArg(), node.getPatternArg()));
+				node.replaceWith(new FunctionCall(FN.CONTAINS.stringValue(), node.getArg().clone(),
+						node.getPatternArg().clone()));
 			}
 		}
 
@@ -104,7 +105,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 			final String potential = regex.substring(0, regex.length() - 1);
 			if (plain(potential)) {
 				ValueConstant vc = new ValueConstant(vf.createLiteral(potential));
-				node.replaceWith(new FunctionCall(FN.ENDS_WITH.stringValue(), node.getArg(), vc));
+				node.replaceWith(new FunctionCall(FN.ENDS_WITH.stringValue(), node.getArg().clone(), vc));
 			}
 		}
 
@@ -112,7 +113,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 			final String potential = regex.substring(1, regex.length());
 			if (plain(potential)) {
 				ValueConstant vc = new ValueConstant(vf.createLiteral(potential));
-				node.replaceWith(new FunctionCall(FN.STARTS_WITH.stringValue(), node.getArg(), vc));
+				node.replaceWith(new FunctionCall(FN.STARTS_WITH.stringValue(), node.getArg().clone(), vc));
 			}
 		}
 
@@ -120,7 +121,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 			final String potential = regex.substring(1, regex.length() - 1);
 			if (plain(potential)) {
 				ValueConstant vc = new ValueConstant(vf.createLiteral(potential));
-				node.replaceWith(new Compare(node.getArg(), vc, Compare.CompareOp.EQ));
+				node.replaceWith(new Compare(node.getArg().clone(), vc, Compare.CompareOp.EQ));
 			}
 		}
 	}
