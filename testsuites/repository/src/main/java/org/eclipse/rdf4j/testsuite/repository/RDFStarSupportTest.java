@@ -21,16 +21,20 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -218,6 +222,56 @@ public abstract class RDFStarSupportTest {
 		assertEquals(1, testCon.getStatements(copyOfInsertedTriple, null, null, false).stream().count());
 		testCon.commit();
 
+	}
+
+	@Test
+	public void testMemoryStore_RDFstar() {
+		String queryString = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
+				+ "PREFIX person: <http://example.com/person/>\n"
+				+ "PREFIX org: <http://example.com/org/>\n"
+				+ "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+				+ "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n"
+				+ "CONSTRUCT {\n"
+				+ "  ?s ?p ?o.\n"
+				+ "  << ?s ?p ?o >> <http://example.com/certainty> ?cert.\n"
+				+ "  << ?s ?p ?o >> <http://example.com/certaintyDeviation> ?certDiv.\n"
+				+ "  << person:alice foaf:knows person:bob >> <http://example.com/observedBy> person:mike.\n"
+				+ "}\n"
+				+ "WHERE {\n"
+				+ "  {\n"
+				+ "    SELECT ?s ?p ?o ?cert ?certDiv WHERE {\n"
+				+ "      VALUES (?s ?p ?o ?cert ?certDiv) {\n"
+				+ "        (person:alice foaf:knows person:bob \"1.0\"^^xsd:decimal 0 )\n"
+				+ "        (person:alice foaf:knows person:carol \"0.3\"^^xsd:decimal \"0.1\"^^xsd:decimal)\n"
+				+ "        (person:carol foaf:knows person:mike \"0.7\"^^xsd:decimal \"0.2\"^^xsd:decimal)\n"
+				+ "        (person:mike foaf:knows person:carol \"0.1\"^^xsd:decimal UNDEF)\n"
+				+ "        (person:bob foaf:knows person:carol \"0.8\"^^xsd:decimal UNDEF)\n"
+				+ "        (person:alice foaf:knows person:mike \"0.6\"^^xsd:decimal \"0.1\"^^xsd:decimal)\n"
+				+ "        (person:alice foaf:member org:W3C UNDEF UNDEF)\n"
+				+ "        (person:mike foaf:member org:W3C UNDEF UNDEF)\n"
+				+ "        (person:alice rdf:type foaf:Person UNDEF UNDEF)\n"
+				+ "        (person:carol rdf:type foaf:Person UNDEF UNDEF)\n"
+				+ "        (person:mike rdf:type foaf:Person UNDEF UNDEF)\n"
+				+ "        (person:bob rdf:type foaf:Person UNDEF UNDEF)\n"
+				+ "        (org:W3C rdf:type foaf:Organization UNDEF UNDEF)\n"
+				+ "        (person:alice rdfs:label \"Alice\" UNDEF UNDEF)\n"
+				+ "        (person:alice foaf:birthday \"1990-01-01\" UNDEF UNDEF)\n"
+				+ "        (person:bob rdfs:label \"Bob\" UNDEF UNDEF)\n"
+				+ "        (person:carol rdfs:label \"Carol\" UNDEF UNDEF)\n"
+				+ "        (person:mike rdfs:label \"Mike\" UNDEF UNDEF)\n"
+				+ "      }\n"
+				+ "    }\n"
+				+ "  }\n"
+				+ "}";
+
+		try (RepositoryConnection con = testRepository.getConnection()) {
+			GraphQuery graphQuery = con.prepareGraphQuery(queryString);
+			try (GraphQueryResult result = graphQuery.evaluate()) {
+				List<Statement> statements = QueryResults.asList(result);
+				Assertions.assertEquals(29, statements.size());
+			}
+		}
 	}
 
 	protected abstract Repository createRepository();
