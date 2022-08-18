@@ -5,7 +5,9 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- ******************************************************************************/
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
 
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
@@ -32,6 +34,7 @@ import org.slf4j.LoggerFactory;
 public class ParentReferenceChecker implements QueryOptimizer {
 
 	private static final Logger logger = LoggerFactory.getLogger(ParentReferenceChecker.class);
+
 	private final QueryOptimizer previousOptimizerInPipeline;
 
 	public ParentReferenceChecker(QueryOptimizer previousOptimizerInPipeline) {
