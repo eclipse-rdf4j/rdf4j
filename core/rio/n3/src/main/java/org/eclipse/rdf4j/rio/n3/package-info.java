@@ -5,7 +5,9 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- ******************************************************************************/
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
 /**
  * Writer for the <a href="http://www.w3.org/DesignIssues/Notation3.html">Notation-3 (N3) format</a>.
  */
