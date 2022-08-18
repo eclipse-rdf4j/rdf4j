@@ -9,13 +9,14 @@
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
-@InternalUseOnly
 /**
  * Lmdb implementations of the RDF Model interfaces.
  *
  * @apiNote This package is for internal use only: its existence, signature or behavior may change without warning from
  *          one release to the next.
  */
+
+@InternalUseOnly
 package org.eclipse.rdf4j.sail.lmdb.model;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;

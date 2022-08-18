@@ -9,8 +9,6 @@
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
 
-package org.eclipse.rdf4j.repository.sparql;
-
 /**
  * @author Jeen Broekstra
  */
@@ -58,3 +56,5 @@ package org.eclipse.rdf4j.repository.sparql;
 //		System.err.println("temporarily disabled testAutoCommitHandling() for HTTPRepository");
 //	}
 //}
+
+package org.eclipse.rdf4j.repository.sparql;
