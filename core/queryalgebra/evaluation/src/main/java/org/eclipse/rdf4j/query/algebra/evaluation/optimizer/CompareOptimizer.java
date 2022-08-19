@@ -5,7 +5,9 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- ******************************************************************************/
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import org.eclipse.rdf4j.model.Resource;
@@ -57,7 +59,7 @@ public class CompareOptimizer implements QueryOptimizer {
 				boolean rightIsResource = isResource(rightArg);
 
 				if (leftIsVar && rightIsResource || leftIsResource && rightIsVar || leftIsResource && rightIsResource) {
-					SameTerm sameTerm = new SameTerm(leftArg, rightArg);
+					SameTerm sameTerm = new SameTerm(leftArg.clone(), rightArg.clone());
 					compare.replaceWith(sameTerm);
 				}
 			}

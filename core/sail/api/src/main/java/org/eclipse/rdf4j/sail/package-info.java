@@ -5,7 +5,9 @@
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- ******************************************************************************/
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
 /**
  * RDF Storage And Inference Layer (RDF Sail): a set of interfaces defining an SPI for RDF databases.
  *

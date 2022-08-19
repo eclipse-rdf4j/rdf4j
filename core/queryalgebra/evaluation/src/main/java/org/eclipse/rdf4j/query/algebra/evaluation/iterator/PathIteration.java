@@ -417,13 +417,14 @@ public class PathIteration extends LookAheadIteration<BindingSet, QueryEvaluatio
 			if (toBeReplaced.equals(var) || (toBeReplaced.isAnonymous() && var.isAnonymous()
 					&& (toBeReplaced.hasValue() && toBeReplaced.getValue().equals(var.getValue())))) {
 				QueryModelNode parent = var.getParentNode();
+				Var replacement = this.replacement.clone();
 				parent.replaceChildNode(var, replacement);
-				replacement.setParentNode(parent);
+				assert replacement.getParentNode() == parent;
 			} else if (replaceAnons && var.isAnonymous() && !var.hasValue()) {
 				Var replacementVar = createAnonVar("anon-replace-" + var.getName() + index);
 				QueryModelNode parent = var.getParentNode();
 				parent.replaceChildNode(var, replacementVar);
-				replacementVar.setParentNode(parent);
+				assert replacementVar.getParentNode() == parent;
 			}
 		}
 

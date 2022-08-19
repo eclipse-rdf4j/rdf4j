@@ -58,10 +58,10 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Var o2 = new Var("o2");
 		ValueConstant two = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(2));
 		ValueConstant four = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(4));
-		Compare oSmallerThanTwo = new Compare(o, two, CompareOp.GT);
-		Filter spo = new Filter(new StatementPattern(s, p, o), oSmallerThanTwo);
-		Compare o2SmallerThanFour = new Compare(o2, four, CompareOp.LT);
-		Filter spo2 = new Filter(new StatementPattern(s, p, o2), o2SmallerThanFour);
+		Compare oSmallerThanTwo = new Compare(o.clone(), two, CompareOp.GT);
+		Filter spo = new Filter(new StatementPattern(s.clone(), p.clone(), o.clone()), oSmallerThanTwo);
+		Compare o2SmallerThanFour = new Compare(o2.clone(), four, CompareOp.LT);
+		Filter spo2 = new Filter(new StatementPattern(s.clone(), p.clone(), o2.clone()), o2SmallerThanFour);
 		TupleExpr expected = new QueryRoot(
 				new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
 						new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2"))));
@@ -81,12 +81,13 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		ValueConstant four = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(4));
 		ValueConstant five = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(5));
 
-		And firstAnd = new And(new Compare(o, five, CompareOp.LT), new Compare(o, two, CompareOp.GT));
-		Filter spo = new Filter(new StatementPattern(s, p, o), firstAnd);
+		And firstAnd = new And(new Compare(o.clone(), five, CompareOp.LT), new Compare(o.clone(), two, CompareOp.GT));
+		Filter spo = new Filter(new StatementPattern(s.clone(), p.clone(), o.clone()), firstAnd);
 
-		And secondAnd = new And(new And(new Compare(o2, two, CompareOp.NE), new Compare(o2, one, CompareOp.GT)),
-				new Compare(o2, four, CompareOp.LT));
-		Filter spo2 = new Filter(new StatementPattern(s, p, o2), secondAnd);
+		And secondAnd = new And(
+				new And(new Compare(o2.clone(), two, CompareOp.NE), new Compare(o2.clone(), one, CompareOp.GT)),
+				new Compare(o2.clone(), four, CompareOp.LT));
+		Filter spo2 = new Filter(new StatementPattern(s.clone(), p.clone(), o2.clone()), secondAnd);
 
 		TupleExpr expected = new QueryRoot(
 				new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),

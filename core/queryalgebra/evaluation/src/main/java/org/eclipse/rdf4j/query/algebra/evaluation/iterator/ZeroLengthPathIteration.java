@@ -86,7 +86,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet, Quer
 
 		StatementPattern subjects;
 		if (contextVar != null) {
-			subjects = new StatementPattern(Scope.NAMED_CONTEXTS, startVar, predicate, endVar, contextVar);
+			subjects = new StatementPattern(Scope.NAMED_CONTEXTS, startVar, predicate, endVar, contextVar.clone());
 		} else {
 			subjects = new StatementPattern(startVar, predicate, endVar);
 		}

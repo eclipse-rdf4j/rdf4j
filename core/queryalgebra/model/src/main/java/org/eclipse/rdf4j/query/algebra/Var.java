@@ -109,6 +109,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public void setParentNode(QueryModelNode parent) {
+		assert this.parent == null;
 		this.parent = parent;
 	}
 

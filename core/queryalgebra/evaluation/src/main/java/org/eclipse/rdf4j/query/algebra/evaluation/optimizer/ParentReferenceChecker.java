@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayDeque;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -23,21 +24,29 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Cleans up {@link QueryModelNode#getParentNode()} references that have become inconsistent with the actual algebra
- * tree structure due to optimization operations. Typically used at the very end of the optimization pipeline.
+ * Checks {@link QueryModelNode#getParentNode()} references that have become inconsistent with the actual algebra tree
+ * structure due to optimization operations. Used during testing.
  *
  * @author Jeen Broekstra
+ * @author Håvard Ottestad
  */
-public class ParentReferenceCleaner implements QueryOptimizer {
+@InternalUseOnly
+public class ParentReferenceChecker implements QueryOptimizer {
 
-	private static final Logger logger = LoggerFactory.getLogger(ParentReferenceCleaner.class);
+	private static final Logger logger = LoggerFactory.getLogger(ParentReferenceChecker.class);
+
+	private final QueryOptimizer previousOptimizerInPipeline;
+
+	public ParentReferenceChecker(QueryOptimizer previousOptimizerInPipeline) {
+		this.previousOptimizerInPipeline = previousOptimizerInPipeline;
+	}
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new ParentFixingVisitor());
+		tupleExpr.visit(new ParentCheckingVisitor());
 	}
 
-	private static class ParentFixingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	private class ParentCheckingVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final ArrayDeque<QueryModelNode> ancestors = new ArrayDeque<>();
 
@@ -45,12 +54,17 @@ public class ParentReferenceCleaner implements QueryOptimizer {
 		protected void meetNode(QueryModelNode node) throws RuntimeException {
 			QueryModelNode expectedParent = ancestors.peekLast();
 			if (node.getParentNode() != expectedParent) {
-				String message = "unexpected parent for node " + node + ": " + node.getParentNode() + " (expected "
-						+ expectedParent + ")";
-				assert node.getParentNode() == expectedParent : message;
-				logger.debug(message);
+				String previousOptimizer;
+				if (ParentReferenceChecker.this.previousOptimizerInPipeline != null) {
+					previousOptimizer = ParentReferenceChecker.this.previousOptimizerInPipeline.getClass()
+							.getSimpleName();
+				} else {
+					previousOptimizer = "query parsing";
+				}
+				String message = "After " + previousOptimizer + " there was an unexpected parent for node " + node
+						+ ": " + node.getParentNode() + " (expected " + expectedParent + ")";
 
-				node.setParentNode(expectedParent);
+				assert node.getParentNode() == expectedParent : message;
 			}
 
 			ancestors.addLast(node);

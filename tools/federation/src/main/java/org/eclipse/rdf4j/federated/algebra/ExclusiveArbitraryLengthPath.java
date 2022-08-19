@@ -40,8 +40,8 @@ public class ExclusiveArbitraryLengthPath extends ArbitraryLengthPath
 	private final List<String> freeVars;
 
 	public ExclusiveArbitraryLengthPath(ArbitraryLengthPath path, StatementSource owner, QueryInfo queryInfo) {
-		super(path.getScope(), path.getSubjectVar(), path.getPathExpression(), path.getObjectVar(),
-				path.getContextVar(), path.getMinLength());
+		super(path.getScope(), path.getSubjectVar().clone(), path.getPathExpression(), path.getObjectVar().clone(),
+				path.getContextVar() != null ? path.getContextVar().clone() : null, path.getMinLength());
 		this.owner = owner;
 		this.queryInfo = queryInfo;
 		this.freeVars = computeFreeVars();
