@@ -14,6 +14,8 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.EVALUATION_STRATEGY_FACTORY;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.NAMESPACE;
 
+import java.util.Optional;
+
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -47,10 +49,11 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		}
 
 		try {
-			return (EvaluationStrategyFactory) Thread.currentThread()
+			var factory = (EvaluationStrategyFactory) Thread.currentThread()
 					.getContextClassLoader()
 					.loadClass(evalStratFactoryClassName)
 					.newInstance();
+			return factory;
 		} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
 			throw new SailConfigException(e);
 		}
@@ -65,11 +68,11 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 			graph.add(implNode, EVALUATION_STRATEGY_FACTORY,
 					literal(evalStratFactoryClassName));
 		}
-		if (getDefaultQueryEvaluationMode() != null) {
+		getDefaultQueryEvaluationMode().ifPresent(mode -> {
 			graph.setNamespace("sb", NAMESPACE);
 			graph.add(implNode, BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE,
-					literal(getDefaultQueryEvaluationMode().getValue()));
-		}
+					literal(mode.getValue()));
+		});
 
 		return implNode;
 	}
@@ -94,8 +97,8 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 	/**
 	 * @return the defaultQueryEvaluationMode
 	 */
-	public QueryEvaluationMode getDefaultQueryEvaluationMode() {
-		return defaultQueryEvaluationMode;
+	public Optional<QueryEvaluationMode> getDefaultQueryEvaluationMode() {
+		return Optional.ofNullable(defaultQueryEvaluationMode);
 	}
 
 	/**

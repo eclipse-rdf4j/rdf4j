@@ -10,8 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base.config;
 
+import static org.eclipse.rdf4j.model.util.Values.iri;
+
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.util.Values;
 
 /**
  * Defines constants for the BaseSail schema.
@@ -22,8 +23,8 @@ public class BaseSailSchema {
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/base#";
 
 	/** <var>http://www.openrdf.org/config/sail/base#evaluationStrategyFactory</var> */
-	public final static IRI EVALUATION_STRATEGY_FACTORY = Values.iri(NAMESPACE, "evaluationStrategyFactory");
+	public final static IRI EVALUATION_STRATEGY_FACTORY = iri(NAMESPACE, "evaluationStrategyFactory");
 
-	public final static IRI DEFAULT_QUERY_EVALUATION_MODE = Values.iri(NAMESPACE, "defaultQueryEvaluationMode");
+	public final static IRI DEFAULT_QUERY_EVALUATION_MODE = iri(NAMESPACE, "defaultQueryEvaluationMode");
 
 }

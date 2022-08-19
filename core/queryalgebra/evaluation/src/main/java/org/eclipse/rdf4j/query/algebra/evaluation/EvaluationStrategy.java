@@ -17,6 +17,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -164,6 +165,10 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	default void setTrackTime(boolean trackTime) {
 		// no-op for backwards compatibility
 	}
+
+	QueryEvaluationMode getQueryEvaluationMode();
+
+	void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode);
 
 	default QueryValueEvaluationStep precompile(ValueExpr arg, QueryEvaluationContext context) {
 		return new QueryValueEvaluationStep.Minimal(this, arg);

@@ -41,7 +41,6 @@ public class StandardEvaluationStrategyFactory extends AbstractEvaluationStrateg
 		StandardEvaluationStrategy strategy = new StandardEvaluationStrategy(tripleSource, dataset, serviceResolver,
 				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
 		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
-
 		return strategy;
 	}
 

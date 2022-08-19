@@ -14,6 +14,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -63,6 +64,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 			long iterationCacheSyncThreshold, EvaluationStatistics evaluationStatistics) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncThreshold, evaluationStatistics);
 		this.tupleFuncRegistry = tupleFuncRegistry;
+		this.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
 	}
 
 	public TupleFunctionEvaluationStrategy(TripleSource tripleSource, Dataset dataset,

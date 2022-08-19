@@ -12,12 +12,10 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
@@ -944,6 +942,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		long closed = iterationsClosed.sum();
 		long opened = iterationsOpened.sum();
 		return closed != opened;
+	}
+
+	protected AbstractSail getSailBase() {
+		return sailBase;
 	}
 
 	private void forceCloseActiveOperations() throws SailException {
