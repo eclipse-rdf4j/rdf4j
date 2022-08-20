@@ -52,10 +52,9 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 		BiConsumer<MutableBindingSet, BindingSet> consumer = null;
 		for (ProjectionElem pe : projectionElemList.getElements()) {
-			String sourceName = pe.getSourceName();
-			String targetName = pe.getTargetName();
-			Function<BindingSet, Value> valueWithSourceName = context.getValue(sourceName);
-			BiConsumer<Value, MutableBindingSet> setTarget = context.setBinding(targetName);
+			String projectionName = pe.getProjectionAlias().orElse(pe.getName());
+			Function<BindingSet, Value> valueWithSourceName = context.getValue(pe.getName());
+			BiConsumer<Value, MutableBindingSet> setTarget = context.setBinding(projectionName);
 			BiConsumer<MutableBindingSet, BindingSet> next = (resultBindings, sourceBindings) -> {
 				Value targetValue = valueWithSourceName.apply(sourceBindings);
 				if (!includeAllParentBindings && targetValue == null) {
@@ -120,12 +119,12 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		final QueryBindingSet resultBindings = makeNewQueryBindings(parentBindings, includeAllParentBindings);
 
 		for (ProjectionElem pe : projElemList.getElements()) {
-			Value targetValue = sourceBindings.getValue(pe.getSourceName());
+			Value targetValue = sourceBindings.getValue(pe.getName());
 			if (!includeAllParentBindings && targetValue == null) {
-				targetValue = parentBindings.getValue(pe.getSourceName());
+				targetValue = parentBindings.getValue(pe.getName());
 			}
 			if (targetValue != null) {
-				resultBindings.setBinding(pe.getTargetName(), targetValue);
+				resultBindings.setBinding(pe.getProjectionAlias().orElse(pe.getName()), targetValue);
 			}
 		}
 

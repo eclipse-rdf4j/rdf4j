@@ -551,11 +551,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					throw new VisitorException("Either TripleRef or Expression expected in projection.");
 				}
 
-				String sourceName = alias;
-				if (child instanceof ASTVar) {
-					sourceName = ((ASTVar) child).getName();
-				}
-				ProjectionElem elem = new ProjectionElem(sourceName, alias);
+				ProjectionElem elem = new ProjectionElem(alias);
 				projElemList.addElement(elem);
 
 				AggregateCollector collector = new AggregateCollector();
@@ -637,8 +633,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							throw new VisitorException("non-aggregate expression '" + expr
 									+ "' not allowed in projection when using GROUP BY.");
 						}
-					} else if (!groupNames.contains(elem.getTargetName())) {
-						throw new VisitorException("variable '" + elem.getTargetName()
+					} else if (!groupNames.contains(elem.getName())) {
+						throw new VisitorException("variable '" + elem.getName()
 								+ "' in projection not present in GROUP BY.");
 					}
 				}
@@ -690,7 +686,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			String prev = varName;
 
 			for (ProjectionElem element : elements) {
-				if (element.getTargetName().equals(varName)) {
+				if (element.getName().equals(varName)) {
 					if (element.hasAggregateOperatorInExpression()) {
 						return false;
 					} else {
@@ -702,7 +698,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							}
 						}
 
-						varName = element.getSourceName();
+						varName = element.getName();
 						break;
 					}
 				}
@@ -1658,9 +1654,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		@Override
 		public void meet(ProjectionElem node) throws VisitorException {
-			if (node.getSourceName().equals(toBeReplaced.getName())) {
-				node.setSourceName(replacement.getName());
-				node.setTargetName(replacement.getName());
+			if (node.getName().equals(toBeReplaced.getName())) {
+				node.setName(replacement.getName());
 			}
 		}
 	}
