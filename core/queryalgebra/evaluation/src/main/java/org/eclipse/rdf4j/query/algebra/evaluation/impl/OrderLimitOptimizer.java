@@ -75,9 +75,7 @@ public class OrderLimitOptimizer implements QueryOptimizer {
 			if (projection != null) {
 				boolean projected = false;
 				for (ProjectionElem e : projection.getProjectionElemList().getElements()) {
-					String source = e.getSourceName();
-					String target = e.getTargetName();
-					if (node.getName().equals(source) && node.getName().equals(target)) {
+					if (node.getName().equals(e.getName())) {
 						projected = true;
 						break;
 					}

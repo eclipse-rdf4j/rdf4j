@@ -367,11 +367,11 @@ public class SpinRenderer {
 			if (isSubQuery) {
 				super.meet(node);
 			} else {
-				String varName = node.getSourceName();
+				String varName = node.getName();
 				ValueExpr valueExpr = inlineBindings.getValueExpr(varName);
 				Value value = (valueExpr instanceof ValueConstant) ? ((ValueConstant) valueExpr).getValue()
 						: getVar(varName);
-				String targetName = node.getTargetName();
+				String targetName = node.getProjectionAlias().orElse(null);
 				IRI pred;
 				if ("subject".equals(targetName)) {
 					pred = SP.SUBJECT_PROPERTY;
@@ -611,10 +611,10 @@ public class SpinRenderer {
 		public void meet(ProjectionElem node) throws RDFHandlerException {
 			ValueExpr valueExpr = null;
 			if (inlineBindings != null) {
-				String varName = node.getSourceName();
+				String varName = node.getName();
 				valueExpr = inlineBindings.getValueExpr(varName);
 			}
-			Resource targetVar = getVar(node.getTargetName());
+			Resource targetVar = getVar(node.getProjectionAlias().orElse(node.getName()));
 			listEntry(targetVar);
 			if (valueExpr != null && !(valueExpr instanceof Var)) {
 				Resource currentSubj = subject;

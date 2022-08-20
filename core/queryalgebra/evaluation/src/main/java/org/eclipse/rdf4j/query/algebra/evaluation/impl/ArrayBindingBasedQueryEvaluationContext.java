@@ -14,7 +14,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -271,8 +270,8 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			@Override
 			public void meet(ProjectionElem node) throws QueryEvaluationException {
 				super.meet(node);
-				node.setSourceName(varNames.computeIfAbsent(node.getSourceName(), k -> k));
-				node.setTargetName(varNames.computeIfAbsent(node.getTargetName(), k -> k));
+				node.setName(varNames.computeIfAbsent(node.getName(), k -> k));
+				node.setProjectionAlias(varNames.computeIfAbsent(node.getProjectionAlias().orElse(null), k -> k));
 			}
 
 			@Override

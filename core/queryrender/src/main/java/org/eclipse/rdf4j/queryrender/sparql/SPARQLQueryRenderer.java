@@ -103,7 +103,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 							aFirst = false;
 						}
 
-						aQuery.append("?" + aElem.getSourceName());
+						aQuery.append("?" + aElem.getName());
 					}
 				}
 			}
