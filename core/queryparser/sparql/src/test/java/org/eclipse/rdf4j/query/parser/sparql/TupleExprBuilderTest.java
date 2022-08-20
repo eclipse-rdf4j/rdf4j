@@ -19,13 +19,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
@@ -55,11 +54,12 @@ public class TupleExprBuilderTest {
 			assertThat(result instanceof Projection).isTrue();
 
 			Projection p = (Projection) result;
-			assertThat(p.getArg()).isInstanceOf(StatementPattern.class);
+			assertThat(p.getArg()).isInstanceOf(Extension.class);
+			Extension extension = (Extension) p.getArg();
 
-			ProjectionElem alias = p.getProjectionElemList().getElements().get(0);
-			assertThat(alias.getSourceName()).isEqualTo("a");
-			assertThat(alias.getTargetName()).isEqualTo("b");
+			assertThat(extension.getElements()).hasSize(1)
+					.allMatch(elem -> elem.getName().equals("b") && ((Var) elem.getExpr()).getName().equals("a"));
+
 		} catch (Exception e) {
 			e.printStackTrace();
 			fail("should parse simple select query");
