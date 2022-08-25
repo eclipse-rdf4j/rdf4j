@@ -176,12 +176,20 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 		assert !closed;
-		if (deprecated == null || deprecatedEmpty) {
+		if ((deprecated == null || deprecatedEmpty) && deprecatedContexts == null) {
 			return false;
 		}
 
 		boolean readLock = readWriteLock.readLock();
 		try {
+			if (deprecatedContexts != null) {
+				for (Resource context : contexts) {
+					if (deprecatedContexts.contains(context)) {
+						return true;
+					}
+				}
+			}
+
 			return deprecated.contains(subj, pred, obj, contexts);
 		} finally {
 			readWriteLock.unlockReader(readLock);
@@ -637,7 +645,16 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	public boolean hasDeprecated() {
 		assert !closed;
-		return deprecated != null && !deprecatedEmpty;
+		if (deprecatedContexts == null) {
+			return deprecated != null && !deprecatedEmpty;
+		} else {
+			boolean readLock = readWriteLock.readLock();
+			try {
+				return (deprecated != null && !deprecatedEmpty) || !deprecatedContexts.isEmpty();
+			} finally {
+				readWriteLock.unlockReader(readLock);
+			}
+		}
 	}
 
 	boolean isChanged() {
@@ -680,13 +697,21 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	boolean hasDeprecated(Statement statement) {
 		assert !closed;
-		if (deprecated == null || deprecatedEmpty) {
+		if ((deprecated == null || deprecatedEmpty) && deprecatedContexts == null) {
 			return false;
 		}
 
 		boolean readLock = readWriteLock.readLock();
 		try {
-			return deprecated.contains(statement);
+			if (deprecatedContexts != null) {
+				if (deprecatedContexts.contains(statement.getContext())) {
+					return true;
+				}
+			}
+			if (deprecated != null) {
+				return deprecated.contains(statement);
+			} else
+				return false;
 		} finally {
 			readWriteLock.unlockReader(readLock);
 		}

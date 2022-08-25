@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.Dataset;
@@ -463,6 +464,9 @@ class Transaction implements AutoCloseable {
 
 	private static class WildcardRDFRemover extends AbstractRDFHandler {
 
+		private static final Resource[] ALL_CONTEXT = {};
+		private static final Resource[] DEFAULT_CONTEXT = { null };
+
 		private final RepositoryConnection conn;
 
 		public WildcardRDFRemover(RepositoryConnection conn) {
@@ -476,28 +480,26 @@ class Transaction implements AutoCloseable {
 			IRI predicate = SESAME.WILDCARD.equals(st.getPredicate()) ? null : st.getPredicate();
 			Value object = SESAME.WILDCARD.equals(st.getObject()) ? null : st.getObject();
 
-			// use the RepositoryConnection.clear operation if we're removing
-			// all statements
-			final boolean clearAllTriples = subject == null && predicate == null && object == null;
+			Resource[] context;
+			if (st.getContext() == null) {
+				context = ALL_CONTEXT;
+			} else if (RDF4J.NIL.equals(st.getContext())) {
+				context = DEFAULT_CONTEXT;
+			} else {
+				context = new Resource[] { st.getContext() };
+			}
 
 			try {
-				Resource context = st.getContext();
-				if (context != null) {
-					if (clearAllTriples) {
-						conn.clear(context);
-					} else {
-						conn.remove(subject, predicate, object, context);
-					}
+				if (subject == null && predicate == null && object == null) {
+					// use the RepositoryConnection.clear operation if we're removing all statements
+					conn.clear(context);
 				} else {
-					if (clearAllTriples) {
-						conn.clear();
-					} else {
-						conn.remove(subject, predicate, object);
-					}
+					conn.remove(subject, predicate, object, context);
 				}
 			} catch (RepositoryException e) {
 				throw new RDFHandlerException(e);
 			}
+
 		}
 
 	}

@@ -360,8 +360,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			Resource... contexts) throws RepositoryException, RDFHandlerException {
 		handler.startRDF();
 
-		try ( // Export namespace information
-				CloseableIteration<? extends Namespace, RepositoryException> nsIter = getNamespaces()) {
+		// Export namespace information
+		try (var nsIter = getNamespaces()) {
 			while (nsIter.hasNext()) {
 				Namespace ns = nsIter.next();
 				handler.handleNamespace(ns.getPrefix(), ns.getName());
@@ -369,9 +369,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		}
 
 		// Export statements
-
-		try (CloseableIteration<? extends Statement, RepositoryException> stIter = getStatements(subj, pred, obj,
-				includeInferred, contexts)) {
+		try (var stIter = getStatements(subj, pred, obj, includeInferred, contexts)) {
 			while (stIter.hasNext()) {
 				handler.handleStatement(stIter.next());
 			}
