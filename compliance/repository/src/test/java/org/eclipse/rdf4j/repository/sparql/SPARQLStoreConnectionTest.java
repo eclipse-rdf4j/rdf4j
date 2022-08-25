@@ -441,4 +441,17 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	}
 
+	@Test
+	@Ignore("relies on pending updates being visible in own connection")
+	@Override
+	public void testRemoveStatementsFromContextSingleTransaction() throws Exception {
+		super.testRemoveStatementsFromContextSingleTransaction();
+	}
+
+	@Test
+	@Ignore("relies on pending updates being visible in own connection")
+	@Override
+	public void testClearStatementsFromContextSingleTransaction() throws Exception {
+		super.testClearStatementsFromContextSingleTransaction();
+	}
 }

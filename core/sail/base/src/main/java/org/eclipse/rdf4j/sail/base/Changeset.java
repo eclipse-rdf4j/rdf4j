@@ -155,7 +155,7 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	synchronized boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 		assert !closed;
-		if (deprecated == null) {
+		if ((deprecated == null) && deprecatedContexts == null) {
 			return false;
 		}
 
@@ -464,7 +464,10 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	public synchronized boolean hasDeprecated() {
 		assert !closed;
-		return deprecated != null && !deprecated.isEmpty();
+		if (deprecatedContexts == null) {
+			return deprecated != null && !deprecated.isEmpty();
+		}
+		return (deprecated != null && !deprecated.isEmpty()) || !deprecatedContexts.isEmpty();
 	}
 
 	boolean isChanged() {
@@ -493,10 +496,19 @@ abstract class Changeset implements SailSink, ModelFactory {
 
 	synchronized boolean hasDeprecated(Statement statement) {
 		assert !closed;
-		if (deprecated == null) {
+		if (deprecated == null && deprecatedContexts == null) {
 			return false;
 		}
-		return deprecated.contains(statement);
+		if (deprecatedContexts != null) {
+			if (deprecatedContexts.contains(statement.getContext())) {
+				return true;
+			}
+		}
+		if (deprecated != null) {
+			return deprecated.contains(statement);
+		} else {
+			return false;
+		}
 	}
 
 	synchronized boolean hasApproved() {
