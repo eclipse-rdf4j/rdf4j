@@ -158,15 +158,15 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 		ProjectionElem aObj = theList.getElements().get(2);
 
 		return new StatementPattern(
-				mExtensions.containsKey(aSubj.getSourceName())
-						? new Var(scrubVarName(aSubj.getSourceName()), asValue(mExtensions.get(aSubj.getSourceName())))
-						: new Var(scrubVarName(aSubj.getSourceName())),
-				mExtensions.containsKey(aPred.getSourceName())
-						? new Var(scrubVarName(aPred.getSourceName()), asValue(mExtensions.get(aPred.getSourceName())))
-						: new Var(scrubVarName(aPred.getSourceName())),
-				mExtensions.containsKey(aObj.getSourceName())
-						? new Var(scrubVarName(aObj.getSourceName()), asValue(mExtensions.get(aObj.getSourceName())))
-						: new Var(scrubVarName(aObj.getSourceName())));
+				mExtensions.containsKey(aSubj.getName())
+						? new Var(scrubVarName(aSubj.getName()), asValue(mExtensions.get(aSubj.getName())))
+						: new Var(scrubVarName(aSubj.getName())),
+				mExtensions.containsKey(aPred.getName())
+						? new Var(scrubVarName(aPred.getName()), asValue(mExtensions.get(aPred.getName())))
+						: new Var(scrubVarName(aPred.getName())),
+				mExtensions.containsKey(aObj.getName())
+						? new Var(scrubVarName(aObj.getName()), asValue(mExtensions.get(aObj.getName())))
+						: new Var(scrubVarName(aObj.getName())));
 	}
 
 	/**
@@ -227,9 +227,9 @@ public abstract class BaseTupleExprRenderer extends AbstractQueryModelVisitor<Ex
 	 */
 	public static boolean isSPOElemList(ProjectionElemList theList) {
 		return theList.getElements().size() == 3
-				&& theList.getElements().get(0).getTargetName().equalsIgnoreCase("subject")
-				&& theList.getElements().get(1).getTargetName().equalsIgnoreCase("predicate")
-				&& theList.getElements().get(2).getTargetName().equalsIgnoreCase("object");
+				&& theList.getElements().get(0).getProjectionAlias().get().equalsIgnoreCase("subject")
+				&& theList.getElements().get(1).getProjectionAlias().get().equalsIgnoreCase("predicate")
+				&& theList.getElements().get(2).getProjectionAlias().get().equalsIgnoreCase("object");
 	}
 
 	/**

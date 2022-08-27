@@ -88,7 +88,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 			for (ProjectionElemList projElems : visitor.projElemLists) {
 				for (ProjectionElem projElem : projElems.getElements()) {
 
-					String name = projElem.getSourceName();
+					String name = projElem.getName();
 
 					if (varsBefore.contains(name)) {
 						UnaryTupleOperator proj = (UnaryTupleOperator) projElems.getParentNode();

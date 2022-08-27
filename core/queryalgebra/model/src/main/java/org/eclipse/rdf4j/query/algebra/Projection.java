@@ -65,14 +65,14 @@ public class Projection extends UnaryTupleOperator {
 
 	@Override
 	public Set<String> getBindingNames() {
-		return projElemList.getTargetNames();
+		return projElemList.getProjectedNames();
 	}
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
 		// Return all target binding names for which the source binding is assured
 		// by the argument
-		return projElemList.getTargetNamesFor(getArg().getAssuredBindingNames());
+		return projElemList.getProjectedNamesFor(getArg().getAssuredBindingNames());
 	}
 
 	@Override

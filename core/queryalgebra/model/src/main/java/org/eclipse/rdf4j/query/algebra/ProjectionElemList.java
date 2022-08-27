@@ -23,16 +23,10 @@ import java.util.stream.StreamSupport;
  */
 public class ProjectionElemList extends AbstractQueryModelNode {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
+	private static final long serialVersionUID = 167331362220688635L;
 
 	private ProjectionElem[] elements = {};
 	private List<ProjectionElem> elementsList = Collections.emptyList();
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	public ProjectionElemList() {
 	}
@@ -44,10 +38,6 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 	public ProjectionElemList(Iterable<ProjectionElem> elements) {
 		addElements(elements);
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	public List<ProjectionElem> getElements() {
 		return elementsList;
@@ -90,26 +80,44 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 		pe.setParentNode(this);
 	}
 
+	/**
+	 *
+	 * @deprecated since 4.1.1. Use {@link #getProjectedNames()} instead.
+	 */
+	@Deprecated(since = "4.1.1", forRemoval = true)
 	public Set<String> getTargetNames() {
-		Set<String> targetNames = new LinkedHashSet<>(elementsList.size());
-
-		for (ProjectionElem pe : elementsList) {
-			targetNames.add(pe.getTargetName());
-		}
-
-		return targetNames;
+		return getProjectedNames();
 	}
 
-	public Set<String> getTargetNamesFor(Collection<String> sourceNames) {
-		Set<String> targetNames = new LinkedHashSet<>(elementsList.size());
+	public Set<String> getProjectedNames() {
+		Set<String> projectedNames = new LinkedHashSet<>(elementsList.size());
 
 		for (ProjectionElem pe : elementsList) {
-			if (sourceNames.contains(pe.getSourceName())) {
-				targetNames.add(pe.getTargetName());
+			projectedNames.add(pe.getProjectionAlias().orElse(pe.getName()));
+		}
+
+		return projectedNames;
+	}
+
+	/**
+	 *
+	 * @deprecated since 4.1.1. Use {@link #getProjectedNamesFor(Collection)} instead.
+	 */
+	@Deprecated(since = "4.1.1", forRemoval = true)
+	public Set<String> getTargetNamesFor(Collection<String> sourceNames) {
+		return getProjectedNamesFor(sourceNames);
+	}
+
+	public Set<String> getProjectedNamesFor(Collection<String> sourceNames) {
+		Set<String> projectedNames = new LinkedHashSet<>(elementsList.size());
+
+		for (ProjectionElem pe : elementsList) {
+			if (sourceNames.contains(pe.getName())) {
+				projectedNames.add(pe.getProjectionAlias().orElse(pe.getName()));
 			}
 		}
 
-		return targetNames;
+		return projectedNames;
 	}
 
 	@Override

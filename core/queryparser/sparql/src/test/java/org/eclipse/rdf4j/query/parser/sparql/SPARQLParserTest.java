@@ -248,6 +248,27 @@ public class SPARQLParserTest {
 	}
 
 	@Test
+	public void testOrderByWithAliases2() throws Exception {
+		String queryString = "SELECT (?l AS ?v)\n"
+				+ "WHERE { ?s rdfs:label ?l. }\n"
+				+ "ORDER BY ?v";
+
+		ParsedQuery query = parser.parseQuery(queryString, null);
+
+		TupleExpr te = query.getTupleExpr();
+		assertThat(te).isInstanceOf(QueryRoot.class);
+		te = ((QueryRoot) te).getArg();
+		assertThat(te).isInstanceOf(Projection.class);
+
+		te = ((Projection) te).getArg();
+		assertThat(te).isInstanceOf(Order.class);
+
+		te = ((Order) te).getArg();
+		assertThat(te).isInstanceOf(Extension.class);
+
+	}
+
+	@Test
 	public void testSES1927UnequalLiteralValueConstants1() throws Exception {
 
 		StringBuilder qb = new StringBuilder();
@@ -457,7 +478,7 @@ public class SPARQLParserTest {
 				+ "} GROUP BY ?p";
 
 		assertThatExceptionOfType(MalformedQueryException.class).isThrownBy(() -> parser.parseQuery(query, null))
-				.withMessageStartingWith("variable 'o' in projection not present in GROUP BY.");
+				.withMessageStartingWith("non-aggregate expression 'Var (name=o)");
 	}
 
 	@Test

@@ -1027,9 +1027,6 @@ public class SpinParser {
 					} else {
 						valueExpr = new Var(varName);
 					}
-					if (projName == null) {
-						projName = varName;
-					}
 				} else {
 					// resource
 					if (projName == null) {
@@ -1050,7 +1047,7 @@ public class SpinParser {
 					group = new Group();
 				}
 				for (AggregateOperator op : aggregates) {
-					group.addGroupElement(new GroupElem(projName, op));
+					group.addGroupElement(new GroupElem(projElem.getProjectionAlias().orElse(varName), op));
 				}
 			}
 			aggregates = oldAggregates;

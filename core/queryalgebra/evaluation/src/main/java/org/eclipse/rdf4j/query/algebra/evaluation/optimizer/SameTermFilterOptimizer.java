@@ -191,8 +191,8 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(ProjectionElem projElem) throws RuntimeException {
-			if (projElem.getSourceName().equals(oldVar.getName())) {
-				projElem.setSourceName(newVar.getName());
+			if (projElem.getName().equals(oldVar.getName())) {
+				projElem.setName(newVar.getName());
 			}
 		}
 	}

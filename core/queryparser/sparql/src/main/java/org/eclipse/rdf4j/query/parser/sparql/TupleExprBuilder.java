@@ -551,11 +551,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					throw new VisitorException("Either TripleRef or Expression expected in projection.");
 				}
 
-				String sourceName = alias;
-				if (child instanceof ASTVar) {
-					sourceName = ((ASTVar) child).getName();
-				}
-				ProjectionElem elem = new ProjectionElem(sourceName, alias);
+				ProjectionElem elem = new ProjectionElem(alias);
 				projElemList.addElement(elem);
 
 				AggregateCollector collector = new AggregateCollector();
@@ -592,14 +588,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					}
 				}
 
-				if (!(child instanceof ASTVar)) {
-					// source of the aliased projection is not a simple variable:
-					// add extension element reference to the projection element and
-					// to the extension
-					ExtensionElem extElem = new ExtensionElem(valueExpr, alias);
-					extension.addElement(extElem);
-					elem.setSourceExpression(extElem);
-				}
+				// SELECT expressions need to be captured as an extension, so that original and alias are
+				// available for the ORDER BY clause (which gets applied _before_ projection). See GH-4066
+				// and https://www.w3.org/TR/sparql11-query/#sparqlSolMod .
+				ExtensionElem extElem = new ExtensionElem(valueExpr, alias);
+				extension.addElement(extElem);
+				elem.setSourceExpression(extElem);
 			} else if (child instanceof ASTVar) {
 				Var projVar = (Var) child.jjtAccept(this, null);
 				ProjectionElem elem = new ProjectionElem(projVar.getName());
@@ -611,12 +605,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		if (!extension.getElements().isEmpty()) {
 			if (orderClause != null) {
-				// Extensions produced by SELECT expressions should be nested
-				// inside
-				// the ORDER BY clause, to make sure
-				// sorting can work on the newly introduced variable. See
-				// SES-892
-				// and SES-1809.
+				// Extensions produced by SELECT expressions should be nested inside the ORDER BY clause, to make sure
+				// sorting can work on the newly introduced variable. See SES-892 and SES-1809.
 				TupleExpr arg = orderClause.getArg();
 				extension.setArg(arg);
 				orderClause.setArg(extension);
@@ -643,27 +633,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							throw new VisitorException("non-aggregate expression '" + expr
 									+ "' not allowed in projection when using GROUP BY.");
 						}
-
-					} else {
-
-						if (!elem.getSourceName().equals(elem.getTargetName())) {
-							// Projection element is a SELECT expression using a simple var (e.g. (?a AS ?b)).
-							// Source var must be present in GROUP BY.
-							if (!groupNames.contains(elem.getSourceName())) {
-								if (isIllegalCombinedWithGroupByExpression(elem.getSourceName(), elements,
-										groupNames)) {
-									throw new VisitorException("variable '" + elem.getSourceName()
-											+ "' in projection not present in GROUP BY.");
-								}
-
-							}
-						} else {
-							// projection element is simple var. Must be present in GROUP BY.
-							if (!groupNames.contains(elem.getTargetName())) {
-								throw new VisitorException("variable '" + elem.getTargetName()
-										+ "' in projection not present in GROUP BY.");
-							}
-						}
+					} else if (!groupNames.contains(elem.getName())) {
+						throw new VisitorException("variable '" + elem.getName()
+								+ "' in projection not present in GROUP BY.");
 					}
 				}
 			}
@@ -714,7 +686,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			String prev = varName;
 
 			for (ProjectionElem element : elements) {
-				if (element.getTargetName().equals(varName)) {
+				if (element.getName().equals(varName)) {
 					if (element.hasAggregateOperatorInExpression()) {
 						return false;
 					} else {
@@ -726,7 +698,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							}
 						}
 
-						varName = element.getSourceName();
+						varName = element.getName();
 						break;
 					}
 				}
@@ -1682,9 +1654,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		@Override
 		public void meet(ProjectionElem node) throws VisitorException {
-			if (node.getSourceName().equals(toBeReplaced.getName())) {
-				node.setSourceName(replacement.getName());
-				node.setTargetName(replacement.getName());
+			if (node.getName().equals(toBeReplaced.getName())) {
+				node.setName(replacement.getName());
 			}
 		}
 	}
