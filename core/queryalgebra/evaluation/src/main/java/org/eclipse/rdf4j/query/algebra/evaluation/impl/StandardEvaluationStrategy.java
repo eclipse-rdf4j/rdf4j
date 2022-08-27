@@ -272,7 +272,8 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
-		this.pipeline = new StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics);
+		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
+				tripleSource, evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
 		this.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
