@@ -91,6 +91,7 @@
 									SPARQL endpoint proxy
 								</option>
 								<option value="federate">Federation</option>
+								<option value="lmdb">LMDB Store</option>
 							</select>
 						</td>
 						<td></td>
