@@ -354,6 +354,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	 * Query evaluation *
 	 *------------------*/
 
+	/**
+	 * @deprecated WeakReference<?> callerRef argument will be removed
+	 */
+	@Deprecated(since = "4.1.2")
 	public TupleQueryResult sendTupleQuery(QueryLanguage ql, String query, Dataset dataset, boolean includeInferred,
 			WeakReference<?> callerRef,
 			Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
@@ -361,6 +365,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		return sendTupleQuery(ql, query, null, dataset, includeInferred, 0, callerRef, bindings);
 	}
 
+	/**
+	 * @deprecated WeakReference<?> callerRef argument will be removed
+	 */
+	@Deprecated(since = "4.1.2")
 	public TupleQueryResult sendTupleQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxQueryTime, WeakReference<?> callerRef, Binding... bindings)
 			throws IOException, RepositoryException,
@@ -397,6 +405,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		}
 	}
 
+	/**
+	 * @deprecated WeakReference<?> callerRef argument will be removed
+	 */
+	@Deprecated(since = "4.1.2")
 	public GraphQueryResult sendGraphQuery(QueryLanguage ql, String query, Dataset dataset, boolean includeInferred,
 			WeakReference<?> callerRef,
 			Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
@@ -404,6 +416,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		return sendGraphQuery(ql, query, null, dataset, includeInferred, 0, callerRef, bindings);
 	}
 
+	/**
+	 * @deprecated WeakReference<?> callerRef argument will be removed
+	 */
+	@Deprecated(since = "4.1.2")
 	public GraphQueryResult sendGraphQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset,
 			boolean includeInferred, int maxQueryTime, WeakReference<?> callerRef, Binding... bindings)
 			throws IOException, RepositoryException,
@@ -641,7 +657,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Parse the response in a background thread. HTTP connections are dealt with in the {@link BackgroundTupleResult}
 	 * or (in the error-case) in this method.
+	 * 
+	 * @deprecated WeakReference<?> callerRef argument will be removed
 	 */
+	@Deprecated(since = "4.1.2")
 	protected TupleQueryResult getBackgroundTupleQueryResult(HttpUriRequest method, WeakReference<?> callerRef)
 			throws RepositoryException, QueryInterruptedException, MalformedQueryException, IOException {
 
@@ -771,7 +790,10 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Parse the response in a background thread. HTTP connections are dealt with in the {@link BackgroundGraphResult}
 	 * or (in the error-case) in this method.
+	 * 
+	 * @deprecated WeakReference<?> callerRef argument will be removed
 	 */
+	@Deprecated(since = "4.1.2")
 	protected GraphQueryResult getRDFBackground(HttpUriRequest method, boolean requireContext,
 			WeakReference<?> callerRef)
 			throws IOException, RDFHandlerException, RepositoryException, MalformedQueryException,

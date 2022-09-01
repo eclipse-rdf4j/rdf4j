@@ -19,6 +19,8 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.CleanerTupleQueryResult;
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -43,6 +45,8 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
  * @author Arjohn Kampman
  */
 public class QueryResultIO {
+
+	private final static ConcurrentCleaner cleaner = new ConcurrentCleaner();
 
 	/**
 	 * Tries to match a MIME type against the list of tuple query result formats that can be parsed.
@@ -301,11 +305,14 @@ public class QueryResultIO {
 	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the used query result parser.
 	 * @throws UnsupportedQueryResultFormatException
 	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
+	 * @deprecated WeakReference<?> callerReference argument will be removed
 	 */
+	@Deprecated(since = "4.1.2")
 	public static TupleQueryResult parseTuple(InputStream in, QueryResultFormat format,
 			WeakReference<?> callerReference) throws IOException,
 			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
-		return parseTupleInternal(in, format, false, callerReference);
+		assert callerReference == null;
+		return parseTupleInternal(in, format, false);
 	}
 
 	/**
@@ -323,35 +330,36 @@ public class QueryResultIO {
 	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the used query result parser.
 	 * @throws UnsupportedQueryResultFormatException
 	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
+	 * @deprecated WeakReference<?> callerReference argument will be removed
 	 */
+	@Deprecated(since = "4.1.2")
 	public static TupleQueryResult parseTupleBackground(InputStream in, QueryResultFormat format,
 			WeakReference<?> callerReference) throws IOException,
 			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
-		return parseTupleInternal(in, format, true, callerReference);
+		assert callerReference == null;
+		return parseTupleInternal(in, format, true);
 	}
 
 	private static TupleQueryResult parseTupleInternal(InputStream in, QueryResultFormat format,
-			boolean parseOnBackgroundThread, WeakReference<?> callerReference)
+			boolean parseOnBackgroundThread)
 			throws IOException, QueryResultParseException,
 			TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
 		TupleQueryResultParser parser = createTupleParser(format);
 
 		if (parseOnBackgroundThread) {
 			BackgroundTupleResult result = new BackgroundTupleResult(
-					new QueueCursor<>(new LinkedBlockingQueue<>(1), callerReference),
+					new QueueCursor<>(new LinkedBlockingQueue<>(1)),
 					parser, in);
 			// Start a new thread in the background, which will be completed
 			// when the BackgroundTupleResult is either closed or interrupted
-			boolean allGood = false;
 			try {
 				ForkJoinPool.commonPool().submit(result);
-				allGood = true;
-			} finally {
-				if (!allGood) {
-					result.close();
-				}
+			} catch (Throwable t) {
+				result.close();
+				throw t;
 			}
-			return result;
+
+			return new CleanerTupleQueryResult(result, cleaner);
 		} else {
 			TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();
 			try {
@@ -470,4 +478,5 @@ public class QueryResultIO {
 			}
 		}
 	}
+
 }

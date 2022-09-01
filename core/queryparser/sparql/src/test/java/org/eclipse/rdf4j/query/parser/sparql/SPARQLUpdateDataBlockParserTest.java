@@ -32,7 +32,7 @@ public class SPARQLUpdateDataBlockParserTest {
 		String[] blocksToCheck = new String[] { "graph <u:g1> {<u:1> <p:1> 1 } . <u:2> <p:2> 2.",
 				"graph <u:g1> {<u:1> <p:1> 1 .} . <u:2> <p:2> 2." };
 		for (String block : blocksToCheck) {
-			parser.parse(new StringReader(block), "http://base.org");
+			parser.parse(new StringReader(block), "http://example.org");
 		}
 	}
 
@@ -46,7 +46,7 @@ public class SPARQLUpdateDataBlockParserTest {
 				"@prefix u: <http://example.com/>.\n<< <a>  u:2<<<b> u:4 u:5>>>>u:6<< u:7 u:8<c>>>"
 		};
 		for (String block : blocksToCheck) {
-			parser.parse(new StringReader(block), "http://base.org");
+			parser.parse(new StringReader(block), "http://example.org");
 		}
 	}
 }

@@ -96,7 +96,7 @@ public abstract class AbstractQueryResultIOTest {
 	 */
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in) throws IOException,
 			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
-		return QueryResultIO.parseTuple(in, format, new WeakReference<>(this));
+		return QueryResultIO.parseTuple(in, format, null);
 	}
 
 	/**

@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.rio.rdfjson;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.ref.WeakReference;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -39,7 +38,7 @@ public class RDFJSONWriterTest extends RDFWriterTest {
 			throws RDFParseException, RDFHandlerException, IOException {
 		return QueryResults
 				.asModel(QueryResults.parseGraphBackground(reader, baseURI, rdfParserFactory.getRDFFormat(),
-						new WeakReference<>(this)));
+						null));
 	}
 
 	@Override

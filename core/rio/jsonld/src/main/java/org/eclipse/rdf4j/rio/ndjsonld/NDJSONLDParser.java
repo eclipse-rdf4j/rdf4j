@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.jsonld.JSONLDParser;
 
 import com.fasterxml.jackson.core.JsonFactory;

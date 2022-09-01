@@ -55,7 +55,7 @@ public class TestPropPathMisbehaviour {
 		String query1 = "select ?iri ?value where { \n" +
 				"    ?iri (<urn:p>+) / <urn:q> ?value .\n" +
 				"}";
-		ParsedQuery q = parser.parseQuery(query1, "http://base.org/");
+		ParsedQuery q = parser.parseQuery(query1, "http://example.org/");
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();
@@ -83,7 +83,7 @@ public class TestPropPathMisbehaviour {
 		String query1 = "select ?value where { \n" +
 				"    <urn:non-existent> ^(<urn:p>*) / <urn:q>? ?value .\n" +
 				"}";
-		ParsedQuery q = parser.parseQuery(query1, "http://base.org/");
+		ParsedQuery q = parser.parseQuery(query1, "http://example.org/");
 
 		assertNotNull(q);
 		TupleExpr tupleExpr = q.getTupleExpr();

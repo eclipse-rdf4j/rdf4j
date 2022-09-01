@@ -44,7 +44,7 @@ public class SPARQLGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 			// TODO getQueryString() already inserts bindings, use emptybindingset
 			// as last argument?
 			return client.sendGraphQuery(queryLanguage, getQueryString(), baseURI, dataset, getIncludeInferred(),
-					getMaxExecutionTime(), new WeakReference<>(this), getBindingsArray());
+					getMaxExecutionTime(), ((WeakReference) null), getBindingsArray());
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}

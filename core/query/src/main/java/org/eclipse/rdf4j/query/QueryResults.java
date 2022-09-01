@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query;
 
 import java.io.InputStream;
+import java.lang.ref.Cleaner;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -54,6 +55,8 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utility methods related to query results.
@@ -61,6 +64,8 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
  * @author Jeen Broekstra
  */
 public class QueryResults extends Iterations {
+
+	private final static Cleaner cleaner = Cleaner.create();
 
 	/**
 	 * Get a {@link Model} containing all elements obtained from the specified query result.
@@ -238,7 +243,9 @@ public class QueryResults extends Iterations {
 	 * @param baseURI The base URI for the RDF document.
 	 * @param format  The {@link RDFFormat} of the RDF document.
 	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
+	 * @deprecated WeakReference<?> callerReference argument will be removed
 	 */
+	@Deprecated(since = "4.1.2")
 	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format,
 			WeakReference<?> callerReference)
 			throws UnsupportedRDFormatException {
@@ -255,23 +262,24 @@ public class QueryResults extends Iterations {
 	 * @param baseURI The base URI for the RDF document.
 	 * @param parser  The {@link RDFParser}.
 	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
+	 * @deprecated WeakReference<?> callerReference argument will be removed
 	 */
+	@Deprecated(since = "4.1.2")
 	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser,
 			WeakReference<?> callerReference) {
+		assert callerReference == null;
 		RDFFormat format = parser.getRDFFormat();
 		BackgroundGraphResult result = new BackgroundGraphResult(
-				new QueueCursor<>(new LinkedBlockingQueue<>(1), callerReference),
+				new QueueCursor<>(new LinkedBlockingQueue<>(1)),
 				parser, in, format.getCharset(), baseURI);
-		boolean allGood = false;
+
 		try {
 			ForkJoinPool.commonPool().submit(result);
-			allGood = true;
-		} finally {
-			if (!allGood) {
-				result.close();
-			}
+		} catch (Throwable t) {
+			result.close();
+			throw t;
 		}
-		return result;
+		return new CleanerGraphQueryResult(result, cleaner);
 	}
 
 	/**
@@ -530,8 +538,9 @@ public class QueryResults extends Iterations {
 	 */
 	public static boolean bindingSetsCompatible(BindingSet bs1, BindingSet bs2) {
 		Set<String> bs1BindingNames = bs1.getBindingNames();
-		if (bs1BindingNames.isEmpty())
+		if (bs1BindingNames.isEmpty()) {
 			return true;
+		}
 
 		Set<String> bs2BindingNames = bs2.getBindingNames();
 
@@ -689,6 +698,79 @@ public class QueryResults extends Iterations {
 		@Override
 		public List<String> getBindingNames() throws QueryEvaluationException {
 			return unfiltered.getBindingNames();
+		}
+
+	}
+
+	private static class CleanerGraphQueryResult implements GraphQueryResult {
+
+		private static final Logger logger = LoggerFactory.getLogger(CleanerGraphQueryResult.class);
+
+		private final GraphQueryResult delegate;
+		private final Cleaner.Cleanable cleanable;
+		private final CleanableState state;
+
+		public CleanerGraphQueryResult(GraphQueryResult delegate, Cleaner cleaner) {
+			this.delegate = delegate;
+			this.state = new CleanableState(delegate);
+			this.cleanable = cleaner.register(this, state);
+		}
+
+		@Override
+		public void close() {
+			state.close();
+			cleanable.clean();
+		}
+
+		@Override
+		public boolean hasNext() {
+			return delegate.hasNext();
+		}
+
+		@Override
+		public Statement next() {
+			return delegate.next();
+		}
+
+		@Override
+		public void remove() {
+			delegate.remove();
+		}
+
+		@Override
+		public Map<String, String> getNamespaces() throws QueryEvaluationException {
+			return delegate.getNamespaces();
+		}
+
+		private final static class CleanableState implements Runnable {
+
+			private final GraphQueryResult iteration;
+			private boolean closed = false;
+
+			public CleanableState(GraphQueryResult iteration) {
+				this.iteration = iteration;
+			}
+
+			@Override
+			public void run() {
+				if (!closed) {
+					try {
+						logger.warn(
+								"Forced closing of unclosed iteration. Set the system property 'org.eclipse.rdf4j.repository.debug' to 'true' to get stack traces.");
+						iteration.close();
+					} catch (Exception e) {
+						if (e instanceof InterruptedException) {
+							Thread.currentThread().interrupt();
+						}
+						throw new RuntimeException(e);
+					}
+				}
+			}
+
+			public void close() {
+				closed = true;
+				iteration.close();
+			}
 		}
 
 	}

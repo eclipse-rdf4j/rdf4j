@@ -48,7 +48,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 
 	/* Variables */
 	protected volatile Thread evaluationThread;
-	protected FedXQueueCursor<T> rightQueue = FedXQueueCursor.create(1024, new WeakReference<>(this));
+	protected FedXQueueCursor<T> rightQueue = FedXQueueCursor.create(1024);
 	protected volatile CloseableIteration<T, QueryEvaluationException> rightIter;
 	protected volatile boolean finished = false;
 
