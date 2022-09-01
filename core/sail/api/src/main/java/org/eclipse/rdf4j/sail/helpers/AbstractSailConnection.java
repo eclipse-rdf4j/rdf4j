@@ -990,7 +990,6 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * @throws SailException
 	 */
 	private void flushPendingUpdates() throws SailException {
-
 		if ((statementsAdded || statementsRemoved) && isActive()) {
 			if (isActive()) {
 				synchronized (this) {

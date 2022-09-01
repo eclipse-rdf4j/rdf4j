@@ -22,6 +22,7 @@ import java.io.Reader;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -52,6 +53,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -85,10 +87,10 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
  * specific RepositoryException subclasses UnautorizedException and NotAllowedException, the semantics of which are
  * defined by the HTTP protocol.
  *
- * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
- * @see org.eclipse.rdf4j.http.protocol.NotAllowedException
  * @author Arjohn Kampman
  * @author Herko ter Horst
+ * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
+ * @see org.eclipse.rdf4j.http.protocol.NotAllowedException
  */
 class HTTPRepositoryConnection extends AbstractRepositoryConnection implements HttpClientDependent {
 
@@ -510,12 +512,13 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	@Override
 	public void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
 		if (!isActive()) {
-			logger.debug("adding statement directly: {} {} {} {}",
-					new Object[] { subject, predicate, object, contexts });
+			if (logger.isDebugEnabled()) {
+				logger.debug("adding statement directly: {} {} {} {}", subject, predicate, object, contexts);
+			}
 			// operation is not part of a transaction - just send directly
 			Objects.requireNonNull(contexts,
 					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
-			final Model m = new LinkedHashModel();
+			Model m = new LinkedHashModel();
 			m.add(subject, predicate, object, contexts);
 			addModel(m);
 		} else {
@@ -649,6 +652,7 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		if (toRemove == null) {
 			toRemove = new LinkedHashModel();
 		}
+
 		if (subject == null) {
 			subject = SESAME.WILDCARD;
 		}
@@ -658,7 +662,22 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 		if (object == null) {
 			object = SESAME.WILDCARD;
 		}
-		toRemove.add(subject, predicate, object, contexts);
+
+		if (contexts.length == 0) {
+			toRemove.add(subject, predicate, object);
+		} else if (contexts.length == 1) {
+			toRemove.add(subject, predicate, object, contexts[0] == null ? RDF4J.NIL : contexts[0]);
+		} else {
+			// We shouldn't modify the array of contexts that is passed to this method, so we need to mak a copy isntead
+			Resource[] contextsCopy = Arrays.copyOf(contexts, contexts.length);
+			for (int i = 0; i < contextsCopy.length; i++) {
+				if (contextsCopy[i] == null) {
+					contextsCopy[i] = RDF4J.NIL;
+				}
+			}
+			toRemove.add(subject, predicate, object, contextsCopy);
+		}
+
 	}
 
 	@Override

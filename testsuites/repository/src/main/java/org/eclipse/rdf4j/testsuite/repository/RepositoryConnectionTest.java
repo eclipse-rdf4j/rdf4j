@@ -40,6 +40,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -211,8 +213,11 @@ public abstract class RepositoryConnectionTest {
 		testRepository = createRepository();
 
 		testCon = testRepository.getConnection();
+		testCon.begin();
 		testCon.clear();
 		testCon.clearNamespaces();
+		testCon.commit();
+
 		testCon.setIsolationLevel(level);
 
 		testCon2 = testRepository.getConnection();
@@ -1726,14 +1731,60 @@ public abstract class RepositoryConnectionTest {
 		assertThat(size(g2)).isEqualTo(1);
 	}
 
+	@Test
+	public void testRemoveStatementsFromContextSingleTransaction() throws Exception {
+		IRI g1 = vf.createIRI("urn:test:g1");
+		IRI g2 = vf.createIRI("urn:test:g2");
+		testCon.begin();
+		testCon.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1), g1);
+		testCon.add(vf.createIRI("urn:test:s2"), vf.createIRI(URN_TEST_P2), vf.createIRI("urn:test:o2"), g2);
+		testCon.commit();
+
+		testCon.begin();
+		testCon.remove(((Resource) null), null, null, g1);
+		try (Stream<Statement> stream = testCon.getStatements(null, null, null, false).stream()) {
+			List<Statement> collect = stream.collect(Collectors.toList());
+			assertEquals(1, collect.size());
+		}
+		testCon.commit();
+	}
+
+	@Test
+	public void testClearStatementsFromContextSingleTransaction() throws Exception {
+		IRI g1 = vf.createIRI("urn:test:g1");
+		IRI g2 = vf.createIRI("urn:test:g2");
+		testCon.begin();
+		testCon.add(vf.createIRI(URN_TEST_S1), vf.createIRI(URN_TEST_P1), vf.createIRI(URN_TEST_O1), g1);
+		testCon.add(vf.createIRI("urn:test:s2"), vf.createIRI(URN_TEST_P2), vf.createIRI("urn:test:o2"), g2);
+		testCon.commit();
+
+		testCon.begin();
+		testCon.clear(g1);
+
+		try (Stream<Statement> stream = testCon.getStatements(null, null, null, false).stream()) {
+			List<Statement> collect = stream.collect(Collectors.toList());
+			assertEquals(1, collect.size());
+		}
+		testCon.commit();
+	}
+
 	private long size(IRI defaultGraph) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
 		TupleQuery qry = testCon.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * { ?s ?p ?o }");
 		SimpleDataset dataset = new SimpleDataset();
 		dataset.addDefaultGraph(defaultGraph);
 		qry.setDataset(dataset);
+
+		long size;
 		try (TupleQueryResult result = qry.evaluate()) {
-			return result.stream().count();
+			size = result.stream().count();
 		}
+
+		try (Stream<Statement> stream = testCon.getStatements(null, null, null, defaultGraph).stream()) {
+			assertEquals(size, stream.count());
+		}
+
+		return size;
+
 	}
 
 	private long getTotalStatementCount(RepositoryConnection connection) throws RepositoryException {
