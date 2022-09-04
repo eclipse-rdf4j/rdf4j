@@ -8,9 +8,10 @@ Eclipse RDF4J supports security updates for the following releases:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 3.7.x   | :white_check_mark: |
-| 3.6.x   | :white_check_mark: |
-| < 3.6   | :x:                |
+| 4.1.x   | ✅ |
+| 4.0.x   | ✅                 |
+| 3.7.x   | ✅                 |
+| < 3.7   | :x:                |
 
 ## Reporting a Vulnerability
 
