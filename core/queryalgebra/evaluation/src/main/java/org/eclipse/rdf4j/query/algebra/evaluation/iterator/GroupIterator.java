@@ -30,7 +30,6 @@ import java.util.function.LongFunction;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -353,9 +352,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy
-				.precompile(group.getArg(), context)
-				.evaluate(parentBindings)) {
+		try (var iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings)) {
+
 			long setId = 0;
 			Function<BindingSet, Integer> hashMaker = hashMaker(context, group);
 			Map<Key, Entry> entries = new LinkedHashMap<>();
@@ -507,7 +505,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class Entry {
+	private static class Entry {
 
 		private final BindingSet prototype;
 		private final List<AggregateCollector> collectors;
@@ -539,7 +537,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	 * <p>
 	 * Making an aggregate function is quite a lot of work and we do not want to repeat that for each final binding.
 	 */
-	private class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
+	private static class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
 		public final String name;
 		private final AggregateFunction<T, D> agg;
 		private final LongFunction<Predicate<D>> predicate;
@@ -654,16 +652,17 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			var aggOperator = (AggregateFunctionCall) operator;
 			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			var factory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getURI());
-			if (factory.isPresent()) {
-				var function = factory.get()
-						.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
-				return new AggregatePredicateCollectorSupplier<>(
-						function,
-						predicate,
-						() -> factory.get().getCollector(),
-						ge.getName());
-			}
+			var factory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getIRI());
+
+			var function = factory.orElseThrow(
+					() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
+					.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
+			return new AggregatePredicateCollectorSupplier<>(
+					function,
+					predicate,
+					() -> factory.get().getCollector(),
+					ge.getName());
+
 		}
 		return null;
 	}

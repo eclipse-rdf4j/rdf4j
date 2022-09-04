@@ -23,7 +23,9 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -36,9 +38,10 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 /**
  * Integration tests for evaluation of custom aggregate functions in SPARQL
@@ -51,7 +54,7 @@ public class CustomAggregateFunctionEvaluationTest {
 
 	private static AggregateFunctionFactory functionFactory;
 
-	@BeforeClass
+	@BeforeAll
 	public static void setUp() throws IOException {
 		rep = new SailRepository(new MemoryStore());
 		functionFactory = new AggregateFunctionFactory() {
@@ -61,13 +64,8 @@ public class CustomAggregateFunctionEvaluationTest {
 			}
 
 			@Override
-			public AggregateFunction buildFunction(Function<BindingSet, Value> evaluationStep) {
-				return new AggregateFunction(evaluationStep) {
-					@Override
-					public void processAggregate(BindingSet bindingSet, Predicate distinctValue,
-							AggregateCollector agv) throws QueryEvaluationException {
-						processAggregate(bindingSet, (Predicate<Value>) distinctValue, (SumCollector) agv);
-					}
+			public AggregateFunction<SumCollector, Value> buildFunction(Function<BindingSet, Value> evaluationStep) {
+				return new AggregateFunction<>(evaluationStep) {
 
 					private ValueExprEvaluationException typeError = null;
 
@@ -97,7 +95,7 @@ public class CustomAggregateFunctionEvaluationTest {
 			}
 
 			@Override
-			public AggregateCollector getCollector() {
+			public SumCollector getCollector() {
 				return new SumCollector();
 			}
 		};
@@ -106,7 +104,7 @@ public class CustomAggregateFunctionEvaluationTest {
 		addData();
 	}
 
-	@AfterClass
+	@AfterAll
 	public static void cleanUp() {
 		CustomAggregateFunctionRegistry.getInstance().remove(functionFactory);
 	}
@@ -118,7 +116,7 @@ public class CustomAggregateFunctionEvaluationTest {
 		try (RepositoryConnection conn = rep.getConnection()) {
 			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 				BindingSet bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("96.690000200001");
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("125.933564200001");
 				assertThat(result.hasNext()).isFalse();
 			}
 		}
@@ -159,10 +157,99 @@ public class CustomAggregateFunctionEvaluationTest {
 			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 				BindingSet bs = result.next();
 				assertThat(bs.getValue("m").stringValue()).isEqualTo("62.390000200001");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("96.690000200001");
+				assertThat(bs.getValue("sa").stringValue()).isEqualTo("125.933564200001");
 				assertThat(bs.getValue("m").stringValue()).isNotEqualTo(bs.getValue("sa").stringValue());
 				assertThat(result.hasNext()).isFalse();
 			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_MultipleSumWithDistinctGroupBy() {
+		String query = "select ?s (<" + functionFactory.getIri() + ">(distinct ?o) as ?m) where { \n"
+
+				+ "\t?s <urn:n> ?o . filter(?o > 0) } group by ?s order by ?s";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				assertThat(result.next().getValue("m").stringValue()).isEqualTo("12.5");
+				assertThat(result.next().getValue("m").stringValue()).isEqualTo("6");
+				assertThat(result.next().getValue("m").stringValue()).isEqualTo("12.5");
+				assertThat(result.next().getValue("m").stringValue()).isEqualTo("31.3");
+				assertThat(result.next().getValue("m").stringValue()).isEqualTo("0.090000200001");
+				assertThat(result.next().getValue("m").stringValue()).isEqualTo("60.543564");
+				assertThat(result.next().getValue("m").stringValue()).isEqualTo("3");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_MultipleSumWithHaving() {
+		String query = "select ?s (<" + functionFactory.getIri() + ">(?o) as ?m) where { \n"
+				+ "\t?s <urn:n> ?o . }\n" +
+				"GROUP BY ?s \n" +
+				"HAVING((<" + functionFactory.getIri() + ">( ?o)) > 60)";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			TupleQuery tupleQuery = conn.prepareTupleQuery(query);
+			try (TupleQueryResult result = tupleQuery.evaluate()) {
+				assertThat(result.next().getValue("s").stringValue()).isEqualTo("http://example/book7");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_SumWithDistinctAndHaving() {
+		String query = "select ?s (SUM(?o) as ?sum)  where { \n"
+				+ "\t?s <urn:n> ?o . }\n" +
+				"GROUP BY ?s \n" +
+				"HAVING(SUM(?o) > 60)";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			TupleQuery tupleQuery = conn.prepareTupleQuery(query);
+			try (TupleQueryResult result = tupleQuery.evaluate()) {
+				assertThat(result.next().getValue("s").stringValue()).isEqualTo("http://example/book7");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testNonExistentCustomAggregateFunction() {
+		String query = "select (<http://example.org/doesNotExist>(distinct ?o) as ?m) where { ?s <urn:n> ?o . }";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				QueryEvaluationException queryEvaluationException = Assertions
+						.assertThrows(QueryEvaluationException.class, result::next);
+				Assertions.assertTrue(queryEvaluationException.toString().contains("aggregate"));
+			}
+		}
+	}
+
+	@Test
+	public void testNonExistentCustomAggregateFunction2() {
+		String query = "select (<http://example.org/doesNotExist>(?o) as ?m) where { ?s <urn:n> ?o . }";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				QueryEvaluationException queryEvaluationException = Assertions
+						.assertThrows(QueryEvaluationException.class, result::next);
+				Assertions.assertFalse(queryEvaluationException.toString().contains("aggregate"));
+			}
+		}
+	}
+
+	@Test
+	public void testNonExistentCustomAggregateFunction3() {
+		String query = "select ?s (<http://example.org/doesNotExist>(?o) as ?m) where { ?s <urn:n> ?o . } group by ?s";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			MalformedQueryException queryEvaluationException = Assertions.assertThrows(MalformedQueryException.class,
+					() -> {
+						TupleQuery tupleQuery = conn.prepareTupleQuery(query);
+						try (TupleQueryResult result = tupleQuery.evaluate()) {
+							result.next();
+						}
+					});
+			Assertions.assertTrue(queryEvaluationException.toString().contains("non-aggregate"));
+
 		}
 	}
 
@@ -175,6 +262,7 @@ public class CustomAggregateFunctionEvaluationTest {
 					+ "    <http://example/book5> <urn:n>  \"31.11241cawda3\"^^xsd:string .\n"
 					+ "    <http://example/book6> <urn:n>  0.090000200001 .\n"
 					+ "    <http://example/book7> <urn:n>  31.3 .\n"
+					+ "    <http://example/book7> <urn:n>  29.243564 .\n"
 					+ "    <http://example/book8> <urn:n>  3 ."), "", RDFFormat.TURTLE);
 		}
 	}

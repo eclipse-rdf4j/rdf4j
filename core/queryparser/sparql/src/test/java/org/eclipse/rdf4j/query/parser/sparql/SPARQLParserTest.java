@@ -476,7 +476,7 @@ public class SPARQLParserTest {
 			var extensionElements = ((Extension) parsedExpression).getElements();
 			assertEquals(1, extensionElements.size());
 			assertTrue(extensionElements.get(0).getExpr() instanceof AggregateFunctionCall);
-			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getURI());
+			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getIRI());
 			parsedExpression = ((Extension) parsedExpression).getArg();
 			assertTrue(parsedExpression instanceof Group);
 			assertEquals(1, ((Group) parsedExpression).getGroupElements().size());
@@ -508,7 +508,7 @@ public class SPARQLParserTest {
 			assertEquals(2, extensionElements.size());
 			assertTrue(extensionElements.get(0).getExpr() instanceof AggregateFunctionCall);
 			assertTrue(extensionElements.get(1).getExpr() instanceof Sum);
-			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getURI());
+			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getIRI());
 			parsedExpression = ((Extension) parsedExpression).getArg();
 			assertTrue(parsedExpression instanceof Group);
 			assertEquals(2, ((Group) parsedExpression).getGroupElements().size());

@@ -1855,7 +1855,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	public Object visit(ASTFunctionCall node, Object data) throws VisitorException {
 		ValueConstant uriNode = (ValueConstant) node.jjtGetChild(0).jjtAccept(this, null);
 		IRI functionURI = (IRI) uriNode.getValue();
-		if (CustomAggregateFunctionRegistry.getInstance().has(functionURI.stringValue())) {
+		if (CustomAggregateFunctionRegistry.getInstance().has(functionURI.stringValue()) || node.isDistinct()) {
 			AggregateFunctionCall aggregateCall = new AggregateFunctionCall(functionURI.stringValue(),
 					node.isDistinct());
 			if (node.jjtGetNumChildren() > 2) {
