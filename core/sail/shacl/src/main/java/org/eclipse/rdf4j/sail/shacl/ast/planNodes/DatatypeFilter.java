@@ -15,8 +15,8 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.impl.SimpleLiteral;
-import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 
 /**
  * @author Håvard Ottestad
@@ -24,13 +24,13 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 public class DatatypeFilter extends FilterPlanNode {
 
 	private final IRI datatype;
-	private final XSD.Datatype xsdDatatype;
+	private final CoreDatatype.XSD xsdDatatype;
 	private StackTraceElement[] stackTrace;
 
 	public DatatypeFilter(PlanNode parent, IRI datatype) {
 		super(parent);
 		this.datatype = datatype;
-		this.xsdDatatype = XSD.Datatype.from(datatype).orElse(null);
+		this.xsdDatatype = CoreDatatype.from(datatype).asXSDDatatype().orElse(null);
 //		stackTrace = Thread.currentThread().getStackTrace();
 	}
 
@@ -41,8 +41,12 @@ public class DatatypeFilter extends FilterPlanNode {
 		}
 
 		Literal literal = (Literal) t.getValue();
-		if (xsdDatatype != null && literal instanceof SimpleLiteral) {
-			return xsdDatatype == ((SimpleLiteral) literal).getXsdDatatype().orElse(null);
+		if (xsdDatatype != null) {
+			if (literal.getCoreDatatype() == xsdDatatype) {
+				boolean validValue = XMLDatatypeUtil.isValidValue(literal.stringValue(), xsdDatatype);
+				return validValue;
+			}
+			return false;
 		} else {
 			return literal.getDatatype() == datatype || literal.getDatatype().equals(datatype);
 		}
