@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -88,16 +88,12 @@ public class GroupIteratorTest {
 			}
 
 			@Override
-			public AggregateFunction buildFunction(Function<BindingSet, Value> evaluationStep) {
-				return new AggregateFunction(evaluationStep) {
-					@Override
-					public void processAggregate(BindingSet bindingSet, Predicate distinctValue,
-							AggregateCollector agv) throws QueryEvaluationException {
-						processAggregate(bindingSet, (Predicate<Value>) distinctValue, (SumCollector) agv);
-					}
+			public AggregateFunction<SumCollector, Value> buildFunction(Function<BindingSet, Value> evaluationStep) {
+				return new AggregateFunction<>(evaluationStep) {
 
 					private ValueExprEvaluationException typeError = null;
 
+					@Override
 					public void processAggregate(BindingSet s, Predicate<Value> distinctValue, SumCollector sum)
 							throws QueryEvaluationException {
 						if (typeError != null) {
@@ -123,7 +119,7 @@ public class GroupIteratorTest {
 			}
 
 			@Override
-			public AggregateCollector getCollector() {
+			public SumCollector getCollector() {
 				return new SumCollector();
 			}
 		};
@@ -259,7 +255,8 @@ public class GroupIteratorTest {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("customSum", new AggregateFunctionCall(new Var("a"), "urn:i", false)));
 		try (GroupIterator gi = new GroupIterator(evaluator, group, EmptyBindingSet.getInstance(), context)) {
-			assertThatNullPointerException().isThrownBy(() -> gi.next().getBinding("customSum").getValue());
+			assertThatExceptionOfType(QueryEvaluationException.class)
+					.isThrownBy(() -> gi.next().getBinding("customSum").getValue());
 		}
 	}
 

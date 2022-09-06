@@ -30,7 +30,6 @@ import java.util.function.LongFunction;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -73,6 +72,7 @@ import org.mapdb.DBMaker;
  * @author Jeen Broekstra
  * @author James Leigh
  * @author Jerven Bolleman
+ * @author Tomas Kovachev
  */
 public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
 
@@ -353,9 +353,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy
-				.precompile(group.getArg(), context)
-				.evaluate(parentBindings)) {
+		try (var iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings)) {
+
 			long setId = 0;
 			Function<BindingSet, Integer> hashMaker = hashMaker(context, group);
 			Map<Key, Entry> entries = new LinkedHashMap<>();
@@ -507,7 +506,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class Entry {
+	private static class Entry {
 
 		private final BindingSet prototype;
 		private final List<AggregateCollector> collectors;
@@ -539,7 +538,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	 * <p>
 	 * Making an aggregate function is quite a lot of work and we do not want to repeat that for each final binding.
 	 */
-	private class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
+	private static class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
 		public final String name;
 		private final AggregateFunction<T, D> agg;
 		private final LongFunction<Predicate<D>> predicate;
@@ -654,16 +653,17 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			var aggOperator = (AggregateFunctionCall) operator;
 			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			var factory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getURI());
-			if (factory.isPresent()) {
-				var function = factory.get()
-						.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
-				return new AggregatePredicateCollectorSupplier<>(
-						function,
-						predicate,
-						() -> factory.get().getCollector(),
-						ge.getName());
-			}
+			var factory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getIRI());
+
+			var function = factory.orElseThrow(
+					() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
+					.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
+			return new AggregatePredicateCollectorSupplier<>(
+					function,
+					predicate,
+					() -> factory.get().getCollector(),
+					ge.getName());
+
 		}
 		return null;
 	}
@@ -687,10 +687,24 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	private class IntegerCollector implements AggregateCollector {
+		private ValueExprEvaluationException typeError;
+
 		private Literal value = vf.createLiteral("0", CoreDatatype.XSD.INTEGER);
+
+		public void setTypeError(ValueExprEvaluationException typeError) {
+			this.typeError = typeError;
+		}
+
+		public boolean hasError() {
+			return typeError != null;
+		}
 
 		@Override
 		public Value getFinalValue() {
+			if (typeError != null) {
+				// a type error occurred while processing the aggregate, throw it now.
+				throw typeError;
+			}
 			return value;
 		}
 	}
@@ -698,7 +712,15 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private class AvgCollector implements AggregateCollector {
 		private Literal sum = vf.createLiteral("0", CoreDatatype.XSD.INTEGER);
 		private long count;
-		private ValueExprEvaluationException typeError = null;
+		private ValueExprEvaluationException typeError;
+
+		public void setTypeError(ValueExprEvaluationException typeError) {
+			this.typeError = typeError;
+		}
+
+		public boolean hasError() {
+			return typeError != null;
+		}
 
 		@Override
 		public Value getFinalValue() throws ValueExprEvaluationException {
@@ -838,8 +860,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private class SumAggregate extends AggregateFunction<IntegerCollector, Value> {
 
-		private ValueExprEvaluationException typeError = null;
-
 		public SumAggregate(Sum operator) {
 			super(new QueryStepEvaluator(strategy.precompile(operator.getArg(), context)));
 		}
@@ -847,7 +867,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		@Override
 		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, IntegerCollector sum)
 				throws QueryEvaluationException {
-			if (typeError != null) {
+			if (sum.hasError()) {
 				// halt further processing if a type error has been raised
 				return;
 			}
@@ -860,10 +880,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 							&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
 						sum.value = MathUtil.compute(sum.value, nextLiteral, MathOp.PLUS);
 					} else {
-						typeError = new ValueExprEvaluationException("not a number: " + v);
+						sum.setTypeError(new ValueExprEvaluationException("not a number: " + v));
 					}
-				} else {
-					typeError = new ValueExprEvaluationException("not a number: " + v);
 				}
 			}
 		}
@@ -878,9 +896,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		@Override
 		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, AvgCollector avg)
 				throws QueryEvaluationException {
-			if (avg.typeError != null) {
+			if (avg.hasError()) {
 				// Prevent calculating the aggregate further if a type error has
-				// occured.
+				// occurred.
 				return;
 			}
 
@@ -893,14 +911,14 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 							&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
 						avg.sum = MathUtil.compute(avg.sum, nextLiteral, MathOp.PLUS);
 					} else {
-						avg.typeError = new ValueExprEvaluationException("not a number: " + v);
+						avg.setTypeError(new ValueExprEvaluationException("not a number: " + v));
 					}
 					avg.count++;
 				} else if (v != null) {
 					// we do not actually throw the exception yet, but record it and
 					// stop further processing. The exception will be thrown when
 					// getValue() is invoked.
-					avg.typeError = new ValueExprEvaluationException("not a number: " + v);
+					avg.setTypeError(new ValueExprEvaluationException("not a number: " + v));
 				}
 			}
 		}

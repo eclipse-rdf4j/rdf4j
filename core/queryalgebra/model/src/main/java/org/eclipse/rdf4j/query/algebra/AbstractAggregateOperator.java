@@ -44,13 +44,27 @@ public abstract class AbstractAggregateOperator extends UnaryValueOperator imple
 	}
 
 	@Override
-	public int hashCode() {
-		int distHash = (isDistinct() ? 1 : 0);
-		if (arg == null) {
-			return 73 + distHash;
-		} else {
-			return arg.hashCode() + distHash;
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
 		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		if (!super.equals(o)) {
+			return false;
+		}
+
+		AbstractAggregateOperator that = (AbstractAggregateOperator) o;
+
+		return distinct == that.distinct;
+	}
+
+	@Override
+	public int hashCode() {
+		int result = super.hashCode();
+		result = 31 * result + (distinct ? 1 : 0);
+		return result;
 	}
 
 	@Override

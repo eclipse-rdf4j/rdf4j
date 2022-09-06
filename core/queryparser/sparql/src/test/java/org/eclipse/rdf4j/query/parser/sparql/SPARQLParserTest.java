@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.parser.sparql;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -476,12 +477,49 @@ public class SPARQLParserTest {
 			var extensionElements = ((Extension) parsedExpression).getElements();
 			assertEquals(1, extensionElements.size());
 			assertTrue(extensionElements.get(0).getExpr() instanceof AggregateFunctionCall);
-			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getURI());
+			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getIRI());
 			parsedExpression = ((Extension) parsedExpression).getArg();
 			assertTrue(parsedExpression instanceof Group);
 			assertEquals(1, ((Group) parsedExpression).getGroupElements().size());
 			assertEquals(extensionElements.get(0).getExpr(),
 					((Group) parsedExpression).getGroupElements().get(0).getOperator());
+			assertTrue(((Group) parsedExpression).getGroupElements().get(0).getOperator().isDistinct());
+		} finally {
+			CustomAggregateFunctionRegistry.getInstance().remove(factory);
+		}
+	}
+
+	@Test
+	public void testProjectionHandling_HavingCustomAggregateFunction() {
+		var factory = buildDummyFactory();
+		try {
+			CustomAggregateFunctionRegistry.getInstance().add(factory);
+			String query = "prefix rj: <https://www.rdf4j.org/aggregate#>"
+					+ "SELECT (rj:x(distinct ?o) AS ?o1) \n"
+					+ "WHERE {\n"
+					+ "	?s ?p ?o \n"
+					+ "} GROUP BY ?s \nHAVING (rj:x(distinct ?o) > 50) ";
+			var parsedExpression = parser.parseQuery(query, null).getTupleExpr();
+			assertTrue(parsedExpression instanceof QueryRoot);
+			parsedExpression = ((QueryRoot) parsedExpression).getArg();
+			assertTrue(parsedExpression instanceof Projection);
+			parsedExpression = ((Projection) parsedExpression).getArg();
+			assertTrue(parsedExpression instanceof Extension);
+			var extensionElements = ((Extension) parsedExpression).getElements();
+			assertEquals(1, extensionElements.size());
+			assertTrue(extensionElements.get(0).getExpr() instanceof AggregateFunctionCall);
+			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getIRI());
+			parsedExpression = ((Extension) parsedExpression).getArg();
+			assertTrue(parsedExpression instanceof Filter);
+			parsedExpression = ((Filter) parsedExpression).getArg();
+			assertTrue(parsedExpression instanceof Extension);
+			parsedExpression = ((Extension) parsedExpression).getArg();
+			assertTrue(parsedExpression instanceof Group);
+			assertEquals(2, ((Group) parsedExpression).getGroupElements().size());
+			assertEquals(extensionElements.get(0).getExpr(),
+					((Group) parsedExpression).getGroupElements().get(0).getOperator());
+			assertEquals(extensionElements.get(0).getExpr(),
+					((Group) parsedExpression).getGroupElements().get(1).getOperator());
 			assertTrue(((Group) parsedExpression).getGroupElements().get(0).getOperator().isDistinct());
 		} finally {
 			CustomAggregateFunctionRegistry.getInstance().remove(factory);
@@ -508,7 +546,7 @@ public class SPARQLParserTest {
 			assertEquals(2, extensionElements.size());
 			assertTrue(extensionElements.get(0).getExpr() instanceof AggregateFunctionCall);
 			assertTrue(extensionElements.get(1).getExpr() instanceof Sum);
-			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getURI());
+			assertEquals(factory.getIri(), ((AggregateFunctionCall) extensionElements.get(0).getExpr()).getIRI());
 			parsedExpression = ((Extension) parsedExpression).getArg();
 			assertTrue(parsedExpression instanceof Group);
 			assertEquals(2, ((Group) parsedExpression).getGroupElements().size());
@@ -521,18 +559,13 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testProjectionHandling_FunctionCallWithDistinctFails() {
+	public void testProjectionHandling_UnknownFunctionCallWithDistinct() {
 		String query = "prefix rj: <https://www.rdf4j.org/aggregate#>"
 				+ "SELECT (rj:x(distinct ?o) AS ?o1) \n"
 				+ "WHERE {\n"
 				+ "	?s ?p ?o \n"
 				+ "} GROUP BY ?s ?o";
-		try {
-			parser.parseQuery(query, null);
-			fail("Should not be able to parse function calls with distinct");
-		} catch (Exception e) {
-			assertTrue(e instanceof IllegalArgumentException);
-		}
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
 	}
 
 	@Test
