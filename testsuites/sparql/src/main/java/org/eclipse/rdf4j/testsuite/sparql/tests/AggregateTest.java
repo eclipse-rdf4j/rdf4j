@@ -318,13 +318,12 @@ public class AggregateTest extends AbstractComplianceTest {
 		conn.add(bnode2, FOAF.KNOWS, Values.bnode());
 		conn.add(bnode3, FOAF.KNOWS, Values.bnode());
 		conn.add(bnode3, FOAF.KNOWS, Values.bnode());
-		conn.add(bnode2, FOAF.KNOWS, Values.bnode());
 		conn.add(bnode1, FOAF.KNOWS, Values.bnode());
 
 		String query = "SELECT ?a WHERE { ?a ?b ?c } GROUP BY ?a HAVING( (COUNT(?c) > 1 ) && ( COUNT(?c)  != 0 ) ) ";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			List<BindingSet> collect = QueryResults.asList(result);
-			assertEquals(3, collect.size());
+			assertEquals(2, collect.size());
 		}
 	}
 
