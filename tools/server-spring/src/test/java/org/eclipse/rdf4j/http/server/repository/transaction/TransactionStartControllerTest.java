@@ -12,13 +12,22 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import static org.eclipse.rdf4j.common.transaction.IsolationLevels.SNAPSHOT;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 import java.util.HashMap;
+import java.util.UUID;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -87,4 +96,59 @@ class TransactionStartControllerTest {
 
 		return (HashMap<String, String>) result.getModel().get("headers");
 	}
+
+	@Test
+	void positiveIsolationEnumsOldPath() {
+		for (IsolationLevel level : IsolationLevels.values()) {
+			request.addParameter("isolation-level", level.toString());
+
+			assertThat(controller.getIsolationLevel(request).size() == 1);
+		}
+
+	}
+
+	@Test
+	void negativeIsolationEnumsOldPath() {
+		request.addParameter("isolation-level", "GARBAGE");
+		assertThat(controller.getIsolationLevel(request).size() == 0);
+	}
+
+	@Test
+	void createTransactionLocation_withPositiveIsolationOldPath() throws Exception {
+
+		TransactionStartController controller = spy(TransactionStartController.class);
+		Transaction tx = mock(Transaction.class);
+		// Arrange
+		controller.setExternalUrl(null);
+
+		request.addParameter("isolation-level", "SNAPSHOT");
+		Repository repository = RepositoryInterceptor.getRepository(request);
+
+		when(controller.createTransaction(repository)).thenReturn(tx);
+		when(tx.getID()).thenReturn(UUID.randomUUID());
+		// Act
+		controller.handleRequest(request, response);
+
+		verify(tx).begin(SNAPSHOT);
+	}
+
+	@Test
+	void createTransactionLocation_withNegativeIsolationOldPath() throws Exception {
+
+		TransactionStartController controller = spy(TransactionStartController.class);
+		Transaction tx = mock(Transaction.class);
+		// Arrange
+		controller.setExternalUrl(null);
+
+		request.addParameter("isolation-level", "GARBAGE");
+		Repository repository = RepositoryInterceptor.getRepository(request);
+
+		when(controller.createTransaction(repository)).thenReturn(tx);
+		when(tx.getID()).thenReturn(UUID.randomUUID());
+		// Act
+		controller.handleRequest(request, response);
+
+		verify(tx).begin();
+	}
+
 }
