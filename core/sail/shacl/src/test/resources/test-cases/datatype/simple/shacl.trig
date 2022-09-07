@@ -9,8 +9,14 @@
 rdf4j:SHACLShapeGraph {
   ex:PersonShape a sh:NodeShape;
     sh:targetClass ex:Person;
-    sh:property ex:PersonPropertyShape .
-  
+    sh:property ex:PersonPropertyShape, ex:PersonDateOfBirthShape, ex:PersonDateTimeOfBirthShape .
+
   ex:PersonPropertyShape sh:path ex:age;
     sh:datatype xsd:integer .
+
+  ex:PersonDateOfBirthShape sh:path ex:dateOfBirth;
+    sh:datatype xsd:date .
+
+  ex:PersonDateTimeOfBirthShape sh:path ex:dateTimeOfBirth;
+    sh:datatype xsd:dateTime .
 }
