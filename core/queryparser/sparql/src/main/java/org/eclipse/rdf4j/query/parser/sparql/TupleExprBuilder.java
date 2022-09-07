@@ -1646,9 +1646,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		public void meet(Var var) {
 			if (toBeReplaced.equals(var)) {
 				QueryModelNode parent = var.getParentNode();
-				Var replacementVar = replacement.clone();
-				parent.replaceChildNode(var, replacementVar);
-				assert replacementVar.getParentNode() != null;
+				parent.replaceChildNode(var, replacement.clone());
 			}
 		}
 
@@ -2613,7 +2611,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		private void meetAggregate(AggregateOperator node) {
 			if (node.equals(operator)) {
-				node.getParentNode().replaceChildNode(node, replacement);
+				node.getParentNode().replaceChildNode(node, replacement.clone());
 			}
 		}
 	}

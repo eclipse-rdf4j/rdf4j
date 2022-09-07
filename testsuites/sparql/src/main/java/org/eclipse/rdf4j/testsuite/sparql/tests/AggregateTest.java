@@ -19,9 +19,12 @@ import static org.junit.Assert.fail;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -300,6 +303,28 @@ public class AggregateTest extends AbstractComplianceTest {
 		} catch (QueryEvaluationException e) {
 			e.printStackTrace();
 			fail(e.getMessage());
+		}
+	}
+
+	@Test
+	public void testCountHaving() {
+		BNode bnode1 = Values.bnode();
+		BNode bnode2 = Values.bnode();
+		BNode bnode3 = Values.bnode();
+
+		conn.add(bnode3, FOAF.KNOWS, Values.bnode());
+		conn.add(bnode1, FOAF.KNOWS, Values.bnode());
+		conn.add(bnode1, FOAF.KNOWS, Values.bnode());
+		conn.add(bnode2, FOAF.KNOWS, Values.bnode());
+		conn.add(bnode3, FOAF.KNOWS, Values.bnode());
+		conn.add(bnode3, FOAF.KNOWS, Values.bnode());
+		conn.add(bnode2, FOAF.KNOWS, Values.bnode());
+		conn.add(bnode1, FOAF.KNOWS, Values.bnode());
+
+		String query = "SELECT ?a WHERE { ?a ?b ?c } GROUP BY ?a HAVING( (COUNT(?c) > 1 ) && ( COUNT(?c)  != 0 ) ) ";
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> collect = QueryResults.asList(result);
+			assertEquals(3, collect.size());
 		}
 	}
 
