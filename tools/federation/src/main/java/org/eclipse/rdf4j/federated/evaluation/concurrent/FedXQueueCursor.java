@@ -33,9 +33,14 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 	private static final Logger log = LoggerFactory.getLogger(FedXQueueCursor.class);
 
 	public static <T> FedXQueueCursor<T> create(int capacity, WeakReference<?> callerReference) {
+		assert callerReference == null;
+		return create(capacity);
+	}
+
+	public static <T> FedXQueueCursor<T> create(int capacity) {
 		BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queue = new ArrayBlockingQueue<>(capacity,
 				false);
-		return new FedXQueueCursor<>(queue, callerReference);
+		return new FedXQueueCursor<>(queue);
 	}
 
 	/**
@@ -45,9 +50,8 @@ public class FedXQueueCursor<T> extends QueueCursor<CloseableIteration<T, QueryE
 	 */
 	private final BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queueRef;
 
-	private FedXQueueCursor(BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queue,
-			WeakReference<?> callerRef) {
-		super(queue, callerRef);
+	private FedXQueueCursor(BlockingQueue<CloseableIteration<T, QueryEvaluationException>> queue) {
+		super(queue);
 		this.queueRef = queue;
 	}
 

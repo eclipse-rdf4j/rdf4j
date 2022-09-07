@@ -50,7 +50,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
-import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;

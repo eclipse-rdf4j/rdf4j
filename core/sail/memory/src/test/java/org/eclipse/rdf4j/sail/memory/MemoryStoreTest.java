@@ -53,7 +53,7 @@ public class MemoryStoreTest extends RDFNotifyingStoreTest {
 						"    <http://unexisting_resource> (^(<http://predicate_a>)*) / <http://predicate_b>? ?resource\n"
 						+
 						"}",
-				"http://base.org/");
+				"http://example.org/");
 		CloseableIteration<? extends BindingSet, QueryEvaluationException> res = con.evaluate(tupleQuery.getTupleExpr(),
 				null, EmptyBindingSet.getInstance(), false);
 		assertTrue("expect a result", res.hasNext());

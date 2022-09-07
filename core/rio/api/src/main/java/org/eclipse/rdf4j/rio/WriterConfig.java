@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio;
 
-import java.io.Serializable;
-
 /**
  * A container object for easy setting and passing of {@link RDFWriter} configuration options.
  *
