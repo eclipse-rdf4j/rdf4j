@@ -17,6 +17,8 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.DatatypeFilter;
@@ -25,10 +27,12 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 
 public class DatatypeConstraintComponent extends SimpleAbstractConstraintComponent {
 
-	IRI datatype;
+	private final CoreDatatype coreDatatype;
+	private final IRI datatype;
 
 	public DatatypeConstraintComponent(IRI datatype) {
 		this.datatype = datatype;
+		this.coreDatatype = CoreDatatype.from(datatype);
 	}
 
 	@Override
@@ -53,11 +57,26 @@ public class DatatypeConstraintComponent extends SimpleAbstractConstraintCompone
 
 	@Override
 	String getSparqlFilterExpression(String varName, boolean negated) {
+		String checkDatatypeConformance = "<" + RSX.valueConformsToXsdDatatypeFunction + ">(?" + varName + ", <"
+				+ datatype + ">)";
 		if (negated) {
-			return "isLiteral(?" + varName + ") && datatype(?" + varName + ") = <" + datatype.stringValue() + ">";
+			return "isLiteral(?" + varName + ") && datatype(?" + varName + ") = <" + datatype + ">"
+					+ (coreDatatype.isXSDDatatype() ? " && " + checkDatatypeConformance : "");
 		} else {
-			return "!isLiteral(?" + varName + ") || datatype(?" + varName + ") != <" + datatype.stringValue() + ">";
+			return "!isLiteral(?" + varName + ") || datatype(?" + varName + ") != <" + datatype + ">"
+					+ (coreDatatype.isXSDDatatype() ? " || !" + checkDatatypeConformance : "");
 		}
 	}
+
+	// @formatter:off
+	/*
+	// This an attempt at an alternate approach using casting instead of a custom function. One issue with this is that we don't have an xsd:date constructor function which would be required to have parity with the reference SHACL validator.
+	if (negated) {
+		return "isLiteral(?" + varName + ") && datatype(?" + varName + ") = <" + datatype + ">" + (coreDatatype != null && coreDatatype.isPrimitiveDatatype() ? " && xsd:"+coreDatatype.getIri().getLocalName()+"(?"+varName+")":"");
+	} else {
+		return "!isLiteral(?" + varName + ") || datatype(?" + varName + ") != <" + datatype + "> "+ (coreDatatype != null && coreDatatype.isPrimitiveDatatype() ? " || !sameTerm(xsd:"+coreDatatype.getIri().getLocalName()+"(?"+varName+"), ?"+varName+")":"");
+	}
+	*/
+	// @formatter:on
 
 }

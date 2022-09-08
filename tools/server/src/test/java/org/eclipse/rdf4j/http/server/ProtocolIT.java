@@ -624,8 +624,7 @@ public class ProtocolIT {
 			// HTTP 200
 			if (responseCode == HttpURLConnection.HTTP_OK) {
 				// Process query results
-				return QueryResultIO.parseTuple(conn.getInputStream(), TupleQueryResultFormat.SPARQL,
-						new WeakReference<>(this));
+				return QueryResultIO.parseTuple(conn.getInputStream(), TupleQueryResultFormat.SPARQL, null);
 			} else {
 				String response = "location " + location + " responded: " + conn.getResponseMessage() + " ("
 						+ responseCode + ")";

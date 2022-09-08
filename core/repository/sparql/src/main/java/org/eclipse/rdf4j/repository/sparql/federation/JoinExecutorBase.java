@@ -54,8 +54,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	 */
 	protected volatile boolean finished = false;
 
-	protected final QueueCursor<CloseableIteration<T, QueryEvaluationException>> rightQueue = new QueueCursor<>(1024,
-			new WeakReference<>(this));
+	protected final QueueCursor<CloseableIteration<T, QueryEvaluationException>> rightQueue = new QueueCursor<>(1024);
 
 	protected JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,
 			BindingSet bindings) throws QueryEvaluationException {

@@ -63,7 +63,7 @@ public class SPARQLJSONTupleBackgroundTest extends AbstractQueryResultIOTupleTes
 	@Override
 	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in) throws IOException,
 			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
-		return QueryResultIO.parseTupleBackground(in, format, new WeakReference<>(this));
+		return QueryResultIO.parseTupleBackground(in, format, null);
 	}
 
 	@Test

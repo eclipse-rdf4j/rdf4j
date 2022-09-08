@@ -231,7 +231,7 @@ public abstract class AbstractQueryResultIOTupleTest extends AbstractQueryResult
 			QueryResultIO.writeTuple(new IteratingTupleQueryResult(bindingNames, bindings), getTupleFormat(), bos);
 			try (ByteArrayInputStream bis = new ByteArrayInputStream(bos.toByteArray())) {
 				TupleQueryResult parsedBindings = QueryResultIO.parseTuple(bis, getTupleFormat(),
-						new WeakReference<>(this));
+						null);
 				assertEquals(bindingNames, parsedBindings.getBindingNames());
 				List<BindingSet> actualBindings = new ArrayList<>();
 				parsedBindings.forEach(actualBindings::add);

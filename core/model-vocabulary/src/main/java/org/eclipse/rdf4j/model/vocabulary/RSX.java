@@ -39,6 +39,7 @@ public class RSX {
 	public final static IRI targetShape = create("targetShape");
 	public final static IRI dataGraph = create("dataGraph");
 	public final static IRI shapesGraph = create("shapesGraph");
+	public final static IRI valueConformsToXsdDatatypeFunction = create("valueConformsToXsdDatatypeFunction");
 
 	private static IRI create(String localName) {
 		return Vocabularies.createIRI(RSX.NAMESPACE, localName);
