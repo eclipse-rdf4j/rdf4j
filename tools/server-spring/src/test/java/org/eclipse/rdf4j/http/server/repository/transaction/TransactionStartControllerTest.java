@@ -112,7 +112,6 @@ class TransactionStartControllerTest {
 
 	@Test
 	void createTransactionLocation_withPositiveIsolationOldPath() throws Exception {
-
 		TransactionStartController controller = spy(TransactionStartController.class);
 		Transaction tx = mock(Transaction.class);
 		// Arrange
@@ -131,7 +130,6 @@ class TransactionStartControllerTest {
 
 	@Test
 	void createTransactionLocation_withNegativeIsolationOldPath() throws Exception {
-
 		TransactionStartController controller = spy(TransactionStartController.class);
 		Transaction tx = mock(Transaction.class);
 
@@ -142,9 +140,8 @@ class TransactionStartControllerTest {
 
 		when(controller.createTransaction(repository)).thenReturn(tx);
 		when(tx.getID()).thenReturn(UUID.randomUUID());
-		
-		assertThatIllegalArgumentException().isThrownBy(()->controller.handleRequest(request, response));
 
+		assertThatIllegalArgumentException().isThrownBy(()->controller.handleRequest(request, response));
 	}
 
 }
