@@ -134,7 +134,7 @@ class TransactionStartControllerTest {
 
 		TransactionStartController controller = spy(TransactionStartController.class);
 		Transaction tx = mock(Transaction.class);
-		// Arrange
+
 		controller.setExternalUrl(null);
 
 		request.addParameter("isolation-level", "GARBAGE");
@@ -142,8 +142,8 @@ class TransactionStartControllerTest {
 
 		when(controller.createTransaction(repository)).thenReturn(tx);
 		when(tx.getID()).thenReturn(UUID.randomUUID());
-		// Act
-		controller.handleRequest(request, response);
+		
+		assertThatIllegalArgumentException().isThrownBy(()->controller.handleRequest(request, response));
 
 	}
 
