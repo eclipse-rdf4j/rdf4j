@@ -10,10 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.Assertions.*;
 import static org.eclipse.rdf4j.common.transaction.IsolationLevels.SNAPSHOT;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import java.util.HashMap;
@@ -27,7 +25,6 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -110,7 +107,7 @@ class TransactionStartControllerTest {
 	@Test
 	void negativeIsolationEnumsOldPath() {
 		request.addParameter("isolation-level", "GARBAGE");
-		assertThat(controller.getIsolationLevel(request).size() == 0);
+		assertThatIllegalArgumentException().isThrownBy(() -> controller.getIsolationLevel(request));
 	}
 
 	@Test
@@ -148,7 +145,6 @@ class TransactionStartControllerTest {
 		// Act
 		controller.handleRequest(request, response);
 
-		verify(tx).begin();
 	}
 
 }

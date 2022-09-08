@@ -74,7 +74,7 @@ public class TransactionStartController extends AbstractController {
 	}
 
 	@Deprecated
-	ArrayList<TransactionSetting> getIsolationLevel(HttpServletRequest request) {
+	ArrayList<TransactionSetting> getIsolationLevel(HttpServletRequest request) throws IllegalArgumentException {
 		// process legacy isolation level param for backward compatibility with older clients
 
 		ArrayList<TransactionSetting> transactionSettings = new ArrayList<>();
@@ -87,6 +87,8 @@ public class TransactionStartController extends AbstractController {
 					break;
 				}
 			}
+			if (transactionSettings.isEmpty())
+				throw new IllegalArgumentException("Unknown isolation value " + isolationLevelString);
 		}
 
 		return transactionSettings;
@@ -94,8 +96,6 @@ public class TransactionStartController extends AbstractController {
 
 	ArrayList<TransactionSetting> getTransactionSettings(HttpServletRequest request) {
 
-		// currently does not work.  need to revisit to get a better idea of the approach
-		
 		ArrayList<TransactionSetting> transactionSettings = new ArrayList<>();
 		request.getParameterMap().forEach((k, v) -> {
 			if (k.startsWith(Protocol.TRANSACTION_SETTINGS_PREFIX)) {
