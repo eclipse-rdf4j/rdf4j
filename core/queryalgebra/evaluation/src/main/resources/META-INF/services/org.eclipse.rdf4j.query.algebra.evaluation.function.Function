@@ -36,6 +36,7 @@ org.eclipse.rdf4j.query.algebra.evaluation.function.string.Substring
 org.eclipse.rdf4j.query.algebra.evaluation.function.string.UpperCase
 org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.BooleanCast
 org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.ByteCast
+org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DateCast
 org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DateTimeCast
 org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DecimalCast
 org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DoubleCast
