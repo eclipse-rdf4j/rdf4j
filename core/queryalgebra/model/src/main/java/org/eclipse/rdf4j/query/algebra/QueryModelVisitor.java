@@ -71,8 +71,6 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	void meet(FunctionCall node) throws X;
 
-	void meet(AggregateFunctionCall node) throws X;
-
 	void meet(Group node) throws X;
 
 	void meet(GroupConcat node) throws X;
