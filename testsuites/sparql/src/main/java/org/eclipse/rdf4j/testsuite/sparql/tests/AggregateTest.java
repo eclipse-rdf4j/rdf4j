@@ -14,15 +14,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.Date;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -31,6 +40,9 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFWriter;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
 import org.junit.Test;
 
@@ -38,7 +50,6 @@ import org.junit.Test;
  * Tests on SPARQL aggregate function compliance.
  *
  * @author Jeen Broekstra
- *
  */
 public class AggregateTest extends AbstractComplianceTest {
 
@@ -325,6 +336,150 @@ public class AggregateTest extends AbstractComplianceTest {
 			List<BindingSet> collect = QueryResults.asList(result);
 			assertEquals(2, collect.size());
 		}
+	}
+
+	@Test
+	public void testSum() {
+		mixedDataForNumericAggregates();
+
+		String query = "SELECT ?a (SUM(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> collect = QueryResults.asList(result);
+			int i = 0;
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(30.11), collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(new BigDecimal("89.4786576482391284723864721567342354783275234")),
+					collect.get(i++).getValue("aggregate"));
+
+		}
+
+	}
+
+	@Test
+	public void testDistinctSum() {
+		mixedDataForNumericAggregates();
+
+		String query = "SELECT ?a (SUM(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> collect = QueryResults.asList(result);
+			int i = 0;
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(30.11), collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(new BigDecimal("55.4786576482391284723864721567342354783275234")),
+					collect.get(i++).getValue("aggregate"));
+		}
+
+	}
+
+	@Test
+	public void testAvg() {
+		mixedDataForNumericAggregates();
+
+		String query = "SELECT ?a (AVG(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> collect = QueryResults.asList(result);
+			int i = 0;
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(15.055), collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(new BigDecimal("17.89573152964782569447729443134684709566550468")),
+					collect.get(i++).getValue("aggregate"));
+		}
+
+	}
+
+	@Test
+	public void testDistinctAvg() {
+		mixedDataForNumericAggregates();
+
+		String query = "SELECT ?a (AVG(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> collect = QueryResults.asList(result);
+			int i = 0;
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertNull(collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(15.055), collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(new BigDecimal("18.492885882746376157462157")),
+					collect.get(i++).getValue("aggregate"));
+		}
+
+	}
+
+	@Test
+	public void testMax() {
+		mixedDataForNumericAggregates();
+
+		String query = "SELECT ?a (MAX(?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> collect = QueryResults.asList(result);
+			int i = 0;
+			assertEquals(Values.literal(new BigDecimal("19.4786576482391284723864721567342354783275234")),
+					collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(23), collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(23), collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal("2022-01-01T01:01:01.000000001Z", CoreDatatype.XSD.DATETIME),
+					collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal("3"), collect.get(i++).getValue("aggregate"));
+		}
+
+	}
+
+	@Test
+	public void testDistinctMax() {
+		mixedDataForNumericAggregates();
+
+		String query = "SELECT ?a (MAX(DISTINCT ?c) as ?aggregate) WHERE { ?a ?b ?c } GROUP BY ?a ORDER BY ?aggregate ";
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> collect = QueryResults.asList(result);
+			int i = 0;
+			assertEquals(Values.literal(new BigDecimal("19.4786576482391284723864721567342354783275234")),
+					collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(23), collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal(23), collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal("2022-01-01T01:01:01.000000001Z", CoreDatatype.XSD.DATETIME),
+					collect.get(i++).getValue("aggregate"));
+			assertEquals(Values.literal("3"), collect.get(i++).getValue("aggregate"));
+		}
+
+	}
+
+	private void mixedDataForNumericAggregates() {
+		IRI node1 = Values.iri("http://example.com/1");
+		IRI node2 = Values.iri("http://example.com/2");
+		IRI node3 = Values.iri("http://example.com/3");
+		IRI node4 = Values.iri("http://example.com/4");
+		IRI node5 = Values.iri("http://example.com/5");
+
+		conn.add(node3, FOAF.AGE, Values.bnode());
+		conn.add(node1, FOAF.AGE, Values.literal("3"));
+		conn.add(node1, FOAF.AGE, Values.literal(5));
+		conn.add(node2, FOAF.AGE, Values.literal(7.11));
+		conn.add(node3, FOAF.AGE, Values.literal(13));
+		conn.add(node3, FOAF.AGE, Values.literal(17));
+		conn.add(node1, FOAF.AGE, Values.literal(19));
+		conn.add(node2, FOAF.AGE, Values.literal(23));
+
+		conn.add(node4, FOAF.AGE, Values.literal(19));
+		conn.add(node4, FOAF.AGE, Values.literal(ZonedDateTime.of(2022, 01, 01, 01, 01, 01, 01, ZoneId.of("UTC"))));
+
+		conn.add(node1, FOAF.AGE, Values.literal(23));
+		conn.add(node2, FOAF.AGE, Values.literal(23));
+		conn.add(node3, FOAF.AGE, Values.literal(23));
+		conn.add(node4, FOAF.AGE, Values.literal(23));
+
+		conn.add(node3, FOAF.KNOWS, node1);
+
+		conn.add(node5, FOAF.AGE, Values.literal(17));
+		conn.add(node5, FOAF.PHONE, Values.literal(17));
+		conn.add(node5, FOAF.DNA_CHECKSUM, Values.literal(17));
+		conn.add(node5, FOAF.DNA_CHECKSUM, Values.literal(19));
+		conn.add(node5, FOAF.PHONE, Values.literal(new BigDecimal("19.4786576482391284723864721567342354783275234")));
 	}
 
 	private int countCharOccurrences(String string, char ch) {

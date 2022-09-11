@@ -70,6 +70,7 @@ import org.mapdb.DBMaker;
  * @author Jeen Broekstra
  * @author James Leigh
  * @author Jerven Bolleman
+ * @author Tomas Kovachev
  */
 public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryEvaluationException> {
 
@@ -686,10 +687,24 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	private class IntegerCollector implements AggregateCollector {
+		private ValueExprEvaluationException typeError;
+
 		private Literal value = vf.createLiteral("0", CoreDatatype.XSD.INTEGER);
+
+		public void setTypeError(ValueExprEvaluationException typeError) {
+			this.typeError = typeError;
+		}
+
+		public boolean hasError() {
+			return typeError != null;
+		}
 
 		@Override
 		public Value getFinalValue() {
+			if (typeError != null) {
+				// a type error occurred while processing the aggregate, throw it now.
+				throw typeError;
+			}
 			return value;
 		}
 	}
@@ -697,7 +712,15 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private class AvgCollector implements AggregateCollector {
 		private Literal sum = vf.createLiteral("0", CoreDatatype.XSD.INTEGER);
 		private long count;
-		private ValueExprEvaluationException typeError = null;
+		private ValueExprEvaluationException typeError;
+
+		public void setTypeError(ValueExprEvaluationException typeError) {
+			this.typeError = typeError;
+		}
+
+		public boolean hasError() {
+			return typeError != null;
+		}
 
 		@Override
 		public Value getFinalValue() throws ValueExprEvaluationException {
@@ -861,8 +884,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private class SumAggregate extends Aggregate<IntegerCollector, Value> {
 
-		private ValueExprEvaluationException typeError = null;
-
 		public SumAggregate(Sum operator) {
 			super(operator);
 		}
@@ -870,23 +891,25 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		@Override
 		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, IntegerCollector sum)
 				throws QueryEvaluationException {
-			if (typeError != null) {
+			if (sum.hasError()) {
 				// halt further processing if a type error has been raised
 				return;
 			}
 
 			Value v = evaluate(s);
-			if (v instanceof Literal) {
-				if (distinctValue.test(v)) {
-					Literal nextLiteral = (Literal) v;
-					if (nextLiteral.getDatatype() != null
-							&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
-						sum.value = MathUtil.compute(sum.value, nextLiteral, MathOp.PLUS);
-					} else {
-						typeError = new ValueExprEvaluationException("not a number: " + v);
+			if (v != null) {
+				if (v.isLiteral()) {
+					if (distinctValue.test(v)) {
+						Literal literal = (Literal) v;
+						CoreDatatype coreDatatype = literal.getCoreDatatype();
+						if (coreDatatype.isXSDDatatype() && ((CoreDatatype.XSD) coreDatatype).isNumericDatatype()) {
+							sum.value = MathUtil.compute(sum.value, literal, MathOp.PLUS);
+						} else {
+							sum.setTypeError(new ValueExprEvaluationException("not a number: " + v));
+						}
 					}
-				} else if (v != null) {
-					typeError = new ValueExprEvaluationException("not a number: " + v);
+				} else {
+					sum.setTypeError(new ValueExprEvaluationException("not a number: " + v));
 				}
 			}
 		}
@@ -901,9 +924,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		@Override
 		public void processAggregate(BindingSet s, Predicate<Value> distinctValue, AvgCollector avg)
 				throws QueryEvaluationException {
-			if (avg.typeError != null) {
+			if (avg.hasError()) {
 				// Prevent calculating the aggregate further if a type error has
-				// occured.
+				// occurred.
 				return;
 			}
 
@@ -916,14 +939,14 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 							&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
 						avg.sum = MathUtil.compute(avg.sum, nextLiteral, MathOp.PLUS);
 					} else {
-						avg.typeError = new ValueExprEvaluationException("not a number: " + v);
+						avg.setTypeError(new ValueExprEvaluationException("not a number: " + v));
 					}
 					avg.count++;
 				} else if (v != null) {
 					// we do not actually throw the exception yet, but record it and
 					// stop further processing. The exception will be thrown when
 					// getValue() is invoked.
-					avg.typeError = new ValueExprEvaluationException("not a number: " + v);
+					avg.setTypeError(new ValueExprEvaluationException("not a number: " + v));
 				}
 			}
 		}
