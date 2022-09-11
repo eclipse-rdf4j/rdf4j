@@ -10,11 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.aggregate;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 
 /**
  * Collector for values used by {@link AggregateFunction}'s
  */
+@Experimental
 public interface AggregateCollector {
 	Value getFinalValue();
 }

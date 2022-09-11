@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.parser.sparql.aggregate;
 
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 
@@ -21,6 +22,7 @@ import org.eclipse.rdf4j.query.BindingSet;
  *
  * @author Tomas Kovachev t.kovachev1996@gmail.com
  */
+@Experimental
 public interface AggregateFunctionFactory {
 
 	/**

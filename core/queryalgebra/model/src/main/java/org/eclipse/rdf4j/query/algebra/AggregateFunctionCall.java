@@ -11,12 +11,15 @@
 
 package org.eclipse.rdf4j.query.algebra;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Custom {@link AggregateOperator} function call that can be defined to take an argument and can apply distinct
  * filtering on it.
  *
  * @author Tomas Kovachev t.kovachev1996@gmail.com
  */
+@Experimental
 public class AggregateFunctionCall extends AbstractAggregateOperator {
 
 	protected String iri;

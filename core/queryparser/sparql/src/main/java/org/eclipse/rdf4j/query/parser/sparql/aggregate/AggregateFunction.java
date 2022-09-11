@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.parser.sparql.aggregate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @param <T>
  * @param <D>
  */
+@Experimental
 public abstract class AggregateFunction<T extends AggregateCollector, D> {
 
 	protected final Function<BindingSet, Value> evaluationStep;
