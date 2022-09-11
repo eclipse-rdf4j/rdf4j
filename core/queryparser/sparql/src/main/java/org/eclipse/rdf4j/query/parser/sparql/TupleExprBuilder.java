@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -104,6 +105,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAbs;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAnd;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAskQuery;
@@ -1851,15 +1853,26 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	public Object visit(ASTFunctionCall node, Object data) throws VisitorException {
 		ValueConstant uriNode = (ValueConstant) node.jjtGetChild(0).jjtAccept(this, null);
 		IRI functionURI = (IRI) uriNode.getValue();
-
-		FunctionCall functionCall = new FunctionCall(functionURI.stringValue());
-
-		for (int i = 1; i < node.jjtGetNumChildren(); i++) {
-			Node argNode = node.jjtGetChild(i);
-			functionCall.addArg(castToValueExpr(argNode.jjtAccept(this, null)));
+		if (CustomAggregateFunctionRegistry.getInstance().has(functionURI.stringValue()) || node.isDistinct()) {
+			AggregateFunctionCall aggregateCall = new AggregateFunctionCall(functionURI.stringValue(),
+					node.isDistinct());
+			if (node.jjtGetNumChildren() > 2) {
+				throw new IllegalArgumentException("Custom aggregate functions cannot have more than one argument");
+			}
+			Node argNode = node.jjtGetChild(1);
+			aggregateCall.setArg(castToValueExpr(argNode.jjtAccept(this, null)));
+			return aggregateCall;
+		} else {
+			if (node.isDistinct()) {
+				throw new IllegalArgumentException("Custom function calls cannot apply distinct iteration to args");
+			}
+			FunctionCall functionCall = new FunctionCall(functionURI.stringValue());
+			for (int i = 1; i < node.jjtGetNumChildren(); i++) {
+				Node argNode = node.jjtGetChild(i);
+				functionCall.addArg(castToValueExpr(argNode.jjtAccept(this, null)));
+			}
+			return functionCall;
 		}
-
-		return functionCall;
 	}
 
 	@Override
@@ -2550,6 +2563,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			meetAggregate(node);
 		}
 
+		@Override
+		public void meet(AggregateFunctionCall node) throws VisitorException {
+			super.meet(node);
+			meetAggregate(node);
+		}
+
 		private void meetAggregate(AggregateOperator node) {
 			operators.add(node);
 		}
@@ -2605,6 +2624,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		@Override
 		public void meet(Sum node) throws VisitorException {
+			super.meet(node);
+			meetAggregate(node);
+		}
+
+		@Override
+		public void meet(AggregateFunctionCall node) throws VisitorException {
 			super.meet(node);
 			meetAggregate(node);
 		}

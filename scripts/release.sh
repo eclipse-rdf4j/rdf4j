@@ -221,7 +221,6 @@ echo "It's ok to merge this PR later, so wait for the Jenkins tests to finish."
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 mvn clean
-git checkout main
 
 echo "Build javadocs"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";

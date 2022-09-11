@@ -1,0 +1,455 @@
+From 4d46d4a289eb4320cc26c9e3e837825fe2bca887 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Ha=CC=8Avard=20Ottestad?= <hmottestad@gmail.com>
+Date: Sun, 11 Sep 2022 13:02:12 +0200
+Subject: [PATCH] GH-4131 fix SyntaxTreeBuilder
+
+---
+ .../parser/sparql/ast/SyntaxTreeBuilder.java  | 171 +++++++++---------
+ 1 file changed, 89 insertions(+), 82 deletions(-)
+
+diff --git a/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilder.java b/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilder.java
+index 25e0179a9b..0964cf5318 100644
+--- a/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilder.java
++++ b/core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/SyntaxTreeBuilder.java
+@@ -622,9 +622,8 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			jj_consume_token(CONSTRUCT);
+-			if (jj_2_1(2)) {
++			if (jj_2_1()) {
+ 				ConstructClause();
+-			} else {
+ 			}
+ 		} catch (Throwable jjte000) {
+ 			jjtree.clearNodeScope(jjtn000);
+@@ -2182,11 +2181,7 @@ public class SyntaxTreeBuilder
+ 
+ 	final public void TriplesBlock() throws ParseException {
+ 		TriplesSameSubjectPath();
+-		label_18: while (true) {
+-			if (jj_2_2(2)) {
+-			} else {
+-				break;
+-			}
++		while (jj_2_2()) {
+ 			jj_consume_token(DOT);
+ 			TriplesSameSubjectPath();
+ 		}
+@@ -2199,11 +2194,7 @@ public class SyntaxTreeBuilder
+ 
+ 	final public void TriplesTemplate() throws ParseException {
+ 		TriplesSameSubject();
+-		label_19: while (true) {
+-			if (jj_2_3(2)) {
+-			} else {
+-				break;
+-			}
++		while (jj_2_3()) {
+ 			jj_consume_token(DOT);
+ 			TriplesSameSubject();
+ 		}
+@@ -2549,11 +2540,10 @@ public class SyntaxTreeBuilder
+ 					jj_la1[71] = jj_gen;
+ 				}
+ 				Expression();
+-				label_20: while (true) {
+-					if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == COMMA) {
+-					} else {
++				while (true) {
++					if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != COMMA) {
+ 						jj_la1[72] = jj_gen;
+-						break label_20;
++						break;
+ 					}
+ 					jj_consume_token(COMMA);
+ 					Expression();
+@@ -2599,11 +2589,10 @@ public class SyntaxTreeBuilder
+ 		case LPAREN:
+ 			jj_consume_token(LPAREN);
+ 			Expression();
+-			label_21: while (true) {
+-				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == COMMA) {
+-				} else {
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != COMMA) {
+ 					jj_la1[74] = jj_gen;
+-					break label_21;
++					break;
+ 				}
+ 				jj_consume_token(COMMA);
+ 				Expression();
+@@ -2751,11 +2740,10 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			Object();
+-			label_22: while (true) {
+-				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == COMMA) {
+-				} else {
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != COMMA) {
+ 					jj_la1[80] = jj_gen;
+-					break label_22;
++					break;
+ 				}
+ 				jj_consume_token(COMMA);
+ 				Object();
+@@ -2943,11 +2931,10 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			ObjectPath();
+-			label_23: while (true) {
+-				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == COMMA) {
+-				} else {
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != COMMA) {
+ 					jj_la1[86] = jj_gen;
+-					break label_23;
++					break;
+ 				}
+ 				jj_consume_token(COMMA);
+ 				ObjectPath();
+@@ -2989,11 +2976,10 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			PathSequence();
+-			label_24: while (true) {
+-				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == PIPE) {
+-				} else {
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != PIPE) {
+ 					jj_la1[87] = jj_gen;
+-					break label_24;
++					break;
+ 				}
+ 				jj_consume_token(PIPE);
+ 				PathSequence();
+@@ -3027,11 +3013,10 @@ public class SyntaxTreeBuilder
+ 		jjtree.openNodeScope(jjtn000);
+ 		try {
+ 			PathElt();
+-			label_25: while (true) {
+-				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == SLASH) {
+-				} else {
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != SLASH) {
+ 					jj_la1[88] = jj_gen;
+-					break label_25;
++					break;
+ 				}
+ 				jj_consume_token(SLASH);
+ 				PathElt();
+@@ -3165,11 +3150,10 @@ public class SyntaxTreeBuilder
+ 			case PNAME_NS:
+ 			case PNAME_LN: {
+ 				PathOneInPropertySet();
+-				label_26: while (true) {
+-					if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == PIPE) {
+-					} else {
++				while (true) {
++					if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != PIPE) {
+ 						jj_la1[92] = jj_gen;
+-						break label_26;
++						break;
+ 					}
+ 					jj_consume_token(PIPE);
+ 					PathOneInPropertySet();
+@@ -4775,7 +4759,7 @@ public class SyntaxTreeBuilder
+ 		}
+ 		default:
+ 			jj_la1[125] = jj_gen;
+-			if (jj_2_4(2)) {
++			if (jj_2_4()) {
+ 				FunctionCall();
+ 			} else {
+ 				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+@@ -6687,11 +6671,10 @@ public class SyntaxTreeBuilder
+ 			jj_consume_token(COALESCE);
+ 			jj_consume_token(LPAREN);
+ 			Expression();
+-			label_31: while (true) {
+-				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == COMMA) {
+-				} else {
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != COMMA) {
+ 					jj_la1[145] = jj_gen;
+-					break label_31;
++					break;
+ 				}
+ 				jj_consume_token(COMMA);
+ 				Expression();
+@@ -7897,11 +7880,10 @@ public class SyntaxTreeBuilder
+ 		default:
+ 			jj_la1[164] = jj_gen;
+ 		}
+-		label_32: while (true) {
+-			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == GRAPH) {
+-			} else {
++		while (true) {
++			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != GRAPH) {
+ 				jj_la1[165] = jj_gen;
+-				break label_32;
++				break;
+ 			}
+ 			QuadsNotTriples();
+ 			if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == DOT) {
+@@ -8042,11 +8024,11 @@ public class SyntaxTreeBuilder
+ 		}
+ 		default:
+ 			jj_la1[169] = jj_gen;
+-			if (jj_2_5(2)) {
++			if (jj_2_5()) {
+ 				InsertData();
+-			} else if (jj_2_6(2)) {
++			} else if (jj_2_6()) {
+ 				DeleteData();
+-			} else if (jj_2_7(2)) {
++			} else if (jj_2_7()) {
+ 				DeleteWhere();
+ 			} else {
+ 				switch ((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) {
+@@ -8610,11 +8592,10 @@ public class SyntaxTreeBuilder
+ 				jj_consume_token(-1);
+ 				throw new ParseException();
+ 			}
+-			label_33: while (true) {
+-				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) == USING) {
+-				} else {
++			while (true) {
++				if (((jj_ntk == -1) ? jj_ntk_f() : jj_ntk) != USING) {
+ 					jj_la1[183] = jj_gen;
+-					break label_33;
++					break;
+ 				}
+ 				UsingClause();
+ 			}
+@@ -8642,7 +8623,8 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	private boolean jj_2_1(int xla) {
++	private boolean jj_2_1() {
++		int xla = 2;
+ 		jj_la = xla;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+@@ -8654,7 +8636,8 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	private boolean jj_2_2(int xla) {
++	private boolean jj_2_2() {
++		int xla = 2;
+ 		jj_la = xla;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+@@ -8666,7 +8649,8 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	private boolean jj_2_3(int xla) {
++	private boolean jj_2_3() {
++		int xla = 2;
+ 		jj_la = xla;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+@@ -8678,7 +8662,8 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	private boolean jj_2_4(int xla) {
++	private boolean jj_2_4() {
++		int xla = 2;
+ 		jj_la = xla;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+@@ -8690,7 +8675,8 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	private boolean jj_2_5(int xla) {
++	private boolean jj_2_5() {
++		int xla = 2;
+ 		jj_la = xla;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+@@ -8702,7 +8688,8 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	private boolean jj_2_6(int xla) {
++	private boolean jj_2_6() {
++		int xla = 2;
+ 		jj_la = xla;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+@@ -8714,7 +8701,8 @@ public class SyntaxTreeBuilder
+ 		}
+ 	}
+ 
+-	private boolean jj_2_7(int xla) {
++	private boolean jj_2_7() {
++		int xla = 2;
+ 		jj_la = xla;
+ 		jj_lastpos = jj_scanpos = token;
+ 		try {
+@@ -8831,14 +8819,16 @@ public class SyntaxTreeBuilder
+ 	}
+ 
+ 	private boolean jj_3R_40() {
+-		if (jj_scan_token(DELETE))
++		if (jj_scan_token(DELETE)) {
+ 			return true;
++		}
+ 		return jj_scan_token(WHERE);
+ 	}
+ 
+ 	private boolean jj_3_3() {
+-		if (jj_scan_token(DOT))
++		if (jj_scan_token(DOT)) {
+ 			return true;
++		}
+ 		return jj_3R_36();
+ 	}
+ 
+@@ -8847,8 +8837,9 @@ public class SyntaxTreeBuilder
+ 	}
+ 
+ 	private boolean jj_3_2() {
+-		if (jj_scan_token(DOT))
++		if (jj_scan_token(DOT)) {
+ 			return true;
++		}
+ 		return jj_3R_35();
+ 	}
+ 
+@@ -8861,14 +8852,16 @@ public class SyntaxTreeBuilder
+ 	}
+ 
+ 	private boolean jj_3R_39() {
+-		if (jj_scan_token(DELETE))
++		if (jj_scan_token(DELETE)) {
+ 			return true;
++		}
+ 		return jj_scan_token(DATA);
+ 	}
+ 
+ 	private boolean jj_3R_38() {
+-		if (jj_scan_token(INSERT))
++		if (jj_scan_token(INSERT)) {
+ 			return true;
++		}
+ 		return jj_scan_token(DATA);
+ 	}
+ 
+@@ -8931,12 +8924,14 @@ public class SyntaxTreeBuilder
+ 	}
+ 
+ 	private boolean jj_3R_34() {
+-		if (jj_scan_token(LBRACE))
++		if (jj_scan_token(LBRACE)) {
+ 			return true;
++		}
+ 		Token xsp;
+ 		xsp = jj_scanpos;
+-		if (jj_3R_41())
++		if (jj_3R_41()) {
+ 			jj_scanpos = xsp;
++		}
+ 		return jj_scan_token(RBRACE);
+ 	}
+ 
+@@ -9128,8 +9123,9 @@ public class SyntaxTreeBuilder
+ 	}
+ 
+ 	private boolean jj_3R_37() {
+-		if (jj_3R_46())
++		if (jj_3R_46()) {
+ 			return true;
++		}
+ 		Token xsp;
+ 		xsp = jj_scanpos;
+ 		if (jj_3R_47()) {
+@@ -9319,10 +9315,12 @@ public class SyntaxTreeBuilder
+ 		token = new Token();
+ 		jj_ntk = -1;
+ 		jj_gen = 0;
+-		for (int i = 0; i < 184; i++)
++		for (int i = 0; i < 184; i++) {
+ 			jj_la1[i] = -1;
+-		for (int i = 0; i < jj_2_rtns.length; i++)
++		}
++		for (int i = 0; i < jj_2_rtns.length; i++) {
+ 			jj_2_rtns[i] = new JJCalls();
++		}
+ 	}
+ 
+ 	/**
+@@ -9334,10 +9332,12 @@ public class SyntaxTreeBuilder
+ 		jj_ntk = -1;
+ 		jjtree.reset();
+ 		jj_gen = 0;
+-		for (int i = 0; i < 184; i++)
++		for (int i = 0; i < 184; i++) {
+ 			jj_la1[i] = -1;
+-		for (int i = 0; i < jj_2_rtns.length; i++)
++		}
++		for (int i = 0; i < jj_2_rtns.length; i++) {
+ 			jj_2_rtns[i] = new JJCalls();
++		}
+ 	}
+ 
+ 	/**
+@@ -9348,10 +9348,12 @@ public class SyntaxTreeBuilder
+ 		token = new Token();
+ 		jj_ntk = -1;
+ 		jj_gen = 0;
+-		for (int i = 0; i < 184; i++)
++		for (int i = 0; i < 184; i++) {
+ 			jj_la1[i] = -1;
+-		for (int i = 0; i < jj_2_rtns.length; i++)
++		}
++		for (int i = 0; i < jj_2_rtns.length; i++) {
+ 			jj_2_rtns[i] = new JJCalls();
++		}
+ 	}
+ 
+ 	/**
+@@ -9363,10 +9365,12 @@ public class SyntaxTreeBuilder
+ 		jj_ntk = -1;
+ 		jjtree.reset();
+ 		jj_gen = 0;
+-		for (int i = 0; i < 184; i++)
++		for (int i = 0; i < 184; i++) {
+ 			jj_la1[i] = -1;
+-		for (int i = 0; i < jj_2_rtns.length; i++)
++		}
++		for (int i = 0; i < jj_2_rtns.length; i++) {
+ 			jj_2_rtns[i] = new JJCalls();
++		}
+ 	}
+ 
+ 	private Token jj_consume_token(int kind) throws ParseException {
+@@ -9502,14 +9506,17 @@ public class SyntaxTreeBuilder
+ 							break;
+ 						}
+ 					}
+-					if (exists)
++					if (exists) {
+ 						break;
++					}
+ 				}
+ 			}
+-			if (!exists)
++			if (!exists) {
+ 				jj_expentries.add(jj_expentry);
+-			if (pos != 0)
++			}
++			if (pos != 0) {
+ 				jj_lasttokens[(jj_endpos = pos) - 1] = kind;
++			}
+ 		}
+ 	}
+ 
+-- 
+2.31.0
+
