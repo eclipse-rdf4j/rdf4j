@@ -36,7 +36,7 @@ Patches are stored in `./patches/`. They should be applied in order.
 To apply a patch you need to be in the root RDF4J directory (where the `.git`directory is). The run:
 
 ```
-git apply core/queryparser/sparql/JavaCC/patches/01-optimize-SyntaxTreeBuilderTokenManager.diff
-git apply core/queryparser/sparql/JavaCC/patches/02-optimize-SyntaxTreeBuilder.diff
+git apply core/queryparser/sparql/JavaCC/patches/01-optimize-SyntaxTreeBuilder.diff
+git apply core/queryparser/sparql/JavaCC/patches/02-optimize-SyntaxTreeBuilderTokenManager.diff
 ```
 
