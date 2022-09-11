@@ -859,7 +859,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	}
 
 	private class SumAggregate extends AggregateFunction<IntegerCollector, Value> {
-
 		public SumAggregate(Sum operator) {
 			super(new QueryStepEvaluator(strategy.precompile(operator.getArg(), context)));
 		}
@@ -873,15 +872,19 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 
 			Value v = evaluate(s);
-			if (v instanceof Literal) {
-				if (distinctValue.test(v)) {
-					Literal nextLiteral = (Literal) v;
-					if (nextLiteral.getDatatype() != null
-							&& XMLDatatypeUtil.isNumericDatatype(nextLiteral.getDatatype())) {
-						sum.value = MathUtil.compute(sum.value, nextLiteral, MathOp.PLUS);
-					} else {
-						sum.setTypeError(new ValueExprEvaluationException("not a number: " + v));
+			if (v != null) {
+				if (v.isLiteral()) {
+					if (distinctValue.test(v)) {
+						Literal literal = (Literal) v;
+						CoreDatatype coreDatatype = literal.getCoreDatatype();
+						if (coreDatatype.isXSDDatatype() && ((CoreDatatype.XSD) coreDatatype).isNumericDatatype()) {
+							sum.value = MathUtil.compute(sum.value, literal, MathOp.PLUS);
+						} else {
+							sum.setTypeError(new ValueExprEvaluationException("not a number: " + v));
+						}
 					}
+				} else {
+					sum.setTypeError(new ValueExprEvaluationException("not a number: " + v));
 				}
 			}
 		}
