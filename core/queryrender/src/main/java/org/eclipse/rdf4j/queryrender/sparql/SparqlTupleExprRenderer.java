@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.queryrender.sparql;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -337,11 +336,6 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 
 	@Override
 	public void meet(FunctionCall node) throws Exception {
-		mJoinBuffer.append(renderValueExpr(node));
-	}
-
-	@Override
-	public void meet(AggregateFunctionCall node) throws Exception {
 		mJoinBuffer.append(renderValueExpr(node));
 	}
 
