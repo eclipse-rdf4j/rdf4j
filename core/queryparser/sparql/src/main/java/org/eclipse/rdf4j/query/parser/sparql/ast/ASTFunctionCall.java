@@ -14,6 +14,16 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 
 public class ASTFunctionCall extends SimpleNode {
 
+	private boolean distinct;
+
+	public boolean isDistinct() {
+		return distinct;
+	}
+
+	public void setDistinct(boolean distinct) {
+		this.distinct = distinct;
+	}
+
 	public ASTFunctionCall(int id) {
 		super(id);
 	}
