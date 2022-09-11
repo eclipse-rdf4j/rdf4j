@@ -768,7 +768,7 @@ void Constraint() :
 void FunctionCall() :
 {}
 {
-	IRIref() ArgList()
+    IRIref() (<LPAREN> [ <DISTINCT> {jjtThis.setDistinct(true);} ] Expression() ( <COMMA> Expression() )* <RPAREN> | <NIL>)
 }
 
 void ArgList() #void :
