@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql.aggregate;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.lang.service.ServiceRegistry;
 
 /**
@@ -18,6 +19,7 @@ import org.eclipse.rdf4j.common.lang.service.ServiceRegistry;
  *
  * @author Tomas Kovachev t.kovachev1996@gmail.com
  */
+@Experimental
 public class CustomAggregateFunctionRegistry extends ServiceRegistry<String, AggregateFunctionFactory> {
 
 	private static final CustomAggregateFunctionRegistry instance = new CustomAggregateFunctionRegistry();
