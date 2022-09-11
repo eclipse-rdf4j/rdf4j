@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.helpers;
 
 import org.eclipse.rdf4j.query.algebra.Add;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Avg;
@@ -235,6 +236,11 @@ public abstract class AbstractQueryModelVisitor<X extends Exception> implements 
 
 	@Override
 	public void meet(FunctionCall node) throws X {
+		meetNode(node);
+	}
+
+	@Override
+	public void meet(AggregateFunctionCall node) throws X {
 		meetNode(node);
 	}
 
