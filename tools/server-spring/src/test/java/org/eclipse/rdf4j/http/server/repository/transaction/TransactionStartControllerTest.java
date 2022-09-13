@@ -10,10 +10,18 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
-import static org.assertj.core.api.Assertions.*;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.fail;
+
 import static org.eclipse.rdf4j.common.transaction.IsolationLevels.SNAPSHOT;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 
 import java.util.HashMap;
 import java.util.UUID;
@@ -24,10 +32,8 @@ import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;

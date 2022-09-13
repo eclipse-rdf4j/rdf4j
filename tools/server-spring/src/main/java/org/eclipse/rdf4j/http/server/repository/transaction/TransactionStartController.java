@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import static javax.servlet.http.HttpServletResponse.SC_CREATED;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
 import javax.servlet.http.HttpServletRequest;
@@ -29,8 +32,6 @@ import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
@@ -82,7 +83,7 @@ public class TransactionStartController extends AbstractController {
 		if (isolationLevelString != null) {
 
 			for (IsolationLevel standardLevel : IsolationLevels.values()) {
-				if (standardLevel.toString().equals(isolationLevelString)) {
+				if (standardLevel.getValue().equals(isolationLevelString)) {
 					transactionSettings.add(IsolationLevels.valueOf(isolationLevelString));
 					break;
 				}
