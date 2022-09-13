@@ -129,7 +129,6 @@ class TransactionStartControllerTest {
 		when(tx.getID()).thenReturn(UUID.randomUUID());
 		// Act
 		controller.handleRequest(request, response);
-
 		verify(tx).begin(SNAPSHOT);
 	}
 
