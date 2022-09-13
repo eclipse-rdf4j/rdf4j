@@ -30,6 +30,10 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.stdev.PopulationStandardDeviationAggregateFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.stdev.StandardDeviationAggregateFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.variance.PopulationVarianceAggregateFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.variance.VarianceAggregateFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
@@ -120,6 +124,165 @@ public class CustomAggregateFunctionEvaluationTest {
 	}
 
 	@Test
+	public void testCustomFunction_Stdev_Population() {
+		String query = "select (<" + new PopulationStandardDeviationAggregateFactory().getIri()
+				+ ">(?o) as ?m) where { \n"
+				+ "\t?s <urn:n> ?o . filter(?o > 0) }";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				BindingSet bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("12.194600810623243");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_Stdev_Default() {
+		String query = "select (<" + new StandardDeviationAggregateFactory().getIri() + ">(?o) as ?m) where { \n"
+				+ "\t?s <urn:n> ?o . filter(?o > 0) }";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				BindingSet bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("13.0365766290937");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_StdevEmpty() {
+		String query = "select (<" + new StandardDeviationAggregateFactory().getIri() + ">(?o) as ?m) where { \n"
+				+ "\t?s <urn:n3> ?o . filter(?o > 0) }";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				BindingSet bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_Variance() {
+		String query = "select (<" + new VarianceAggregateFactory().getIri() + ">(?o) as ?m) where { \n"
+				+ "\t?s <urn:n> ?o . filter(?o > 0) }";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				BindingSet bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("169.95233020623206");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_VariancePopulation() {
+		String query = "select (<" + new PopulationVarianceAggregateFactory().getIri() + ">(?o) as ?m) where { \n"
+				+ "\t?s <urn:n> ?o . filter(?o > 0) }";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				BindingSet bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("148.70828893045305");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_VarianceEmpty() {
+		String query = "select (<" + new VarianceAggregateFactory().getIri() + ">(?o) as ?m) where { \n"
+				+ "\t?s <urn:n3> ?o . filter(?o > 0) }";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				BindingSet bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_VarianceWithDistinct() {
+		String query = "select (<" + new PopulationVarianceAggregateFactory().getIri()
+				+ ">(distinct ?o) as ?m) ?s where { \n"
+				+ "\t ?s ?p ?o . } group by ?s ";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				BindingSet bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book8");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.002500019073522708");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book1");
+				bs = result.next();
+				assertThat(bs.getValue("m")).isNull();
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book5");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book4");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book6");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("1.0572322555240015");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book7");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book3");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book2");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void testCustomFunction_VarianceWithDistinct_WithStdv() {
+		String query = "select (<" + new PopulationVarianceAggregateFactory().getIri() + ">(distinct ?o) as ?m) (<"
+				+ new StandardDeviationAggregateFactory().getIri() + ">(?o) as ?n) ?s where { \n"
+				+ "\t ?s ?p ?o . } group by ?s ";
+		try (RepositoryConnection conn = rep.getConnection()) {
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				var bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book3");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book2");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book4");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.002500019073522708");
+				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.057735247160611895");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book1");
+				bs = result.next();
+				assertThat(bs.getValue("m")).isNull();
+				assertThat(bs.getValue("n")).isNull();
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book5");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book6");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book8");
+				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("1.0572322555240015");
+				assertThat(bs.getValue("n").stringValue()).isEqualTo("1.45411984067614");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book7");
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
 	public void testCustomFunction_SumWithDistinct() {
 		String query = "select (<" + functionFactory.getIri() + ">(distinct ?o) as ?m) ?s where { \n"
 				+ "\t ?s <urn:n> ?o . } group by ?s ";
@@ -186,6 +349,10 @@ public class CustomAggregateFunctionEvaluationTest {
 				assertThat(bs.getValue("sa").stringValue()).isEqualTo("311");
 				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book5");
 				bs = result.next();
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("25.1");
+				assertThat(bs.getValue("sa").stringValue()).isEqualTo("37.6");
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book1");
+				bs = result.next();
 				assertThat(bs.getValue("m").stringValue()).isEqualTo("31.3");
 				assertThat(bs.getValue("sa").stringValue()).isEqualTo("31.3");
 				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book4");
@@ -201,10 +368,6 @@ public class CustomAggregateFunctionEvaluationTest {
 				assertThat(bs.getValue("m").stringValue()).isEqualTo("3");
 				assertThat(bs.getValue("sa").stringValue()).isEqualTo("3");
 				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book8");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("12.5");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("25.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book1");
 				assertThat(result.hasNext()).isFalse();
 			}
 		}
@@ -217,8 +380,8 @@ public class CustomAggregateFunctionEvaluationTest {
 		try (RepositoryConnection conn = rep.getConnection()) {
 			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
 				BindingSet bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("405.633564200001");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("449.433564200001");
+				assertThat(bs.getValue("m").stringValue()).isEqualTo("418.2335645814707");
+				assertThat(bs.getValue("sa").stringValue()).isEqualTo("462.0335626741221");
 				assertThat(result.hasNext()).isFalse();
 			}
 		}
@@ -348,6 +511,7 @@ public class CustomAggregateFunctionEvaluationTest {
 		try (RepositoryConnection conn = rep.getConnection()) {
 			conn.add(new StringReader(" <http://example/book1> <urn:n> \"12.5\"^^xsd:float .\n"
 					+ "    <http://example/book1> <urn:n1> \"12.5\"^^xsd:float .\n"
+					+ "    <http://example/book1> <urn:n1> \"12.6\"^^xsd:float .\n"
 					+ "    <http://example/book2> <urn:n> \"6\"^^xsd:int .\n"
 					+ "    <http://example/book3> <urn:n>  \"12.5\"^^xsd:double .\n"
 					+ "    <http://example/book4> <urn:n>  31.3 .\n"
