@@ -101,8 +101,8 @@ public class TransactionStartController extends AbstractController {
 			if (k.startsWith(Protocol.TRANSACTION_SETTINGS_PREFIX)) {
 				String settingsName = k.replace(Protocol.TRANSACTION_SETTINGS_PREFIX, "");
 
-				// FIXME we should make the isolation level an SPI impl as well so that it will work with non-standard
-				// isolation levels
+				// FIXME we should make the isolation level an SPI impl as well so that it will work with
+				//  non-standard isolation levels
 				if (settingsName.equals(IsolationLevels.NONE.getName())) {
 					transactionSettings.add(IsolationLevels.valueOf(v[0]));
 				} else {
