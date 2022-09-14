@@ -21,12 +21,17 @@ import static org.junit.Assert.fail;
 
 import java.io.StringReader;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.FOAF;
+import org.eclipse.rdf4j.model.vocabulary.SKOS;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -226,6 +231,41 @@ public class PropertyPathTest extends AbstractComplianceTest {
 
 		List<BindingSet> result = QueryResults.asList(tq.evaluate());
 		assertThat(result).hasSize(4);
+	}
+
+	@Test
+	public void testComplexPath() {
+		conn.add(Values.bnode(), SKOS.BROADER, Values.bnode());
+		conn.add(Values.bnode(), SKOS.TOP_CONCEPT_OF, Values.bnode());
+
+		TupleQuery tupleQuery = conn.prepareTupleQuery("PREFIX skos:<http://www.w3.org/2004/02/skos/core#> \r\n" +
+				" SELECT *  " +
+				" WHERE {\r\n" +
+				"   ?s (skos:broader|^skos:narrower|skos:topConceptOf|^skos:hasTopConcept) ?o.\r\n" +
+				" }");
+		try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
+			List<BindingSet> collect = evaluate.stream().collect(Collectors.toList());
+			assertEquals(2, collect.size());
+		}
+	}
+
+	@Test
+	public void testInversePath() {
+		BNode bnode1 = Values.bnode("bnode1");
+
+		conn.add(Values.bnode(), FOAF.KNOWS, bnode1);
+		conn.add(Values.bnode(), FOAF.KNOWS, bnode1);
+
+		TupleQuery tupleQuery = conn.prepareTupleQuery("PREFIX foaf: <" + FOAF.NAMESPACE + ">\n" +
+				"SELECT * WHERE {\n" +
+				"  ?x foaf:knows/^foaf:knows ?y . \n" +
+				"  FILTER(?x != ?y)\n" +
+				"}");
+
+		try (TupleQueryResult evaluate = tupleQuery.evaluate()) {
+			List<BindingSet> collect = evaluate.stream().collect(Collectors.toList());
+			assertEquals(2, collect.size());
+		}
 	}
 
 	private boolean containsSolution(List<BindingSet> result, Binding... solution) {

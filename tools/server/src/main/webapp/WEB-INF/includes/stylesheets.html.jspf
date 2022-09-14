@@ -6,5 +6,5 @@
 	<!--[if IE 6]>
 	<link title="Default" rel="stylesheet" type="text/css" href="${path}/styles/default/msie-minheight.css" media="screen" />
 	<![endif]-->
-	<link title="Basic" rel="alternate stylesheet" type="text/css" href="${path}/basic/all.css" media="all" />
-	
+	<link title="Basic" rel="alternate stylesheet" type="text/css" href="${path}/styles/basic/all.css" media="all" />
+

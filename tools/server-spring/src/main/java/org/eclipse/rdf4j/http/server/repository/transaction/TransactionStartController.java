@@ -32,8 +32,6 @@ import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
@@ -76,37 +74,37 @@ public class TransactionStartController extends AbstractController {
 		return result;
 	}
 
-	private ModelAndView startTransaction(Repository repository, HttpServletRequest request,
-			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
-		ProtocolUtil.logRequestParameters(request);
-		Map<String, Object> model = new HashMap<>();
+	@Deprecated
+	ArrayList<TransactionSetting> getIsolationLevel(HttpServletRequest request) {
+		// process legacy isolation level param for backward compatibility with older clients
 
 		ArrayList<TransactionSetting> transactionSettings = new ArrayList<>();
-
-		final IsolationLevel[] isolationLevel = { null };
-
-		// process legacy isolation level param for backward compatibility with older clients
 		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
 		if (isolationLevelString != null) {
-			final IRI level = Values.iri(isolationLevelString);
 
 			for (IsolationLevel standardLevel : IsolationLevels.values()) {
-				if (standardLevel.getName().equals(level.getLocalName())) {
-					isolationLevel[0] = standardLevel;
+				if (standardLevel.getValue().equals(isolationLevelString)) {
+					transactionSettings.add(IsolationLevels.valueOf(isolationLevelString));
 					break;
 				}
 			}
+			if (transactionSettings.isEmpty())
+				throw new IllegalArgumentException("Unknown isolation-level setting " + isolationLevelString);
 		}
 
+		return transactionSettings;
+	}
+
+	ArrayList<TransactionSetting> getTransactionSettings(HttpServletRequest request) {
+		ArrayList<TransactionSetting> transactionSettings = new ArrayList<>();
 		request.getParameterMap().forEach((k, v) -> {
 			if (k.startsWith(Protocol.TRANSACTION_SETTINGS_PREFIX)) {
 				String settingsName = k.replace(Protocol.TRANSACTION_SETTINGS_PREFIX, "");
 
-				// FIXME we should make the isolation level an SPI impl as well so that it will work with non-standard
-				// isolation levels
+				// FIXME we should make the isolation level an SPI impl as well so that it will work with
+				// non-standard isolation levels
 				if (settingsName.equals(IsolationLevels.NONE.getName())) {
-					isolationLevel[0] = IsolationLevels.valueOf(v[0]);
-					transactionSettings.add(isolationLevel[0]);
+					transactionSettings.add(IsolationLevels.valueOf(v[0]));
 				} else {
 					TransactionSettingRegistry.getInstance()
 							.get(settingsName)
@@ -116,17 +114,28 @@ public class TransactionStartController extends AbstractController {
 			}
 		});
 
+		return transactionSettings;
+	}
+
+	Transaction createTransaction(Repository repository) throws ExecutionException, InterruptedException {
+		return new Transaction(repository);
+	}
+
+	private ModelAndView startTransaction(Repository repository, HttpServletRequest request,
+			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
+		ProtocolUtil.logRequestParameters(request);
+		Map<String, Object> model = new HashMap<>();
+
+		ArrayList<TransactionSetting> transactionSettings = getIsolationLevel(request);
+		transactionSettings.addAll(getTransactionSettings(request));
+
 		Transaction txn = null;
 		boolean allGood = false;
 		try {
-			txn = new Transaction(repository);
+			txn = createTransaction(repository);
 
 			if (transactionSettings.isEmpty()) {
-				if (isolationLevel[0] == null) {
-					txn.begin();
-				} else {
-					txn.begin(isolationLevel[0]);
-				}
+				txn.begin();
 			} else {
 				txn.begin(transactionSettings.toArray(new TransactionSetting[0]));
 			}
