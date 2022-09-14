@@ -4,8 +4,7 @@ Documentation for building and distributing the Server and Workbench image
 
 ## Getting started
 
-Run `./build.sh` to build the maven project and the docker image. Follow the instructions 
-printed at the end.
+Run `./run.sh` to build and start the server and workbench.
 
 ## Full build
 Before building the docker image we need to get hold of the WAR files. These are built when 
