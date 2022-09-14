@@ -134,15 +134,55 @@ results.forEach(res -> {
 });
 ```
 
+## Complex query (Field boosting and per-field search)
+
+*This feature might no be available for your implementation, see [SearchIndex implementations](#searchindex-implementations).*
+
+During the search, it might be important to boost the value of a single field while using multiple fields, to do that, you can use complex query:
+
+
+```sparql
+PREFIX search: <http://www.openrdf.org/contrib/lucenesail#>
+
+?subj search:matches [
+          search:query 
+          [
+              search:query "search terms over my:property1...";
+              search:property my:property1;
+              search:boost 0.8;
+              search:snippet ?snippet1;
+          ] ,
+          [
+              search:query "search terms over my:property2...";
+              search:property my:property2;
+              search:boost 0.2;
+              search:snippet ?snippet2;
+          ];
+          search:score ?score
+] .
+```
+
+The 'virtual' properties in the `search:` namespace have the following meaning:
+
+- `search:matches` – links the resource to be found with the following query statements (required)
+- `search:query` – specifies the Lucene query object(s), you can put as much query object as you want (required)
+  - `search:query` – specifies the Lucene query (required)
+  - `search:property` – specifies the property to search. If omitted all properties are searched (optional)
+  - `search:boost` – (float number) specifies the boost for the property to search. If omitted, no boost is applied (optional)
+  - `search:snippet` – specifies a variable for a highlighted snippet (optional)
+- `search:score` – specifies a variable for the score (optional)
+
+**You can use complex queries with a literal query!**
+
 ## SearchIndex implementations
 
 The LuceneSail can currently be used with three SearchIndex implementations:
 
-|                   |  SearchIndex implementation                 | Maven module                          |
-|------------------ |---------------------------------------------|---------------------|
-| Apache Lucene     | `org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex` | `rdf4j-sail-lucene` |
-| ElasticSearch     | `org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchIndex` | `rdf4j-sail-elasticsearch` |
-| Apache Solr       | `org.eclipse.rdf4j.sail.solr.SolrIndex`     | `rdf4j-sail-solr`   |
+|                   |  SearchIndex implementation                               | Maven module                          | Complex query support ? |
+|------------------ |-----------------------------------------------------------|---------------------------------------|-------------------------|
+| Apache Lucene     | `org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex`          | `rdf4j-sail-lucene`                   | yes                      |
+| ElasticSearch     | `org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchIndex` | `rdf4j-sail-elasticsearch`            | no                      |
+| Apache Solr       | `org.eclipse.rdf4j.sail.solr.SolrIndex`                   | `rdf4j-sail-solr`                     | no                      |
 
 Each SearchIndex implementation can easily be extended if you need to add extra features or store/access data with a different schema.
 

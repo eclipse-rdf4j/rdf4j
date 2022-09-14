@@ -69,7 +69,7 @@ public class LangSpecTest {
 		}
 
 		@Override
-		protected Iterable<? extends DocumentScore> query(Resource subject, String q, IRI property, boolean highlight) {
+		protected Iterable<? extends DocumentScore> query(Resource subject, QuerySpec spec) {
 			throw new RuntimeException("not implemented");
 		}
 
