@@ -13,7 +13,11 @@ package org.eclipse.rdf4j.http.server.repository.namespaces;
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND;
 
+import static org.apache.commons.lang3.StringUtils.isAlphanumeric;
+import static org.apache.commons.lang3.StringUtils.isEmpty;
+
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -21,6 +25,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
+import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
 import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
@@ -41,11 +46,10 @@ import org.springframework.web.servlet.mvc.AbstractController;
  * @author Arjohn Kampman
  */
 public class NamespaceController extends AbstractController {
-
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	public NamespaceController() throws ApplicationContextException {
-		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, "PUT", "DELETE" });
+		setSupportedMethods(METHOD_GET, METHOD_HEAD, "PUT", "DELETE");
 	}
 
 	@Override
@@ -100,10 +104,7 @@ public class NamespaceController extends AbstractController {
 		String namespace = IOUtil.readString(request.getReader());
 		namespace = namespace.trim();
 
-		if (namespace.length() == 0) {
-			throw new ClientHTTPException(SC_BAD_REQUEST, "No namespace name found in request body");
-		}
-		// FIXME: perform some sanity checks on the namespace string
+		validateUpdateNamespaceData(prefix, namespace);
 
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			repositoryCon.setNamespace(prefix, namespace);
@@ -123,5 +124,28 @@ public class NamespaceController extends AbstractController {
 		}
 
 		return new ModelAndView(EmptySuccessView.getInstance());
+	}
+
+	private void validateUpdateNamespaceData(String prefix, String namespace) throws ClientHTTPException {
+		if (namespace.length() == 0) {
+			throw new ClientHTTPException(SC_BAD_REQUEST, "No namespace name found in request body");
+		}
+
+		if (!isEmpty(prefix) && !isAlphanumeric(prefix)) {
+			throw new ClientHTTPException(SC_BAD_REQUEST, "Prefix not alphanumeric");
+		}
+
+		if (!isValidNamespaceIri(namespace)) {
+			throw new ClientHTTPException(SC_BAD_REQUEST, "Namespace not valid");
+		}
+	}
+
+	private boolean isValidNamespaceIri(String namespace) {
+		try {
+			return new ParsedIRI(namespace).isAbsolute();
+		} catch (URISyntaxException e) {
+			logger.debug("Namespace: {} isn't parseable.", namespace, e);
+			return false;
+		}
 	}
 }
