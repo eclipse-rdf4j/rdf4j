@@ -11,7 +11,6 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -26,11 +25,13 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalPredicateObjectFilter;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterByPredicateObject;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ReduceTargets;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
@@ -42,10 +43,12 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 
 public class ClassConstraintComponent extends AbstractConstraintComponent {
 
-	IRI clazz;
+	private final IRI clazz;
+	private final Set<Resource> clazzSet;
 
 	public ClassConstraintComponent(IRI clazz) {
 		this.clazz = clazz;
+		this.clazzSet = Set.of(clazz);
 	}
 
 	@Override
@@ -78,18 +81,21 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
+				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 
 			} else {
-				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,
-						null);
+				BufferedSplitter addedTargetsBufferedSplitter = new BufferedSplitter(
+						target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false, null));
+				addedTargets = addedTargetsBufferedSplitter.getPlanNode();
 				PlanNode addedByPath = path.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
 				addedByPath = target.getTargetFilter(connectionsGroup,
 						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
+
+				addedByPath = new ReduceTargets(addedByPath, addedTargetsBufferedSplitter.getPlanNode());
 
 				addedByPath = target.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.left, false,
@@ -120,7 +126,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				addedTargets = Unique.getInstance(addedTargets, false);
 			}
 
-			PlanNode joined = new BulkedExternalInnerJoin(
+			PlanNode falseNode = new BulkedExternalInnerJoin(
 					addedTargets,
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(),
@@ -131,20 +137,19 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					BulkedExternalInnerJoin.getMapper("a", "c", scope, validationSettings.getDataGraph())
 			);
 
-			PlanNode falseNode = joined;
 			if (connectionsGroup.getAddedStatements() != null) {
 				// filter by type against the added statements
-				falseNode = new ExternalPredicateObjectFilter(
+				falseNode = new FilterByPredicateObject(
 						connectionsGroup.getAddedStatements(),
-						validationSettings.getDataGraph(), RDF.TYPE, Collections.singleton(clazz),
-						falseNode, false, ExternalPredicateObjectFilter.FilterOn.value);
+						validationSettings.getDataGraph(), RDF.TYPE, clazzSet,
+						falseNode, false, FilterByPredicateObject.FilterOn.value, false);
 			}
 
 			// filter by type against the base sail
-			falseNode = new ExternalPredicateObjectFilter(
+			falseNode = new FilterByPredicateObject(
 					connectionsGroup.getBaseConnection(),
-					validationSettings.getDataGraph(), RDF.TYPE, Collections.singleton(clazz),
-					falseNode, false, ExternalPredicateObjectFilter.FilterOn.value);
+					validationSettings.getDataGraph(), RDF.TYPE, clazzSet,
+					falseNode, false, FilterByPredicateObject.FilterOn.value, true);
 
 			return falseNode;
 
@@ -153,8 +158,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
+				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 			} else {
@@ -179,10 +184,10 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			}
 
 			// filter by type against the base sail
-			PlanNode falseNode = new ExternalPredicateObjectFilter(
+			PlanNode falseNode = new FilterByPredicateObject(
 					connectionsGroup.getBaseConnection(),
-					validationSettings.getDataGraph(), RDF.TYPE, Collections.singleton(clazz),
-					addedTargets, false, ExternalPredicateObjectFilter.FilterOn.value);
+					validationSettings.getDataGraph(), RDF.TYPE, clazzSet,
+					addedTargets, false, FilterByPredicateObject.FilterOn.value, true);
 
 			return falseNode;
 
@@ -330,7 +335,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		if (rdfsSubClassOfReasoner != null) {
 			allClasses = rdfsSubClassOfReasoner.backwardsChain(clazz);
 		} else {
-			allClasses = Collections.singleton(clazz);
+			allClasses = clazzSet;
 		}
 
 		String condition = allClasses.stream()
@@ -338,7 +343,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				.reduce((a, b) -> a + " || " + b)
 				.orElseThrow(IllegalStateException::new);
 
-		return "\n FILTER(!(" + condition + "))";
+		return "\nFILTER(!(" + condition + "))";
 	}
 
 	@Override

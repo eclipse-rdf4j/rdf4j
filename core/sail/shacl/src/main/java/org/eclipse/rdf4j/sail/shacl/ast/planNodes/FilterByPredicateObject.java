@@ -12,12 +12,8 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -32,29 +28,33 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 /**
  * @author Håvard Ottestad
  */
-public class ExternalPredicateObjectFilter implements PlanNode {
+public class FilterByPredicateObject implements PlanNode {
 
 	private final SailConnection connection;
+	private final boolean includeInferred;
 	private final Set<Resource> filterOnObject;
 	private final IRI filterOnPredicate;
 	private final FilterOn filterOn;
-	PlanNode parent;
+	private final PlanNode parent;
 	private final boolean returnMatching;
+	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 	private final Resource[] dataGraph;
 
-	public ExternalPredicateObjectFilter(SailConnection connection, Resource[] dataGraph, IRI filterOnPredicate,
-			Set<Resource> filterOnObject, PlanNode parent, boolean returnMatching, FilterOn filterOn) {
+	public FilterByPredicateObject(SailConnection connection, Resource[] dataGraph, IRI filterOnPredicate,
+			Set<Resource> filterOnObject, PlanNode parent, boolean returnMatching, FilterOn filterOn,
+			boolean includeInferred) {
 		this.dataGraph = dataGraph;
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
-
 		this.connection = connection;
 		assert this.connection != null;
+		this.includeInferred = includeInferred;
 		this.filterOnPredicate = filterOnPredicate;
 		this.filterOnObject = filterOnObject;
 		this.filterOn = filterOn;
 		this.returnMatching = returnMatching;
+//		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
 	@Override
@@ -66,45 +66,18 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 
 			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
 
-			List<Resource> filterOnObject = null;
+			Resource[] filterOnObject = null;
 			IRI filterOnPredicate = null;
 
 			void calculateNext() {
 
-				if (filterOnObject == null) {
-					if (!parentIterator.hasNext()) {
-						return;
-					}
-
-					try (var stream = connection
-							.getStatements(null, ExternalPredicateObjectFilter.this.filterOnPredicate, null, true,
-									dataGraph)
-							.stream()) {
-						filterOnPredicate = stream.map(Statement::getPredicate).findAny().orElse(null);
-					}
-
-					if (filterOnPredicate == null) {
-						filterOnObject = Collections.emptyList();
-					} else {
-						filterOnObject = ExternalPredicateObjectFilter.this.filterOnObject.stream()
-								.map(object -> {
-									try (var stream = connection
-											.getStatements(null, filterOnPredicate, object, true, dataGraph)
-											.stream()) {
-										return stream.map(Statement::getObject)
-												.map(o -> ((Resource) o))
-												.findAny()
-												.orElse(null);
-									}
-								}
-								)
-								.filter(Objects::nonNull)
-								.collect(Collectors.toList());
-					}
-
+				if (!parentIterator.hasNext()) {
+					return;
 				}
 
-				if (returnMatching && (filterOnPredicate == null || filterOnObject.isEmpty())) {
+				internResources();
+
+				if (returnMatching && (filterOnPredicate == null || filterOnObject.length == 0)) {
 					return;
 				}
 
@@ -131,9 +104,9 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 						} else {
 							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(depth(),
-										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
+										FilterByPredicateObject.this.getClass().getSimpleName()
 												+ ":IgnoredAsNotMatching",
-										temp, ExternalPredicateObjectFilter.this, getId(), null);
+										temp, FilterByPredicateObject.this, getId(), null);
 							}
 						}
 					} else {
@@ -142,9 +115,9 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 						} else {
 							if (validationExecutionLogger.isEnabled()) {
 								validationExecutionLogger.log(depth(),
-										ExternalPredicateObjectFilter.this.getClass().getSimpleName()
+										FilterByPredicateObject.this.getClass().getSimpleName()
 												+ ":IgnoredAsMatching",
-										temp, ExternalPredicateObjectFilter.this, getId(), null);
+										temp, FilterByPredicateObject.this, getId(), null);
 							}
 						}
 					}
@@ -154,17 +127,36 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 				assert next != null || !parentIterator.hasNext() : parentIterator.toString();
 			}
 
-			private boolean matches(Value subject, IRI filterOnPredicate, Collection<Resource> filterOnObject) {
-				if (filterOnPredicate == null || filterOnObject.isEmpty()) {
-					return false;
-				}
+			private void internResources() {
+				if (filterOnObject == null) {
 
-				if (subject.isResource()) {
-					return filterOnObject.stream()
-							.anyMatch(object -> connection.hasStatement((Resource) subject, filterOnPredicate, object,
-									true, dataGraph));
+					try (var stream = connection
+							.getStatements(null, FilterByPredicateObject.this.filterOnPredicate, null, includeInferred,
+									dataGraph)
+							.stream()) {
+						filterOnPredicate = stream.map(Statement::getPredicate).findAny().orElse(null);
+					}
+
+					if (filterOnPredicate == null) {
+						filterOnObject = new Resource[0];
+					} else {
+						filterOnObject = FilterByPredicateObject.this.filterOnObject.stream()
+								.map(object -> {
+									try (var stream = connection
+											.getStatements(null, filterOnPredicate, object, includeInferred, dataGraph)
+											.stream()) {
+										return stream.map(Statement::getObject)
+												.map(o -> ((Resource) o))
+												.findAny()
+												.orElse(null);
+									}
+								}
+								)
+								.filter(Objects::nonNull)
+								.toArray(Resource[]::new);
+					}
+
 				}
-				return false;
 			}
 
 			@Override
@@ -189,6 +181,22 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 			}
 
 		};
+	}
+
+	private boolean matches(Value subject, IRI filterOnPredicate, Resource[] filterOnObject) {
+		if (filterOnPredicate == null || filterOnObject.length == 0) {
+			return false;
+		}
+
+		if (subject.isResource()) {
+			for (Resource object : filterOnObject) {
+				if (connection.hasStatement(((Resource) subject), filterOnPredicate, object, includeInferred,
+						dataGraph)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	@Override
@@ -253,7 +261,7 @@ public class ExternalPredicateObjectFilter implements PlanNode {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		ExternalPredicateObjectFilter that = (ExternalPredicateObjectFilter) o;
+		FilterByPredicateObject that = (FilterByPredicateObject) o;
 		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
 		// sail
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {

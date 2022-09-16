@@ -77,6 +77,13 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),
 							scope, EffectiveTarget.Extend.right,
 							false, null);
+			if (connectionsGroup.hasAddedStatements()) {
+				PlanNode addedByPath = getTargetChain().getPath()
+						.get()
+						.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
+				LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath);
+				target = new GroupByCountFilter(leftOuterJoin, count -> count < minCount);
+			}
 		} else {
 			// we can assume that we are not doing bulk validation, so it is worth checking our added statements before
 			// we go to the base sail
@@ -103,6 +110,8 @@ public class MinCountConstraintComponent extends AbstractConstraintComponent {
 				(b) -> new ValidationTuple(b.getValue("a"), b.getValue("c"), scope, true,
 						validationSettings.getDataGraph())
 		);
+
+		relevantTargetsWithPath = connectionsGroup.getCachedNodeFor(relevantTargetsWithPath);
 
 		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count < minCount);
 

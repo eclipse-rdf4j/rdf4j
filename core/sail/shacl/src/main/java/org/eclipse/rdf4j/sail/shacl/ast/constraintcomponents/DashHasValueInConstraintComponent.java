@@ -94,9 +94,8 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = overrideTargetNode.getPlanNode();
-
-				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
+				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 			} else {
@@ -135,8 +134,8 @@ public class DashHasValueInConstraintComponent extends AbstractConstraintCompone
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
+				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 			} else {

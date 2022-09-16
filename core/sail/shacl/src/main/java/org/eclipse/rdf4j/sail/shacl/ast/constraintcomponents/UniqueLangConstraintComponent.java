@@ -80,7 +80,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 						connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))
 				.orElseThrow(IllegalStateException::new);
 
-		query += String.join("\n", "",
+		query += String.join("\n", trim("",
 				"FILTER(",
 				"	EXISTS {",
 				"		" + pathQuery2,
@@ -91,7 +91,7 @@ public class UniqueLangConstraintComponent extends AbstractConstraintComponent {
 				"			lang(?" + value1.getName() + ") = lang(?" + value2.getName() + ")",
 				"		)",
 				"	}",
-				")");
+				")"));
 
 		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();
 

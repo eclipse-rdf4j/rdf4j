@@ -24,20 +24,19 @@ import java.util.stream.Collectors;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.QueryParserFactory;
-import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
@@ -99,10 +98,10 @@ public class BindSelect implements PlanNode {
 
 	}
 
-	private void updateQuery(ParsedQuery parsedQuery, List<BindingSet> newBindindingset, int expectedSize) {
+	private void updateQuery(TupleExpr parsedQuery, List<BindingSet> newBindindingset, int expectedSize) {
 		try {
 
-			parsedQuery.getTupleExpr()
+			parsedQuery
 					.visit(new AbstractQueryModelVisitor<Exception>() {
 						@Override
 						public void meet(BindingSetAssignment node) throws Exception {
@@ -130,7 +129,7 @@ public class BindSelect implements PlanNode {
 			final CloseableIteration<? extends ValidationTuple, SailException> iterator = source.iterator();
 			List<ValidationTuple> bulk = new ArrayList<>(bulkSize);
 
-			ParsedQuery parsedQuery = null;
+			TupleExpr parsedQuery = null;
 
 			public void calculateNext() {
 
@@ -203,8 +202,14 @@ public class BindSelect implements PlanNode {
 
 								return temp == targetChainSize;
 							})
-							.map(t -> new SimpleBindingSet(varNamesSet, varNames,
-									t.getTargetChain(includePropertyShapeValues)))
+							.map(t -> {
+								List<Value> targetChain = t.getTargetChain(includePropertyShapeValues);
+								if (targetChain.size() == 1) {
+									return new SingletonBindingSet(varNames.get(0), targetChain.get(0));
+								} else {
+									return new SimpleBindingSet(varNamesSet, varNames, targetChain);
+								}
+							})
 							.collect(Collectors.toList());
 
 					bulk = bulk
@@ -224,7 +229,7 @@ public class BindSelect implements PlanNode {
 
 					updateQuery(parsedQuery, bindingSets, targetChainSize);
 
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset,
+					bindingSet = connection.evaluate(parsedQuery, dataset,
 							EmptyBindingSet.getInstance(), true);
 				}
 			}
@@ -258,7 +263,7 @@ public class BindSelect implements PlanNode {
 		};
 	}
 
-	private ParsedQuery getParsedQuery(int targetChainSize) {
+	private TupleExpr getParsedQuery(int targetChainSize) {
 
 		StringBuilder values = new StringBuilder("\nVALUES( ");
 		if (direction == EffectiveTarget.Extend.right) {
@@ -282,18 +287,12 @@ public class BindSelect implements PlanNode {
 		query = query.replace(AbstractConstraintComponent.VALUES_INJECTION_POINT, values.toString());
 		query = "select * where { " + values + query + "\n}";
 
-		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
-				.get(QueryLanguage.SPARQL)
-				.get();
-		ParsedQuery parsedQuery;
 		try {
-			parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
-
+			return SparqlQueryParserCache.get(query);
 		} catch (MalformedQueryException e) {
-			logger.error("Malformed query: \n{}", query);
+			logger.error("Malformed query:\n{}", query);
 			throw e;
 		}
-		return parsedQuery;
 	}
 
 	@Override

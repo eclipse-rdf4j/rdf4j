@@ -97,8 +97,7 @@ public class SparqlFragment {
 						assert !s.filterCondition;
 					})
 					.map(SparqlFragment::getFragment)
-					.map(SparqlFragment::indent)
-					.reduce((a, b) -> a + " \n " + b)
+					.reduce((a, b) -> a + "\n" + b)
 					.orElse("");
 
 			return bgp(collect, getStatementMatchers(sparqlFragments));
@@ -177,7 +176,6 @@ public class SparqlFragment {
 	public String getFragment() {
 		if (union) {
 			return unionFragments.stream()
-					.map(SparqlFragment::indent)
 					.collect(
 							Collectors.joining(
 									"\n} UNION {\n" + VALUES_INJECTION_POINT + "\n",
@@ -200,7 +198,4 @@ public class SparqlFragment {
 		this.statementMatchers.addAll(statementMatchers);
 	}
 
-	public static String indent(String toIndent) {
-		return REGEX_INDENT.matcher(toIndent).replaceAll("\t");
-	}
 }

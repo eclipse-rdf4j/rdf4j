@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByPredicate;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
@@ -78,9 +78,9 @@ public class TargetSubjectsOf extends Target {
 		String tempVar = stableRandomVariableProvider.next().asSparqlVariable();
 
 		return targetSubjectsOf.stream()
-				.map(target -> "\n{ BIND(<" + target + "> as " + tempVar + ") \n " + subjectVariable + " "
+				.map(target -> "{\nBIND(<" + target + "> as " + tempVar + ")\n" + subjectVariable + " "
 						+ tempVar + " " + objectVariable
-						+ ". } \n")
+						+ ".\n}")
 				.reduce((a, b) -> a + " UNION " + b)
 				.get();
 	}
@@ -88,8 +88,8 @@ public class TargetSubjectsOf extends Target {
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
-		return new ExternalFilterByPredicate(connectionsGroup.getBaseConnection(), targetSubjectsOf, parent,
-				ExternalFilterByPredicate.On.Subject, dataGraph);
+		return new FilterByPredicate(connectionsGroup.getBaseConnection(), targetSubjectsOf, parent,
+				FilterByPredicate.On.Subject, dataGraph);
 	}
 
 	@Override
@@ -130,7 +130,7 @@ public class TargetSubjectsOf extends Target {
 					.orElse("");
 
 			return "?" + object.getName() + " ?predicatefjhfuewhw " + tempVar + " .\n" +
-					"FILTER(?predicatefjhfuewhw in (" + in + ")) \n";
+					"FILTER(?predicatefjhfuewhw in (" + in + "))";
 		}
 
 	}

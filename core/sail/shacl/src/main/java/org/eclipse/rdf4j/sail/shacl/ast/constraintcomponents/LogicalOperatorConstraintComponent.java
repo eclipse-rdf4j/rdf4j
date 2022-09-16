@@ -29,7 +29,6 @@ public abstract class LogicalOperatorConstraintComponent extends AbstractConstra
 	}
 
 	/**
-	 *
 	 * @param subject                      the subject from buildSparqlValidNodes_rsx_targetShape
 	 * @param object                       the object from buildSparqlValidNodes_rsx_targetShape
 	 * @param rdfsSubClassOfReasoner       the rdfsSubClassOfReasoner from buildSparqlValidNodes_rsx_targetShape
@@ -90,35 +89,33 @@ public abstract class LogicalOperatorConstraintComponent extends AbstractConstra
 						rdfsSubClassOfReasoner, stableRandomVariableProvider);
 
 				// check that all values for the path from our subject match the filter condition
-				String unionCondition1 = String.join("\n", "",
+				String unionCondition1 = String.join("\n",
 						pathQuery1,
 						"FILTER ( NOT EXISTS {",
-						SparqlFragment.indent(pathQuery2),
-						"\tFILTER(!("
+						pathQuery2,
+						"FILTER(!("
 								+ filterCondition.getFragment()
 								+ "))",
 						"})");
 
 				// alternately there could be no values for the path from our subject, in which case the subject would
 				// also be valid
-				String unionCondition2 = "\t " + subject.asSparqlVariable() + " "
-						+ stableRandomVariableProvider.next().asSparqlVariable() + " "
-						+ stableRandomVariableProvider.next().asSparqlVariable()
-						+ ".\n" +
-						"\t FILTER(NOT EXISTS {\n " +
-						SparqlFragment.indent(pathQuery3)
-						+ " \n" +
-						"})\n";
+				String unionCondition2 = String.join("\n",
+						subject.asSparqlVariable() + " " + stableRandomVariableProvider.next().asSparqlVariable() + " "
+								+ stableRandomVariableProvider.next().asSparqlVariable() + ".",
+						"FILTER(NOT EXISTS {",
+						pathQuery3,
+						"})");
 
 				// same as above, except we check for statements where our subject is actually used as an object in a
 				// statement
-				String unionCondition3 = "\t " + stableRandomVariableProvider.next().asSparqlVariable() + " "
-						+ stableRandomVariableProvider.next().asSparqlVariable() + " " + subject.asSparqlVariable()
-						+ ".\n" +
-						"\t FILTER(NOT EXISTS {\n " +
-						SparqlFragment.indent(pathQuery3)
-						+ " \n" +
-						"})\n";
+				String unionCondition3 = String.join("\n",
+						stableRandomVariableProvider.next().asSparqlVariable() + " "
+								+ stableRandomVariableProvider.next().asSparqlVariable() + " "
+								+ subject.asSparqlVariable() + ".",
+						"FILTER(NOT EXISTS {",
+						pathQuery3,
+						"})");
 
 				List<StatementMatcher> statementMatchers = SparqlFragment.getStatementMatchers(sparqlFragments);
 

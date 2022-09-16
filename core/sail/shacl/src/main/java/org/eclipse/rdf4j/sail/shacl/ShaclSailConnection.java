@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -511,6 +512,12 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		try {
+			int numberOfShapes = shapes.stream()
+					.map(ContextWithShapes::getShapes)
+					.map(List::size)
+					.mapToInt(i -> i)
+					.sum();
+
 			Stream<Callable<ValidationResultIterator>> callableStream = shapes
 					.stream()
 					.flatMap(contextWithShapes -> contextWithShapes.getShapes()
@@ -526,9 +533,11 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					.filter(ValidationContainer::hasPlanNode)
 					.map(validationContainer -> validationContainer::performValidation);
 
-			List<ValidationResultIterator> validationResultIterators;
+			List<ValidationResultIterator> validationResultIterators = new ArrayList<>(numberOfShapes);
 
 			List<Future<ValidationResultIterator>> futures = Collections.emptyList();
+
+			boolean parallelValidation = numberOfShapes > 1 && isParallelValidation();
 
 			try {
 				futures = callableStream
@@ -537,7 +546,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 								return null;
 							}
 
-							if (isParallelValidation()) {
+							if (parallelValidation) {
 								return sail.submitToExecutorService(callable);
 							} else {
 								FutureTask<ValidationResultIterator> futureTask = new FutureTask<>(callable);
@@ -547,32 +556,29 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						})
 						.collect(Collectors.toList());
 
-				validationResultIterators = futures.stream()
-						.map(future -> {
-							assert future != null;
-							try {
-								if (!Thread.currentThread().isInterrupted()) {
-									return future.get();
-								}
-							} catch (InterruptedException e) {
-								Thread.currentThread().interrupt();
-							} catch (ExecutionException e) {
-								Throwable cause = e.getCause();
-								if (cause instanceof InterruptedException) {
-									Thread.currentThread().interrupt();
-								} else if (cause instanceof RuntimeException) {
-									throw ((RuntimeException) cause);
-								} else if (cause instanceof Error) {
-									throw ((Error) cause);
-								} else {
-									// this should only happen if we throw a checked exception from the Callable that
-									// isn't handled in the if/elseif above
-									throw new IllegalStateException(cause);
-								}
-							}
-							return null;
-						})
-						.collect(Collectors.toList());
+				for (Future<ValidationResultIterator> future : futures) {
+					assert future != null;
+					try {
+						if (!Thread.currentThread().isInterrupted()) {
+							validationResultIterators.add(future.get());
+						}
+					} catch (ExecutionException e) {
+						Throwable cause = e.getCause();
+						if (cause instanceof InterruptedException) {
+							throw new InterruptedException();
+						} else if (cause instanceof RuntimeException) {
+							throw ((RuntimeException) cause);
+						} else if (cause instanceof Error) {
+							throw ((Error) cause);
+						} else {
+							// this should only happen if we throw a checked exception from the Callable that
+							// isn't handled in the if/elseif above
+							assert false;
+							throw new IllegalStateException(cause);
+						}
+					}
+				}
+
 				if (Thread.currentThread().isInterrupted()) {
 					throw new InterruptedException();
 				}
@@ -615,6 +621,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		}
 
 		List<Future<Object>> futures = Collections.emptyList();
+
+		boolean parallelValidation = isParallelValidation() && !addedStatementsSet.isEmpty()
+				&& !removedStatementsSet.isEmpty();
 
 		try {
 			futures = Stream.of(addedStatementsSet, removedStatementsSet)
@@ -676,7 +685,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						if (Thread.currentThread().isInterrupted()) {
 							return null;
 						}
-						if (isParallelValidation()) {
+						if (parallelValidation) {
 							return sail.submitToExecutorService(callable);
 						} else {
 							FutureTask<Object> objectFutureTask = new FutureTask<>(callable);
@@ -1145,7 +1154,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						List<ValidationTuple> tuples = validationResults.getTuples();
 
 						logger.info(
-								"SHACL not valid. The following experimental debug results were produced:  \n\t\t{}\n\n{}\n",
+								"SHACL not valid. The following experimental debug results were produced:\n\t\t{}\n\n{}\n",
 								tuples.stream()
 										.map(ValidationTuple::toString)
 										.collect(Collectors.joining("\n\t\t")),

@@ -12,12 +12,16 @@ package org.eclipse.rdf4j.sail.shacl.ast;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.SHACL;
 
 public class StatementMatcher {
 
@@ -29,6 +33,7 @@ public class StatementMatcher {
 
 	private final String objectName;
 	private final Value objectValue;
+	private final Set<String> varNames;
 
 	public StatementMatcher(String subjectName, Resource subjectValue, String predicateName, IRI predicateValue,
 			String objectName, Value objectValue) {
@@ -38,6 +43,39 @@ public class StatementMatcher {
 		this.predicateValue = predicateValue;
 		this.objectName = objectName;
 		this.objectValue = objectValue;
+		this.varNames = calculateVarNames(subjectName, predicateName, objectName);
+	}
+
+	private static Set<String> calculateVarNames(String subjectName, String predicateName, String objectName) {
+		if (subjectName != null) {
+			if (predicateName != null) {
+				if (objectName != null) {
+					return Set.of(subjectName, predicateName, objectName);
+				} else {
+					return Set.of(subjectName, predicateName);
+				}
+			} else {
+				if (objectName != null) {
+					return Set.of(subjectName, objectName);
+				} else {
+					return Set.of(subjectName);
+				}
+			}
+		} else {
+			if (predicateName != null) {
+				if (objectName != null) {
+					return Set.of(predicateName, objectName);
+				} else {
+					return Set.of(predicateName);
+				}
+			} else {
+				if (objectName != null) {
+					return Set.of(objectName);
+				} else {
+					return Set.of();
+				}
+			}
+		}
 	}
 
 	public StatementMatcher(Variable subject, Variable predicate, Variable object) {
@@ -47,10 +85,35 @@ public class StatementMatcher {
 		this.predicateValue = predicate == null ? null : (IRI) predicate.value;
 		this.objectName = object == null ? null : object.name;
 		this.objectValue = object == null ? null : object.value;
+		this.varNames = calculateVarNames(subjectName, predicateName, objectName);
 	}
 
-	public static List<StatementMatcher> reduce(List<StatementMatcher> statementMatchers) {
-		List<StatementMatcher> wildcardMatchers = statementMatchers.stream()
+	public static List<StatementMatcher> reduce(Set<String> varNames, List<StatementMatcher> statementMatchers) {
+		statementMatchers = statementMatchers
+				.stream()
+				.map(s -> {
+					String subjectName = s.subjectName;
+					if (subjectName != null && !varNames.contains(subjectName)) {
+						subjectName = null;
+					}
+
+					String predicateName = s.predicateName;
+					if (predicateName != null && !varNames.contains(predicateName)) {
+						predicateName = null;
+					}
+
+					String objectName = s.objectName;
+					if (objectName != null && !varNames.contains(objectName)) {
+						objectName = null;
+					}
+					return new StatementMatcher(subjectName, s.subjectValue, predicateName, s.predicateValue,
+							objectName, s.objectValue);
+
+				})
+				.collect(Collectors.toList());
+
+		List<StatementMatcher> wildcardMatchers = statementMatchers
+				.stream()
 				.filter(s -> s.subjectIsWildcard() || s.predicateIsWildcard() || s.objectIsWildcard())
 				.collect(Collectors.toList());
 
@@ -58,15 +121,18 @@ public class StatementMatcher {
 			return statementMatchers;
 		}
 
-		return statementMatchers.stream().filter(s -> {
-			for (StatementMatcher statementMatcher : wildcardMatchers) {
-				if (statementMatcher != s && statementMatcher.covers(s)) {
-					return false;
-				}
-			}
+		return statementMatchers
+				.stream()
+				.filter(s -> {
+					for (StatementMatcher statementMatcher : wildcardMatchers) {
+						if (statementMatcher != s && statementMatcher.covers(s)) {
+							return false;
+						}
+					}
 
-			return true;
-		}).collect(Collectors.toList());
+					return true;
+				})
+				.collect(Collectors.toList());
 
 	}
 
@@ -165,6 +231,25 @@ public class StatementMatcher {
 	@Override
 	public int hashCode() {
 		return Objects.hash(subjectName, subjectValue, predicateName, predicateValue, objectName, objectValue);
+	}
+
+	public String getSparqlValuesDecl() {
+		StringBuilder sb = new StringBuilder("VALUES ( ");
+		if (subjectName != null) {
+			sb.append("?").append(subjectName).append(" ");
+		}
+		if (predicateName != null) {
+			sb.append("?").append(predicateName).append(" ");
+		}
+		if (objectName != null) {
+			sb.append("?").append(objectName).append(" ");
+		}
+		sb.append("){}\n");
+		return sb.toString();
+	}
+
+	public Set<String> getVarNames() {
+		return varNames;
 	}
 
 	public static class StableRandomVariableProvider {
@@ -327,13 +412,37 @@ public class StatementMatcher {
 
 	@Override
 	public String toString() {
-		return "StatementMatcher{" +
-				"subjectName='" + subjectName + '\'' +
-				", subjectValue=" + subjectValue +
-				", predicateName='" + predicateName + '\'' +
-				", predicateValue=" + predicateValue +
-				", objectName='" + objectName + '\'' +
-				", objectValue=" + objectValue +
-				'}';
+		return "StatementMatcher{ " +
+				formatForToString("s", subjectName, subjectValue) + ", " +
+				formatForToString("p", predicateName, predicateValue) + ", " +
+				formatForToString("o", objectName, objectValue) + " }";
+	}
+
+	private static String formatForToString(String field, String name, Value value) {
+		if (value == null && name == null) {
+			return field + "[*]";
+		}
+		StringBuilder ret = new StringBuilder(field).append("[");
+		if (name != null) {
+			ret.append("\"").append(name).append("\"").append("=");
+		}
+
+		if (value == null) {
+			ret.append("*");
+		} else if (value.isIRI()) {
+			IRI iri = (IRI) value;
+			if (iri.getNamespace().equals(RDF.NAMESPACE)) {
+				ret.append(RDF.PREFIX + ":").append(iri.getLocalName());
+			} else if (iri.getNamespace().equals(SHACL.NAMESPACE)) {
+				ret.append(SHACL.PREFIX + ":").append(iri.getLocalName());
+			} else if (iri.getNamespace().equals(RDFS.NAMESPACE)) {
+				ret.append(RDFS.PREFIX + ":").append(iri.getLocalName());
+			} else {
+				ret.append("<").append(iri).append(">");
+			}
+		} else {
+			ret.append(value);
+		}
+		return ret.append("]").toString();
 	}
 }

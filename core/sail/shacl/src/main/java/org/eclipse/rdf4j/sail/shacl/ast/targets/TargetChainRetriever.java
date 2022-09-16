@@ -11,11 +11,14 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.targets;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -28,7 +31,11 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
@@ -39,6 +46,8 @@ import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LoggingCloseableIteration;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeHelper;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SimpleBindingSet;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingletonBindingSet;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
@@ -53,35 +62,42 @@ public class TargetChainRetriever implements PlanNode {
 
 	private static final Logger logger = LoggerFactory.getLogger(TargetChainRetriever.class);
 
+	private static final int BULK_SIZE = 1000;
+
 	private final ConnectionsGroup connectionsGroup;
 	private final List<StatementMatcher> statementMatchers;
 	private final List<StatementMatcher> removedStatementMatchers;
-	private final String query;
+	private final String queryFragment;
 	private final QueryParserFactory queryParserFactory;
 	private final ConstraintComponent.Scope scope;
 	private final Resource[] dataGraph;
 	private final Dataset dataset;
+	private final Set<String> varNames;
+	private final String sparqlProjection;
+
 	private StackTraceElement[] stackTrace;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
 			Resource[] dataGraph, List<StatementMatcher> statementMatchers,
-			List<StatementMatcher> removedStatementMatchers, String query,
+			List<StatementMatcher> removedStatementMatchers, String queryFragment,
 			List<StatementMatcher.Variable> vars, ConstraintComponent.Scope scope) {
 		this.connectionsGroup = connectionsGroup;
 		this.dataGraph = dataGraph;
+		this.varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toSet());
+
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(this.dataGraph);
-		this.statementMatchers = StatementMatcher.reduce(statementMatchers);
+		this.statementMatchers = StatementMatcher.reduce(varNames, statementMatchers);
 
 		this.scope = scope;
 
-		String sparqlProjection = vars.stream()
-				.map(s -> "?" + s.getName())
+		this.sparqlProjection = vars.stream()
+				.map(StatementMatcher.Variable::asSparqlVariable)
 				.reduce((a, b) -> a + " " + b)
 				.orElseThrow(IllegalStateException::new);
 
-		this.query = "select " + sparqlProjection + " where {\n"
-				+ StatementMatcher.StableRandomVariableProvider.normalize(query) + "\n}";
+		this.queryFragment = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);
+
 //		this.stackTrace = Thread.currentThread().getStackTrace();
 
 		queryParserFactory = QueryParserRegistry.getInstance()
@@ -89,7 +105,7 @@ public class TargetChainRetriever implements PlanNode {
 				.get();
 
 		this.removedStatementMatchers = removedStatementMatchers != null
-				? StatementMatcher.reduce(removedStatementMatchers)
+				? StatementMatcher.reduce(varNames, removedStatementMatchers)
 				: Collections.emptyList();
 
 	}
@@ -110,8 +126,7 @@ public class TargetChainRetriever implements PlanNode {
 
 			ParsedQuery parsedQuery;
 
-			// for de-duping bindings
-			MapBindingSet previousBindings;
+			private final List<BindingSet> bulk = new ArrayList<>(BULK_SIZE);
 
 			public void calculateNextStatementMatcher() {
 				if (statements != null && statements.hasNext()) {
@@ -157,7 +172,7 @@ public class TargetChainRetriever implements PlanNode {
 
 				} while (!statements.hasNext());
 
-				previousBindings = null;
+				parsedQuery = null;
 
 			}
 
@@ -182,42 +197,26 @@ public class TargetChainRetriever implements PlanNode {
 						}
 
 						if (parsedQuery == null) {
+							String query = "select " + sparqlProjection + " where {\n" +
+									currentStatementMatcher.getSparqlValuesDecl() +
+									queryFragment + "\n" +
+									"}";
+
 							parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
 						}
 
-						Statement next = statements.next();
+						Set<String> varNames = currentStatementMatcher.getVarNames();
 
-						MapBindingSet bindings = new MapBindingSet();
+						List<BindingSet> bulk = readStatementsInBulk(varNames);
 
-						if (currentStatementMatcher.getSubjectValue() == null
-								&& !currentStatementMatcher.subjectIsWildcard()) {
-							bindings.addBinding(currentStatementMatcher.getSubjectName(), next.getSubject());
-						}
-
-						if (currentStatementMatcher.getPredicateValue() == null
-								&& !currentStatementMatcher.predicateIsWildcard()) {
-							bindings.addBinding(currentStatementMatcher.getPredicateName(), next.getPredicate());
-						}
-
-						if (currentStatementMatcher.getObjectValue() == null
-								&& !currentStatementMatcher.objectIsWildcard()) {
-							bindings.addBinding(currentStatementMatcher.getObjectName(), next.getObject());
-						}
-
-						if (bindingsEquivalent(currentStatementMatcher, bindings, previousBindings)) {
-							continue;
-						}
-
-						previousBindings = bindings;
-
-						// TODO: Should really bulk this operation!
+						setBindings(varNames, bulk);
 
 						results = connectionsGroup.getBaseConnection()
 								.evaluate(parsedQuery.getTupleExpr(), dataset,
-										bindings, true);
+										EmptyBindingSet.getInstance(), true);
 
 					} catch (MalformedQueryException e) {
-						logger.error("Malformed query: \n{}", query);
+						logger.error("Malformed query:\n{}", queryFragment);
 						throw e;
 					}
 				}
@@ -243,6 +242,56 @@ public class TargetChainRetriever implements PlanNode {
 
 				}
 
+			}
+
+			private List<BindingSet> readStatementsInBulk(Set<String> varNames) {
+				bulk.clear();
+
+				for (int i = 0; i < BULK_SIZE && statements.hasNext(); i++) {
+					Statement next = statements.next();
+
+					Binding[] bindings = new Binding[varNames.size()];
+					int j = 0;
+
+					if (currentStatementMatcher.getSubjectValue() == null
+							&& currentStatementMatcher.getSubjectName() != null) {
+						bindings[j++] = new SimpleBinding(currentStatementMatcher.getSubjectName(), next.getSubject());
+					}
+
+					if (currentStatementMatcher.getPredicateValue() == null
+							&& currentStatementMatcher.getPredicateName() != null) {
+						bindings[j++] = new SimpleBinding(currentStatementMatcher.getPredicateName(),
+								next.getPredicate());
+					}
+
+					if (currentStatementMatcher.getObjectValue() == null
+							&& currentStatementMatcher.getObjectName() != null) {
+						bindings[j++] = new SimpleBinding(currentStatementMatcher.getObjectName(), next.getObject());
+					}
+					if (bindings.length == 1) {
+						bulk.add(new SingletonBindingSet(bindings[0].getName(), bindings[0].getValue()));
+
+					} else {
+						bulk.add(new SimpleBindingSet(varNames, bindings));
+					}
+
+				}
+				return bulk;
+			}
+
+			private void setBindings(Set<String> varNames, List<BindingSet> bulk) {
+				parsedQuery.getTupleExpr()
+						.visit(new AbstractSimpleQueryModelVisitor<>(false) {
+							@Override
+							public void meet(BindingSetAssignment node) {
+								Set<String> bindingNames = node.getBindingNames();
+								if (bindingNames.equals(varNames)) {
+									node.setBindingSets(bulk);
+								}
+								super.meet(node);
+							}
+
+						});
 			}
 
 			@Override
@@ -351,14 +400,14 @@ public class TargetChainRetriever implements PlanNode {
 		TargetChainRetriever that = (TargetChainRetriever) o;
 		return statementMatchers.equals(that.statementMatchers) &&
 				removedStatementMatchers.equals(that.removedStatementMatchers) &&
-				query.equals(that.query) &&
+				queryFragment.equals(that.queryFragment) &&
 				Objects.equals(dataset, that.dataset) &&
 				scope == that.scope;
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(statementMatchers, removedStatementMatchers, query, scope, dataset);
+		return Objects.hash(statementMatchers, removedStatementMatchers, queryFragment, scope, dataset);
 	}
 
 	@Override
@@ -366,7 +415,7 @@ public class TargetChainRetriever implements PlanNode {
 		return "TargetChainRetriever{" +
 				"statementPatterns=" + statementMatchers +
 				", removedStatementMatchers=" + removedStatementMatchers +
-				", query='" + query.replace("\n", "\t") + '\'' +
+				", query='" + queryFragment.replace("\n", "\t") + '\'' +
 				", scope=" + scope +
 				'}';
 	}

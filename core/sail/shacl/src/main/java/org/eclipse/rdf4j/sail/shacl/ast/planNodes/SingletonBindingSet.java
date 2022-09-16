@@ -11,9 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
-import java.util.Arrays;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
@@ -24,79 +22,87 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
 /**
  * A simple binding set tuned for the use case that the ShaclSail has.
  */
-public class SimpleBindingSet implements BindingSet {
+public class SingletonBindingSet implements BindingSet {
 
-	private static final long serialVersionUID = 1001660194269450975L;
+	private static final long serialVersionUID = 6083219124988052038L;
 
-	private final Set<String> bindingNamesSet;
-	private final Binding[] bindings;
+	private final String name;
+	private final Value value;
 
+	private Binding cachedBinding;
 	private int cachedHashCode = 0;
 
-	public SimpleBindingSet(Set<String> bindingNamesSet, List<String> varNamesList, List<Value> values) {
-		assert varNamesList.size() == values.size();
-		this.bindingNamesSet = bindingNamesSet;
-		this.bindings = new Binding[varNamesList.size()];
-
-		for (int i = 0; i < varNamesList.size(); i++) {
-			bindings[i] = new SimpleBinding(varNamesList.get(i), values.get(i));
-		}
-
-	}
-
-	public SimpleBindingSet(Set<String> bindingNamesSet, Binding[] bindings) {
-		this.bindingNamesSet = bindingNamesSet;
-		this.bindings = bindings;
+	public SingletonBindingSet(String bindingName, Value value) {
+		this.name = bindingName;
+		this.value = value;
 	}
 
 	@Override
 	public Iterator<Binding> iterator() {
-		return Arrays.asList(bindings).iterator();
+		if (cachedBinding == null) {
+			cachedBinding = new SimpleBinding(name, value);
+		}
+		return new SingleIterator(cachedBinding);
+	}
+
+	private static class SingleIterator implements Iterator<Binding> {
+		private Binding next;
+
+		public SingleIterator(Binding next) {
+			this.next = next;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return next != null;
+		}
+
+		@Override
+		public Binding next() {
+			Binding temp = next;
+			next = null;
+			return temp;
+		}
 	}
 
 	@Override
 	public Set<String> getBindingNames() {
-		return bindingNamesSet;
+		return Set.of(name);
 	}
 
 	@Override
 	public Binding getBinding(String bindingName) {
-		for (Binding binding : bindings) {
-			if (binding.getName().equals(bindingName)) {
-				return binding;
+		if (this.name.equals(bindingName)) {
+			if (cachedBinding == null) {
+				cachedBinding = new SimpleBinding(name, value);
 			}
+			return cachedBinding;
 		}
 		return null;
 	}
 
 	@Override
 	public boolean hasBinding(String bindingName) {
-		return bindingNamesSet.contains(bindingName);
+		return name.equals(bindingName);
 	}
 
 	@Override
 	public Value getValue(String bindingName) {
-		Binding binding = getBinding(bindingName);
-		if (binding != null) {
-			return binding.getValue();
+		if (name.equals(bindingName)) {
+			return value;
 		}
 		return null;
 	}
 
 	@Override
 	public int size() {
-		return bindings.length;
+		return 1;
 	}
 
 	@Override
 	public int hashCode() {
 		if (cachedHashCode == 0) {
-			int hashCode = 0;
-
-			for (Binding binding : bindings) {
-				hashCode ^= binding.getName().hashCode() ^ binding.getValue().hashCode();
-			}
-			cachedHashCode = hashCode;
+			cachedHashCode = (name.hashCode() ^ value.hashCode());
 		}
 		return cachedHashCode;
 	}

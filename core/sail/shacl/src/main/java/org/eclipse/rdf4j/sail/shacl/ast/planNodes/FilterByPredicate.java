@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 /**
  * @author Håvard Ottestad
  */
-public class ExternalFilterByPredicate implements PlanNode {
+public class FilterByPredicate implements PlanNode {
 
 	private final SailConnection connection;
 	private final Set<IRI> filterOnPredicates;
@@ -45,7 +45,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 		Object
 	}
 
-	public ExternalFilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent,
+	public FilterByPredicate(SailConnection connection, Set<IRI> filterOnPredicates, PlanNode parent,
 			On on, Resource[] dataGraph) {
 		this.dataGraph = dataGraph;
 		this.parent = PlanNodeHelper.handleSorting(this, parent);
@@ -72,7 +72,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 						return;
 					}
 
-					filterOnPredicates = ExternalFilterByPredicate.this.filterOnPredicates.stream()
+					filterOnPredicates = FilterByPredicate.this.filterOnPredicates.stream()
 							.map(predicate -> {
 								try (var stream = connection
 										.getStatements(null, predicate, null, true, dataGraph)
@@ -215,7 +215,7 @@ public class ExternalFilterByPredicate implements PlanNode {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		ExternalFilterByPredicate that = (ExternalFilterByPredicate) o;
+		FilterByPredicate that = (FilterByPredicate) o;
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
 			return ((MemoryStoreConnection) connection).getSail()
 					.equals(((MemoryStoreConnection) that.connection).getSail()) &&
