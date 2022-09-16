@@ -1,0 +1,4 @@
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.stdev.PopulationStandardDeviationAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.stdev.StandardDeviationAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.variance.PopulationVarianceAggregateFactory
+org.eclipse.rdf4j.query.algebra.evaluation.function.aggregate.variance.VarianceAggregateFactory

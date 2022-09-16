@@ -125,12 +125,12 @@ public class NotValuesIn implements PlanNode {
 
 	@Override
 	public boolean producesSorted() {
-		return true;
+		return parent.producesSorted();
 	}
 
 	@Override
 	public boolean requiresSorted() {
-		return true;
+		return false;
 	}
 
 	@Override

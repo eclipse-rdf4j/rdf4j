@@ -21,14 +21,12 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.QueryParserFactory;
-import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,25 +48,26 @@ public class Select implements PlanNode {
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public Select(SailConnection connection, String queryFregment, String orderBy,
+	public Select(SailConnection connection, String queryFragment, String orderBy,
 			Function<BindingSet, ValidationTuple> mapper, Resource[] dataGraph) {
 		this.connection = connection;
 		assert this.connection != null;
 		this.mapper = mapper;
-		if (queryFregment.trim().equals("")) {
+		if (queryFragment.trim().equals("")) {
 			logger.error("Query is empty", new Throwable("This throwable is just to log the stack trace"));
 
 			// empty set
-			queryFregment = "" +
-					"?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c. \n" +
-					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c}) \n";
+			queryFragment = "" +
+					"?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c.\n" +
+					"FILTER (NOT EXISTS {?a <http://fjiewojfiwejfioewhgurh8924y.com/f289h8fhn> ?c})";
 		}
 		sorted = orderBy != null;
 
-		if (!sorted && queryFregment.trim().startsWith("select ")) {
-			this.query = queryFregment;
+		if (!sorted && queryFragment.trim().startsWith("select ")) {
+			this.query = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);
 		} else {
-			this.query = "select * where {\n" + queryFregment + "\n} " + (sorted ? "order by " + orderBy : "");
+			this.query = StatementMatcher.StableRandomVariableProvider
+					.normalize("select * where {\n" + queryFragment + "\n}" + (sorted ? " order by " + orderBy : ""));
 		}
 
 		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
@@ -101,16 +100,12 @@ public class Select implements PlanNode {
 					return;
 				}
 
-				QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance()
-						.get(QueryLanguage.SPARQL)
-						.get();
-
 				try {
-					ParsedQuery parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
-					bindingSet = connection.evaluate(parsedQuery.getTupleExpr(), dataset,
-							EmptyBindingSet.getInstance(), true);
+					TupleExpr tupleExpr = SparqlQueryParserCache.get(query);
+
+					bindingSet = connection.evaluate(tupleExpr, dataset, EmptyBindingSet.getInstance(), true);
 				} catch (MalformedQueryException e) {
-					logger.error("Malformed query: \n{}", query);
+					logger.error("Malformed query:\n{}", query);
 					throw e;
 				}
 			}

@@ -103,4 +103,11 @@ public abstract class AbstractConstraintComponent implements ConstraintComponent
 		throw new UnsupportedOperationException(this.getClass().getSimpleName());
 	}
 
+	static CharSequence[] trim(String... s) {
+		for (int i = 0; i < s.length; i++) {
+			s[i] = s[i].trim();
+		}
+		return s;
+	}
+
 }

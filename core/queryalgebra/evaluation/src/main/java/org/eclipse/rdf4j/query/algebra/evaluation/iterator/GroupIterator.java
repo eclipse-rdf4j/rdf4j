@@ -30,7 +30,6 @@ import java.util.function.LongFunction;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -40,7 +39,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.Count;
@@ -61,6 +60,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 
@@ -351,9 +353,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
 
-		try (CloseableIteration<BindingSet, QueryEvaluationException> iter = strategy
-				.precompile(group.getArg(), context)
-				.evaluate(parentBindings)) {
+		try (var iter = strategy.precompile(group.getArg(), context).evaluate(parentBindings)) {
+
 			long setId = 0;
 			Function<BindingSet, Integer> hashMaker = hashMaker(context, group);
 			Map<Key, Entry> entries = new LinkedHashMap<>();
@@ -505,7 +506,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class Entry {
+	private static class Entry {
 
 		private final BindingSet prototype;
 		private final List<AggregateCollector> collectors;
@@ -537,13 +538,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	 * <p>
 	 * Making an aggregate function is quite a lot of work and we do not want to repeat that for each final binding.
 	 */
-	private class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
+	private static class AggregatePredicateCollectorSupplier<T extends AggregateCollector, D> {
 		public final String name;
-		private final Aggregate<T, D> agg;
+		private final AggregateFunction<T, D> agg;
 		private final LongFunction<Predicate<D>> predicate;
 		private final Supplier<T> supplier;
 
-		public AggregatePredicateCollectorSupplier(Aggregate<T, D> agg, LongFunction<Predicate<D>> predicate,
+		public AggregatePredicateCollectorSupplier(AggregateFunction<T, D> agg, LongFunction<Predicate<D>> predicate,
 				Supplier<T> supplier, String name) {
 			super();
 			this.agg = agg;
@@ -567,7 +568,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		if (operator instanceof Count) {
 			if (((Count) operator).getArg() == null) {
-				WildCardCountAggregate wildCardCountAggregate = new WildCardCountAggregate((Count) operator);
+				WildCardCountAggregate wildCardCountAggregate = new WildCardCountAggregate();
 				LongFunction<Predicate<BindingSet>> predicate = operator.isDistinct() ? DistinctBindingSets::new
 						: (l) -> ALWAYS_TRUE_BINDING_SET;
 				return new AggregatePredicateCollectorSupplier<>(
@@ -648,24 +649,23 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 					StringBuilderCollector::new,
 					ge.getName()
 			);
+		} else if (operator instanceof AggregateFunctionCall) {
+			var aggOperator = (AggregateFunctionCall) operator;
+			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
+					: ALWAYS_TRUE_VALUE_SUPPLIER;
+			var factory = CustomAggregateFunctionRegistry.getInstance().get(aggOperator.getIRI());
+
+			var function = factory.orElseThrow(
+					() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
+					.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
+			return new AggregatePredicateCollectorSupplier<>(
+					function,
+					predicate,
+					() -> factory.get().getCollector(),
+					ge.getName());
+
 		}
 		return null;
-	}
-
-	private <T> Predicate<T> createPredicate(AggregateOperator operator, long setId)
-			throws QueryEvaluationException {
-		if (operator.isDistinct()) {
-			if (operator instanceof Count && ((Count) operator).getArg() == null) {
-				return (Predicate<T>) new DistinctBindingSets(setId);
-			} else {
-				return (Predicate<T>) new DistinctValues(setId);
-			}
-		}
-		return (v) -> true;
-	}
-
-	private interface AggregateCollector {
-		Value getFinalValue();
 	}
 
 	private class CountCollector implements AggregateCollector {
@@ -677,7 +677,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class ValueCollector implements AggregateCollector {
+	private static class ValueCollector implements AggregateCollector {
 		private Value value;
 
 		@Override
@@ -775,34 +775,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private abstract class Aggregate<T extends AggregateCollector, D> {
-
-		private final QueryValueEvaluationStep qes;
-
-		public Aggregate(AbstractAggregateOperator operator) {
-			this(operator, strategy.precompile(operator.getArg(), context));
-		}
-
-		public Aggregate(AbstractAggregateOperator operator, QueryValueEvaluationStep ves) {
-			qes = ves;
-		}
-
-		public abstract void processAggregate(BindingSet bindingSet, Predicate<D> distinctValue, T agv)
-				throws QueryEvaluationException;
-
-		protected Value evaluate(BindingSet s) throws QueryEvaluationException {
-			try {
-				return qes.evaluate(s);
-			} catch (ValueExprEvaluationException e) {
-				return null; // treat missing or invalid expressions as null
-			}
-		}
-	}
-
-	private class CountAggregate extends Aggregate<CountCollector, Value> {
+	private class CountAggregate extends AggregateFunction<CountCollector, Value> {
 
 		public CountAggregate(Count operator) {
-			super(operator);
+			super(new QueryStepEvaluator(strategy.precompile(operator.getArg(), context)));
 		}
 
 		@Override
@@ -815,10 +791,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class WildCardCountAggregate extends Aggregate<CountCollector, BindingSet> {
+	private class WildCardCountAggregate extends AggregateFunction<CountCollector, BindingSet> {
 
-		public WildCardCountAggregate(Count operator) {
-			super(operator, null);
+		public WildCardCountAggregate() {
+			super(null);
 		}
 
 		@Override
@@ -831,12 +807,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class MinAggregate extends Aggregate<ValueCollector, Value> {
+	private class MinAggregate extends AggregateFunction<ValueCollector, Value> {
 
 		private final ValueComparator comparator = new ValueComparator();
 
 		public MinAggregate(Min operator) {
-			super(operator);
+			super(new QueryStepEvaluator(strategy.precompile(operator.getArg(), context)));
 			if (strategy instanceof ExtendedEvaluationStrategy) {
 				comparator.setStrict(false);
 			}
@@ -857,12 +833,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class MaxAggregate extends Aggregate<ValueCollector, Value> {
+	private class MaxAggregate extends AggregateFunction<ValueCollector, Value> {
 
 		private final ValueComparator comparator = new ValueComparator();
 
 		public MaxAggregate(Max operator) {
-			super(operator);
+			super(new QueryStepEvaluator(strategy.precompile(operator.getArg(), context)));
 			if (strategy instanceof ExtendedEvaluationStrategy) {
 				comparator.setStrict(false);
 			}
@@ -882,10 +858,9 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class SumAggregate extends Aggregate<IntegerCollector, Value> {
-
+	private class SumAggregate extends AggregateFunction<IntegerCollector, Value> {
 		public SumAggregate(Sum operator) {
-			super(operator);
+			super(new QueryStepEvaluator(strategy.precompile(operator.getArg(), context)));
 		}
 
 		@Override
@@ -915,10 +890,10 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class AvgAggregate extends Aggregate<AvgCollector, Value> {
+	private class AvgAggregate extends AggregateFunction<AvgCollector, Value> {
 
 		public AvgAggregate(Avg operator) {
-			super(operator);
+			super(new QueryStepEvaluator(strategy.precompile(operator.getArg(), context)));
 		}
 
 		@Override
@@ -952,7 +927,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class SampleCollector implements AggregateCollector {
+	private static class SampleCollector implements AggregateCollector {
 		private Value sample;
 
 		@Override
@@ -964,12 +939,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class SampleAggregate extends Aggregate<SampleCollector, Value> {
+	private class SampleAggregate extends AggregateFunction<SampleCollector, Value> {
 
 		private final Random random;
 
 		public SampleAggregate(Sample operator) {
-			super(operator);
+			super(new QueryStepEvaluator(strategy.precompile(operator.getArg(), context)));
 			random = new Random(System.currentTimeMillis());
 		}
 
@@ -999,13 +974,13 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 	}
 
-	private class ConcatAggregate extends Aggregate<StringBuilderCollector, Value> {
+	private class ConcatAggregate extends AggregateFunction<StringBuilderCollector, Value> {
 
 		private String separator = " ";
 
 		public ConcatAggregate(GroupConcat groupConcatOp)
 				throws QueryEvaluationException {
-			super(groupConcatOp);
+			super(new QueryStepEvaluator(strategy.precompile(groupConcatOp.getArg(), context)));
 			ValueExpr separatorExpr = groupConcatOp.getSeparator();
 			if (separatorExpr != null) {
 				Value separatorValue = strategy.evaluate(separatorExpr, parentBindings);
@@ -1026,6 +1001,22 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				collector.concatenated.append(v.stringValue());
 			}
 		}
+	}
 
+	private static class QueryStepEvaluator implements Function<BindingSet, Value> {
+		private final QueryValueEvaluationStep evaluationStep;
+
+		public QueryStepEvaluator(QueryValueEvaluationStep evaluationStep) {
+			this.evaluationStep = evaluationStep;
+		}
+
+		@Override
+		public Value apply(BindingSet bindings) {
+			try {
+				return evaluationStep.evaluate(bindings);
+			} catch (ValueExprEvaluationException e) {
+				return null; // treat missing or invalid expressions as null
+			}
+		}
 	}
 }

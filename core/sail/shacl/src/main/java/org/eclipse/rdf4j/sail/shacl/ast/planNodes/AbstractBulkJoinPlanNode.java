@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.ArrayDeque;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -22,75 +21,75 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
-import org.eclipse.rdf4j.query.parser.ParsedQuery;
-import org.eclipse.rdf4j.query.parser.QueryParserFactory;
-import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
 
 public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 
+	public static final String BINDING_NAME = "a";
+	protected static final int BULK_SIZE = 1000;
+	private StackTraceElement[] stackTrace;
 	protected Function<BindingSet, ValidationTuple> mapper;
 	ValidationExecutionLogger validationExecutionLogger;
 
-	ParsedQuery parseQuery(String query) {
-		QueryParserFactory queryParserFactory = QueryParserRegistry.getInstance().get(QueryLanguage.SPARQL).get();
+	public AbstractBulkJoinPlanNode() {
+//		this.stackTrace = Thread.currentThread().getStackTrace();
+	}
+
+	TupleExpr parseQuery(String query) {
 
 		// #VALUES_INJECTION_POINT# is an annotation in the query where there is a "new scope" due to the bottom up
 		// semantics of SPARQL but where we don't actually want a new scope.
 		query = query.replace(AbstractConstraintComponent.VALUES_INJECTION_POINT, "\nVALUES (?a) {}\n");
-		String completeQuery = "select * where { \nVALUES (?a) {}\n" + query + "\n}\nORDER BY ?a";
-		return queryParserFactory.getParser().parseQuery(completeQuery, null);
+		String completeQuery = "select * where {\nVALUES (?a) {}\n" + query + "\n}";
+		return SparqlQueryParserCache.get(completeQuery);
 	}
 
 	void runQuery(ArrayDeque<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection,
-			ParsedQuery parsedQuery, Dataset dataset, Resource[] dataGraph, boolean skipBasedOnPreviousConnection,
-			SailConnection previousStateConnection, Function<BindingSet, ValidationTuple> mapper) {
-		List<BindingSet> newBindindingset = buildBindingSets(left, connection, skipBasedOnPreviousConnection,
+			TupleExpr parsedQuery, Dataset dataset, Resource[] dataGraph, boolean skipBasedOnPreviousConnection,
+			SailConnection previousStateConnection) {
+		List<BindingSet> newBindindingSet = buildBindingSets(left, connection, skipBasedOnPreviousConnection,
 				previousStateConnection, dataGraph);
 
-		if (!newBindindingset.isEmpty()) {
-			updateQuery(parsedQuery, newBindindingset);
-			executeQuery(right, connection, dataset, parsedQuery, mapper);
+		if (!newBindindingSet.isEmpty()) {
+			updateQuery(parsedQuery, newBindindingSet);
+			executeQuery(right, connection, dataset, parsedQuery);
 		}
 	}
 
-	private static void executeQuery(ArrayDeque<ValidationTuple> right, SailConnection connection,
-			Dataset dataset, ParsedQuery parsedQuery,
-			Function<BindingSet, ValidationTuple> mapper) {
+	private void executeQuery(ArrayDeque<ValidationTuple> right, SailConnection connection,
+			Dataset dataset, TupleExpr parsedQuery) {
 
+//		System.out.println(stackTrace[3].getClassName());
 		try (Stream<? extends BindingSet> stream = connection
-				.evaluate(parsedQuery.getTupleExpr(), dataset, new MapBindingSet(), true)
+				.evaluate(parsedQuery, dataset, EmptyBindingSet.getInstance(), true)
 				.stream()) {
 			stream
 					.map(mapper)
+					.sorted(ValidationTuple::compareActiveTarget)
 					.forEachOrdered(right::addFirst);
 		}
 
 	}
 
-	private void updateQuery(ParsedQuery parsedQuery, List<BindingSet> newBindindingset) {
-		try {
-
-			parsedQuery.getTupleExpr()
-					.visit(new AbstractQueryModelVisitor<Exception>() {
-						@Override
-						public void meet(BindingSetAssignment node) throws Exception {
-							Set<String> bindingNames = node.getBindingNames();
-							if (bindingNames.size() == 1 && bindingNames.contains("a")) {
-								node.setBindingSets(newBindindingset);
-							}
-							super.meet(node);
+	private void updateQuery(TupleExpr parsedQuery, List<BindingSet> newBindindingSet) {
+		parsedQuery
+				.visit(new AbstractSimpleQueryModelVisitor<>(false) {
+					@Override
+					public void meet(BindingSetAssignment node) {
+						Set<String> bindingNames = node.getBindingNames();
+						if (bindingNames.size() == 1 && bindingNames.contains(BINDING_NAME)) {
+							node.setBindingSets(newBindindingSet);
 						}
+						super.meet(node);
+					}
 
-					});
-		} catch (Exception e) {
-			throw new RuntimeException(e);
-		}
+				});
 	}
 
 	private List<BindingSet> buildBindingSets(ArrayDeque<ValidationTuple> left, SailConnection connection,
@@ -124,9 +123,8 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 					return hasStatement;
 
 				})
-				.map(validationTuple -> validationTuple.getActiveTarget())
-				.map(r -> new SimpleBindingSet(Collections.singleton("a"), Collections.singletonList("a"),
-						Collections.singletonList(r)))
+				.map(ValidationTuple::getActiveTarget)
+				.map(r -> new SingletonBindingSet(BINDING_NAME, r))
 				.collect(Collectors.toList());
 	}
 

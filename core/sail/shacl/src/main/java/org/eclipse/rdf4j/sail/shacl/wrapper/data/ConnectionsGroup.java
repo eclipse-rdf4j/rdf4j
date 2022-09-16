@@ -161,6 +161,10 @@ public class ConnectionsGroup implements AutoCloseable {
 		return sparqlValidation;
 	}
 
+	public boolean hasAddedStatements() {
+		return addedStatements != null;
+	}
+
 	public interface RdfsSubClassOfReasonerProvider {
 		RdfsSubClassOfReasoner getRdfsSubClassOfReasoner();
 	}

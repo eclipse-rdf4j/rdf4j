@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
@@ -48,7 +48,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	private final PlanNode leftNode;
 	private final Dataset dataset;
 	private final Resource[] dataGraph;
-	private ParsedQuery parsedQuery = null;
+	private TupleExpr parsedQuery = null;
 	private final boolean skipBasedOnPreviousConnection;
 	private final SailConnection previousStateConnection;
 	private final String query;
@@ -88,11 +88,11 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final ArrayDeque<ValidationTuple> left = new ArrayDeque<>();
+			final ArrayDeque<ValidationTuple> left = new ArrayDeque<>(BULK_SIZE);
 
-			final ArrayDeque<ValidationTuple> right = new ArrayDeque<>();
+			final ArrayDeque<ValidationTuple> right = new ArrayDeque<>(BULK_SIZE);
 
-			final ArrayDeque<ValidationTuple> joined = new ArrayDeque<>();
+			final ArrayDeque<ValidationTuple> joined = new ArrayDeque<>(BULK_SIZE);
 
 			final CloseableIteration<? extends ValidationTuple, SailException> leftNodeIterator = leftNode.iterator();
 
@@ -104,7 +104,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 
 				while (joined.isEmpty() && leftNodeIterator.hasNext()) {
 
-					while (left.size() < 200 && leftNodeIterator.hasNext()) {
+					while (left.size() < BULK_SIZE && leftNodeIterator.hasNext()) {
 						left.addFirst(leftNodeIterator.next());
 					}
 
@@ -113,7 +113,7 @@ public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {
 					}
 
 					runQuery(left, right, connection, parsedQuery, dataset, dataGraph, skipBasedOnPreviousConnection,
-							previousStateConnection, mapper);
+							previousStateConnection);
 
 					while (!right.isEmpty()) {
 

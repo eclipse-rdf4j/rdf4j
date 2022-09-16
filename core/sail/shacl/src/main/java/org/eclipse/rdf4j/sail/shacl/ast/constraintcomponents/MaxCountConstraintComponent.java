@@ -30,12 +30,14 @@ import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
 import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ReduceTargets;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
@@ -81,20 +83,22 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 					EffectiveTarget.Extend.right, false, null);
 		} else {
 
-			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),
-					scope, false, null);
+			BufferedSplitter addedTargets = new BufferedSplitter(
+					effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),
+							scope, false, null));
 
 			PlanNode addedByPath = path.get().getAdded(connectionsGroup, validationSettings.getDataGraph(), null);
 
-			addedByPath = effectiveTarget.getTargetFilter(connectionsGroup,
-					validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));
+			addedByPath = Unique.getInstance(new TrimToTarget(addedByPath), false);
+
+			addedByPath = new ReduceTargets(addedByPath, addedTargets.getPlanNode());
 
 			addedByPath = effectiveTarget.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(),
 					scope, EffectiveTarget.Extend.left,
 					false,
 					null);
 
-			mergeNode = UnionNode.getInstance(addedTargets, addedByPath);
+			mergeNode = UnionNode.getInstance(addedTargets.getPlanNode(), addedByPath);
 		}
 
 		mergeNode = Unique.getInstance(new TrimToTarget(mergeNode), false);
@@ -127,6 +131,8 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 							validationSettings.getDataGraph())
 			);
 		}
+
+		relevantTargetsWithPath = connectionsGroup.getCachedNodeFor(relevantTargetsWithPath);
 
 		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -> count > maxCount);
 
@@ -208,7 +214,7 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 			String innerCondition = String.join(" && ", notEquals);
 
-			query += paths + "FILTER(" + innerCondition + ")\n";
+			query += paths + "FILTER(" + innerCondition + ")";
 		}
 
 		List<StatementMatcher.Variable> allTargetVariables = effectiveTarget.getAllTargetVariables();

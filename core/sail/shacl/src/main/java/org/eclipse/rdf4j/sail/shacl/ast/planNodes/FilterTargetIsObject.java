@@ -22,12 +22,12 @@ import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
 /**
  * @author Håvard Ottestad
  */
-public class ExternalFilterTargetIsObject extends FilterPlanNode {
+public class FilterTargetIsObject extends FilterPlanNode {
 
 	private final SailConnection connection;
 	private final Resource[] dataGraph;
 
-	public ExternalFilterTargetIsObject(SailConnection connection, Resource[] dataGraph, PlanNode parent) {
+	public FilterTargetIsObject(SailConnection connection, Resource[] dataGraph, PlanNode parent) {
 		super(parent);
 		this.connection = connection;
 		assert this.connection != null;
@@ -58,7 +58,7 @@ public class ExternalFilterTargetIsObject extends FilterPlanNode {
 			return false;
 		}
 
-		ExternalFilterTargetIsObject that = (ExternalFilterTargetIsObject) o;
+		FilterTargetIsObject that = (FilterTargetIsObject) o;
 		if (connection instanceof MemoryStoreConnection && that.connection instanceof MemoryStoreConnection) {
 			return ((MemoryStoreConnection) connection).getSail()
 					.equals(((MemoryStoreConnection) that.connection).getSail())
