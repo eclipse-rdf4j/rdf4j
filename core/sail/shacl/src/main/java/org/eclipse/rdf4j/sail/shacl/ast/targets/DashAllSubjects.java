@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterTargetIsSubject;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterTargetIsSubject;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
@@ -70,9 +70,9 @@ public class DashAllSubjects extends Target {
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 //		return targetObjectsOf.stream()
-//			.map(target -> "\n{ BIND(<" + target + "> as " + tempVar + ") \n " + objectVariable + " "
+//			.map(target -> "\n{ BIND(<" + target + "> as " + tempVar + ")\n" + objectVariable + " "
 //				+ tempVar + " " + subjectVariable
-//				+ ". } \n")
+//				+ ". }\n")
 //			.reduce((a, b) -> a + " UNION " + b)
 //			.get();
 
@@ -82,7 +82,7 @@ public class DashAllSubjects extends Target {
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
-		return new ExternalFilterTargetIsSubject(connectionsGroup.getBaseConnection(), dataGraph, parent)
+		return new FilterTargetIsSubject(connectionsGroup.getBaseConnection(), dataGraph, parent)
 				.getTrueNode(UnBufferedPlanNode.class);
 	}
 
@@ -110,7 +110,7 @@ public class DashAllSubjects extends Target {
 		String tempVar1 = stableRandomVariableProvider.next().asSparqlVariable();
 		String tempVar2 = stableRandomVariableProvider.next().asSparqlVariable();
 
-		return " ?" + object.getName() + " " + tempVar1 + " " + tempVar2 + " .";
+		return "?" + object.getName() + " " + tempVar1 + " " + tempVar2 + " .";
 
 	}
 

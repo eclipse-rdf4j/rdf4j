@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalPredicateObjectFilter;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterByPredicateObject;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Sort;
@@ -90,11 +90,11 @@ public class TargetClass extends Target {
 		return targets.stream()
 				.map(r -> "<" + r + ">")
 				.sorted()
-				.map(r -> String.join("\n", "",
+				.map(r -> String.join("\n",
 						"{",
-						"\tBIND(rdf:type as " + stableRandomVariableProvider.next().asSparqlVariable() + ")",
-						"\tBIND(" + r + " as " + objectVariable + ")",
-						"\t" + subjectVariable + " " + stableRandomVariableProvider.current().asSparqlVariable()
+						"BIND(rdf:type as " + stableRandomVariableProvider.next().asSparqlVariable() + ")",
+						"BIND(" + r + " as " + objectVariable + ")",
+						"" + subjectVariable + " " + stableRandomVariableProvider.current().asSparqlVariable()
 								+ objectVariable + ".",
 						"}"
 				)
@@ -108,25 +108,25 @@ public class TargetClass extends Target {
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
 
-		SailConnection addedStatements = connectionsGroup.getAddedStatements();
-
-		if (addedStatements != null) {
+		if (connectionsGroup.hasAddedStatements()) {
 			BufferedSplitter bufferedSplitter = new BufferedSplitter(parent);
 
-			ExternalPredicateObjectFilter typeFoundInAdded = new ExternalPredicateObjectFilter(
+			FilterByPredicateObject typeFoundInAdded = new FilterByPredicateObject(
 					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,
-					bufferedSplitter.getPlanNode(), true, ExternalPredicateObjectFilter.FilterOn.activeTarget);
-			ExternalPredicateObjectFilter typeNotFoundInAdded = new ExternalPredicateObjectFilter(
-					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,
-					bufferedSplitter.getPlanNode(), false, ExternalPredicateObjectFilter.FilterOn.activeTarget);
-			ExternalPredicateObjectFilter externalPredicateObjectFilter = new ExternalPredicateObjectFilter(
-					connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE, targetClass, typeNotFoundInAdded, true,
-					ExternalPredicateObjectFilter.FilterOn.activeTarget);
+					bufferedSplitter.getPlanNode(), true, FilterByPredicateObject.FilterOn.activeTarget, false);
 
-			return new Sort(UnionNode.getInstance(typeFoundInAdded, externalPredicateObjectFilter));
+			FilterByPredicateObject typeNotFoundInAdded = new FilterByPredicateObject(
+					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,
+					bufferedSplitter.getPlanNode(), false, FilterByPredicateObject.FilterOn.activeTarget, false);
+
+			FilterByPredicateObject filterAgainstBaseConnection = new FilterByPredicateObject(
+					connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE, targetClass, typeNotFoundInAdded, true,
+					FilterByPredicateObject.FilterOn.activeTarget, true);
+
+			return new Sort(UnionNode.getInstance(typeFoundInAdded, filterAgainstBaseConnection));
 		} else {
-			return new ExternalPredicateObjectFilter(connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE,
-					targetClass, parent, true, ExternalPredicateObjectFilter.FilterOn.activeTarget);
+			return new FilterByPredicateObject(connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE,
+					targetClass, parent, true, FilterByPredicateObject.FilterOn.activeTarget, true);
 		}
 
 	}
@@ -194,7 +194,7 @@ public class TargetClass extends Target {
 			String randomSparqlVariable = stableRandomVariableProvider.next().asSparqlVariable();
 
 			return object.asSparqlVariable() + " a " + randomSparqlVariable + ".\n" +
-					"FILTER(" + randomSparqlVariable + " in ( " + in + " )) \n";
+					"FILTER(" + randomSparqlVariable + " in ( " + in + " ))";
 		}
 
 	}

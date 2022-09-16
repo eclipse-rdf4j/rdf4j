@@ -85,8 +85,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
+				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 
@@ -126,8 +126,8 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 			PlanNode addedTargets;
 
 			if (overrideTargetNode != null) {
-				addedTargets = overrideTargetNode.getPlanNode();
-				addedTargets = target.extend(addedTargets, connectionsGroup, validationSettings.getDataGraph(), scope,
+				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,
+						validationSettings.getDataGraph(), scope,
 						EffectiveTarget.Extend.right,
 						false, null);
 			} else {
@@ -221,7 +221,7 @@ public class HasValueConstraintComponent extends AbstractConstraintComponent {
 		if (scope == Scope.nodeShape) {
 
 			query += "FILTER(?" + effectiveTarget.getTargetVar().getName() + " != "
-					+ stringRepresentationOfValue(hasValue) + ")\n";
+					+ stringRepresentationOfValue(hasValue) + ")";
 
 		} else {
 			StatementMatcher.Variable value = StatementMatcher.Variable.VALUE;

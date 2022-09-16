@@ -206,7 +206,7 @@ public class PropertyShape extends Shape {
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 			if (!getPath().isSupported()) {
-				logger.error("Unsupported path detected. Shape ignored! \n" + this);
+				logger.error("Unsupported path detected. Shape ignored!\n" + this);
 				continue;
 			}
 

@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
-import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ExternalFilterByPredicate;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterByPredicate;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
@@ -78,9 +78,9 @@ public class TargetObjectsOf extends Target {
 		String tempVar = stableRandomVariableProvider.next().asSparqlVariable();
 
 		return targetObjectsOf.stream()
-				.map(target -> "\n{ BIND(<" + target + "> as " + tempVar + ") \n " + objectVariable + " "
+				.map(target -> "{\nBIND(<" + target + "> as " + tempVar + ")\n" + objectVariable + " "
 						+ tempVar + " " + subjectVariable
-						+ ". } \n")
+						+ ".\n}")
 				.reduce((a, b) -> a + " UNION " + b)
 				.get();
 	}
@@ -88,8 +88,8 @@ public class TargetObjectsOf extends Target {
 	@Override
 	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
 			PlanNode parent) {
-		return new ExternalFilterByPredicate(connectionsGroup.getBaseConnection(), targetObjectsOf, parent,
-				ExternalFilterByPredicate.On.Object, dataGraph);
+		return new FilterByPredicate(connectionsGroup.getBaseConnection(), targetObjectsOf, parent,
+				FilterByPredicate.On.Object, dataGraph);
 	}
 
 	@Override
@@ -102,8 +102,7 @@ public class TargetObjectsOf extends Target {
 				.map(t -> new StatementMatcher(
 						null,
 						new StatementMatcher.Variable(t),
-						object
-				)
+						object)
 				);
 	}
 
@@ -130,7 +129,7 @@ public class TargetObjectsOf extends Target {
 					.orElse("");
 
 			return tempVar + " ?predicatefjhfuewhw ?" + object.getName() + " .\n" +
-					"FILTER(?predicatefjhfuewhw in (" + in + ")) \n";
+					"FILTER(?predicatefjhfuewhw in (" + in + "))";
 		}
 
 	}

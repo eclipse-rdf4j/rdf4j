@@ -80,7 +80,7 @@ public class TargetNode extends Target {
 				})
 				.forEach(targetNode -> sb.append("( ").append(targetNode).append(" )\n"));
 
-		sb.append("}\n");
+		sb.append("}");
 
 		return sb.toString();
 	}
@@ -137,7 +137,7 @@ public class TargetNode extends Target {
 				})
 				.forEach(targetNode -> sb.append("( ").append(targetNode).append(" )\n"));
 
-		sb.append("}\n");
+		sb.append("}");
 
 		return sb.toString();
 	}
