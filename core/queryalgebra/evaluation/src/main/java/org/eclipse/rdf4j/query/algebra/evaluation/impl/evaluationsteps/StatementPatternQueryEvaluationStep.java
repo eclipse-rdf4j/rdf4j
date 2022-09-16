@@ -279,6 +279,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		CloseableIteration<? extends Statement, QueryEvaluationException> iteration = null;
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			if (iteration instanceof EmptyIteration) {
+				return null;
+			}
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings
