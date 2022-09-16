@@ -56,6 +56,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -482,102 +483,191 @@ class TripleStore implements Closeable {
 		return new LmdbRecordIterator(pool, index, rangeSearch, subj, pred, obj, context, explicit, txn);
 	}
 
+	/**
+	 * Computes start key for a bucket by linear interpolation between a lower and an upper bound.
+	 *
+	 * @param fraction    Value between 0 and 1
+	 * @param lowerValues The lower bound
+	 * @param upperValues The upper Bound
+	 * @param startValues The interpolated values
+	 */
+	protected void bucketStart(double fraction, long[] lowerValues, long[] upperValues, long[] startValues) {
+		long diff = 0;
+		for (int i = 0; i < lowerValues.length; i++) {
+			if (diff == 0) {
+				// only interpolate the first value that is different
+				diff = upperValues[i] - lowerValues[i];
+				startValues[i] = diff == 0 ? lowerValues[i] : (long) (lowerValues[i] + diff * fraction);
+			} else {
+				// set rest of the values to 0
+				startValues[i] = 0;
+			}
+		}
+	}
+
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		TripleIndex index = getBestIndex(subj, pred, obj, context);
 
-		double cardinality = 0;
-		for (boolean explicit : new boolean[] { true, false }) {
-			int dbi = index.getDB(explicit);
-			if (index.getPatternScore(subj, pred, obj, context) == 0) {
-				cardinality += txnManager.doWith((stack, txn) -> {
+		int relevantParts = index.getPatternScore(subj, pred, obj, context);
+		if (relevantParts == 0) {
+			// it's worthless to use the index, just retrieve all entries in the db
+			return txnManager.doWith((stack, txn) -> {
+				double cardinality = 0;
+				for (boolean explicit : new boolean[] { true, false }) {
+					int dbi = index.getDB(explicit);
 					MDBStat stat = MDBStat.mallocStack(stack);
 					mdb_stat(txn, dbi, stat);
-					return (double) stat.ms_entries();
-				});
-			} else {
-				// TODO currently uses a scan to determine range size
-				long[] startValues = new long[4];
-				cardinality += txnManager.doWith((stack, txn) -> {
-					MDBVal maxKey = MDBVal.malloc(stack);
-					ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-					index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
-					maxKeyBuf.flip();
-					maxKey.mv_data(maxKeyBuf);
+					cardinality += (double) stat.ms_entries();
+				}
+				return cardinality;
+			});
+		}
 
+		return txnManager.doWith((stack, txn) -> {
+			final Statistics s = pool.getStatistics();
+			try {
+				MDBVal maxKey = MDBVal.malloc(stack);
+				ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+				maxKeyBuf.flip();
+				maxKey.mv_data(maxKeyBuf);
+
+				PointerBuffer pp = stack.mallocPointer(1);
+
+				MDBVal keyData = MDBVal.mallocStack(stack);
+				ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
+				MDBVal valueData = MDBVal.mallocStack(stack);
+
+				double cardinality = 0;
+				for (boolean explicit : new boolean[] { true, false }) {
+					Arrays.fill(s.avgRowsPerValue, 1.0);
+					Arrays.fill(s.avgRowsPerValueCounts, 0);
+
+					keyBuf.clear();
+					index.getMinKey(keyBuf, subj, pred, obj, context);
+					keyBuf.flip();
+
+					int dbi = index.getDB(explicit);
+
+					int pos = 0;
 					long cursor = 0;
+
 					try {
-						PointerBuffer pp = stack.mallocPointer(1);
 						E(mdb_cursor_open(txn, dbi, pp));
 						cursor = pp.get(0);
 
-						MDBVal keyData = MDBVal.mallocStack(stack);
-						ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);
-						index.getMinKey(keyBuf, subj, pred, obj, context);
-						keyBuf.flip();
-
 						// set cursor to min key
 						keyData.mv_data(keyBuf);
-						MDBVal valueData = MDBVal.mallocStack(stack);
-
-						GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
-
-						long rangeSize = 0;
 						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-						while (rc == 0) {
-							if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
-								break;
-							} else if (!matcher.matches(keyData.mv_data())) {
-								// value doesn't match search key/mask, fetch next value
-								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-								continue;
-							} else {
-								if (rangeSize == 0) {
-									Varint.readListUnsigned(keyData.mv_data(), startValues);
-								}
-								rangeSize++;
-								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+						if (rc != 0 || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+							break;
+						} else {
+							Varint.readListUnsigned(keyData.mv_data(), s.minValues);
+						}
+
+						// set cursor to max key
+						keyData.mv_data(maxKeyBuf);
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						if (rc != 0) {
+							// directly go to last value
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+						} else {
+							// go to previous value of selected key
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+						}
+						if (rc == 0) {
+							Varint.readListUnsigned(keyData.mv_data(), s.maxValues);
+							// this is required to correctly estimate the range size at a later point
+							s.startValues[s.MAX_BUCKETS] = s.maxValues;
+						} else {
+							break;
+						}
+
+						long allSamplesCount = 0;
+						int bucket = 0;
+						boolean endOfRange = false;
+						for (; bucket < s.MAX_BUCKETS && !endOfRange; bucket++) {
+							if (bucket != 0) {
+								bucketStart((double) bucket / s.MAX_BUCKETS, s.minValues, s.maxValues, s.values);
+								keyBuf.clear();
+								Varint.writeListUnsigned(keyBuf, s.values);
+								keyBuf.flip();
 							}
+							// this is the min key for the first iteration
+							keyData.mv_data(keyBuf);
 
-							if (rangeSize == 1000) {
-								long[] lastValues = new long[4];
-								long[] values = new long[4];
-
-								Varint.readListUnsigned(keyData.mv_data(), lastValues);
-
-								keyData.mv_data(maxKeyBuf);
-								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-								if (rc != 0) {
-									// directly go to last value
-									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+							int currentSamplesCount = 0;
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+							while (rc == 0 && currentSamplesCount < s.MAX_SAMPLES_PER_BUCKET) {
+								if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+									endOfRange = true;
+									break;
 								} else {
-									// go to previous value of selected key
-									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
-								}
-								if (rc == 0) {
-									Varint.readListUnsigned(keyData.mv_data(), values);
-									int pos = 0;
-									while (pos < values.length && values[pos] == lastValues[pos]) {
-										pos++;
+									allSamplesCount++;
+									currentSamplesCount++;
+
+									System.arraycopy(s.values, 0, s.lastValues[bucket], 0, s.values.length);
+									Varint.readListUnsigned(keyData.mv_data(), s.values);
+
+									if (currentSamplesCount == 1) {
+										Arrays.fill(s.counts, 1);
+										System.arraycopy(s.values, 0, s.startValues[bucket], 0, s.values.length);
+									} else {
+										for (int i = 0; i < s.values.length; i++) {
+											if (s.values[i] == s.lastValues[bucket][i]) {
+												s.counts[i]++;
+											} else {
+												long diff = s.values[i] - s.lastValues[bucket][i];
+												s.avgRowsPerValueCounts[i]++;
+												s.avgRowsPerValue[i] = (s.avgRowsPerValue[i]
+														* (s.avgRowsPerValueCounts[i] - 1) +
+														(double) s.counts[i] / diff) / s.avgRowsPerValueCounts[i];
+												s.counts[i] = 0;
+											}
+										}
 									}
-									if (pos < values.length) {
-										rangeSize += (values[pos] - lastValues[pos])
-												/ Math.max(1, lastValues[pos] - startValues[pos])
-												* 1000;
+									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+									if (rc != 0) {
+										// no more elements are available
+										endOfRange = true;
 									}
 								}
-								return (double) rangeSize;
 							}
 						}
-						return (double) rangeSize;
+
+						// at least the seen samples must be counted
+						cardinality += allSamplesCount;
+
+						// the actual number of buckets (bucket - 1 "real" buckets and one for the last element within
+						// the range)
+						int buckets = bucket;
+						for (bucket = 1; bucket < buckets; bucket++) {
+							// find first element that has been changed
+							pos = 0;
+							while (pos < s.lastValues[bucket].length
+									&& s.startValues[bucket][pos] == s.lastValues[bucket - 1][pos]) {
+								pos++;
+							}
+							if (pos < s.lastValues[bucket].length) {
+								// this may be < 0 if two groups are overlapping
+								long diffBetweenGroups = Math
+										.max(s.startValues[bucket][pos] - s.lastValues[bucket - 1][pos], 0);
+								// estimate number of elements between last element of previous bucket and first element
+								// of current bucket
+								cardinality += s.avgRowsPerValue[pos] * diffBetweenGroups;
+							}
+						}
 					} finally {
 						if (cursor != 0) {
 							mdb_cursor_close(cursor);
 						}
 					}
-				});
+				}
+				return cardinality;
+			} finally {
+				pool.free(s);
 			}
-		}
-		return cardinality;
+		});
 	}
 
 	protected TripleIndex getBestIndex(long subj, long pred, long obj, long context) {

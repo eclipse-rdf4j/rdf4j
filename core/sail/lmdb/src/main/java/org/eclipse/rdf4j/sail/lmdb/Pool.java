@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -16,14 +16,16 @@ import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
- * A simple pool for {@link MDBVal} and {@link ByteBuffer} instances.
+ * A simple pool for {@link MDBVal}, {@link ByteBuffer} and {@link Statistics} instances.
  */
 class Pool {
 
 	private final MDBVal[] valPool = new MDBVal[1024];
 	private final ByteBuffer[] keyPool = new ByteBuffer[1024];
+	private final Statistics[] statisticsPool = new Statistics[512];
 	private volatile int valPoolIndex = -1;
 	private volatile int keyPoolIndex = -1;
+	private volatile int statisticsPoolIndex = -1;
 
 	MDBVal getVal() {
 		synchronized (valPool) {
@@ -45,6 +47,15 @@ class Pool {
 		return MemoryUtil.memAlloc(TripleStore.MAX_KEY_LENGTH);
 	}
 
+	Statistics getStatistics() {
+		synchronized (statisticsPool) {
+			if (statisticsPoolIndex >= 0) {
+				return statisticsPool[statisticsPoolIndex--];
+			}
+		}
+		return new Statistics();
+	}
+
 	void free(MDBVal val) {
 		synchronized (valPool) {
 			if (valPoolIndex < valPool.length - 1) {
@@ -61,6 +72,14 @@ class Pool {
 				keyPool[++keyPoolIndex] = bb;
 			} else {
 				MemoryUtil.memFree(bb);
+			}
+		}
+	}
+
+	void free(Statistics statistics) {
+		synchronized (statisticsPool) {
+			if (statisticsPoolIndex < statisticsPool.length - 1) {
+				statisticsPool[++statisticsPoolIndex] = statistics;
 			}
 		}
 	}
