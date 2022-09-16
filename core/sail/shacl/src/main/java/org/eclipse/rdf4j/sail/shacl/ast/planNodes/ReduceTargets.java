@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 
 import java.util.HashSet;
-import java.util.Objects;
 import java.util.Set;
 
 import org.apache.commons.text.StringEscapeUtils;
@@ -20,30 +19,36 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
-public class NotValuesIn implements PlanNode {
+/**
+ * Takes a parentToReduce and filters away any tuples that have an active target that exists in reductionSource
+ */
+public class ReduceTargets implements PlanNode {
 
-	private final PlanNode parent;
-	private final PlanNode notIn;
+	private final PlanNode parentToReduce;
+	private final PlanNode reductionSource;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
-	public NotValuesIn(PlanNode parent, PlanNode notIn) {
-		this.parent = PlanNodeHelper.handleSorting(this, parent);
-		this.notIn = notIn;
+	public ReduceTargets(PlanNode parentToReduce, PlanNode reductionSource) {
+		this.parentToReduce = PlanNodeHelper.handleSorting(this, parentToReduce);
+		this.reductionSource = reductionSource;
 	}
 
 	@Override
+
 	public CloseableIteration<? extends ValidationTuple, SailException> iterator() {
 		return new LoggingCloseableIteration(this, validationExecutionLogger) {
 
-			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parent.iterator();
+			final CloseableIteration<? extends ValidationTuple, SailException> parentIterator = parentToReduce
+					.iterator();
 
-			final Set<Value> notInValueSet = new HashSet<>();
+			final Set<Value> reductionSourceSet = new HashSet<>();
 
 			{
-				try (CloseableIteration<? extends ValidationTuple, SailException> iterator = notIn.iterator()) {
+				try (CloseableIteration<? extends ValidationTuple, SailException> iterator = reductionSource
+						.iterator()) {
 					while (iterator.hasNext()) {
-						notInValueSet.add(iterator.next().getValue());
+						reductionSourceSet.add(iterator.next().getActiveTarget());
 					}
 				}
 			}
@@ -54,7 +59,7 @@ public class NotValuesIn implements PlanNode {
 
 				while (next == null && parentIterator.hasNext()) {
 					ValidationTuple temp = parentIterator.next();
-					if (!notInValueSet.contains(temp.getValue())) {
+					if (!reductionSourceSet.contains(temp.getActiveTarget())) {
 						next = temp;
 					}
 
@@ -87,7 +92,7 @@ public class NotValuesIn implements PlanNode {
 
 	@Override
 	public int depth() {
-		return parent.depth() + 1;
+		return parentToReduce.depth() + 1;
 	}
 
 	@Override
@@ -109,28 +114,28 @@ public class NotValuesIn implements PlanNode {
 	}
 
 	@Override
-	public String toString() {
-		return "NotValuesIn{" +
-				"parent=" + parent +
-				", notIn=" + notIn +
-				'}';
-	}
-
-	@Override
 	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
 		this.validationExecutionLogger = validationExecutionLogger;
-		parent.receiveLogger(validationExecutionLogger);
-		notIn.receiveLogger(validationExecutionLogger);
+		parentToReduce.receiveLogger(validationExecutionLogger);
+		reductionSource.receiveLogger(validationExecutionLogger);
 	}
 
 	@Override
 	public boolean producesSorted() {
-		return parent.producesSorted();
+		return parentToReduce.producesSorted();
 	}
 
 	@Override
 	public boolean requiresSorted() {
 		return false;
+	}
+
+	@Override
+	public String toString() {
+		return "ReduceTargets{" +
+				"parentToReduce=" + parentToReduce +
+				", reductionSource=" + reductionSource +
+				'}';
 	}
 
 	@Override
@@ -141,12 +146,17 @@ public class NotValuesIn implements PlanNode {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		NotValuesIn that = (NotValuesIn) o;
-		return parent.equals(that.parent) && notIn.equals(that.notIn);
+
+		ReduceTargets that = (ReduceTargets) o;
+
+		if (!parentToReduce.equals(that.parentToReduce)) {
+			return false;
+		}
+		return reductionSource.equals(that.reductionSource);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(parent, notIn);
+		return 31 * parentToReduce.hashCode() + reductionSource.hashCode();
 	}
 }

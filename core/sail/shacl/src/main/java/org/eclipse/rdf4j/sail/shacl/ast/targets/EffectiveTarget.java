@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Resource;
@@ -38,6 +39,9 @@ import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
 public class EffectiveTarget {
 
 	public static final String TARGET_VAR_PREFIX = "target_";
+	public static final String[] TARGET_NAMES = IntStream.range(0, 1000)
+			.mapToObj(i -> TARGET_VAR_PREFIX + String.format("%010d", i))
+			.toArray(String[]::new);
 	private final ArrayDeque<EffectiveTargetObject> chain;
 	private final EffectiveTargetObject optional;
 
@@ -52,7 +56,7 @@ public class EffectiveTarget {
 
 		for (Targetable targetable : chain) {
 			EffectiveTargetObject effectiveTargetObject = new EffectiveTargetObject(
-					new StatementMatcher.Variable(TARGET_VAR_PREFIX + String.format("%010d", index++)),
+					new StatementMatcher.Variable(getTargetVarName(index++)),
 					targetable,
 					previous,
 					rdfsSubClassOfReasoner,
@@ -63,7 +67,7 @@ public class EffectiveTarget {
 
 		if (optional != null) {
 			this.optional = new EffectiveTargetObject(
-					new StatementMatcher.Variable(TARGET_VAR_PREFIX + String.format("%010d", index)),
+					new StatementMatcher.Variable(getTargetVarName(index)),
 					optional,
 					previous,
 					rdfsSubClassOfReasoner,
@@ -72,6 +76,14 @@ public class EffectiveTarget {
 			this.optional = null;
 		}
 
+	}
+
+	private String getTargetVarName(int i) {
+		if (i < TARGET_NAMES.length) {
+			return TARGET_NAMES[i];
+		} else {
+			return TARGET_VAR_PREFIX + String.format("%010d", i);
+		}
 	}
 
 	public StatementMatcher.Variable getTargetVar() {
@@ -93,7 +105,6 @@ public class EffectiveTarget {
 			return allTargets;
 		}
 
-		String query = getQuery(includePropertyShapeValues);
 		List<StatementMatcher.Variable> vars = getVars();
 		if (includePropertyShapeValues) {
 			vars = new ArrayList<>(vars);
@@ -114,6 +125,7 @@ public class EffectiveTarget {
 			return connectionsGroup
 					.getCachedNodeFor(getTargetFilter(connectionsGroup, dataGraph, Unique.getInstance(parent, false)));
 		} else {
+			String query = getQuery(includePropertyShapeValues);
 
 			PlanNode parent = new BindSelect(connectionsGroup.getBaseConnection(), dataGraph, query, vars, source,
 					varNames, scope,
@@ -137,7 +149,6 @@ public class EffectiveTarget {
 	}
 
 	/**
-	 *
 	 * @return false if it is 100% sure that this will not match, else returns true
 	 */
 	public boolean couldMatch(ConnectionsGroup connectionsGroup, Resource[] dataGraph) {
@@ -283,7 +294,7 @@ public class EffectiveTarget {
 
 		// TODO: this is a slow way to solve this problem! We should use bulk operations.
 		return new ExternalFilterByQuery(connectionsGroup.getBaseConnection(), dataGraph, parent, query, last.var,
-				validationTuple -> validationTuple.getActiveTarget())
+				ValidationTuple::getActiveTarget)
 						.getTrueNode(UnBufferedPlanNode.class);
 	}
 
@@ -301,7 +312,7 @@ public class EffectiveTarget {
 		return chain.stream()
 				.map(EffectiveTargetObject::getQueryFragment)
 				.reduce((a, b) -> a + "\n" + b)
-				.orElse("") + "\n";
+				.orElse("");
 
 	}
 
