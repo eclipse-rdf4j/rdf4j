@@ -19,6 +19,8 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -143,6 +145,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	// Track the time used when evaluating a query, used by explain(...)
 	private boolean trackTime;
+	private QueryEvaluationMode queryEvaluationMode;
 
 	/*--------------*
 	 * Constructors *
@@ -178,6 +181,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		this.federatedServiceResolver = (evalStratFactory instanceof StandardEvaluationStrategyFactory)
 				? ((StandardEvaluationStrategyFactory) evalStratFactory).getFederatedServiceResolver()
 				: null;
+		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 	}
 
 	/*---------*
@@ -208,7 +212,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) evalStrat).setFederatedServiceResolver(federatedServiceResolver);
 		}
-		evalStrat.setQueryEvaluationMode(getSailBase().getDefaultQueryEvaluationMode());
+		evalStrat.setQueryEvaluationMode(queryEvaluationMode);
 		return evalStrat;
 	}
 
@@ -439,6 +443,17 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				}
 			}
 		}
+	}
+
+	@Override
+	public void setTransactionSettings(TransactionSetting... settings) {
+		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+		for (TransactionSetting setting : settings) {
+			if (setting instanceof QueryEvaluationMode) {
+				this.queryEvaluationMode = ((QueryEvaluationMode) setting);
+			}
+		}
+		super.setTransactionSettings(settings);
 	}
 
 	@Override

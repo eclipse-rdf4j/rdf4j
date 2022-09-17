@@ -282,7 +282,6 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		query = "ask {filter (regex(\"Валовой\", \"валовой\")) }";
 
 		assertFalse("case-sensitive match on Cyrillic should fail", conn.prepareBooleanQuery(query).evaluate());
-
 	}
 
 	@Test

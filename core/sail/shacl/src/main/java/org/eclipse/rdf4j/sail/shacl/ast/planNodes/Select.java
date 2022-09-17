@@ -95,7 +95,6 @@ public class Select implements PlanNode {
 			CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingSet = null;
 
 			private void init() {
-
 				if (bindingSet != null) {
 					return;
 				}
@@ -104,6 +103,10 @@ public class Select implements PlanNode {
 					TupleExpr tupleExpr = SparqlQueryParserCache.get(query);
 
 					bindingSet = connection.evaluate(tupleExpr, dataset, EmptyBindingSet.getInstance(), true);
+					if (logger.isTraceEnabled()) {
+						boolean hasNext = bindingSet.hasNext();
+						logger.trace("SPARQL query (hasNext={}) \n{}", hasNext, Formatter.formatSparqlQuery(query));
+					}
 				} catch (MalformedQueryException e) {
 					logger.error("Malformed query:\n{}", query);
 					throw e;
