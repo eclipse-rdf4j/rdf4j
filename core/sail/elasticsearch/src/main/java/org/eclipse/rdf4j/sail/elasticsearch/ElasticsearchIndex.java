@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
 import org.eclipse.rdf4j.sail.lucene.DocumentResult;
 import org.eclipse.rdf4j.sail.lucene.DocumentScore;
 import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+import org.eclipse.rdf4j.sail.lucene.QuerySpec;
 import org.eclipse.rdf4j.sail.lucene.SearchDocument;
 import org.eclipse.rdf4j.sail.lucene.SearchFields;
 import org.elasticsearch.action.ActionRequestBuilder;
@@ -528,16 +529,22 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 	 * Parse the passed query.
 	 *
 	 * @param subject
-	 * @param query       string
-	 * @param propertyURI
-	 * @param highlight
+	 * @param spec    query to process
 	 * @return the parsed query
 	 * @throws MalformedQueryException
 	 * @throws IOException
+	 * @throws IllegalArgumentException if the spec contains a multi-param query
 	 */
 	@Override
-	protected Iterable<? extends DocumentScore> query(Resource subject, String query, IRI propertyURI,
-			boolean highlight) throws MalformedQueryException, IOException {
+	protected Iterable<? extends DocumentScore> query(Resource subject, QuerySpec spec)
+			throws MalformedQueryException, IOException {
+		if (spec.getQueryPatterns().size() != 1) {
+			throw new IllegalArgumentException("Multi-param query not implemented!");
+		}
+		QuerySpec.QueryParam param = spec.getQueryPatterns().iterator().next();
+		IRI propertyURI = param.getProperty();
+		boolean highlight = param.isHighlight();
+		String query = param.getQuery();
 		QueryBuilder qb = prepareQuery(propertyURI, QueryBuilders.queryStringQuery(query));
 		SearchRequestBuilder request = client.prepareSearch();
 		if (highlight) {

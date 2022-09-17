@@ -10,7 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lucene;
 
+import java.util.Collection;
+import java.util.Set;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -25,15 +28,40 @@ import org.eclipse.rdf4j.query.algebra.Var;
  */
 public class QuerySpec extends AbstractSearchQueryEvaluator {
 
+	/**
+	 * Replace the given pattern with a new instance of the given replacement type.
+	 *
+	 * @param pattern     the pattern to remove
+	 * @param replacement the replacement type
+	 */
+	private static void replace(QueryModelNode pattern, Supplier<? extends QueryModelNode> replacement) {
+		if (pattern != null) {
+			pattern.replaceWith(replacement.get());
+		}
+	}
+
+	private static void append(StatementPattern pattern, StringBuilder buffer) {
+		if (pattern == null) {
+			return;
+		}
+
+		buffer.append("   ");
+		buffer.append("StatementPattern\n");
+		append(pattern.getSubjectVar(), buffer);
+		append(pattern.getPredicateVar(), buffer);
+		append(pattern.getObjectVar(), buffer);
+	}
+
+	private static void append(Var var, StringBuilder buffer) {
+		buffer.append("      ");
+		buffer.append(var.toString());
+	}
+
 	private final StatementPattern matchesPattern;
 
-	private final StatementPattern queryPattern;
-
-	private final StatementPattern propertyPattern;
+	private final Collection<QueryParam> queryPatterns;
 
 	private final StatementPattern scorePattern;
-
-	private final StatementPattern snippetPattern;
 
 	private final StatementPattern typePattern;
 
@@ -41,76 +69,41 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 
 	private final Resource subject;
 
-	private final String queryString;
-
-	private final IRI propertyURI;
-
 	private final String matchesVarName;
-
-	private final String propertyVarName;
 
 	private final String scoreVarName;
 
-	private final String snippetVarName;
-
-	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern, StatementPattern propertyPattern,
-			StatementPattern scorePattern, StatementPattern snippetPattern, StatementPattern typePattern,
-			Resource subject, String queryString, IRI propertyURI) {
-		this(matchesPattern, queryPattern, propertyPattern, scorePattern, snippetPattern, typePattern,
-				null, subject, queryString, propertyURI);
-	}
-
-	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern, StatementPattern propertyPattern,
-			StatementPattern scorePattern, StatementPattern snippetPattern, StatementPattern typePattern,
-			StatementPattern idPattern, Resource subject, String queryString, IRI propertyURI) {
+	public QuerySpec(StatementPattern matchesPattern, Collection<QueryParam> queryPatterns,
+			StatementPattern scorePattern, StatementPattern typePattern,
+			StatementPattern idPattern, Resource subject) {
 		this.matchesPattern = matchesPattern;
-		this.queryPattern = queryPattern;
-		this.propertyPattern = propertyPattern;
+		this.queryPatterns = queryPatterns;
 		this.scorePattern = scorePattern;
-		this.snippetPattern = snippetPattern;
 		this.typePattern = typePattern;
 		this.idPattern = idPattern;
 		this.subject = subject;
-		this.queryString = queryString;
-		this.propertyURI = propertyURI;
 		if (matchesPattern != null) {
 			this.matchesVarName = matchesPattern.getSubjectVar().getName();
 		} else {
 			this.matchesVarName = null;
-		}
-		if (propertyPattern != null) {
-			this.propertyVarName = propertyPattern.getObjectVar().getName();
-		} else {
-			this.propertyVarName = null;
 		}
 		if (scorePattern != null) {
 			this.scoreVarName = scorePattern.getObjectVar().getName();
 		} else {
 			this.scoreVarName = null;
 		}
-		if (snippetPattern != null) {
-			this.snippetVarName = snippetPattern.getObjectVar().getName();
-		} else {
-			this.snippetVarName = null;
-		}
 	}
 
 	public QuerySpec(String matchesVarName, String propertyVarName, String scoreVarName, String snippetVarName,
 			Resource subject, String queryString, IRI propertyURI) {
 		this.matchesVarName = matchesVarName;
-		this.propertyVarName = propertyVarName;
 		this.scoreVarName = scoreVarName;
-		this.snippetVarName = snippetVarName;
 		this.matchesPattern = null;
-		this.propertyPattern = null;
 		this.scorePattern = null;
-		this.snippetPattern = null;
 		this.typePattern = null;
-		this.queryPattern = null;
+		this.queryPatterns = Set.of();
 		this.idPattern = null;
 		this.subject = subject;
-		this.queryString = queryString;
-		this.propertyURI = propertyURI;
 	}
 
 	@Override
@@ -122,10 +115,10 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 	public QueryModelNode removeQueryPatterns() {
 		final Supplier<? extends QueryModelNode> replacement = SingletonSet::new;
 
-		replace(getQueryPattern(), replacement);
+		for (QueryParam param : getQueryPatterns()) {
+			param.removeQueryPatterns();
+		}
 		replace(getScorePattern(), replacement);
-		replace(getPropertyPattern(), replacement);
-		replace(getSnippetPattern(), replacement);
 		replace(getTypePattern(), replacement);
 		replace(getIdPattern(), replacement);
 
@@ -134,18 +127,6 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 		getMatchesPattern().replaceWith(placeholder);
 
 		return placeholder;
-	}
-
-	/**
-	 * Replace the given pattern with a new instance of the given replacement type.
-	 *
-	 * @param pattern     the pattern to remove
-	 * @param replacement the replacement type
-	 */
-	private void replace(QueryModelNode pattern, Supplier<? extends QueryModelNode> replacement) {
-		if (pattern != null) {
-			pattern.replaceWith(replacement.get());
-		}
 	}
 
 	public StatementPattern getMatchesPattern() {
@@ -161,20 +142,12 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 		return matchesVarName;
 	}
 
-	public StatementPattern getQueryPattern() {
-		return queryPattern;
-	}
-
-	public StatementPattern getPropertyPattern() {
-		return propertyPattern;
+	public Collection<QueryParam> getQueryPatterns() {
+		return queryPatterns;
 	}
 
 	public StatementPattern getIdPattern() {
 		return idPattern;
-	}
-
-	public String getPropertyVariableName() {
-		return propertyVarName;
 	}
 
 	public StatementPattern getScorePattern() {
@@ -188,14 +161,6 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 	 */
 	public String getScoreVariableName() {
 		return scoreVarName;
-	}
-
-	public StatementPattern getSnippetPattern() {
-		return snippetPattern;
-	}
-
-	public String getSnippetVariableName() {
-		return snippetVarName;
 	}
 
 	public StatementPattern getTypePattern() {
@@ -219,58 +184,168 @@ public class QuerySpec extends AbstractSearchQueryEvaluator {
 		return subject;
 	}
 
-	/**
-	 * return the literal expression of the query or null, if none set. (null values are possible, but not valid).
-	 *
-	 * @return the query or null
-	 */
-	public String getQueryString() {
-		// this should be the same as ((Literal)
-		// queryPattern.getObjectVar().getValue()).getLabel();
-		return queryString;
-	}
-
-	/**
-	 * @return The URI of the property who's literal values should be searched, or <code>null</code>
-	 */
-	public IRI getPropertyURI() {
-		return propertyURI;
-	}
-
 	public boolean isEvaluable() {
-		return queryString != null;
+		return queryPatterns.stream().allMatch(QueryParam::isEvaluable);
+	}
+
+	public boolean isHighlight() {
+		return queryPatterns.stream().anyMatch(QueryParam::isHighlight);
 	}
 
 	@Override
 	public String toString() {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("QuerySpec\n");
-		buffer.append("   queryString=\"" + queryString + "\"\n");
-		buffer.append("   propertyURI=" + propertyURI + "\n");
 		buffer.append("   subject=" + subject + "\n");
 		append(matchesPattern, buffer);
-		append(queryPattern, buffer);
-		append(propertyPattern, buffer);
+		buffer.append("   queryPatterns=").append(queryPatterns);
 		append(scorePattern, buffer);
-		append(snippetPattern, buffer);
 		append(typePattern, buffer);
 		return buffer.toString();
 	}
 
-	private void append(StatementPattern pattern, StringBuilder buffer) {
-		if (pattern == null) {
-			return;
-		}
+	public String getCatQuery() {
+		return getQueryPatterns().stream()
+				.map(q -> {
+					StringBuilder buffer = new StringBuilder();
+					buffer
+							.append('"')
+							.append(q.getQuery())
+							.append('"');
 
-		buffer.append("   ");
-		buffer.append("StatementPattern\n");
-		append(pattern.getSubjectVar(), buffer);
-		append(pattern.getPredicateVar(), buffer);
-		append(pattern.getObjectVar(), buffer);
+					if (q.getProperty() != null) {
+						buffer.append("@<").append(q.getProperty()).append(">");
+					}
+
+					if (q.getBoost() != null) {
+						buffer.append('^').append(q.getBoost());
+					}
+					return buffer.toString();
+				})
+				.collect(Collectors.joining(" "));
 	}
 
-	private void append(Var var, StringBuilder buffer) {
-		buffer.append("      ");
-		buffer.append(var.toString());
+	/**
+	 * Param in a Lucene query extracted in {@link org.eclipse.rdf4j.sail.lucene.QuerySpec}
+	 */
+	public static class QueryParam {
+		private final StatementPattern fieldPattern;
+		private final StatementPattern queryPattern;
+		private final StatementPattern propertyPattern;
+		private final StatementPattern snippetPattern;
+		private final StatementPattern boostPattern;
+		private final StatementPattern typePattern;
+
+		private final String query;
+		private final Float boost;
+		private final IRI property;
+		private final String snippetVarName;
+		private final String propertyVarName;
+
+		public QueryParam(StatementPattern queryPattern, StatementPattern propertyPattern,
+				StatementPattern snippetPattern, StatementPattern typePattern, String query, IRI property,
+				Float boost) {
+			this(null, queryPattern, propertyPattern, snippetPattern, null, typePattern, query, property, boost);
+		}
+
+		public QueryParam(StatementPattern fieldPattern, StatementPattern queryPattern,
+				StatementPattern propertyPattern, StatementPattern snippetPattern, StatementPattern boostPattern,
+				StatementPattern typePattern, String query, IRI property, Float boost) {
+			this.fieldPattern = fieldPattern;
+			this.queryPattern = queryPattern;
+			this.propertyPattern = propertyPattern;
+			this.snippetPattern = snippetPattern;
+			this.boostPattern = boostPattern;
+			this.typePattern = typePattern;
+			this.query = query;
+			this.property = property;
+			this.boost = boost;
+
+			snippetVarName = (snippetPattern != null) ? snippetPattern.getObjectVar().getName() : null;
+			propertyVarName = (propertyPattern != null) ? propertyPattern.getObjectVar().getName() : null;
+		}
+
+		/**
+		 * replace all the query patterns by a singleton
+		 */
+		public void removeQueryPatterns() {
+			final Supplier<? extends QueryModelNode> replacement = SingletonSet::new;
+			replace(getTypePattern(), replacement);
+			replace(getQueryPattern(), replacement);
+			replace(getPropertyPattern(), replacement);
+			replace(getSnippetPattern(), replacement);
+			replace(getBoostPattern(), replacement);
+			replace(getFieldPattern(), replacement);
+		}
+
+		public StatementPattern getTypePattern() {
+			return typePattern;
+		}
+
+		public StatementPattern getFieldPattern() {
+			return fieldPattern;
+		}
+
+		public StatementPattern getQueryPattern() {
+			return queryPattern;
+		}
+
+		public StatementPattern getPropertyPattern() {
+			return propertyPattern;
+		}
+
+		public StatementPattern getSnippetPattern() {
+			return snippetPattern;
+		}
+
+		public StatementPattern getBoostPattern() {
+			return boostPattern;
+		}
+
+		public String getQuery() {
+			return query;
+		}
+
+		public IRI getProperty() {
+			return property;
+		}
+
+		public String getPropertyVarName() {
+			return propertyVarName;
+		}
+
+		public String getSnippetVarName() {
+			return snippetVarName;
+		}
+
+		public Float getBoost() {
+			return boost;
+		}
+
+		/**
+		 * @return is this param is highlighted or not
+		 */
+		public boolean isHighlight() {
+			return getSnippetVarName() != null || getPropertyVarName() != null;
+		}
+
+		@Override
+		public String toString() {
+			StringBuilder buffer = new StringBuilder();
+			buffer.append("QueryParam");
+			append(fieldPattern, buffer);
+			append(queryPattern, buffer);
+			append(propertyPattern, buffer);
+			append(snippetPattern, buffer);
+			append(boostPattern, buffer);
+			return buffer.toString();
+		}
+
+		/**
+		 * @return is this param is evaluable
+		 */
+		public boolean isEvaluable() {
+			return query != null;
+		}
 	}
 }
